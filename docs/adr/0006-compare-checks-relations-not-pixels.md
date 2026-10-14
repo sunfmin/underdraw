@@ -15,7 +15,13 @@ written in one form for every platform. It checks:
   handoff's expected state;
 - **where it is, relatively**: each node below, or right of, the sibling
   before it where the wireframe puts it, and inside the nearest element
-  holding it.
+  holding it;
+- **what it calls**: for each node the test acted on, the operation calls
+  the app made, against the ones the expected state says that event makes
+  ([ADR 0009](0009-operations-live-in-the-screen-and-are-called-by-name.md)):
+  none missing, none extra, each with the same arguments. The test records
+  the calls at the app's data layer, where operations are implemented once,
+  so the check does not depend on the platform's network or storage.
 
 ## Considered options
 

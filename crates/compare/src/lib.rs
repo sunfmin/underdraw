@@ -17,7 +17,7 @@ use underdraw_format::{Breakpoint, Kinds, Node, State, instantiate};
 use underdraw_handoff::{Expected, handoff};
 use underdraw_layout::{Measure, Page, Rect, layout};
 
-pub use capture::{Capture, Element};
+pub use capture::{Acted, Call, Capture, Element};
 
 #[derive(Debug, Serialize)]
 pub struct Comparison {
@@ -45,6 +45,8 @@ pub struct Checked {
     pub enabled: u32,
     pub order: u32,
     pub inside: u32,
+    /// Interactions whose calls were checked.
+    pub calls: u32,
 }
 
 /// One difference, at the node it is about.
@@ -52,7 +54,8 @@ pub struct Checked {
 pub struct Finding {
     pub at: String,
     /// Which check found it: `present`, `absent`, `duplicate`, `text`,
-    /// `enabled`, `order` or `inside`.
+    /// `enabled`, `order`, `inside`, `call-missing`, `call-extra` or
+    /// `call-with`.
     pub check: &'static str,
     pub problem: String,
 }
@@ -121,6 +124,7 @@ pub fn compare(
     differ.presence(&known);
     differ.shows();
     differ.geometry(&root, None, false);
+    differ.calls();
     let mut unknown = Vec::new();
     for element in &capture.elements {
         if !known.contains(&element.id) && !unknown.contains(&element.id) {
@@ -256,6 +260,67 @@ impl Differ<'_> {
         }
         if !wrong.is_empty() {
             self.find(id, "text", format!("it shows {text:?}; the description says it shows {wrong:?}"));
+        }
+    }
+
+    /// For each node the test acted on, the calls the app made against the
+    /// ones the description says that event makes: each expected one made,
+    /// with the same arguments, and no other.
+    fn calls(&mut self) {
+        let capture = self.capture;
+        let none = Vec::new();
+        for acted in &capture.acted {
+            if !self.expected.present.contains(&acted.id) {
+                continue;
+            }
+            self.checked.calls = self.checked.calls.saturating_add(1);
+            let listed = match self.expected.calls.get(&acted.id) {
+                Some(Value::Array(listed)) => listed,
+                _ => &none,
+            };
+            let mut matched: Vec<usize> = Vec::new();
+            for wanted in listed {
+                if wanted.get("on").and_then(Value::as_str) != Some(acted.on.as_str()) {
+                    continue;
+                }
+                let operation = wanted.get("operation").and_then(Value::as_str).unwrap_or_default();
+                let with = wanted.get("with").cloned().unwrap_or(Value::Null);
+                let mut made = None;
+                for (index, call) in acted.calls.iter().enumerate() {
+                    if call.operation == operation && !matched.contains(&index) {
+                        made = Some((index, call));
+                    }
+                }
+                match made {
+                    None => {
+                        let problem = format!(
+                            "acting on it ({}) should call {operation} with {with}; the app made no such call",
+                            acted.on
+                        );
+                        self.find(&acted.id, "call-missing", problem);
+                    }
+                    Some((index, call)) => {
+                        matched.push(index);
+                        let given = &call.with;
+                        if *given != with {
+                            let problem = format!(
+                                "acting on it ({}) called {operation} with {given}; the description says with {with}",
+                                acted.on
+                            );
+                            self.find(&acted.id, "call-with", problem);
+                        }
+                    }
+                }
+            }
+            for (index, call) in acted.calls.iter().enumerate() {
+                if !matched.contains(&index) {
+                    let problem = format!(
+                        "acting on it ({}) called {} with {}; the description calls no such operation here",
+                        acted.on, call.operation, call.with
+                    );
+                    self.find(&acted.id, "call-extra", problem);
+                }
+            }
         }
     }
 
