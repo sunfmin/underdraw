@@ -310,6 +310,9 @@ KINDS.JSON
     self                 "start": as wide as its content
     items                "start" | "center";  justify "center" | "between"
     columns rows span    grid tracks: a count or ["1fr", "1fr"]; span covers cells
+                         a track is "2fr", "40%" or a number of points:
+                         ["3fr", "1fr", 48]. Not "48": a quoted number
+                         passes check but collapses every track to its content
     fill stroke radius dashed   outline and fill in an ink
     cross topLine        a crossed placeholder, a line on top, in an ink
     clip                 cut children at this radius (false: never)
