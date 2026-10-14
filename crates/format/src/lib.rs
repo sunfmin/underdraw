@@ -12,6 +12,7 @@ mod conditions;
 mod expr;
 mod field;
 mod fixture;
+mod instance;
 mod schema;
 mod template;
 
@@ -21,3 +22,4 @@ mod template;
 mod rejected;
 
 pub use check::{Checked, Condition, Finding, check};
+pub use instance::{Breakpoint, Node, State, instantiate};
