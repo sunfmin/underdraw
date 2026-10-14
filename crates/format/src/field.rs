@@ -66,6 +66,9 @@ pub struct Field {
     pub doc: Option<String>,
     /// How the app or server computes it, for a derived field.
     pub derived: Option<String>,
+    /// True of view state: what only the screen holds (an open menu, a
+    /// popup's subject), never domain data an operation answers with.
+    pub view: bool,
 }
 
 impl Field {
@@ -79,6 +82,7 @@ impl Field {
             default: None,
             doc: None,
             derived: None,
+            view: false,
         }
     }
 
@@ -101,13 +105,15 @@ impl Field {
 }
 
 /// Reads a field written either as a type string or as an object with `type`,
-/// and optionally `doc` and `derived`.
+/// and optionally `doc`, `derived` and `view`.
 pub fn read(spec: &Value) -> Result<Field, String> {
     match spec {
         Value::String(text) => parse(text),
         Value::Object(object) => {
-            if let Some(key) = object.keys().find(|key| !matches!(key.as_str(), "type" | "doc" | "derived")) {
-                return Err(format!("a field object holds only type, doc and derived, not {key}"));
+            if let Some(key) =
+                object.keys().find(|key| !matches!(key.as_str(), "type" | "doc" | "derived" | "view"))
+            {
+                return Err(format!("a field object holds only type, doc, derived and view, not {key}"));
             }
             let mut field = match object.get("type") {
                 Some(Value::String(text)) => parse(text)?,
@@ -115,6 +121,11 @@ pub fn read(spec: &Value) -> Result<Field, String> {
             };
             field.doc = object.get("doc").and_then(Value::as_str).map(str::to_string);
             field.derived = object.get("derived").and_then(Value::as_str).map(str::to_string);
+            field.view = match object.get("view") {
+                None => false,
+                Some(Value::Bool(view)) => *view,
+                Some(_) => return Err("view is true or false".to_string()),
+            };
             Ok(field)
         }
         _ => Err("a field is a type string, or an object with a `type`".to_string()),
@@ -163,7 +174,17 @@ pub fn parse(text: &str) -> Result<Field, String> {
     if array && default.as_ref().is_some_and(|value| !value.is_null()) {
         return Err(format!("{text:?}: an array has no default; write [] in the fixture"));
     }
-    Ok(Field { base: Base::from_name(name), array, nullable, lo, hi, default, doc: None, derived: None })
+    Ok(Field {
+        base: Base::from_name(name),
+        array,
+        nullable,
+        lo,
+        hi,
+        default,
+        doc: None,
+        derived: None,
+        view: false,
+    })
 }
 
 fn strip<'a>(name: &'a str, suffix: &str) -> (&'a str, bool) {

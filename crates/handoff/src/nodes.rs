@@ -37,6 +37,10 @@ pub struct Event {
     /// `tap`, `change`, …
     pub on: String,
     pub action: String,
+    /// The operation it calls, when the action is `call`: one of the
+    /// handoff's `operations`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
     /// The use site that picks this action, when `cases` chooses between
     /// actions; `else` for the last.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,9 +196,11 @@ impl Walk<'_> {
                 Some(with) => crate::object([("target", given.clone()), ("with", with.clone())]),
                 None => given.clone(),
             };
+            let operation = if action == "call" { given.as_str().map(str::to_string) } else { None };
             events.push(Event {
                 on: event.to_string(),
                 action: action.clone(),
+                operation,
                 when: when.map(str::to_string),
                 with,
                 implement,

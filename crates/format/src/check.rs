@@ -10,6 +10,7 @@ use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::kinds::{Kinds, track_faults};
+use crate::operations::Operations;
 use crate::overlay::Anchor;
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
@@ -80,16 +81,18 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     let schema = Schema::read(screen, &mut findings);
     let fixtures = fixture::read(screen, &schema, &mut findings);
     let conditions = Conditions::read(screen, &schema, &mut findings);
+    let operations = Operations::read(screen, &schema, &conditions, &mut findings);
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
     let mut walk = Walk {
         schema: &schema,
         conditions: &conditions,
+        operations: &operations,
         components: &components,
         kinds: &known,
         findings: &mut findings,
     };
     match screen.get("root") {
-        Some(root) => walk.node(root, &schema.roots(), &BTreeSet::new(), "root", ""),
+        Some(root) => walk.node(root, &schema.roots(), &Known::default(), "root", ""),
         None => walk.findings.add("root", "the screen needs a root node"),
     }
     let mut phases = Vec::new();
@@ -98,7 +101,7 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
             continue;
         }
         // A phase renders before data arrives: nothing in it may read data.
-        walk.node(tree, &Vec::new(), &BTreeSet::new(), &format!("phases.{name}"), "");
+        walk.node(tree, &Vec::new(), &Known::default(), &format!("phases.{name}"), "");
         phases.push(name.clone());
     }
 
@@ -137,9 +140,25 @@ const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
 const INERT: [&str; 10] = ["$comment", "$note", "$why", "assumed", "id", "kind", "ref", "only", "each", "if"];
 
+/// What is known where a node is reached: the paths tested `!= null`, and
+/// the conditions that hold, by the `if`s around it.
+#[derive(Clone, Default)]
+struct Known {
+    not_null: BTreeSet<String>,
+    holds: BTreeSet<String>,
+}
+
+impl Known {
+    fn extend(&mut self, more: Known) {
+        self.not_null.extend(more.not_null);
+        self.holds.extend(more.holds);
+    }
+}
+
 struct Walk<'a> {
     schema: &'a Schema,
     conditions: &'a Conditions,
+    operations: &'a Operations,
     components: &'a Map<String, Value>,
     kinds: &'a Kinds,
     findings: &'a mut Findings,
@@ -147,16 +166,16 @@ struct Walk<'a> {
 
 impl Walk<'_> {
     /// `value`, found under `key`, where `scope` names what paths may start
-    /// from and `guarded` the paths known not to be null.
-    fn node(&mut self, value: &Value, scope: &Scope, guarded: &BTreeSet<String>, at: &str, key: &str) {
+    /// from and `known` what the enclosing `if`s guarantee.
+    fn node(&mut self, value: &Value, scope: &Scope, known: &Known, at: &str, key: &str) {
         let object = match value {
             Value::Array(items) => {
                 for item in items {
-                    self.node(item, scope, guarded, at, key);
+                    self.node(item, scope, known, at, key);
                 }
                 return;
             }
-            Value::String(text) => return self.template(text, scope, guarded, at, key),
+            Value::String(text) => return self.template(text, scope, &known.not_null, at, key),
             Value::Object(object) => object,
             _ => return,
         };
@@ -172,7 +191,7 @@ impl Walk<'_> {
         let at = object.get("id").and_then(Value::as_str).unwrap_or(at);
         if let Some(name) = object.get("ref") {
             match name.as_str().and_then(|name| self.components.get(name)) {
-                Some(component) => self.node(component, scope, guarded, at, key),
+                Some(component) => self.node(component, scope, known, at, key),
                 None => self.findings.add(at, &format!("ref {name} is not in components")),
             }
             return;
@@ -194,9 +213,9 @@ impl Walk<'_> {
                 &format!("kind {kind} has a backdrop, which only an overlay draws: put it in \"overlay\", or take backdrop out of its look"),
             );
         }
-        let mut guarded = guarded.clone();
+        let mut known = known.clone();
         if let Some(Value::String(used)) = object.get("if") {
-            guarded.extend(self.use_site(used, scope, &format!("{at}.if")));
+            known.extend(self.use_site(used, scope, &format!("{at}.if")));
         }
         if let Some(only) = object.get("only")
             && only.as_str().and_then(Breakpoint::parse).is_none()
@@ -235,7 +254,7 @@ impl Walk<'_> {
             }
             match self.schema.resolve(scope, path) {
                 Some(resolved) if resolved.field.array => {
-                    if resolved.nullable.iter().any(|p| !guarded.contains(p)) {
+                    if resolved.nullable.iter().any(|p| !known.not_null.contains(p)) {
                         self.findings.add(
                             at,
                             &format!("{path} may be null; guard it with a condition testing != null"),
@@ -260,40 +279,199 @@ impl Walk<'_> {
                 ("disabled", Value::String(used)) => {
                     self.use_site(used, scope, &format!("{at}.disabled"));
                 }
-                ("cases", Value::Array(branches)) => self.cases(branches, scope, &guarded, at, key),
+                ("cases", Value::Array(branches)) => self.cases(branches, scope, &known, at, key),
                 ("cases", _) => self.findings.add(at, "cases is a list of branches"),
-                ("item", _) => self.node(v, &item_scope, &guarded, &format!("{at}.{k}"), k),
-                _ => self.node(v, scope, &guarded, &format!("{at}.{k}"), k),
+                ("item", _) => self.node(v, &item_scope, &known, &format!("{at}.{k}"), k),
+                ("on", Value::Object(events)) => {
+                    // A node disabled unless a condition holds is enabled
+                    // only while it does: what it calls may require it.
+                    let mut enabled = known.clone();
+                    if let Some(Value::String(used)) = object.get("disabled") {
+                        let UseSite { negated, name } = UseSite::parse(used);
+                        if negated {
+                            enabled.holds.extend(self.conditions.implied(name));
+                        }
+                    }
+                    for (event, handler) in events {
+                        self.handler(handler, scope, &enabled, &format!("{at}.on.{event}"), at);
+                    }
+                }
+                _ => self.node(v, scope, &known, &format!("{at}.{k}"), k),
             }
         }
     }
 
-    fn cases(&mut self, branches: &[Value], scope: &Scope, guarded: &BTreeSet<String>, at: &str, key: &str) {
+    fn cases(&mut self, branches: &[Value], scope: &Scope, known: &Known, at: &str, key: &str) {
         if !branches.last().is_some_and(|b| b.get("else").is_some()) {
             self.findings
                 .add(at, "the last branch of cases must be {\"else\": …}, so every state has a value");
         }
         for branch in branches {
-            let mut guarded = guarded.clone();
+            let mut known = known.clone();
             if let Some(Value::String(used)) = branch.get("if") {
-                guarded.extend(self.use_site(used, scope, &format!("{at}.cases")));
+                known.extend(self.use_site(used, scope, &format!("{at}.cases")));
             }
             if let Some(value) = branch.get("then").or_else(|| branch.get("else")) {
-                self.node(value, scope, &guarded, at, key);
+                self.node(value, scope, &known, at, key);
             }
         }
     }
 
+    /// One event's handler at `at`, on the node `node`: its actions, or
+    /// `cases` choosing between them.
+    fn handler(&mut self, handler: &Value, scope: &Scope, known: &Known, at: &str, node: &str) {
+        let Some(actions) = handler.as_object() else {
+            return self.node(handler, scope, known, at, "");
+        };
+        if let Some(branches) = actions.get("cases") {
+            let Some(branches) = branches.as_array() else {
+                return self.findings.add(at, "cases is a list of branches");
+            };
+            if !branches.last().is_some_and(|b| b.get("else").is_some()) {
+                self.findings
+                    .add(at, "the last branch of cases must be {\"else\": …}, so every state has a handler");
+            }
+            for branch in branches {
+                let mut known = known.clone();
+                if let Some(Value::String(used)) = branch.get("if") {
+                    known.extend(self.use_site(used, scope, &format!("{at}.cases")));
+                }
+                if let Some(chosen) = branch.get("then").or_else(|| branch.get("else")) {
+                    self.handler(chosen, scope, &known, at, node);
+                }
+            }
+            return;
+        }
+        match actions.get("call") {
+            Some(called) => self.call(called, actions.get("with"), scope, known, at, node),
+            None => self.node(handler, scope, known, at, ""),
+        }
+    }
+
+    /// `{"call": <operation>, "with": {…}}` at `at`, on the node `node`.
+    fn call(
+        &mut self,
+        called: &Value,
+        with: Option<&Value>,
+        scope: &Scope,
+        known: &Known,
+        at: &str,
+        node: &str,
+    ) {
+        let operations = self.operations;
+        let Some(operation) = called.as_str().and_then(|name| operations.get(name)) else {
+            return self.findings.add(
+                &format!("{at}.call"),
+                &format!("{called} is not an operation: call names one in operations"),
+            );
+        };
+        if let Some(required) = &operation.requires
+            && !known.holds.contains(required)
+        {
+            self.findings.add(
+                node,
+                &format!(
+                    "calls {}, which requires {required}: gate this node by it, \"disabled\": \"!{required}\" or \"if\": \"{required}\"",
+                    operation.name
+                ),
+            );
+        }
+        let empty = Map::new();
+        let given = match with {
+            None => &empty,
+            Some(Value::Object(given)) => given,
+            Some(_) => {
+                return self
+                    .findings
+                    .add(&format!("{at}.with"), "with is an object: one value per parameter");
+            }
+        };
+        for (name, param) in &operation.params {
+            if !given.contains_key(name) && param.default.is_none() {
+                self.findings.add(
+                    &format!("{at}.with"),
+                    &format!(
+                        "{} needs {name} ({}), which with does not give",
+                        operation.name,
+                        param.describe()
+                    ),
+                );
+            }
+        }
+        for (name, value) in given {
+            let at = format!("{at}.with.{name}");
+            let Some((_, param)) = operation.params.iter().find(|(param, _)| param == name) else {
+                self.findings.add(&at, &format!("{} has no parameter {name}", operation.name));
+                continue;
+            };
+            self.argument(value, param, scope, known, &at);
+        }
+    }
+
+    /// `value`, given to the parameter `param`: a template whose type fits.
+    fn argument(&mut self, value: &Value, param: &Field, scope: &Scope, known: &Known, at: &str) {
+        let given = match value {
+            Value::String(text) => {
+                let Ok(placeholders) = template::placeholders(text) else {
+                    return self.template(text, scope, &known.not_null, at, "");
+                };
+                let whole = placeholders.len() == 1 && text.starts_with('{') && text.ends_with('}');
+                match placeholders.first() {
+                    Some(placeholder) if whole && placeholder.format.is_none() => {
+                        self.template(text, scope, &known.not_null, at, "");
+                        if placeholder.path == "index" {
+                            Some(Field::of(Base::Int))
+                        } else {
+                            self.schema.resolve(scope, &placeholder.path).map(|resolved| resolved.field)
+                        }
+                    }
+                    None if self.schema.members(param).is_some_and(|m| m.iter().any(|m| m == text)) => {
+                        return;
+                    }
+                    _ => {
+                        self.template(text, scope, &known.not_null, at, "text");
+                        Some(Field::of(Base::String))
+                    }
+                }
+            }
+            Value::Null => Some(Field { nullable: true, ..Field::of(param.base.clone()) }),
+            Value::Bool(_) => Some(Field::of(Base::Bool)),
+            Value::Number(n) if n.is_i64() || n.is_u64() => Some(Field::of(Base::Int)),
+            Value::Number(_) => Some(Field::of(Base::Number)),
+            _ => {
+                return self
+                    .findings
+                    .add(at, "an argument is a template, such as \"{item.id}\", or a literal");
+            }
+        };
+        let Some(given) = given else {
+            // The template's own finding says the path is not one.
+            return;
+        };
+        let base = given.base == param.base || (given.base == Base::Int && param.base == Base::Number);
+        let text_into = given.base == Base::String
+            && matches!(param.base, Base::Url | Base::Image | Base::Icon | Base::Date)
+            && !value.as_str().is_some_and(|text| text.starts_with('{'));
+        if !(base || text_into) || given.array != param.array || (given.nullable && !param.nullable) {
+            self.findings
+                .add(at, &format!("is {}, and the parameter is {}", given.describe(), param.describe()));
+        }
+    }
+
     /// A yes/no at `at`: `!`, then a condition's name or a Bool path. What it
-    /// guarantees is not null when it holds.
-    fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> BTreeSet<String> {
+    /// guarantees when it holds: the paths not null, and the conditions true.
+    fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> Known {
         let UseSite { negated, name } = UseSite::parse(used);
         if !name.split('.').all(crate::field::is_identifier) {
             self.findings.add(at, &format!("{used:?}: here goes !? and a condition's name or a Bool path; name anything more in conditions"));
-            return BTreeSet::new();
+            return Known::default();
         }
         if self.conditions.contains(name) {
-            return if negated { BTreeSet::new() } else { self.conditions.guards(name) };
+            return if negated {
+                Known::default()
+            } else {
+                Known { not_null: self.conditions.guards(name), holds: self.conditions.implied(name) }
+            };
         }
         match self.schema.resolve(scope, name) {
             Some(resolved) if resolved.field.is_plain_bool() => {}
@@ -303,7 +481,7 @@ impl Walk<'_> {
             ),
             None => self.findings.add(at, &format!("{name} is neither a condition nor a path")),
         }
-        BTreeSet::new()
+        Known::default()
     }
 
     fn template(&mut self, text: &str, scope: &Scope, guarded: &BTreeSet<String>, at: &str, key: &str) {

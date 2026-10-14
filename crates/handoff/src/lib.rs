@@ -32,6 +32,8 @@ pub struct Handoff {
     pub code: Code,
     /// Each condition and the fixtures it holds in.
     pub conditions: Vec<Condition>,
+    /// The queries and commands the screen calls, which its events name.
+    pub operations: Vec<OperationSpec>,
     pub tokens: Vec<TokenName>,
     pub nodes: Vec<Spec>,
     pub hidden: Vec<Hidden>,
@@ -41,6 +43,24 @@ pub struct Handoff {
     pub fixtures: Map<String, Value>,
     /// What the agent guessed and the person has not confirmed.
     pub unconfirmed: Vec<Unconfirmed>,
+}
+
+/// One operation, its types written as in the description.
+#[derive(Debug, Serialize)]
+pub struct OperationSpec {
+    pub name: String,
+    /// `query` or `command`.
+    pub does: String,
+    /// What it does, in one line.
+    pub doc: String,
+    pub params: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// The condition that must hold before it is called.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
+    #[serde(skip_serializing_if = "Map::is_empty")]
+    pub fails: Map<String, Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,6 +184,7 @@ pub fn handoff(
         rules,
         code: Code { file: language.file(&root), text: code::file(&model, language) },
         conditions: model.checked.conditions.clone(),
+        operations: operations(&model),
         tokens: token_names(tokens, pattern.unwrap_or("{group}.{name}"), language),
         nodes: walk.specs,
         hidden: walk.hidden,
@@ -171,6 +192,30 @@ pub fn handoff(
         fixtures,
         unconfirmed,
     })
+}
+
+fn operations(model: &Model) -> Vec<OperationSpec> {
+    let mut specs = Vec::new();
+    for operation in model.operations.all() {
+        let mut params = Map::new();
+        for (name, field) in &operation.params {
+            params.insert(name.clone(), Value::from(field.describe()));
+        }
+        let mut fails = Map::new();
+        for (name, when) in &operation.fails {
+            fails.insert(name.clone(), Value::from(when.as_str()));
+        }
+        specs.push(OperationSpec {
+            name: operation.name.clone(),
+            does: operation.does.name().to_string(),
+            doc: operation.doc.clone(),
+            params,
+            result: operation.result.as_ref().map(|field| field.describe()),
+            requires: operation.requires.clone(),
+            fails,
+        });
+    }
+    specs
 }
 
 fn text(value: &Value, key: &str) -> String {

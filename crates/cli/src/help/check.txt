@@ -38,5 +38,9 @@ WHAT TRIPS YOU UP
     != null in its top-level && chain. A negated condition guarantees nothing.
   - A fixture may leave out only fields with a default; T? defaults to null.
   - "$patch" starts a fixture from one written above it.
+  - An operation's result holds no view state: a type with a "view" field
+    (or one reaching such a type) cannot be returned. Wrap the domain type.
+  - A "call" to an operation with "requires" needs the node gated by that
+    condition: "disabled": "!<condition>", or "if": "<condition>".
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.

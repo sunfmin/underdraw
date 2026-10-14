@@ -7,9 +7,10 @@
   "data": {
     "summary": "Summary",
     "sort": "Sort",
-    "docs": "Doc[] ..50",
+    "docs": "DocRow[] ..50",
     "rowMenu": {
       "type": "RowMenu?",
+      "view": true,
       "doc": "The document whose ⋯ menu is open; null while it is closed"
     }
   },
@@ -25,13 +26,25 @@
         "type": "string 1..8",
         "derived": "the selected option's label"
       },
-      "menuOpen": "bool = false",
+      "menuOpen": {
+        "type": "bool = false",
+        "view": true,
+        "doc": "The sort menu is open"
+      },
       "options": "SortOption[] 2..6"
     },
     "SortOption": {
       "id": "string",
       "label": "string 1..8",
       "selected": "bool = false"
+    },
+    "DocRow": {
+      "doc": "Doc",
+      "menuOpen": {
+        "type": "bool = false",
+        "view": true,
+        "derived": "rowMenu is open on this document"
+      }
     },
     "Doc": {
       "id": "string",
@@ -42,11 +55,7 @@
       },
       "owner": "string 1..20",
       "updated": "date",
-      "shared": "bool = false",
-      "menuOpen": {
-        "type": "bool = false",
-        "derived": "rowMenu is open on this document"
-      }
+      "shared": "bool = false"
     },
     "RowMenu": {
       "docId": "string",
@@ -72,6 +81,36 @@
     "canDelete": {
       "when": "rowMenuOpen && rowMenu.canDelete",
       "label": "May delete it"
+    }
+  },
+  "operations": {
+    "listDocs": {
+      "query": "The team's documents, in the order sort names",
+      "params": {
+        "sort": "string"
+      },
+      "result": "Doc[] ..50",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "deleteDoc": {
+      "command": "Deletes a document for everyone in the team",
+      "params": {
+        "id": "string"
+      },
+      "requires": "canDelete",
+      "fails": {
+        "notFound": "the document is already gone",
+        "forbidden": "the person no longer owns it"
+      }
+    },
+    "newDocument": {
+      "command": "Creates an empty document owned by the person, and answers with it",
+      "result": "Doc",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
     }
   },
   "fixtures": {
@@ -103,49 +142,61 @@
       },
       "docs": [
         {
-          "id": "a",
-          "title": "2027 年度产品路线图",
-          "icon": "slideshow",
-          "owner": "我",
-          "updated": "2026-10-14",
-          "shared": true
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
         },
         {
-          "id": "b",
-          "title": "Q4 预算与人力规划",
-          "icon": "table_chart",
-          "owner": "王芳",
-          "updated": "2026-10-13",
-          "shared": true
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          }
         },
         {
-          "id": "c",
-          "title": "新员工入职手册",
-          "icon": "description",
-          "owner": "我",
-          "updated": "2026-10-10"
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          }
         },
         {
-          "id": "d",
-          "title": "客户访谈记录：东京 · 第三轮",
-          "icon": "description",
-          "owner": "Tanaka",
-          "updated": "2026-10-08",
-          "shared": true
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
         },
         {
-          "id": "e",
-          "title": "设计评审纪要",
-          "icon": "description",
-          "owner": "我",
-          "updated": "2026-10-02"
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          }
         },
         {
-          "id": "f",
-          "title": "竞品价格对比",
-          "icon": "table_chart",
-          "owner": "李雷",
-          "updated": "2026-09-28"
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
         }
       ],
       "rowMenu": null
@@ -160,50 +211,62 @@
       "$patch": "default",
       "docs": [
         {
-          "id": "a",
-          "title": "2027 年度产品路线图",
-          "icon": "slideshow",
-          "owner": "我",
-          "updated": "2026-10-14",
-          "shared": true
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
         },
         {
-          "id": "b",
-          "title": "Q4 预算与人力规划",
-          "icon": "table_chart",
-          "owner": "王芳",
-          "updated": "2026-10-13",
-          "shared": true,
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          },
           "menuOpen": true
         },
         {
-          "id": "c",
-          "title": "新员工入职手册",
-          "icon": "description",
-          "owner": "我",
-          "updated": "2026-10-10"
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          }
         },
         {
-          "id": "d",
-          "title": "客户访谈记录：东京 · 第三轮",
-          "icon": "description",
-          "owner": "Tanaka",
-          "updated": "2026-10-08",
-          "shared": true
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
         },
         {
-          "id": "e",
-          "title": "设计评审纪要",
-          "icon": "description",
-          "owner": "我",
-          "updated": "2026-10-02"
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          }
         },
         {
-          "id": "f",
-          "title": "竞品价格对比",
-          "icon": "table_chart",
-          "owner": "李雷",
-          "updated": "2026-09-28"
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
         }
       ],
       "rowMenu": {
@@ -214,50 +277,62 @@
       "$patch": "default",
       "docs": [
         {
-          "id": "a",
-          "title": "2027 年度产品路线图",
-          "icon": "slideshow",
-          "owner": "我",
-          "updated": "2026-10-14",
-          "shared": true
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
         },
         {
-          "id": "b",
-          "title": "Q4 预算与人力规划",
-          "icon": "table_chart",
-          "owner": "王芳",
-          "updated": "2026-10-13",
-          "shared": true
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          }
         },
         {
-          "id": "c",
-          "title": "新员工入职手册",
-          "icon": "description",
-          "owner": "我",
-          "updated": "2026-10-10",
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          },
           "menuOpen": true
         },
         {
-          "id": "d",
-          "title": "客户访谈记录：东京 · 第三轮",
-          "icon": "description",
-          "owner": "Tanaka",
-          "updated": "2026-10-08",
-          "shared": true
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
         },
         {
-          "id": "e",
-          "title": "设计评审纪要",
-          "icon": "description",
-          "owner": "我",
-          "updated": "2026-10-02"
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          }
         },
         {
-          "id": "f",
-          "title": "竞品价格对比",
-          "icon": "table_chart",
-          "owner": "李雷",
-          "updated": "2026-09-28"
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
         }
       ],
       "rowMenu": {
@@ -289,7 +364,7 @@
         "icon": "add",
         "on": {
           "tap": {
-            "navigate": "NewDocument"
+            "call": "newDocument"
           }
         }
       }
@@ -348,64 +423,64 @@
         "if": "hasDocs",
         "each": "docs",
         "item": {
-          "id": "doc-{item.id}",
+          "id": "doc-{item.doc.id}",
           "kind": "DocRow",
-          "leadingIcon": "{item.icon}",
-          "title": "{item.title}",
-          "shared": "{item.shared}",
-          "detail": "{item.owner} · {item.updated|date}",
+          "leadingIcon": "{item.doc.icon}",
+          "title": "{item.doc.title}",
+          "shared": "{item.doc.shared}",
+          "detail": "{item.doc.owner} · {item.doc.updated|date}",
           "on": {
             "tap": {
               "navigate": "Document",
               "with": {
-                "id": "{item.id}"
+                "id": "{item.doc.id}"
               }
             }
           },
           "trailing": {
-            "id": "doc-{item.id}-more",
+            "id": "doc-{item.doc.id}-more",
             "kind": "IconButton",
             "icon": "more_horiz",
             "on": {
               "tap": {
                 "open": "row-menu",
                 "with": {
-                  "id": "{item.id}"
+                  "id": "{item.doc.id}"
                 }
               }
             }
           },
           "overlay": {
-            "id": "doc-{item.id}-menu",
+            "id": "doc-{item.doc.id}-menu",
             "kind": "Menu",
             "if": "item.menuOpen",
             "anchor": "top-trailing",
             "dismiss": "tap outside or choose an item",
             "children": [
               {
-                "id": "doc-{item.id}-rename",
+                "id": "doc-{item.doc.id}-rename",
                 "kind": "MenuItem",
                 "leadingIcon": "edit",
                 "text": "重命名",
                 "on": {
                   "tap": {
-                    "rename": "{item.id}"
+                    "rename": "{item.doc.id}"
                   }
                 }
               },
               {
-                "id": "doc-{item.id}-copy",
+                "id": "doc-{item.doc.id}-copy",
                 "kind": "MenuItem",
                 "leadingIcon": "link",
                 "text": "复制链接",
                 "on": {
                   "tap": {
-                    "copyLink": "{item.id}"
+                    "copyLink": "{item.doc.id}"
                   }
                 }
               },
               {
-                "id": "doc-{item.id}-move",
+                "id": "doc-{item.doc.id}-move",
                 "kind": "MenuItem",
                 "leadingIcon": "drive_file_move",
                 "text": "移动到…",
@@ -413,17 +488,17 @@
                   "tap": {
                     "navigate": "MoveDocument",
                     "with": {
-                      "id": "{item.id}"
+                      "id": "{item.doc.id}"
                     }
                   }
                 }
               },
               {
-                "id": "doc-{item.id}-divider",
+                "id": "doc-{item.doc.id}-divider",
                 "kind": "MenuDivider"
               },
               {
-                "id": "doc-{item.id}-delete",
+                "id": "doc-{item.doc.id}-delete",
                 "kind": "MenuItem",
                 "leadingIcon": "delete",
                 "text": "删除",
@@ -432,9 +507,9 @@
                 "$why": "only the owner may delete; others see it greyed so they know it exists",
                 "on": {
                   "tap": {
-                    "open": "confirm-delete",
+                    "call": "deleteDoc",
                     "with": {
-                      "id": "{item.id}"
+                      "id": "{item.doc.id}"
                     }
                   }
                 }
@@ -460,8 +535,10 @@
               "selected": "{item.selected}",
               "on": {
                 "tap": {
-                  "set": "sort",
-                  "to": "{item.id}"
+                  "call": "listDocs",
+                  "with": {
+                    "sort": "{item.id}"
+                  }
                 }
               }
             }
@@ -481,7 +558,7 @@
           "text": "新建文档",
           "on": {
             "tap": {
-              "navigate": "NewDocument"
+              "call": "newDocument"
             }
           }
         }

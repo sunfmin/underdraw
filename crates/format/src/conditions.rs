@@ -103,6 +103,32 @@ impl Conditions {
         found
     }
 
+    /// The conditions that hold whenever `name` does: itself, and those its
+    /// top-level `&&` chain names, and theirs.
+    pub fn implied(&self, name: &str) -> BTreeSet<String> {
+        let mut found = BTreeSet::new();
+        self.collect_implied(name, &mut found);
+        found
+    }
+
+    fn collect_implied(&self, name: &str, found: &mut BTreeSet<String>) {
+        let Some(condition) = self.get(name) else {
+            return;
+        };
+        if !found.insert(name.to_string()) {
+            return;
+        }
+        let mut chain = vec![&condition.when];
+        while let Some(expr) = chain.pop() {
+            match expr {
+                Expr::And(items) => chain.extend(items),
+                Expr::Atom(Atom::Group(inner)) => chain.push(inner),
+                Expr::Atom(Atom::Name(used)) => self.collect_implied(used, found),
+                _ => {}
+            }
+        }
+    }
+
     fn collect_guards(&self, expr: &Expr, stack: &mut Vec<String>, found: &mut BTreeSet<String>) {
         match expr {
             Expr::And(items) => {

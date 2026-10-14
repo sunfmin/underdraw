@@ -21,13 +21,17 @@ ANSWERS
     "code":       {"file", "text"}: the view model's types and every condition,
                   generated in the platform's language. Save it as is.
     "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
+    "operations": [{"name", "does": "query" or "command", "doc", "params":
+                    {name: type}, "result", "requires", "fails": {name: when}}, …]
+                  the queries and commands the screen calls
     "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
     "nodes":      [{"id", "kind", "parent", "slot",
                     "implement": how the platform builds this kind,
                     "test_id": the test id as the platform writes it,
                     "props": what the description says, as written,
                     "shown": its if / only / each / limit,
-                    "events": [{"on", "action", "with", "implement"}, …],
+                    "events": [{"on", "action", "operation", "with", "implement"}, …],
+                      "operation": the one it calls, when the action is "call"
                     "why", "assumed"}, …] in document order
     "hidden":     [{"id", "why"}, …]: nodes this platform does not build
     "states":     [{"state": {"fixture"} or {"phase"}, "breakpoint",
@@ -44,7 +48,8 @@ HOW TO USE IT
   - Save "code" as "code.file" and use its types and conditions; do not
     rewrite a condition by hand.
   - Build each node with "implement", give it "test_id", and wire each event
-    with its "implement".
+    with its "implement"; an event with "operation" calls that operation,
+    given "with", through the app's data layer.
   - Write one preview or test per state: load its fixture from "fixtures",
     and assert every "present" id and every value in "shows".
   - Ask the person about each "unconfirmed" item before building it.
