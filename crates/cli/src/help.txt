@@ -31,6 +31,7 @@ COMMANDS
     underdraw check <dir>    every fault, and which fixtures each condition holds in
     underdraw render <dir>   a wireframe PNG of one state, and where each node went
   For the agent building the screen on a platform:
+    underdraw schema <dir>   the view model as a JSON Schema, to validate API data against
     underdraw handoff <dir> --platform <name>
                              model code, tokens, every node as the platform builds it,
                              and what each state must show

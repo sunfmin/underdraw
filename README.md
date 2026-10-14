@@ -22,7 +22,8 @@ The description format is drafted; `underdraw check` reads it and names every
 fault, and `underdraw render` draws any fixture or phase as a wireframe PNG at
 any width. `underdraw handoff` gives one platform its generated view model,
 how each node is built there and what every state must show. `underdraw
-compare` checks a capture of the running UI against one state.
+compare` checks a capture of the running UI against one state. `underdraw
+schema` derives the view model's JSON Schema, to validate API data against.
 
 ## Build
 
