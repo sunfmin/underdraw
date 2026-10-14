@@ -18,6 +18,7 @@ fn colour(ink: Ink) -> Color {
         Ink::Fill => [0xEC, 0xEC, 0xEC],
         Ink::Paper => [0xFF, 0xFF, 0xFF],
         Ink::Assumed => [0xF0, 0x8C, 0x00],
+        Ink::Scrim => return Color::from_rgba8(0x00, 0x00, 0x00, 0x59),
     };
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])
 }

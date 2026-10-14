@@ -53,6 +53,8 @@ pub enum Ink {
     Paper,
     /// What the agent guessed, for the person to confirm.
     Assumed,
+    /// The see-through dark a dialog's backdrop lays over the page.
+    Scrim,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
