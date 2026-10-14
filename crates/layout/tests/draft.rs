@@ -176,6 +176,23 @@ fn a_filled_icon_reads_apart_from_its_outline() {
 }
 
 #[test]
+fn an_icon_is_as_big_as_its_square() {
+    let page = tiny(serde_json::json!([
+        { "id": "row", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
+        { "id": "big", "kind": "Glyph", "icon": "flight", "size": 48 }
+    ]));
+    let size = |glyph: &str| {
+        page.draws.iter().find_map(|d| match d {
+            Draw::Text { text, font, .. } if text == glyph => Some(font.size),
+            _ => None,
+        })
+    };
+    // Material Symbols' circle (U+EF4A) in ListItem's 24 square, and flight
+    // (U+E539) in a 48 one.
+    assert_eq!((size("\u{ef4a}"), size("\u{e539}")), (Some(24.0), Some(48.0)));
+}
+
+#[test]
 fn a_kind_not_in_the_catalog_is_drawn_as_a_guess() {
     let page = tiny(serde_json::json!([{ "id": "input", "kind": "TextField" }]));
     let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();

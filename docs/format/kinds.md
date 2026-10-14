@@ -67,7 +67,9 @@ Any look may carry `"if"`, and it is left out when the condition fails.
 
 ### Text keys
 
-`text` (a template), `font` (a token: `font.body` when not set), `ink`,
+`text` (a template), `font` (a token, `font.body` when not set; or a
+number, the size of the body font, as tall as its line: how `Glyph` makes
+an icon as big as its square), `ink`,
 `weight`, `maxLines`, `align` (`start`, `center` or `end`), `underline`,
 `strike`. It also takes `self` and `pin`.
 
