@@ -1,6 +1,8 @@
-//! Compares the documents draft against its two hand-written captures of the
-//! `row-menu-own` state on the web: one whose interactions call what the
-//! description says, and one that gets each call wrong a different way.
+//! Compares the documents draft against its hand-written captures on the
+//! web, of the `row-menu-own` state (a row's menu open) and of the
+//! `confirm-delete` state (the delete confirmation open): in each, one whose
+//! interactions call what the description says, and one that gets each call
+//! wrong a different way.
 
 use serde_json::{Value, json};
 use underdraw_compare::{Comparison, compare};
@@ -24,9 +26,13 @@ fn read(name: &str) -> Value {
 }
 
 fn run(capture: &Value) -> Result<Comparison, String> {
+    run_in("row-menu-own", capture)
+}
+
+fn run_in(fixture: &str, capture: &Value) -> Result<Comparison, String> {
     let (screen, tokens, kinds) = (read("screen.json"), read("tokens.json"), read("kinds.json"));
     let mapping = read("platforms/web.json");
-    compare(&screen, &mapping, &tokens, Some(&kinds), State::Fixture("row-menu-own"), capture, &mut Fixed)
+    compare(&screen, &mapping, &tokens, Some(&kinds), State::Fixture(fixture), capture, &mut Fixed)
 }
 
 #[test]
@@ -34,15 +40,30 @@ fn calls_made_as_described_have_no_findings() {
     let comparison = run(&read("captures/web-row-menu-own.json")).unwrap();
     assert!(comparison.ok, "{:#?}", comparison.findings);
     assert_eq!(comparison.checked.calls, 3);
+    let comparison = run_in("confirm-delete", &read("captures/web-confirm-delete.json")).unwrap();
+    assert!(comparison.ok, "{:#?}", comparison.findings);
+    assert_eq!(comparison.checked.calls, 2);
 }
 
 #[test]
-fn a_call_with_other_arguments_a_missing_call_and_an_extra_one() {
+fn deleting_from_the_menu_without_confirming_a_missing_call_and_an_extra_one() {
     let comparison = run(&read("captures/web-row-menu-own-wrong.json")).unwrap();
     let found: Vec<_> = comparison.findings.iter().map(|f| (f.at.as_str(), f.check)).collect();
     assert_eq!(
         found,
-        [("doc-c-delete", "call-with"), ("nav-new", "call-missing"), ("doc-c-copy", "call-extra")],
+        [("doc-c-delete", "call-extra"), ("nav-new", "call-missing"), ("doc-c-copy", "call-extra")],
+        "{:#?}",
+        comparison.findings
+    );
+}
+
+#[test]
+fn a_call_with_other_arguments_and_cancel_that_deletes() {
+    let comparison = run_in("confirm-delete", &read("captures/web-confirm-delete-wrong.json")).unwrap();
+    let found: Vec<_> = comparison.findings.iter().map(|f| (f.at.as_str(), f.check)).collect();
+    assert_eq!(
+        found,
+        [("confirm-delete-confirm", "call-with"), ("confirm-delete-cancel", "call-extra")],
         "{:#?}",
         comparison.findings
     );
@@ -53,8 +74,8 @@ fn a_call_with_other_arguments_a_missing_call_and_an_extra_one() {
 fn a_call_on_another_event_is_not_the_tap_one() {
     let mut capture = read("captures/web-row-menu-own.json");
     capture["acted"] = json!([
-        { "id": "doc-c-delete", "on": "longPress", "calls": [] },
-        { "id": "doc-c-delete", "calls": [{ "operation": "deleteDoc", "with": { "id": "c" } }] }
+        { "id": "nav-new", "on": "longPress", "calls": [] },
+        { "id": "nav-new", "calls": [{ "operation": "newDocument", "with": {} }] }
     ]);
     let comparison = run(&capture).unwrap();
     assert!(comparison.ok, "the event defaults to tap: {:#?}", comparison.findings);

@@ -120,7 +120,8 @@ impl Operations {
                 None => false,
                 Some(Value::Bool(destructive)) => *destructive,
                 Some(other) => {
-                    findings.add(&format!("{at}.destructive"), &format!("{other}: destructive is true or false"));
+                    findings
+                        .add(&format!("{at}.destructive"), &format!("{other}: destructive is true or false"));
                     false
                 }
             };

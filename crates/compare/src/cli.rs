@@ -104,10 +104,12 @@ pub fn compare_cli(
         }
         None => {
             let with = spec.with_args(args)?;
+            let yes = spec.yes(args);
             for candidate in &interface.golden {
                 if candidate.command == spec.name
                     && candidate.fixture.as_deref() == Some(fixture)
                     && candidate.with.as_ref() == Some(&with)
+                    && candidate.yes == yes
                 {
                     golden = Some(candidate);
                 }

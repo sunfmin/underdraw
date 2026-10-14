@@ -23,12 +23,17 @@ fn each_event_names_the_operation_it_calls() {
         node.events.iter().map(|e| (e.action.clone(), e.operation.clone(), e.with.clone())).collect()
     };
     assert_eq!(
-        calls("doc-{item.doc.id}-delete"),
+        calls("confirm-delete-confirm"),
         [(
             "call".to_string(),
             Some("deleteDoc".to_string()),
-            json!({ "target": "deleteDoc", "with": { "id": "{item.doc.id}" } })
+            json!({ "target": "deleteDoc", "with": { "id": "{rowMenu.docId}" } })
         )]
+    );
+    assert_eq!(
+        calls("doc-{item.doc.id}-delete")[0].0,
+        "open",
+        "the menu's delete only opens its confirmation"
     );
     assert_eq!(calls("sort-{item.id}")[0].1.as_deref(), Some("listDocs"));
     assert_eq!(calls("nav-new")[0].1.as_deref(), Some("newDocument"));
@@ -38,7 +43,7 @@ fn each_event_names_the_operation_it_calls() {
         operations[1],
         json!({
             "name": "deleteDoc", "does": "command", "doc": "Deletes a document for everyone in the team",
-            "params": { "id": "string" }, "requires": "canDelete",
+            "params": { "id": "string" }, "requires": "canDelete", "destructive": true,
             "fails": { "notFound": "the document is already gone", "forbidden": "the person no longer owns it" }
         })
     );
@@ -69,8 +74,9 @@ fn each_state_expects_the_calls_its_nodes_make() {
     let state =
         |fixture: &str| handoff.states.iter().find(|s| s.state == json!({ "fixture": fixture })).unwrap();
     let own = &state("row-menu-own").calls;
+    assert!(!own.contains_key("doc-c-delete"), "the menu's delete opens its confirmation and calls nothing");
     assert_eq!(
-        own["doc-c-delete"],
+        state("confirm-delete").calls["confirm-delete-confirm"],
         json!([{ "on": "tap", "operation": "deleteDoc", "with": { "id": "c" } }])
     );
     assert_eq!(own["nav-new"], json!([{ "on": "tap", "operation": "newDocument", "with": {} }]));

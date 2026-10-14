@@ -29,7 +29,7 @@
     {"id":"doc-f-more"}
   ],
   "acted": [
-    {"id":"doc-c-delete","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"a"}}]},
+    {"id":"doc-c-delete","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"c"}}]},
     {"id":"nav-new","on":"tap","calls":[]},
     {"id":"doc-c-copy","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"c"}}]}
   ]
