@@ -1,9 +1,10 @@
 {
   "platform": "android",
+  "language": "kotlin",
   "stack": "Jetpack Compose + Material 3",
   "testId": "Modifier.testTag(\"{id}\")（需 testTagsAsResourceId = true 才能被 uiautomator 读到）",
   "elementTree": "adb shell uiautomator dump → XML，按 resource-id 读 bounds",
-  "tokenNaming": { "rule": "AppTheme.{group}.{name}（camelCase）", "example": "color.primary → AppTheme.color.primary" },
+  "tokenNaming": { "pattern": "AppTheme.{group}.{name}", "example": "color.primary → AppTheme.color.primary；space.4 → AppTheme.space._4（数字开头的名字前加 _）" },
   "breakpoints": "WindowSizeClass：COMPACT → compact，MEDIUM/EXPANDED → regular",
   "kinds": {
     "Screen": "Scaffold",

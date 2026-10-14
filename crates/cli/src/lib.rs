@@ -67,6 +67,15 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Everything an agent needs to build the screen on one platform: model code, tokens, nodes, states to test
+    #[command(after_long_help = include_str!("help/handoff.txt"))]
+    Handoff {
+        /// The screen's directory, which holds screen.json, tokens.json and platforms/<platform>.json
+        path: PathBuf,
+        /// The platform to build for: the name of a file in <dir>/platforms, such as web, ios or android
+        #[arg(long)]
+        platform: String,
+    },
     /// Read what underdraw depends on, change nothing, and name the fix of each finding
     #[command(after_long_help = include_str!("help/doctor.txt"))]
     Doctor,
@@ -98,6 +107,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         Command::Render { path, fixture, phase, width, scale, out } => {
             render(&path, Wanted { fixture, phase, width, scale, out })
         }
+        Command::Handoff { path, platform } => handoff(&path, &platform),
         Command::Doctor => Ok(doctor()),
     };
     match answer {
@@ -136,6 +146,49 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
     Ok((screen, dir))
 }
 
+fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
+    let (screen, dir) = read(path)?;
+    let tokens = read_tokens(&dir)?;
+    let platforms = dir.join("platforms");
+    let file = platforms.join(format!("{platform}.json"));
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(_) => {
+            let mut known = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&platforms) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if let Some(stem) = name.strip_suffix(".json") {
+                        known.push(stem.to_string());
+                    }
+                }
+            }
+            known.sort();
+            bail!("there is no {}: the platforms here are {known:?}", file.display());
+        }
+    };
+    let mapping: Value =
+        serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))?;
+    match underdraw_handoff::handoff(&screen, &mapping, &tokens) {
+        Ok(handoff) => Ok(serde_json::to_value(handoff)?),
+        Err(checked) => bail!(
+            "the description has {} finding(s), so what is handed off would be wrong: run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        ),
+    }
+}
+
+/// tokens.json beside the description, or no tokens.
+fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
+    match std::fs::read_to_string(dir.join(TOKENS)) {
+        Ok(text) => {
+            serde_json::from_str(&text).with_context(|| format!("{} is not JSON", dir.join(TOKENS).display()))
+        }
+        Err(_) => Ok(json!({})),
+    }
+}
+
 /// What `render` was asked for.
 struct Wanted {
     fixture: Option<String>,
@@ -147,11 +200,7 @@ struct Wanted {
 
 fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
-    let tokens = match std::fs::read_to_string(dir.join(TOKENS)) {
-        Ok(text) => serde_json::from_str(&text)
-            .with_context(|| format!("{} is not JSON", dir.join(TOKENS).display()))?,
-        Err(_) => json!({}),
-    };
+    let tokens = read_tokens(&dir)?;
     let checked = underdraw_format::check(&screen);
     if !checked.ok {
         bail!(

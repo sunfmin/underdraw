@@ -1,9 +1,10 @@
 {
   "platform": "ios",
+  "language": "swift",
   "stack": "SwiftUI（iOS 17+）",
   "testId": ".accessibilityIdentifier(\"{id}\")",
   "elementTree": "XCUITest：app.descendants(matching: .any) 按 identifier 读 frame；或 idb ui describe-all",
-  "tokenNaming": { "rule": "Theme.{group}.{name}", "example": "color.primary → Theme.color.primary" },
+  "tokenNaming": { "pattern": "Theme.{group}.{name}", "example": "color.primary → Theme.color.primary；space.4 → Theme.space._4（数字开头的名字前加 _）" },
   "breakpoints": "horizontalSizeClass：.compact → compact，.regular → regular（iPad 横屏 / 分屏）",
   "kinds": {
     "Screen": "NavigationStack 里的一个 View",

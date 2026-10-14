@@ -1,0 +1,22 @@
+[package]
+name = "underdraw-handoff"
+description = "What an agent needs to build a screen on one platform: generated model code, tokens, nodes and the states to test. Pure; checked by Flux."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+underdraw-format = { path = "../format" }
+serde.workspace = true
+serde_json.workspace = true
+flux-rs.workspace = true
+flux-alloc.workspace = true
+flux-core.workspace = true
+
+# `cargo flux` (through ../../verify.sh) checks every function in this crate.
+[package.metadata.flux]
+enabled = true
+check_overflow = "strict"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(flux)'] }

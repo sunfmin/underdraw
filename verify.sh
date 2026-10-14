@@ -65,7 +65,7 @@ case "${1:-}" in
 "" | -* | check) ;;
 *) set -- check --only-check="def:$1" ;;
 esac
-for crate in format layout; do
+for crate in format layout handoff; do
     echo "verify: crate underdraw-$crate"
     (cd "crates/$crate" && cargo flux "$@")
 done
