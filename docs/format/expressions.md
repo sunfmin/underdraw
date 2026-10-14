@@ -15,7 +15,8 @@ Why so little: see [ADR 0001](../adr/0001-expressions-name-conditions-not-logic-
 
 A path names a value: dot-separated identifiers.
 
-- Roots are the top-level keys of `data` (`status`, `listing`, `booking`).
+- Roots are the keys of `data` (`listing`, `booking`); their types are in
+  [data.md](data.md). A phase tree (`loading`, `error`) has no roots.
 - Inside `each`, two more roots exist: `item` (the element) and `index` (from 0).
 - `each` iterates arrays only. Data that should be iterated is an array.
 
@@ -45,12 +46,17 @@ the description says how it is shown, so no platform guesses.
 | `money` | Money | `¥18,500` per the locale |
 | `date` | date | medium date per the locale |
 | `date:short` | date | short date per the locale |
-| `number:N` | number | N decimals (`number:2` → `4.92`) |
+| `number:N` | number | exactly N decimals (`number:1`: `5` → `5.0`) |
+| `number:N-M` | number | N to M decimals (`number:0-1`: `1` → `1`, `1.5` → `1.5`) |
 | `count` | array | its length |
 
-A nullable value may appear in a template only where an enclosing `if` or
-`cases` branch tests that same path `!= null` (directly or through a named
-condition).
+A nullable value — or one reached through a nullable value — may appear in a
+template only where an enclosing `if` or `cases` branch tests that path
+`!= null`, directly or through a named condition. Only `!= null` in the
+condition's top-level `&&` chain counts; a negated condition guarantees nothing.
+
+A text property cannot show a Bool, an enum, an image or an object: choose the
+words with `cases`.
 
 ## Conditions
 
@@ -80,10 +86,11 @@ literal = number | "string" | true | false | null
 Types are strict, the same on every platform:
 
 - `when` is a Bool. There is no truthiness: a date, a string or a number is not
-  a condition; write `!= null`, `> 0`, `== "loaded"`.
+  a condition; write `!= null`, `> 0`, `== "monthly"`.
 - `==` / `!=` compare equal types; `null` compares with any nullable value.
 - `<` `<=` `>` `>=` compare numbers or dates.
 - A string literal compared with an enum must be one of its members.
+- Comparing a value that cannot be null with `null` is an error: it is constant.
 - No arithmetic. A value computed from others (`booking.nights`,
   `booking.total`) is declared in `data` as derived and supplied by fixtures —
   the screen does not compute business values.
@@ -115,7 +122,8 @@ Chooses one value for any property — text, icon, variant, action:
 
 ## Checks this makes possible
 
-- Every path exists; every format fits its type; every enum literal is a member.
+- Every path exists; every format fits its type; every enum literal is a member;
+  every nullable value shown is guarded; every `{…}` is a well-formed placeholder.
 - No condition tests a non-Bool for truth; every `cases` ends in `else`; every
   use site names a condition or a Bool path.
 - **Condition coverage:** every condition is true in some fixture and false in

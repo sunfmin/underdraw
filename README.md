@@ -22,14 +22,14 @@ Designing the description format. Nothing is built yet.
   detail page. The content is illustrative, written from public knowledge, and
   not affiliated with Airbnb.
 
-Expressions are defined in [docs/format/expressions.md](docs/format/expressions.md)
-([why](docs/adr/0001-expressions-name-conditions-not-logic-in-strings.md)).
+The format: [data](docs/format/data.md) and [expressions](docs/format/expressions.md);
+the reasons are in [docs/adr](docs/adr/).
 `uv run prototype/check.py drafts/airbnb-listing` checks a draft against it.
 
 ## Open questions
 
-- A formal data schema: types, nullability, optional fields and defaults are
-  still prose (`"int ≥0"`), so the checker infers types from fixtures.
+- Worst-case fixtures generated from ranges (longest title, most items) to
+  catch overflow.
 - A shared icon vocabulary mapped to SF Symbols / Material Symbols / web icons.
 - Localised copy.
 - Sheets are still stubs.

@@ -14,7 +14,17 @@ tokens, never raw values.
 
 **Platform mapping** — how one platform realises each kind, action and token.
 
-**Fixture** — one set of sample data. Each fixture puts the screen in one state.
+**View model** — the data a screen shows, as the screen needs it: the screen's
+`data` and the named `types` it uses. Not an API response.
+
+**Derived field** — a view-model field computed from other values by the app or
+server, never by the screen.
+
+**Fixture** — one sample value of the view model. Each fixture puts the screen
+in one state.
+
+**Phase** — a stage before the view model exists, such as loading or error.
+Each phase has its own node tree and reads no data.
 
 **Condition** — a named yes/no decision the screen makes, such as `hasDates`.
 Declared once; used by name.
