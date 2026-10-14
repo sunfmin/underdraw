@@ -1,0 +1,33 @@
+{
+  "platform": "web",
+  "language": "typescript",
+  "stack": "React + CSS",
+  "testId": "data-testid=\"{id}\"",
+  "elementTree": "Playwright: every element with a data-testid, framed by getBoundingClientRect plus scrollX/scrollY",
+  "tokenNaming": { "pattern": "var(--{group}-{kebab-name})", "example": "color.textSecondary → var(--color-text-secondary)" },
+  "breakpoints": "CSS media query: compact = max-width 743px",
+  "kinds": {
+    "Screen": "<main>",
+    "NavBar": "<header> with the title and its trailing button",
+    "Text": "<p>/<span>; role heading → <h1>",
+    "Stack": "flex column", "Row": "flex row",
+    "Button": "<button>",
+    "IconButton": "<button aria-label=\"{label}\">",
+    "SortButton": "<button> with the label and a trailing icon",
+    "DocRow": "<li> with an icon, title, shared mark, detail and a trailing button",
+    "Menu": "popover anchored to its node",
+    "MenuItem": "<button role=\"menuitem\">; destructive → red text",
+    "MenuDivider": "<hr>",
+    "Dialog": "<dialog> shown with showModal(), over a dimmed backdrop",
+    "EmptyState": "centered icon, title, detail and button",
+    "Skeleton": "gray block with a shimmer"
+  },
+  "actions": {
+    "call": "await operations[operation](with), through the app's data layer",
+    "navigate": "router.push",
+    "toggle": "flip the view-state field",
+    "open": "open the popover or dialog, holding which row it is about",
+    "close": "close the dialog",
+    "copy": "navigator.clipboard.writeText of the link router.push would follow"
+  }
+}

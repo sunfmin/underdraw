@@ -1,0 +1,131 @@
+WHEN
+  After building a state of the screen on a platform, and after every change
+  to it: is the real UI what the person agreed to? Once per state you can put
+  the UI in (each fixture, each phase), at the width you ran it at.
+  Or, for a CLI derived with `underdraw cli`: once per command run in a
+  fixture, is what it printed the golden output? (A CLI'S CAPTURE, below.)
+
+WHO
+  The agent that builds the real UI, from its UI tests; or the CLI, from its
+  tests.
+
+READS
+  <path>/screen.json, tokens.json, platforms/<platform>.json, and the capture
+  file. Writes nothing. Refuses a description `check` finds faults in.
+  A capture holding "exit" is a CLI's, and needs no --platform.
+
+THE CAPTURE
+  The UI's elements that have a test id, read by the platform's UI test tool
+  ("elementTree" in the platform file says which) and written as:
+    {
+      "width": 390,                     the width the UI ran at, in points
+                                        (CSS pixels on the web)
+      "elements": [
+        { "id": "reserve-button",       the test id, which is the node's id
+          "x": 16, "y": 780, "width": 358, "height": 48,
+                                        the frame, all four or none
+          "text": "预订",               the words it shows, if the tool reads them
+          "enabled": true },            whether it can be used, if the tool reads it
+        …
+      ],
+      "acted": [                        optional: each node the test acted on
+        { "id": "confirm-delete-confirm", its test id
+          "on": "tap",                  the event, as in handoff's "events";
+                                        "tap" when left out
+          "calls": [                    every operation call the app made in
+                                        answer, [] for none
+            { "operation": "deleteDoc", the operation's name
+              "with": {"id": "c"} } ] } its arguments by parameter name; {} for none
+        …
+      ]
+    }
+  Every frame in one coordinate space: the page's, with its top-left at 0,0.
+  A check that needs something the capture leaves out is skipped, not failed.
+  Record the calls at the app's data layer (a fake of the operations that
+  logs each call), act on one node at a time, and reset the state between.
+
+ANSWERS
+  {
+    "screen", "platform"
+    "ok":         true when nothing differs
+    "state":      {"fixture"} or {"phase"}
+    "breakpoint": the breakpoint "width" falls in; "width"
+    "checked":    {"present", "absent", "text", "enabled", "order", "inside",
+                   "calls"}:
+                  how many of each check were made
+    "findings":   [{"at": id, "check", "problem"}, …], where check is
+      present     a node the state shows has no element
+      duplicate   two elements have one node's id
+      absent      an element the state does not show, or the platform hides
+      text        the words differ (one value: exactly; several: each is in it)
+      enabled     enabled where the description says disabled, or the reverse
+      order       a node is not below, or right of, the sibling before it,
+                  where the wireframe puts it
+      inside      a node's frame is outside the nearest element holding it
+      call-missing  acting on the node did not call an operation the
+                  description says that event calls (handoff's "calls")
+      call-extra  acting on the node called an operation the description
+                  does not say it calls
+      call-with   it called the right operation with other arguments
+    "unknown":    [id, …]: ids no node of the description has
+  }
+  Exit 1 when there is a finding.
+
+A CLI'S CAPTURE
+  One command run, in one fixture (--fixture; the first when not given):
+    {
+      "command": ["delete", "b", "--yes"],  the command line after the CLI's name
+      "exit": 1,                        the code it exited with
+      "stdout": "{\"error\": …}",       what it printed, as text (or the
+                                        JSON value it parsed to)
+      "failure": "notFound"             optional: the named failure the test
+                                        made the fake server fail with; then
+                                        the fixture and arguments do not matter
+    }
+  The command line is read as `underdraw cli` says the command takes it,
+  defaults filled in, and matched to the golden output of that command, in
+  that fixture, given the same parameters (and, for a destructive command,
+  with --yes or without it, and for a long one, with --no-wait or without
+  it, as the run was). Exit 2 when it is not one the
+  derived CLI takes, or has no golden output (the error lists the ones
+  there are).
+  ANSWERS
+  {
+    "screen", "command"
+    "ok":       true when it exited with the golden code and printed the
+                golden stdout
+    "state":    {"fixture"} or {"failure"}
+    "golden":   the golden output compared with
+    "checked":  {"exit", "stdout"}: how many values were compared
+    "findings": [{"at", "check", "problem"}, …], where check is
+      exit      it exited with another code; at is "exit"
+      stdout    a value differs, is missing or is extra; at is its JSON
+                path, as stdout.result[2].title
+  }
+  Exit 1 when there is a finding.
+
+HOW TO USE IT
+  - In a UI test: load a fixture from `underdraw handoff`'s "fixtures", show
+    the screen, dump its elements into a capture, run compare with that
+    --fixture, and fail the test on exit 1, printing "findings".
+  - To check what the UI calls: in the same state, act on each node that
+    handoff's state lists under "calls" (and any other you wire to the data
+    layer), record what the app called, and put it in "acted". A node acted
+    on that is not in "acted" is not checked.
+  - In a CLI's test: give the CLI a fake server holding a fixture's data
+    (`underdraw handoff`'s "fixtures"), run each command `underdraw cli`
+    lists a golden output for, write each run as a capture, and fail on
+    exit 1.
+  - Fix the UI, not the capture. When the UI is right and the description is
+    not, change the description, `render` it, and show the person.
+
+WHAT TRIPS YOU UP
+  - Lazy containers (LazyVStack, LazyColumn, virtualised lists) build only
+    what is on screen: what is not built is "present" as missing. Capture with
+    the content built, or scroll and capture the parts into one page.
+  - On the web, getBoundingClientRect is relative to the viewport: add
+    scrollX and scrollY so the frames are the page's.
+  - Order and nesting are checked; sizes and spacing are not: the wireframe's
+    are not the real UI's.
+  - Pinned bars (StickyBar) and overlays are not checked for order, and
+    nothing is checked for nesting inside a node that scrolls.

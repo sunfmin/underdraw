@@ -1,0 +1,546 @@
+
+FORMAT — how to write a description
+  The reference for writing screen.json, tokens.json and kinds.json, from
+  the files' keys to every built-in kind.
+
+FILES
+  <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
+  <dir>/tokens.json   design tokens; read by name, always this file name
+  <dir>/kinds.json    optional: the project's own kinds (KINDS.JSON below)
+  <dir>/platforms/<name>.json
+                      how one platform builds it: `underdraw handoff --help`
+
+SCREEN.JSON
+  {
+    "screen":     "TodoList",          the name code is generated under
+    "title":      "My todos",          what a person calls it
+    "locale":     "zh-CN",             optional BCP 47 tag: glyph forms, line breaks
+    "tokens":     "tokens.json",
+    "data":       {…}, "types": {…},   the view model
+    "fixtures":   {…},                 sample view models, one state each
+    "conditions": {…},                 every yes/no the screen decides, named
+    "operations": {…},                 the queries and commands it calls (OPERATIONS, PAGING)
+    "components": {"name": node, …},   nodes used more than once, by "ref"
+    "root":       node,                the screen once data has arrived
+    "phases":     {"loading": node, "error": node}
+                                       trees shown before data; they read no data
+  }
+  "$comment", "$note", "$why" may be put on anything: read by people only.
+
+DATA AND TYPES
+  "data" names the roots a path may start from; "types" names every shape.
+    "data":  { "todos": "Todo[] ..200", "summary": "Summary", "plan": "Plan" },
+    "types": {
+      "Todo":    { "id": "string", "title": "string 1..80", "done": "bool = false",
+                   "due": { "type": "date?", "doc": "No due date when null" } },
+      "Summary": { "remaining": { "type": "int 0..", "derived": { "app": "undone todos" } } },
+      "Plan":    "enum(monthly, yearly)"
+    }
+  A field is   type range? default?   or {"type", "doc", "derived", "from", "view"}:
+    type     a built-in, or a named type; "[]" after it: a list; "?": nullable
+             ("date?", "Photo[]", "Photo[]?")
+    range    lo..hi, either side open: a number's value, a string's length,
+             a list's count ("int 1..16", "string ..200", "image[] 5..")
+    default  "= <JSON>": what a fixture that leaves the field out holds
+             ("bool = false", "string = \"\""). T? defaults to null. A list
+             has no default: write [].
+    doc      one line for the person and the implementing agent
+    derived  who computes it, and how: {"app": "undone todos"} for what the
+             app works out for the screen, {"server": "the person owns it"}
+             for what the server answers with. Fixtures supply the value;
+             the screen never computes: no arithmetic anywhere. No
+             operation's result reaches an app-derived field, and view
+             state is never derived by the server.
+    from     on a field of "data" only: the query whose result fills it,
+             or "<query>.<field>" for one field of that result (OPERATIONS).
+             A field without it is the app's or the screen's.
+    view     true: view state, held by the screen alone (an open menu, the
+             row a popup is about), not domain data. No operation answers
+             with it, so keep it out of the types operations return: wrap
+             the domain type in a row type that adds it.
+               "data":  { "docs": "DocRow[]",
+                          "rowMenu": { "type": "RowMenu?", "view": true } },
+               "types": { "DocRow": { "doc": "Doc",
+                                      "menuOpen": { "type": "bool = false", "view": true } },
+                          "Doc": { "id": "string", "title": "string 1..60" } }
+  Built-ins, with how a fixture writes them:
+    string "…"   int 3   number 4.92   bool true   date "2026-11-12"
+    url "https://…"   image "photo-1.jpg"   icon "wifi" (a Material Symbols
+    name; ".fill" for the solid form)   money {"amount": 18500, "currency": "JPY"}
+  Named types start with a capital letter; every object and enum is named
+  (no inline shapes). Only T? may be null.
+
+FIXTURES
+  Each is one whole value of "data", by name, in the order they are shown.
+    "fixtures": {
+      "default": { "todos": [{"id": "1", "title": "Milk", "done": true}],
+                   "summary": {"remaining": 0}, "plan": "monthly" },
+      "empty":   { "$patch": "default", "todos": [], "summary": {"remaining": 0} }
+    }
+  "$patch": "<fixture written above>" starts from it and deep-merges the rest
+  over it: objects merge key by key; lists and scalars replace. A fixture
+  may leave out only fields with a default; no unknown fields; types and
+  ranges hold. Use real sample values. The first fixture is the default
+  for `render`.
+
+CONDITIONS
+  Every decision is named once, and used by name:
+    "conditions": {
+      "hasTodos": { "when": "summary.total > 0", "label": "Has todos" },
+      "allDone":  { "when": "hasTodos && summary.remaining == 0", "label": "All done" },
+      "yearly":   { "when": "plan == \"yearly\"", "label": "Yearly plan" }
+    }
+  Grammar of "when":
+    expr = and ("||" and)*        and = not ("&&" not)*
+    not  = "!" not | compare      compare = atom (op atom)?
+    op   = == != < <= > >=        atom = path | condition | literal | ( expr )
+    literal = number | "string" | true | false | null
+  - A condition is a Bool: no truthiness. Write != null, > 0, == "x".
+  - == and != compare equal types; null compares only with a nullable value.
+    < <= > >= compare numbers or dates. An enum compares with a member's
+    name as a string.
+  - A condition may use others by name; no cycles.
+  - Every condition must be true in one fixture and false in another.
+  A use site ("if", "disabled", a cases branch's "if") is only
+  !? <condition or Bool path>: "hasTodos", "!canAdd", "item.done".
+  Anything more is a named condition.
+
+TEMPLATES AND FORMATS
+  Any string may hold placeholders: {path} or {path|format}. A path is
+  dot-separated: a data root, or inside "item" also item and index. No
+  operators in a placeholder. {{ and }} are literal braces.
+    "text": "{summary.remaining} left · {booking.total|money}"
+  Formats (closed set; a value that needs one and lacks it is a fault):
+    (none)       string, int
+    money        money             ¥18,500, per the locale
+    date         date              medium date
+    date:short   date              short date
+    number:N     number or int     exactly N decimals
+    number:N-M   number or int     N to M decimals
+    count        list              its length
+  Text properties — text, title, subtitle, label, detail — always get text.
+  Any other property given exactly one placeholder and nothing else gets the
+  value itself, with its type: "value": "{listing.rating}", "each" items.
+  A bool, enum, image or object cannot be shown as text: choose words with
+  cases. A nullable value (or one reached through it) may be shown only
+  where an enclosing "if" or cases branch tests it != null, directly or via
+  a condition whose top-level && chain says so. A negation guarantees nothing.
+
+CASES
+  Any property's value can be chosen per state; the first true branch wins,
+  and the last branch must be "else":
+    "leadingIcon": { "cases": [ { "if": "item.done", "then": "check_circle.fill" },
+                                { "else": "circle" } ] }
+  A slot (children, leading, …) is not a property: it holds nodes, never
+  cases. To show one node or another, write both, each with its own "if".
+
+NODES
+  A node is an object:
+    "id"        required, unique: "todo-{index}" inside an item template
+    "kind"      a built-in kind (BUILT-IN KINDS) or one in kinds.json
+    "if"        a use site: the node and all inside it show only when it holds
+    "only"      "compact" or "regular": shown at that breakpoint only
+    "each"      a list path: repeat "item" once per element
+    "item"      the node repeated; it sees item (the element) and index (0..)
+    "limit"     at most this many elements: 5, or {"compact": 6, "regular": 9}
+    "bind"      a path (or a list of paths) the person edits; its value is
+                given to the kind as "value" ("bind": "composer.text";
+                a date range: ["booking.checkIn", "booking.checkOut"])
+    "disabled"  a use site: "!canAdd"
+    "on"        actions (ACTIONS below)
+    "ref"       "<component>": stands for that component; other keys ignored
+    "assumed"   "why this is a guess": drawn orange until the person agrees
+    "platform"  {"web": {"hidden": true, "$why": "…"}} or {"ios": {"<prop>": v}}:
+                one platform leaves it out, or builds a prop differently
+    any other key   a prop of the kind, such as "text", "variant", "icon"
+  Slots hold child nodes (one node or a list; never cases: use "if"):
+    children   the body, in order
+    leading    before the body;  trailing  pushed to the far end
+    action     in the body after children (EmptyState's button)
+    overlay    floats over the node; its "anchor" is "bottom-trailing"
+               (default), "top-leading", "top-trailing", "bottom-leading"
+               (16 in from the corner), "center" (the middle of the node:
+               a dialog) or "bottom" (flush along the bottom edge, as wide
+               as the node: a sheet)
+  A kind draws its slots only if its look places "$children".
+  "each" with no "item" passes the elements to the kind as "items" (photos):
+    { "id": "photos", "kind": "ImageCarousel", "each": "listing.photos" }
+  "item" sees item and index; "children" of the same node are drawn once
+  and see neither.
+
+LAYOUT ON A NODE
+  Direction comes from the kind: Stack, List, Scroll, Screen, Card,
+  FieldGroup are columns; Row, NavBar, StickyBar, Carousel are rows; Grid
+  and Columns are grids. These containers take from the node:
+    "gap"        a length: 12 or a token "space.3"
+    "padding"    a length, [vertical, horizontal] or [top, right, bottom, left]
+    "radius"     a length or "radius.md"; also clips the children
+    "border"     a colour token: "color.border"
+    "elevation"  an elevation token: outlined in the wireframe
+    "columns"    Grid and Columns only: a count, or tracks ["58%", "1fr"]
+  Section takes "gap" and "padding" too. Width, grow, alignment and sizes
+  are never written on a node: they belong to a kind's look (KINDS.JSON).
+  When a built-in kind does not lay out as needed, define a kind.
+
+ACTIONS
+  "on" maps an event (usually "tap") to actions, each "name": argument.
+  What reads or changes domain data is an operation, called with "call"
+  (OPERATIONS below): saving, deleting, sending a form, loading again
+  (a retry button), choosing what the server keeps (a delivery option, a
+  filter it applies), marking a todo done. Everything else is UI-only,
+  what the screen does by itself, and is one of these:
+    navigate   go to a screen    "navigate": "Checkout", "with": {"id": "{listing.id}"}
+    back       go back           "back": true
+    open       show a popup      "open": "cancel-dialog", "with": {"id": "{item.id}"}
+    close      hide it           "close": "cancel-dialog"
+    scrollTo   scroll to a node  "scrollTo": "calendar"
+    share      the system sheet  "share": "{listing.url}"
+    copy       a screen's link   "copy": "Document", "with": {"id": "{item.doc.id}"}
+    set        write view state  "set": "item.selected", "to": true
+                                 "set": {"booking.checkIn": null, "booking.checkOut": null}
+    toggle     flip view state   "toggle": "sort.menuOpen"
+  set and toggle write only view state: a field marked "view": true, or
+  one inside such a field (DATA AND TYPES), an element of a view-state
+  list included. check refuses any other action name, and set or toggle
+  on domain data: "toggle": "item.done" on a Todo is "call": "toggleTodo".
+  Each platform file says how to do each action it uses, "call" once.
+  "with" is passed along with the action. A handler may be cases:
+    "on": { "tap": { "cases": [ { "if": "!hasDates", "then": {"scrollTo": "calendar"} },
+                                { "else": {"navigate": "Checkout"} } ] } }
+  Event names, unlike action names, are free: "tap", or "change" on a node
+  with "bind", raised once the person has edited the bound value. Its
+  handler reads the new value through the bound path, so an edit that
+  changes domain data calls the operation that saves it:
+    { "id": "qty-{index}", "kind": "Stepper", "bind": "item.quantity",
+      "on": { "change": { "call": "setQuantity",
+                          "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } }
+  A node with "on" or "bind" is one a person can act on.
+
+OPERATIONS
+  The queries and commands behind the screen, declared once and called by
+  name. Each is a query (it only reads) or a command (it changes something):
+    "operations": {
+      "listDocs":  { "query": "The team's documents, in the order sort names",
+                     "params": { "sort": "SortKey = \"updated\"" },
+                     "result": "Doc[] ..50" },
+      "deleteDoc": { "command": "Deletes a document for everyone",
+                     "params": { "id": "string" }, "requires": "canDelete",
+                     "fails": { "notFound": "the document is already gone" } }
+    }
+    "query" or "command"   exactly one: what it does, in one line
+    "params"   fields as in "data" (DATA AND TYPES); a named type is in "types"
+    "result"   what it answers with: one of "types", written as a field type
+               ("Doc", "Doc[] ..50", "Doc?"); never a built-in, and holding no
+               view state. A query needs one; a command may have none.
+    "requires" a condition (CONDITIONS) that must hold before it is called
+    "destructive"  true: a command that cannot be undone (deleting, sending,
+               paying). Only its confirmation may call it (below), and its
+               CLI command does nothing without --yes (`underdraw cli --help`)
+    "long"     true: a command that takes long (an export, an import). It
+               answers with a job, and what reads the job is derived (below)
+    "fails"    each way it can fail: a name and when, {"offline": "…"}
+    "pages"    "cursor", for a query that answers one page at a time (PAGING)
+  A query fills the fields of "data" that name it with "from":
+    "data":  { "docs": { "type": "DocRow[] ..50", "from": "listDocs" } },
+    "types": { "DocRow": { "doc": "Doc",
+                           "menuOpen": { "type": "bool = false", "view": true } } }
+  The field is of the query's result type, or of a type that wraps it: one
+  field of the result's type (here doc), beside only view state and fields
+  the app derives. "[]" and "?" match the result's. A command fills no field.
+  "from": "<query>.<field>" fills it with one field of the result instead,
+  of that field's type or wrapping it: "from": "listDocs.next".
+  A parameter with a fixed set of choices is an enum in "types", and the
+  view model offers the same enum, so a call passes one of them on:
+    "types": { "SortKey": "enum(updated, created, title, owner)",
+               "SortOption": { "id": "SortKey", "label": "string 1..8" } }
+    "params": { "sort": "SortKey = \"updated\"" }   default: the one the screen selects
+  The default is one of the choices; "with" gives a SortKey path
+  ("{item.id}") or a member as a literal ("title"), and check refuses
+  anything else.
+  A node calls one as an action:
+    "on": { "tap": { "call": "deleteDoc", "with": { "id": "{item.doc.id}" } } }
+  "with" gives every parameter but those with a default, and no other. Each
+  value is a template whose type is the parameter's: "{item.doc.id}" for a
+  string; a nullable value only for a nullable parameter; words around a
+  placeholder make a string. A literal works too: "title", 3, true, null.
+  A node that calls an operation with "requires" is gated by that
+  condition, or one whose && chain names it: "disabled": "!canDelete" on
+  the node, or "if": "canDelete" on it or around it (a handler's cases
+  branch counts). check refuses a call that is not.
+  A destructive operation is called only from inside its confirmation: a
+  popup (POPUPS) whose kind's look has "backdrop": true, and that a node
+  opens by its id with { "open": "<id>" }. The node a person first acts on
+  opens it; only the button inside the popup calls the operation:
+    the row menu's item:  "on": { "tap": { "open": "confirm-delete",
+                                           "with": { "id": "{item.doc.id}" } } }
+    the screen's overlay: { "id": "confirm-delete", "kind": "Dialog",
+                            "if": "confirmingDelete", "anchor": "center",
+                            "children": [ …the question…,
+      { "id": "confirm-delete-cancel", "kind": "Button", "text": "取消",
+        "on": { "tap": { "close": "confirm-delete" } } },
+      { "id": "confirm-delete-confirm", "kind": "Button", "text": "删除",
+        "on": { "tap": { "call": "deleteDoc", "with": { "id": "{rowMenu.docId}" } } } } ] }
+  with "confirmingDelete": "canDelete && rowMenu.confirming" in conditions,
+  so the popup's "if" gates the call too, and a fixture that opens it.
+  check refuses a call to a destructive operation anywhere else, a menu
+  without a backdrop included.
+  A long command ("long": true) answers with a job at once, and the job
+  runs on. Two things are derived from it, so neither is written by hand
+  (check refuses a type or an operation of either name):
+    the job's type, its name and Job:  "ExportDocsJob": {
+        "id": "string", "status": "JobStatus", "progress": "int 0..100",
+        "result": "Archive?",   what the command answers with, once done
+                                (left out when it answers with nothing)
+        "error": "string?" }    which of its "fails" it ended in, once failed
+      with "JobStatus": "enum(running, done, failed)", one for every job;
+    the query that reads it, its name and Job:  "exportDocsJob":
+      { "query": "Reads the job exportDocs started…", "params": { "id": "string" },
+        "result": "ExportDocsJob", "fails": { "notFound": "no job has this id" } }
+  The screen shows the job through the view model, as anything else: a
+  field of "data" holds it, conditions read its status, and fixtures show
+  it running, done and failed (check requires all three):
+    "operations": { "exportDocs": { "command": "Exports every document…",
+                    "result": "Archive", "long": true,
+                    "fails": { "tooLarge": "over 2 GB" } } },
+    "data":       { …, "job": "ExportDocsJob?" },      null before it is started
+    "conditions": { "exporting": { "when": "job != null && job.status == \"running\"", … },
+                    "exported":  { "when": "job != null && job.status == \"done\"
+                                            && job.result != null", … },
+                    "exportFailed": { "when": "job != null && job.status == \"failed\"", … } },
+    "fixtures":   { …, "running": { "$patch": "default",
+                                    "job": { "id": "j42", "status": "running", "progress": 40 } },
+                    "done":   { …, "status": "done", "progress": 100, "result": {…} },
+                    "failed": { …, "status": "failed", "progress": 65, "error": "tooLarge" } }
+  A node shows the progress with "{job.progress}" under "if": "exporting".
+  A done job holds its result; a failed one names one of the command's
+  "fails". Loading and error stay phases: they come before the view model
+  exists, and a job's running and failing happen inside it.
+  Operations live in screen.json, one screen's own, and are not shared
+  with other screens.
+
+PAGING
+  A query that answers one page at a time says so, and its result is one
+  page: a type holding exactly one list, the page's rows, with the most a
+  page holds ("..50"), and "next": "string?", where the next page starts,
+  null on the last page.
+    "operations": { "listDocs": { "query": "The team's documents",
+                                  "pages": "cursor", "result": "DocPage" } },
+    "types": { "DocPage": { "docs": "Doc[] ..50", "next": "string?" } },
+    "data":  { "docs": { "type": "DocRow[]", "from": "listDocs.docs" },
+               "next": { "type": "string?", "from": "listDocs.next" } },
+    "conditions": { "hasMore": { "when": "next != null", "label": "More to load" } }
+  "pages" adds two parameters, never written in "params": "cursor"
+  (string?, where the page starts) and "limit" (int 1..50 = 50: as many
+  rows as the page's list may hold). Every call to the query gives cursor:
+  null for the first page (a sort, a retry), or the field of "data" filled
+  from its "next" for the page after it, offered only while that is not
+  null ("load more", or the end of a list):
+    { "id": "load-more", "kind": "Button", "if": "hasMore", "text": "Load more",
+      "on": { "tap": { "call": "listDocs", "with": { "cursor": "{next}" } } } }
+  Give the fixtures both states: one with "next" set (more to come) and one
+  with it null (the last page), so hasMore holds in one and not another.
+  check refuses a paged query whose result has no "next", a call that
+  gives no cursor or another value, and a load more not gated by a
+  condition that tests next != null. `underdraw cli` gives the query
+  --cursor and --limit, and its stdout holds "next" (see cli --help).
+
+COMPONENTS
+  "components": { "nav-back": { "id": "nav-back", "kind": "IconButton",
+                                "icon": "arrow_back", "on": {"tap": {"back": true}} } }
+  used as { "ref": "nav-back" } anywhere a node goes, phases included.
+
+POPUPS
+  underdraw has no dialog, sheet or menu kind. A popup is a state like any
+  other: a nullable field holds what it shows, a condition says it is open,
+  a fixture opens it, and its node floats in the screen's "overlay":
+    "data":       { …, "cancelling": "CancelRequest?" },
+    "conditions": { "dialogOpen": { "when": "cancelling != null", "label": "Dialog open" } },
+    "fixtures":   { …, "cancel-dialog": { "$patch": "default", "cancelling": {…} } },
+    "root": { "id": "screen", "kind": "Screen", "children": [ … ],
+              "overlay": { "id": "cancel-dialog", "kind": "Dialog", "if": "dialogOpen",
+                           "anchor": "center", "children": [ … ] } }
+  Inside it, paths through the nullable field are safe: "if" tests it.
+  The button that opens it says so with a UI-only action, { "open": "cancel-dialog" };
+  a list of choices inside it is "each" like anywhere else.
+  "Dialog" is the project's own kind (kinds.json): a look such as
+  { "box": "column", "backdrop": true, "width": "{width|or:88%}",
+    "padding": 24, "radius": 16, "fill": "paper", "stroke": "line",
+    "children": ["$children"] }, with
+  "width": {"compact": "88%", "regular": 480} on the node.
+  - "anchor" places it: "center" for a dialog, "bottom" for a sheet. On a
+    Screen, the middle and the bottom are those of the whole page, which
+    is as tall as its content. A sheet's look leaves out "width".
+  - The page is only as tall as its content: an overlay taller than that
+    runs off it and is cut. check finds it, in each state at widths 390
+    and 1120; give the fixture that opens it more content behind it.
+  - "backdrop": true dims the screen behind it; what is behind gets no
+    number, since nothing there can be acted on while it is open.
+
+PHASES
+  "phases": { "loading": { "id": "loading", "kind": "Screen", "children": [
+                { "id": "sk", "kind": "Skeleton", "shape": ["image 4:3", "line 60%"] } ] } }
+  A phase tree has no data roots: no paths, no conditions on data. Inside
+  root, every non-nullable path has a value. A section that loads on its own
+  later is a nullable field and a condition, not a phase.
+
+RESPONSIVE
+  tokens.json "breakpoint" splits widths into compact and regular; `render
+  --width` picks one. Two tools:
+    "only": "regular"                        keep the node at one breakpoint
+    "columns": {"compact": ["1fr"], "regular": ["58%", "1fr"]}
+                                             any value, one per breakpoint
+  A responsive value names both breakpoints; a value the same at both is
+  written once.
+
+BUILT-IN KINDS
+  Kind             props it reads (all optional unless named)
+  Screen           the root; slots. gap, padding
+  Scroll, Stack, List, FieldGroup
+                   a column of children. gap, padding, radius, border, elevation
+  Card             a column, gap 16 unless gap is given. same frame props
+  Row              a row, items centred across. same frame props
+  NavBar           a row 56 high, padding 0 16; leading, children, trailing
+  StickyBar        a row with a line on top, ends pushed apart
+  Grid             columns (default 2), gap 16
+  Columns          columns (default 1), gap 24, children aligned at the top
+  Carousel         a row of 280-wide cards cut at the edge
+  Section          title, subtitle (font.heading / muted), then children; gap, padding
+  Text             text, font (token, default font.body), color (token), maxLines,
+                   align (start|center|end), underline
+  Link             text, font (default font.subhead), trailingIcon (adds ›)
+  Button           text, variant ("primary" filled | "secondary" outlined),
+                   size ("small"), disabled
+  IconButton       icon: a 40 circle
+  Glyph            icon, size (default 24), font (a smaller icon), background (an ink)
+  Badge            text: a small pill
+  Rating           value: "★ 4.9"
+  Avatar           size (default 40): a gray circle
+  Divider          a 1-high line
+  ListItem         title, detail, leadingIcon, trailingIcon, strikethrough
+  Metric           value (font.price), label
+  EmptyState       icon, title, detail; then children / action
+  ImageCarousel    each over images (or items), aspectRatio ("4:3"): one photo, "1 / N"
+  ImageGrid        each over images, radius: one large photo and four small
+  Map              aspectRatio (default "16:9"): a gray area with a marker
+  DateRangePicker  bind [from, to], months (1..3): the dates over month grids
+  DateField        label, bind (a date): "add date" until set
+  Stepper          label, bind (an int): − value +
+  PriceBreakdown   lines (list of names), total (default "合计")
+  Skeleton         shape: a list of "image 4:3" and "line 70%"
+  Props a kind does not read still reach `handoff` (and so the builder):
+  write what the platform needs to know, such as "minLength", "sticky".
+  The built-in kinds use the fonts font.body, font.subhead, font.caption,
+  font.heading and font.price: define them in tokens.json.
+
+TOKENS.JSON
+  {
+    "color":      { "primary": "#3B5BDB", "text": "#222222", "textSecondary": "#6A6A6A",
+                    "border": "#DDDDDD", "surface": "#FFFFFF" },
+    "space":      { "1": 4, "2": 8, "3": 12, "4": 16, "6": 24 },
+    "radius":     { "sm": 8, "md": 12, "pill": 999 },
+    "font":       { "body":    { "size": 16, "weight": 400, "lineHeight": 22 },
+                    "caption": { "size": 14, "weight": 400, "lineHeight": 18 }, … },
+    "elevation":  { "card": { "y": 2, "blur": 8, "color": "#0000001A" } },
+    "breakpoint": { "compact": [0, 743], "regular": [744, null] }
+  }
+  A token is named by its dotted path: "space.4", "radius.md", "font.body",
+  "color.textSecondary", "elevation.card". A length is a number or a token
+  naming one. Groups and names are the project's; a platform file names
+  them in code ("tokenNaming"). The wireframe is gray: color.textSecondary
+  draws muted, color.primary strong, color.border as a line, other colours
+  as text.
+
+KINDS.JSON
+  The project's own kinds, and replacements for built-ins by name. A kind
+  is never a guess: write its whole look; check refuses "assumed" on a kind
+  (a node may still carry one).
+    { "kinds": { "Chip": {
+        "doc": "A filter as a pill: filled when on.",
+        "look": { "box": "row", "gap": 6, "padding": [6, 12], "radius": 999,
+                  "fill":  { "cases": [ { "if": "selected", "then": "strong" }, { "else": null } ] },
+                  "stroke": { "cases": [ { "if": "selected", "then": null }, { "else": "line" } ] },
+                  "children": [ { "text": "{text}", "font": "font.caption",
+                                  "ink": { "cases": [ { "if": "selected", "then": "paper" },
+                                                      { "else": "text" } ] } } ] } } } }
+  Beside "look" and "doc", a kind may say how a platform treats it, which
+  `compare` reads (each true or false):
+    "scrolls": true    its content scrolls or pages, so what is in it may
+                       lie outside its frame (Screen, Scroll, Carousel)
+    "pinned":  true    pinned to the screen, out of its siblings' order
+                       (StickyBar)
+  A node then writes { "id": "chip-direct", "kind": "Chip", "text": "Direct",
+  "selected": "{filters.direct}" }. A look's templates read the node's props
+  (after the node's own templates are filled), not data.
+  A look is one of:
+    {"box": "row"|"column"|"grid" or none, …box keys}    a box
+    {"text": "…", …text keys}                            text
+    {"kind": "Glyph", "icon": "{leadingIcon}", …props}   another kind drawn inside
+    {"repeat": 3 | "{list}" | ["50%", "35%"], "each": look}
+                       repeated; inside: n (from 1), index (from 0), item
+    {"cases": [{"if": …, "then": look}, {"else": look}]}
+    "$children"        the node's slots: leading, body, trailing, overlays
+    [look, …]          each in turn
+  Any look may carry "if"; it is left out when that does not hold.
+  Box keys:
+    gap padding margin   a length (number or token); padding and margin also
+                         [v, h] or [top, right, bottom, left]
+    width height size    a length or "70%" of the parent; size sets both
+    aspect               "4:3" or a number
+    grow shrink basis    flex sharing in the parent row or column
+    self                 "start": as wide as its content
+    items                "start" | "center";  justify "center" | "between" | "end"
+                         check refuses a word a key does not take
+    columns rows span    grid tracks: a count or ["1fr", "1fr"]; span covers cells
+                         a track is "2fr", "40%" or a number of points:
+                         ["3fr", "1fr", 48]; check refuses anything else
+    fill stroke radius dashed   outline and fill in an ink
+    cross topLine        a crossed placeholder, a line on top, in an ink
+    clip                 cut children at this radius (false: never)
+    overflowX            "clip": a row that runs off the edge
+    pin                  {"x": "end", "y": "end", "inset": 12}: floats over the
+                         parent; each axis start | center | end
+    backdrop             true, on an overlay: a see-through dark over the node
+                         it floats over, and nothing there can be acted on.
+                         Only the whole look of a kind put in "overlay", or a
+                         box with "pin", floats: check refuses it elsewhere
+    itemWidth            every child this wide, not shrinking
+    frame                true: the node's padding, gap, radius, border and
+                         elevation override the look's (containers)
+    children             looks inside it
+  Text keys: text, font (token or a size number), ink, weight, maxLines,
+  align (start|center|end), underline, strike; also self and pin.
+  Inks: text, muted, line, fill, strong, paper (or a colour token).
+  Look placeholders take filters, left to right: or:v (when missing),
+  count, first, last, head, tail (first word / the rest), slashes
+  (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.
+    "columns": "{columns|or:2}"     "repeat": "{items|count|atMost:5}"
+  A look's "if" uses the condition grammar over props written without
+  braces: "value && value != \"\"", "size == \"small\"", "value|first".
+  A prop holds when given and not false; "" counts as given.
+  Any key named icon or ending in Icon holds a Material Symbols name.
+
+A WHOLE SCREEN
+  It passes `check`. A condition holds no format and no arithmetic, so a
+  list's length is a derived int beside it.
+  {
+    "screen": "Inbox", "title": "Inbox", "tokens": "tokens.json",
+    "data":  { "inbox": "Inbox" },
+    "types": { "Inbox": { "count": { "type": "int 0..", "derived": { "app": "messages' length" } },
+                          "messages": "Message[]" },
+               "Message": { "from": "string 1..", "unread": "bool = false" } },
+    "conditions": { "hasMessages": { "when": "inbox.count > 0", "label": "Has mail" } },
+    "fixtures": {
+      "some":  { "inbox": { "count": 1, "messages": [{ "from": "Ana", "unread": true }] } },
+      "empty": { "inbox": { "count": 0, "messages": [] } }
+    },
+    "root": { "id": "inbox", "kind": "Screen", "padding": "space.4", "children": [
+      { "id": "empty", "kind": "EmptyState", "if": "!hasMessages",
+        "icon": "inbox", "title": "No mail" },
+      { "id": "list", "kind": "List", "if": "hasMessages", "each": "inbox.messages",
+        "item": { "id": "msg-{index}", "kind": "ListItem", "title": "{item.from}",
+                  "leadingIcon": { "cases": [ { "if": "item.unread", "then": "mail.fill" },
+                                              { "else": "drafts" } ] },
+                  "on": { "tap": { "navigate": "Message", "with": {"index": "{index}"} } } } } ] },
+    "phases": { "loading": { "id": "loading", "kind": "Screen", "children": [
+      { "id": "sk", "kind": "Skeleton", "shape": ["line 90%", "line 90%"] } ] } }
+  }
