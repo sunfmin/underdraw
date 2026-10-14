@@ -205,6 +205,8 @@ POPUPS
   - "anchor" places it: "center" for a dialog, "bottom" for a sheet. On a
     Screen, the middle and the bottom are those of the whole page, which
     is as tall as its content. A sheet's look leaves out "width".
+  - An overlay taller than its node runs off the top and is cut: give the
+    fixture that opens it enough content behind it.
   - "backdrop": true dims the screen behind it; what is behind gets no
     number, since nothing there can be acted on while it is open.
 
