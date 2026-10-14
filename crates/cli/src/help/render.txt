@@ -34,10 +34,11 @@ WHAT YOU SEE
   A wireframe, in grays: boxes, text in the system font, crossed boxes for
   images. A dark numbered circle tags everything a person can act on, in
   document order; the same number is "label" in nodes, so "3" in a
-  conversation means one node. What a dialog (an opaque box pinned over
-  the page) or its backdrop covers gets no number, and its "label" is null. An orange
-  dashed outline and "?" mark what was assumed, for the person to confirm,
-  and a kind underdraw does not know, drawn as a box with its name. Icons
+  conversation means one node. An orange dashed outline and "?" mark what
+  was assumed, for the person to confirm, and a kind underdraw does not
+  know, drawn as a box with its name. What a dialog (an opaque box pinned
+  over the page) or its backdrop covers gets no number and no "?": its
+  "label" is null, and its "assumed" still says why it was guessed. Icons
   are Material Symbols, drawn outlined, or solid for a name ending in .fill.
 
 WHAT TRIPS YOU UP

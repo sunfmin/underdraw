@@ -118,18 +118,35 @@ struct Out {
     /// Tags go over everything else, and are never cut by a clip.
     tags: Vec<Draw>,
     nodes: Vec<Placed>,
-    /// Nodes a person can act on, in order, waiting for their numbers: an
-    /// opaque box pinned over one later hides its tag.
-    numbered: Vec<Numbered>,
+    /// Nodes to number or mark as guessed, in order, waiting until all is
+    /// drawn: an opaque box or a backdrop pinned over one later hides its
+    /// marks.
+    marked: Vec<Marked>,
 }
 
-/// A node to number, unless something drawn later covers it.
-struct Numbered {
+/// A node to number or mark as guessed, unless something drawn later
+/// covers it.
+struct Marked {
     /// Its place in `Out::nodes`, when it is listed there.
     node: Option<usize>,
     rect: Rect,
-    tag: Rect,
+    /// A person can act on it: it gets a number.
+    acts: bool,
+    /// It was guessed: it gets an orange outline and "?".
+    guessed: bool,
     covered: bool,
+}
+
+impl Marked {
+    /// Where its number goes.
+    fn number_tag(&self) -> Rect {
+        tag(self.rect.x - 6.0, self.rect.y - 6.0)
+    }
+
+    /// Where its "?" goes.
+    fn guess_tag(&self) -> Rect {
+        tag(self.rect.x + self.rect.width - 12.0, self.rect.y - 6.0)
+    }
 }
 
 pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Result<Page, TaffyError> {
@@ -167,9 +184,9 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             height: known.height.unwrap_or(height),
         })
     })?;
-    let mut out = Out { draws: Vec::new(), tags: Vec::new(), nodes: Vec::new(), numbered: Vec::new() };
+    let mut out = Out { draws: Vec::new(), tags: Vec::new(), nodes: Vec::new(), marked: Vec::new() };
     emit(&tree, root, &laid, Rect::default(), None, &mut out)?;
-    number(&mut out);
+    mark(&mut out);
     let size = tree.layout(laid.id)?.size;
     let mut draws = out.draws;
     draws.append(&mut out.tags);
@@ -278,33 +295,19 @@ fn emit(
     Ok(())
 }
 
-/// Notes where `node` went, and tags it: a number, given once all is drawn,
-/// when a person can act on it, a dashed outline and "?" when `assumed`
-/// says why it was guessed. A
-/// node cut away entirely
-/// gets no tag.
+/// Notes where `node` went, and holds it for its marks, drawn once all is
+/// drawn: a number when a person can act on it, a dashed outline and "?"
+/// when `assumed` says why it was guessed. A node cut away entirely gets
+/// none.
 fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, out: &mut Out) {
     let seen = match clip {
         Some(area) => overlaps(rect, area),
         None => true,
     };
-    if seen && node.interactive {
+    let (acts, guessed) = (seen && node.interactive, seen && assumed.is_some());
+    if acts || guessed {
         let listed = (!node.id.is_empty()).then_some(out.nodes.len());
-        let tag = tag(rect.x - 6.0, rect.y - 6.0);
-        out.numbered.push(Numbered { node: listed, rect, tag, covered: false });
-    }
-    if seen && assumed.is_some() {
-        let around =
-            Rect { x: rect.x - 2.0, y: rect.y - 2.0, width: rect.width + 4.0, height: rect.height + 4.0 };
-        out.tags.push(Draw::Box {
-            rect: around,
-            radius: 4.0,
-            fill: None,
-            stroke: Some(Ink::Assumed),
-            dashed: true,
-        });
-        let corner = tag(rect.x + rect.width - 12.0, rect.y - 6.0);
-        out.tags.push(Draw::Tag { rect: corner, text: "?".to_string(), ink: Ink::Assumed });
+        out.marked.push(Marked { node: listed, rect, acts, guessed, covered: false });
     }
     if !node.id.is_empty() {
         out.nodes.push(Placed { id: node.id.clone(), kind: node.kind.clone(), rect, label: None, assumed });
@@ -314,29 +317,47 @@ fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, 
 /// Marks what an opaque box at `over`, drawn on top, covers: a node whose
 /// middle is under it, or whose tag would sit on it.
 fn cover(over: Rect, out: &mut Out) {
-    for numbered in &mut out.numbered {
-        let rect = numbered.rect;
+    for marked in &mut out.marked {
+        let rect = marked.rect;
         let middle =
             Rect { x: rect.x + rect.width / 2.0, y: rect.y + rect.height / 2.0, width: 0.0, height: 0.0 };
-        if inside(middle, over) || overlaps(numbered.tag, over) {
-            numbered.covered = true;
+        if inside(middle, over)
+            || (marked.acts && overlaps(marked.number_tag(), over))
+            || (marked.guessed && overlaps(marked.guess_tag(), over))
+        {
+            marked.covered = true;
         }
     }
 }
 
 /// Numbers, in order, every node a person can act on and still see, and
-/// tags it.
-fn number(out: &mut Out) {
+/// marks every guess still seen.
+fn mark(out: &mut Out) {
     let mut next: u32 = 1;
-    for numbered in &out.numbered {
-        if numbered.covered {
+    for marked in &out.marked {
+        if marked.covered {
             continue;
         }
-        if let Some(placed) = numbered.node.and_then(|index| out.nodes.get_mut(index)) {
-            placed.label = Some(next);
+        if marked.acts {
+            if let Some(placed) = marked.node.and_then(|index| out.nodes.get_mut(index)) {
+                placed.label = Some(next);
+            }
+            out.tags.push(Draw::Tag { rect: marked.number_tag(), text: next.to_string(), ink: Ink::Strong });
+            next = next.saturating_add(1);
         }
-        out.tags.push(Draw::Tag { rect: numbered.tag, text: next.to_string(), ink: Ink::Strong });
-        next = next.saturating_add(1);
+        if marked.guessed {
+            let rect = marked.rect;
+            let around =
+                Rect { x: rect.x - 2.0, y: rect.y - 2.0, width: rect.width + 4.0, height: rect.height + 4.0 };
+            out.tags.push(Draw::Box {
+                rect: around,
+                radius: 4.0,
+                fill: None,
+                stroke: Some(Ink::Assumed),
+                dashed: true,
+            });
+            out.tags.push(Draw::Tag { rect: marked.guess_tag(), text: "?".to_string(), ink: Ink::Assumed });
+        }
     }
 }
 

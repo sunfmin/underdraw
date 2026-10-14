@@ -320,3 +320,40 @@ fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
     let labels: Vec<_> = ["a", "b", "c", "d", "e", "ok"].map(|id| placed(&page, id).label).into();
     assert_eq!(labels, [None, None, None, None, None, Some(1)], "behind a backdrop nothing can be acted on");
 }
+
+#[test]
+fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
+    let kinds = serde_json::json!({ "kinds": { "Dialog": { "look": {
+        "box": "column", "backdrop": true, "width": "80%", "padding": 16, "fill": "paper",
+        "children": ["$children"] } } } });
+    let page = tiny_with(
+        serde_json::json!([{ "id": "body", "kind": "Stack", "children": [
+            { "id": "behind", "kind": "Text", "text": "behind", "assumed": "a guess behind" },
+            { "id": "filler", "kind": "Text", "text": "filler" } ],
+          "overlay": { "id": "dialog", "kind": "Dialog", "anchor": "center", "children": [
+            { "id": "inside", "kind": "Text", "text": "inside", "assumed": "a guess on the dialog" } ] } }]),
+        Some(&kinds),
+    );
+    let marks: Vec<_> = page
+        .draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Tag { rect, text, .. } if text == "?" => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    let inside = placed(&page, "inside").rect;
+    assert_eq!(marks.len(), 1, "one \"?\", on the dialog: {marks:?}");
+    assert!((marks[0].y - (inside.y - 6.0)).abs() < 1.0, "the \"?\" marks the guess on the dialog");
+    let outlines = page
+        .draws
+        .iter()
+        .filter(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(underdraw_layout::Ink::Assumed), .. }))
+        .count();
+    assert_eq!(outlines, 1, "one orange outline");
+    assert_eq!(
+        placed(&page, "behind").assumed.as_deref(),
+        Some("a guess behind"),
+        "still a guess in the answer"
+    );
+}
