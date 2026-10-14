@@ -239,3 +239,15 @@ fn a_kind_still_assumed_is_drawn_as_a_guess() {
     let assumed = placed(&page, "chip").assumed.as_deref().unwrap_or_default();
     assert!(assumed.contains("until the person says otherwise"), "{assumed:?}");
 }
+
+#[test]
+fn a_grid_track_is_a_share_a_part_or_points() {
+    let page = tiny(serde_json::json!([
+        { "id": "grid", "kind": "Grid", "gap": 0, "columns": ["1fr", 48, "50%"], "children": [
+            { "id": "share", "kind": "Text", "text": "a" },
+            { "id": "points", "kind": "Text", "text": "b" },
+            { "id": "part", "kind": "Text", "text": "c" } ] }
+    ]));
+    let width = |id| placed(&page, id).rect.width;
+    assert_eq!((width("share"), width("points"), width("part")), (390.0 - 48.0 - 195.0, 48.0, 195.0));
+}
