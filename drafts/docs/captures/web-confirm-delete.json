@@ -1,0 +1,35 @@
+{
+  "width": 390,
+  "elements": [
+    {"id":"docs"},
+    {"id":"nav"},
+    {"id":"nav-title","text":"团队文档"},
+    {"id":"nav-new"},
+    {"id":"toolbar"},
+    {"id":"doc-count","text":"共 6 个文档"},
+    {"id":"sort-button","text":"排序：最近修改"},
+    {"id":"list"},
+    {"id":"doc-a"},
+    {"id":"doc-a-more"},
+    {"id":"doc-b"},
+    {"id":"doc-b-more"},
+    {"id":"doc-c"},
+    {"id":"doc-c-more"},
+    {"id":"doc-d"},
+    {"id":"doc-d-more"},
+    {"id":"doc-e"},
+    {"id":"doc-e-more"},
+    {"id":"doc-f"},
+    {"id":"doc-f-more"},
+    {"id":"confirm-delete"},
+    {"id":"confirm-delete-title","text":"删除这个文档？"},
+    {"id":"confirm-delete-detail","text":"团队里的所有人都将无法再打开它，删除后无法恢复。"},
+    {"id":"confirm-delete-actions"},
+    {"id":"confirm-delete-cancel","text":"取消"},
+    {"id":"confirm-delete-confirm","text":"删除"}
+  ],
+  "acted": [
+    {"id":"confirm-delete-confirm","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"c"}}]},
+    {"id":"confirm-delete-cancel","on":"tap","calls":[]}
+  ]
+}

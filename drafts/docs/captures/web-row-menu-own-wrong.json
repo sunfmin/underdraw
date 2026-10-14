@@ -1,0 +1,36 @@
+{
+  "width": 390,
+  "elements": [
+    {"id":"docs"},
+    {"id":"nav"},
+    {"id":"nav-title","text":"团队文档"},
+    {"id":"nav-new"},
+    {"id":"toolbar"},
+    {"id":"doc-count","text":"共 6 个文档"},
+    {"id":"sort-button","text":"排序：最近修改"},
+    {"id":"list"},
+    {"id":"doc-a"},
+    {"id":"doc-a-more"},
+    {"id":"doc-b"},
+    {"id":"doc-b-more"},
+    {"id":"doc-c"},
+    {"id":"doc-c-more"},
+    {"id":"doc-c-menu"},
+    {"id":"doc-c-rename","text":"重命名"},
+    {"id":"doc-c-copy","text":"复制链接"},
+    {"id":"doc-c-move","text":"移动到…"},
+    {"id":"doc-c-divider"},
+    {"id":"doc-c-delete","text":"删除","enabled":true},
+    {"id":"doc-d"},
+    {"id":"doc-d-more"},
+    {"id":"doc-e"},
+    {"id":"doc-e-more"},
+    {"id":"doc-f"},
+    {"id":"doc-f-more"}
+  ],
+  "acted": [
+    {"id":"doc-c-delete","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"c"}}]},
+    {"id":"nav-new","on":"tap","calls":[]},
+    {"id":"doc-c-copy","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"c"}}]}
+  ]
+}
