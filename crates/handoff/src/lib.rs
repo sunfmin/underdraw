@@ -61,6 +61,9 @@ pub struct OperationSpec {
     /// The condition that must hold before it is called.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires: Option<String>,
+    /// It cannot be undone: the screen calls it only from its confirmation.
+    #[serde(skip_serializing_if = "is_false")]
+    pub destructive: bool,
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub fails: Map<String, Value>,
     /// The fields of `data` a query's result fills: `docs`, or `docs[].doc`
@@ -230,6 +233,7 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
             params,
             result: operation.result.as_ref().map(|field| field.describe()),
             requires: operation.requires.clone(),
+            destructive: operation.destructive,
             fails,
             fills: operation
                 .fills
@@ -363,6 +367,11 @@ fn token_names(tokens: &Value, pattern: &str, language: Language) -> Vec<TokenNa
         }
     }
     names
+}
+
+/// For serde: leave out a flag that is false.
+pub(crate) fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// `textSecondary` as `text-secondary`.

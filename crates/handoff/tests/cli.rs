@@ -26,7 +26,7 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
         usages,
         [
             ("list", "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]"),
-            ("delete", "delete <id>"),
+            ("delete", "delete <id> --yes"),
             ("new", "new")
         ]
     );
@@ -45,8 +45,21 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
         json!({ "error": "requires canDelete", "when": "refused before it is tried: \"May delete it\" does not hold",
                 "exit": 1, "stdout": { "error": "requires canDelete" } })
     );
-    assert_eq!(commands[1]["fails"][1]["exit"], 2);
-    assert!(commands[1]["help"].as_str().unwrap().contains("<cli> delete <id>"));
+    assert_eq!(commands[1]["destructive"], true);
+    assert_eq!(
+        commands[1]["fails"][1],
+        json!({ "error": "needs --yes",
+                "when": "not tried without --yes, as it cannot be undone: says what it would do",
+                "exit": 1,
+                "stdout": { "error": "needs --yes",
+                            "dryRun": { "operation": "deleteDoc", "does": "Deletes a document for everyone in the team",
+                                        "with": { "id": "<id>" } } } })
+    );
+    assert_eq!(commands[1]["fails"][2]["exit"], 2);
+    let help = commands[1]["help"].as_str().unwrap();
+    assert!(help.contains("<cli> delete <id> --yes"), "{help}");
+    assert!(help.contains("  --yes  do it"), "{help}");
+    assert_eq!(commands[0].get("destructive"), None, "only a destructive command says so");
 }
 
 #[test]
@@ -69,7 +82,9 @@ fn each_stdout_schema_validates_its_golden_outputs_and_holds_no_view_state() {
 fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
     let interface = interface();
     let golden: Vec<Value> = interface.golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
-    for fixture in ["default", "more-to-come", "sort-open", "row-menu", "row-menu-own", "empty"] {
+    for fixture in
+        ["default", "more-to-come", "sort-open", "row-menu", "row-menu-own", "confirm-delete", "empty"]
+    {
         assert!(
             golden.iter().any(|g| g["command"] == "list" && g["fixture"] == fixture),
             "no golden list in {fixture}"
@@ -99,9 +114,17 @@ fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
     assert_eq!(
         deletes,
         [
-            (&json!("row-menu"), &json!(["b"]), &json!(1), &json!({ "error": "requires canDelete" })),
-            (&json!("row-menu-own"), &json!(["c"]), &json!(0), &json!({})),
-        ]
+            (
+                &json!("confirm-delete"),
+                &json!(["c"]),
+                &json!(1),
+                &json!({ "error": "needs --yes",
+                         "dryRun": { "operation": "deleteDoc", "does": "Deletes a document for everyone in the team",
+                                     "with": { "id": "c" } } })
+            ),
+            (&json!("confirm-delete"), &json!(["c", "--yes"]), &json!(0), &json!({})),
+        ],
+        "deleted only from its confirmation, and only given --yes"
     );
     let failures: Vec<(&Value, &Value)> = golden
         .iter()
@@ -130,4 +153,96 @@ fn arguments_are_read_as_the_command_takes_them() {
     assert_eq!(delete.with_args(&args(&["b"])), Ok(json!({ "id": "b" })));
     assert!(delete.with_args(&[]).unwrap_err().contains("needs <id>"));
     assert!(delete.with_args(&args(&["b", "c"])).is_err());
+    assert_eq!(delete.with_args(&args(&["b", "--yes"])), Ok(json!({ "id": "b" })), "--yes is no parameter");
+    assert!(delete.yes(&args(&["b", "--yes"])) && !delete.yes(&args(&["b"])));
+    assert!(list.with_args(&args(&["--yes"])).is_err(), "only a destructive command takes --yes");
+}
+
+/// The draft with its menu's delete calling deleteDoc itself, and deleteDoc
+/// marked destructive or not.
+fn deleting_from_the_menu(destructive: bool) -> Value {
+    let mut text =
+        std::fs::read_to_string(format!("{}/../../drafts/docs/screen.json", env!("CARGO_MANIFEST_DIR")))
+            .unwrap()
+            .replace(r#""open": "confirm-delete""#, r#""call": "deleteDoc""#);
+    if !destructive {
+        text = text.replace(
+            r#""destructive": true,
+      "fails""#,
+            r#""fails""#,
+        );
+    }
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn a_command_whose_precondition_does_not_hold_is_refused() {
+    let model = model(&deleting_from_the_menu(false), Some(&draft("kinds.json")))
+        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let interface = cli(&model);
+    let golden: Vec<Value> = interface.golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
+    let deletes: Vec<(&Value, &Value, &Value, &Value)> = golden
+        .iter()
+        .filter(|g| g["command"] == "delete" && g.get("fixture").is_some())
+        .map(|g| (&g["fixture"], &g["args"], &g["exit"], &g["stdout"]))
+        .collect();
+    assert_eq!(
+        deletes[..2],
+        [
+            (&json!("row-menu"), &json!(["b"]), &json!(1), &json!({ "error": "requires canDelete" })),
+            (&json!("row-menu-own"), &json!(["c"]), &json!(0), &json!({})),
+        ]
+    );
+}
+
+#[test]
+fn a_destructive_command_called_outside_its_confirmation_derives_no_cli() {
+    let refused = model(&deleting_from_the_menu(true), Some(&draft("kinds.json"))).err().unwrap();
+    assert!(
+        refused
+            .findings
+            .iter()
+            .any(|f| f.at == "doc-{item.doc.id}-delete" && f.problem.contains("destructive")),
+        "{:#?}",
+        refused.findings
+    );
+}
+
+#[test]
+fn a_destructive_command_refused_by_its_precondition_is_refused_with_yes_too() {
+    // The confirmation opens on a document the person may not delete, and
+    // its button is disabled there.
+    let text =
+        std::fs::read_to_string(format!("{}/../../drafts/docs/screen.json", env!("CARGO_MANIFEST_DIR")))
+            .unwrap()
+            .replace(
+                r#""when": "canDelete && rowMenu.confirming""#,
+                r#""when": "rowMenuOpen && rowMenu.confirming""#,
+            )
+            .replace(
+                r#""docId": "c",
+        "canDelete": true,
+        "confirming": true"#,
+                r#""docId": "c",
+        "confirming": true"#,
+            )
+            .replace(
+                r#""destructive": true,
+              "text": "删除""#,
+                r#""disabled": "!canDelete",
+              "text": "删除""#,
+            );
+    let model = model(&serde_json::from_str(&text).unwrap(), Some(&draft("kinds.json")))
+        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let golden: Vec<Value> = cli(&model).golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
+    let deletes: Vec<(&Value, &Value, &Value)> = golden
+        .iter()
+        .filter(|g| g["command"] == "delete" && g.get("fixture").is_some())
+        .map(|g| (&g["args"], &g["exit"], &g["stdout"]))
+        .collect();
+    let refused = json!({ "error": "requires canDelete" });
+    assert_eq!(
+        deletes,
+        [(&json!(["c"]), &json!(1), &refused), (&json!(["c", "--yes"]), &json!(1), &refused)]
+    );
 }

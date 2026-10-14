@@ -59,5 +59,9 @@ WHAT TRIPS YOU UP
     it gives "cursor": null for the first page, or "{next}" — the field
     filled "from": "<query>.next" — under a condition that tests it != null.
     Do not write cursor or limit in its params: paging adds them.
+  - A "call" to a "destructive" operation is made only inside its
+    confirmation: an overlay whose kind has a backdrop and that a node
+    opens with {"open": "<its id>"}. The menu item or button a person first
+    acts on opens it instead (OPERATIONS below).
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.

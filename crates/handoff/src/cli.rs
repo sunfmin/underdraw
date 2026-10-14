@@ -9,13 +9,17 @@ use serde_json::{Map, Value};
 use underdraw_format::{Base, Does, Field, Model, Operation, Shape};
 
 use crate::json_schema::{MONEY, def, money, object_of};
-use crate::{kebab, object};
+use crate::{is_false, kebab, object};
 
 /// Exit 1: the command was refused before it was tried, as its
 /// precondition does not hold.
 pub const REFUSED: u8 = 1;
 /// Exit 2: the command was tried and failed, in one of its named ways.
 pub const FAILED: u8 = 2;
+/// The flag a destructive command needs before it does anything.
+pub const YES: &str = "--yes";
+/// What `"error"` says when a destructive command is run without `--yes`.
+const NEEDS_YES: &str = "needs --yes";
 
 #[derive(Debug, Serialize)]
 pub struct Interface {
@@ -37,14 +41,19 @@ pub struct CommandSpec {
     /// `query` or `command`.
     pub does: String,
     pub doc: String,
-    /// `list [--sort <updated|created|title|owner>]`.
+    /// It cannot be undone, so it does nothing without `--yes`: it exits 1
+    /// and says what it would do, as a dry run.
+    #[serde(skip_serializing_if = "is_false")]
+    pub destructive: bool,
+    /// `list [--sort <updated|created|title|owner>]`, `delete <id> --yes`.
     pub usage: String,
     pub args: Vec<Arg>,
     /// What it prints on success: a JSON Schema of `{"result": …}`, or of
     /// `{}` for an operation that answers with nothing.
     pub stdout: Value,
     /// Every way it ends without its result: its precondition first, then
-    /// each named failure.
+    /// its dry run without `--yes` when it is destructive, then each named
+    /// failure.
     pub fails: Vec<Failure>,
     /// A draft of `<command> --help`.
     pub help: String,
@@ -75,7 +84,8 @@ pub struct Arg {
 /// One way a command ends without its result.
 #[derive(Debug, Serialize)]
 pub struct Failure {
-    /// What `"error"` says: the failure's name, or `requires <condition>`.
+    /// What `"error"` says: the failure's name, `requires <condition>`, or
+    /// `needs --yes`.
     pub error: String,
     pub when: String,
     pub exit: u8,
@@ -97,12 +107,11 @@ pub struct Golden {
     /// The parameters those arguments give, defaults filled in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub with: Option<Value>,
+    /// The arguments include `--yes`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub yes: bool,
     pub exit: u8,
     pub stdout: Value,
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 /// The CLI derived from `model`'s operations.
@@ -128,6 +137,7 @@ pub fn cli(model: &Model) -> Interface {
                     failure: Some(failure.error.clone()),
                     args: None,
                     with: None,
+                    yes: false,
                     exit: failure.exit,
                     stdout: failure.stdout.clone(),
                 });
@@ -193,6 +203,18 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
             exit: REFUSED,
         });
     }
+    if operation.destructive {
+        let mut with = Map::new();
+        for (param, _) in &operation.params {
+            with.insert(param.clone(), Value::from(format!("<{param}>")));
+        }
+        fails.push(Failure {
+            error: NEEDS_YES.to_string(),
+            when: format!("not tried without {YES}, as it cannot be undone: says what it would do"),
+            exit: REFUSED,
+            stdout: dry_run(operation, Value::Object(with)),
+        });
+    }
     for (failure, when) in &operation.fails {
         fails.push(Failure {
             error: failure.clone(),
@@ -201,7 +223,10 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
             stdout: object([("error", Value::from(failure.as_str()))]),
         });
     }
-    let usage = usage(name, &args);
+    let mut usage = usage(name, &args);
+    if operation.destructive {
+        usage.push_str(&format!(" {YES}"));
+    }
     let stdout = stdout(model, operation.result.as_ref());
     let help = help(operation, &usage, &args, &fails);
     CommandSpec {
@@ -209,12 +234,29 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
         operation: operation.name.clone(),
         does: operation.does.name().to_string(),
         doc: operation.doc.clone(),
+        destructive: operation.destructive,
         usage,
         args,
         stdout,
         fails,
         help,
     }
+}
+
+/// What a destructive command run without `--yes` prints: that it needs
+/// it, and what it would have done, given `with`.
+fn dry_run(operation: &Operation, with: Value) -> Value {
+    object([
+        ("error", Value::from(NEEDS_YES)),
+        (
+            "dryRun",
+            object([
+                ("operation", Value::from(operation.name.as_str())),
+                ("does", Value::from(operation.doc.as_str())),
+                ("with", with),
+            ]),
+        ),
+    ])
 }
 
 /// `delete <id>`, `list [--sort <updated|created>]`.
@@ -293,7 +335,7 @@ fn reach(model: &Model, base: &Base, reached: &mut Vec<String>, money_used: &mut
 
 fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> String {
     let mut help = format!("{}\n\nUSAGE\n  <cli> {usage}\n", operation.doc);
-    if !args.is_empty() {
+    if !args.is_empty() || operation.destructive {
         help.push_str("\nARGUMENTS\n");
         for arg in args {
             let written = match &arg.flag {
@@ -318,6 +360,11 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
                 said.push_str("; give it once per value");
             }
             help.push_str(&format!("  {written}  {said}\n"));
+        }
+        if operation.destructive {
+            help.push_str(&format!(
+                "  {YES}  do it: it cannot be undone; without {YES} nothing is done, and it says what would be\n"
+            ));
         }
     }
     let answer = match &operation.result {
@@ -373,6 +420,7 @@ fn queried(model: &Model, operation: &Operation, spec: &CommandSpec, golden: &mu
             failure: None,
             args: Some(Vec::new()),
             with: Some(with.clone()),
+            yes: false,
             exit: 0,
             stdout: object([("result", result)]),
         });
@@ -470,38 +518,51 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                 };
                 let refused =
                     operation.requires.as_ref().is_some_and(|condition| !holds(model, condition, fixture));
-                let (exit, stdout) = if refused {
-                    let mut stdout = Value::Null;
-                    for failure in &spec.fails {
-                        if failure.exit == REFUSED {
-                            stdout = failure.stdout.clone();
+                // A destructive command is run both ways: without --yes and
+                // with it. Any other is run as it is.
+                let runs: &[bool] = if operation.destructive { &[false, true] } else { &[false] };
+                for &yes in runs {
+                    let (exit, stdout) = if refused {
+                        let mut stdout = Value::Null;
+                        for failure in &spec.fails {
+                            if failure.exit == REFUSED && failure.error != NEEDS_YES {
+                                stdout = failure.stdout.clone();
+                            }
+                        }
+                        (REFUSED, stdout)
+                    } else if operation.destructive && !yes {
+                        (REFUSED, dry_run(operation, with.clone()))
+                    } else if operation.result.is_none() {
+                        (0, Value::Object(Map::new()))
+                    } else {
+                        continue;
+                    };
+                    let mut seen = false;
+                    for known in golden.iter() {
+                        if known.command == spec.name
+                            && known.fixture.as_deref() == Some(fixture.as_str())
+                            && known.with.as_ref() == Some(&with)
+                            && known.yes == yes
+                        {
+                            seen = true;
                         }
                     }
-                    (REFUSED, stdout)
-                } else if operation.result.is_none() {
-                    (0, Value::Object(Map::new()))
-                } else {
-                    continue;
-                };
-                let mut seen = false;
-                for known in golden.iter() {
-                    if known.command == spec.name
-                        && known.fixture.as_deref() == Some(fixture.as_str())
-                        && known.with.as_ref() == Some(&with)
-                    {
-                        seen = true;
+                    if !seen {
+                        let mut args = args.clone();
+                        if yes {
+                            args.push(YES.to_string());
+                        }
+                        golden.push(Golden {
+                            command: spec.name.clone(),
+                            fixture: Some(fixture.clone()),
+                            failure: None,
+                            args: Some(args),
+                            with: Some(with.clone()),
+                            yes,
+                            exit,
+                            stdout,
+                        });
                     }
-                }
-                if !seen {
-                    golden.push(Golden {
-                        command: spec.name.clone(),
-                        fixture: Some(fixture.clone()),
-                        failure: None,
-                        args: Some(args),
-                        with: Some(with),
-                        exit,
-                        stdout,
-                    });
                 }
             }
         }
@@ -518,8 +579,15 @@ fn holds(model: &Model, condition: &str, fixture: &str) -> bool {
 }
 
 impl CommandSpec {
+    /// Whether `args` give `--yes`, which a destructive command needs
+    /// before it does anything.
+    pub fn yes(&self, args: &[String]) -> bool {
+        self.destructive && args.iter().any(|word| word == YES)
+    }
+
     /// The parameters `args` (what follows the command's name) give, each
     /// default filled in; why, when they are not this command's arguments.
+    /// A destructive command's `--yes` gives none.
     pub fn with_args(&self, args: &[String]) -> Result<Value, String> {
         let mut with = Map::new();
         let mut positional = Vec::new();
@@ -533,6 +601,9 @@ impl CommandSpec {
         while index < args.len() {
             let word = &args[index];
             index = index.saturating_add(1);
+            if self.destructive && word == YES {
+                continue;
+            }
             if let Some(flag) = word.strip_prefix("--") {
                 let (flag, inline) = match flag.split_once('=') {
                     Some((flag, value)) => (flag, Some(value.to_string())),
