@@ -1,0 +1,285 @@
+{
+  "$comment": "Airbnb 房源详情页，平台无关的界面描述。id 即各平台的测试标识（data-testid / accessibilityIdentifier / testTag）。样式只能引用 tokens.json；{a.b} 是数据绑定；if 是显示条件；only 限定断点；platform 是平台局部覆盖；assumed 是 AI 的猜测，渲染为虚线框待用户确认。",
+  "screen": "ListingDetail",
+  "title": "房源详情",
+  "tokens": "tokens.json",
+
+  "data": {
+    "status": "enum(loading, loaded, error)",
+    "listing": {
+      "id": "string",
+      "url": "url",
+      "title": "string, maxLength 50",
+      "kind": "string  例：整套公寓",
+      "city": "string",
+      "country": "string",
+      "guests": "int ≥1", "bedrooms": "int ≥0", "beds": "int ≥1", "baths": "number ≥0, step 0.5",
+      "photos": "Image[] ≥5",
+      "rating": "number 0–5, 2 位小数, 可为空（新房源）",
+      "reviewCount": "int ≥0",
+      "isGuestFavorite": "bool",
+      "isSaved": "bool",
+      "host": { "name": "string", "avatar": "Image", "isSuperhost": "bool", "yearsHosting": "int ≥0" },
+      "highlights": "{icon, title, detail}[] 0–3",
+      "description": "string",
+      "amenities": "{icon, label, unavailable: bool}[]",
+      "ratingBreakdown": "{cleanliness, accuracy, checkIn, communication, location, value: number 0–5}",
+      "reviews": "{author, avatar, date, text}[]",
+      "location": { "lat": "number", "lng": "number", "approx": "bool  入住前只显示大概位置" },
+      "nightlyPrice": "Money",
+      "cancellationPolicy": "string"
+    },
+    "booking": {
+      "checkIn": "date | null",
+      "checkOut": "date | null",
+      "guests": "int ≥1, ≤ listing.guests",
+      "nights": "int, 派生 = checkOut − checkIn",
+      "available": "bool, 所选日期是否可订",
+      "total": "Money | null, 派生"
+    }
+  },
+
+  "fixtures": {
+    "default": {
+      "status": "loaded",
+      "listing": {
+        "id": "listing-1", "url": "https://example.com/rooms/listing-1",
+        "title": "涩谷站步行 6 分钟 · 安静的设计师公寓",
+        "kind": "整套公寓", "city": "涩谷区", "country": "日本",
+        "guests": 3, "bedrooms": 1, "beds": 2, "baths": 1,
+        "photos": ["photo-1.jpg", "photo-2.jpg", "photo-3.jpg", "photo-4.jpg", "photo-5.jpg", "…共 24 张"],
+        "rating": 4.92, "reviewCount": 128, "isGuestFavorite": true, "isSaved": false,
+        "host": { "name": "Yuki", "avatar": "host.jpg", "isSuperhost": true, "yearsHosting": 6 },
+        "highlights": [
+          { "icon": "door", "title": "自助入住", "detail": "使用智能门锁自行入住。" },
+          { "icon": "medal", "title": "Yuki 是超赞房东", "detail": "经验丰富、评价很高的房东。" },
+          { "icon": "calendar", "title": "11 月 2 日前可免费取消", "detail": "" }
+        ],
+        "description": "公寓位于安静的住宅街，步行 6 分钟到涩谷站……（约 800 字）",
+        "amenities": [
+          { "icon": "wifi", "label": "Wi‑Fi" }, { "icon": "kitchen", "label": "厨房" },
+          { "icon": "washer", "label": "洗衣机" }, { "icon": "ac", "label": "空调" },
+          { "icon": "tv", "label": "电视" }, { "icon": "desk", "label": "专用工作区" },
+          { "icon": "hairdryer", "label": "吹风机" }, { "icon": "elevator", "label": "电梯" },
+          { "icon": "smoke", "label": "烟雾报警器" }, { "icon": "parking", "label": "免费停车", "unavailable": true },
+          { "icon": "…", "label": "…共 45 项" }
+        ],
+        "ratingBreakdown": { "cleanliness": 4.9, "accuracy": 4.9, "checkIn": 5.0, "communication": 5.0, "location": 4.9, "value": 4.8 },
+        "reviews": [
+          { "author": "Mei", "avatar": "r1.jpg", "date": "2026 年 9 月", "text": "位置太方便了，房间比照片还干净……" },
+          { "author": "Tom", "avatar": "r2.jpg", "date": "2026 年 9 月", "text": "Great host, quick replies……" }
+        ],
+        "location": { "lat": 35.658, "lng": 139.701, "approx": true },
+        "nightlyPrice": { "amount": 18500, "currency": "JPY" },
+        "cancellationPolicy": "11 月 2 日前取消可全额退款。"
+      },
+      "booking": { "checkIn": "2026-11-12", "checkOut": "2026-11-17", "guests": 2, "nights": 5, "available": true,
+                   "total": { "amount": 104300, "currency": "JPY" } }
+    },
+    "no-dates":    { "$patch": "default", "booking": { "checkIn": null, "checkOut": null, "nights": 0, "total": null } },
+    "unavailable": { "$patch": "default", "booking": { "available": false, "total": null } },
+    "new-listing": { "$patch": "default", "listing": { "rating": null, "reviewCount": 0, "isGuestFavorite": false } },
+    "loading":     { "status": "loading" },
+    "error":       { "status": "error" }
+  },
+
+  "root": {
+    "id": "listing-detail", "kind": "Screen",
+    "children": [
+
+      { "id": "nav", "kind": "NavBar", "transparentOverContent": true,
+        "platform": { "web": { "hidden": true, "$why": "网页用站点顶栏和浏览器后退" } },
+        "leading":  [ { "id": "nav-back", "kind": "IconButton", "icon": "back", "label": "返回", "on": { "tap": { "back": true } },
+                        "platform": { "android": { "$why": "安卓同时响应系统返回手势" } } } ],
+        "trailing": [ { "id": "nav-share", "kind": "IconButton", "icon": "share", "label": "分享",
+                        "on": { "tap": { "share": "{listing.url}" } } },
+                      { "id": "nav-save", "kind": "IconButton", "icon": "{listing.isSaved ? heart.fill : heart}", "label": "收藏",
+                        "on": { "tap": { "toggle": "listing.isSaved" } } } ] },
+
+      { "id": "loading-skeleton", "kind": "Skeleton", "if": "status == loading",
+        "shape": ["image 4:3", "line 70%", "line 40%", "line 90%", "line 90%"] },
+
+      { "id": "error-state", "kind": "EmptyState", "if": "status == error",
+        "icon": "warning", "title": "房源加载失败", "detail": "请检查网络后重试。",
+        "action": { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "reload": true } } } },
+
+      { "id": "content", "kind": "Scroll", "if": "status == loaded",
+        "children": [
+
+          { "id": "photos-carousel", "kind": "ImageCarousel", "only": "compact",
+            "each": "listing.photos", "aspectRatio": "4:3", "indicator": "counter",
+            "on": { "tap": { "navigate": "PhotoGallery", "with": { "start": "{index}" } } } },
+
+          { "id": "photos-grid", "kind": "ImageGrid", "only": "regular",
+            "each": "listing.photos", "limit": 5, "pattern": "1 large + 4 small", "radius": "radius.md",
+            "overlay": { "id": "photos-show-all", "kind": "Button", "variant": "secondary", "size": "small",
+                         "text": "显示所有照片", "anchor": "bottom-trailing",
+                         "on": { "tap": { "navigate": "PhotoGallery" } } } },
+
+          { "id": "body", "kind": "Columns", "gap": "space.12", "padding": "space.6",
+            "columns": { "compact": ["1fr"], "regular": ["58%", "1fr"] },
+            "children": [
+
+              { "id": "main", "kind": "Stack", "gap": "space.8",
+                "children": [
+
+                  { "id": "summary", "kind": "Stack", "gap": "space.1", "children": [
+                    { "id": "summary-title", "kind": "Text", "text": "{listing.title}", "font": "font.title", "maxLines": 2,
+                      "role": "heading" },
+                    { "id": "summary-kind", "kind": "Text", "text": "{listing.kind} · {listing.city}，{listing.country}", "font": "font.subhead" },
+                    { "id": "summary-capacity", "kind": "Text", "font": "font.body", "color": "color.textSecondary",
+                      "text": "{listing.guests} 位房客 · {listing.bedrooms} 间卧室 · {listing.beds} 张床 · {listing.baths} 间卫生间" } ] },
+
+                  { "id": "rating-bar", "kind": "Row", "gap": "space.4", "padding": "space.4",
+                    "border": "color.border", "radius": "radius.md", "if": "listing.reviewCount > 0",
+                    "on": { "tap": { "open": "sheet-reviews" } },
+                    "children": [
+                      { "id": "guest-favorite", "kind": "Badge", "if": "listing.isGuestFavorite", "text": "房客推荐",
+                        "assumed": "徽章的显示条件我猜是 isGuestFavorite，由后端决定；还是前端按 rating ≥ 4.9 自己算？" },
+                      { "id": "rating-value", "kind": "Rating", "value": "{listing.rating}", "showStars": true },
+                      { "id": "rating-count", "kind": "Text", "text": "{listing.reviewCount} 条评价", "font": "font.subhead", "underline": true } ] },
+
+                  { "id": "rating-new", "kind": "Text", "if": "listing.reviewCount == 0", "text": "★ 新房源 · 暂无评价",
+                    "font": "font.subhead" },
+
+                  { "id": "divider-1", "kind": "Divider" },
+
+                  { "id": "host-row", "kind": "Row", "gap": "space.4", "children": [
+                    { "id": "host-avatar", "kind": "Avatar", "image": "{listing.host.avatar}", "size": 40,
+                      "badge": { "if": "listing.host.isSuperhost", "icon": "medal" } },
+                    { "id": "host-text", "kind": "Stack", "children": [
+                      { "id": "host-name", "kind": "Text", "text": "房东：{listing.host.name}", "font": "font.subhead" },
+                      { "id": "host-meta", "kind": "Text", "font": "font.caption", "color": "color.textSecondary",
+                        "text": "{listing.host.isSuperhost ? 超赞房东 · : }已接待 {listing.host.yearsHosting} 年" } ] } ] },
+
+                  { "id": "divider-2", "kind": "Divider" },
+
+                  { "id": "highlights", "kind": "List", "each": "listing.highlights", "gap": "space.6",
+                    "item": { "id": "highlight-{index}", "kind": "ListItem", "leadingIcon": "{item.icon}",
+                              "title": "{item.title}", "detail": "{item.detail}" } },
+
+                  { "id": "divider-3", "kind": "Divider" },
+
+                  { "id": "description", "kind": "Stack", "gap": "space.4", "children": [
+                    { "id": "description-text", "kind": "Text", "text": "{listing.description}", "font": "font.body", "maxLines": 6 },
+                    { "id": "description-more", "kind": "Link", "text": "显示更多", "trailingIcon": "chevron.right",
+                      "on": { "tap": { "open": "sheet-description" } } } ] },
+
+                  { "id": "divider-4", "kind": "Divider" },
+
+                  { "id": "amenities", "kind": "Section", "title": "提供的设施", "children": [
+                    { "id": "amenities-list", "kind": "Grid", "columns": { "compact": 1, "regular": 2 }, "gap": "space.4",
+                      "each": "listing.amenities", "limit": 10,
+                      "item": { "id": "amenity-{index}", "kind": "ListItem", "leadingIcon": "{item.icon}", "title": "{item.label}",
+                                "strikethrough": "{item.unavailable}" } },
+                    { "id": "amenities-all", "kind": "Button", "variant": "secondary",
+                      "text": "显示全部 {listing.amenities.length} 项设施",
+                      "on": { "tap": { "open": "sheet-amenities" } } } ] },
+
+                  { "id": "divider-5", "kind": "Divider" },
+
+                  { "id": "calendar", "kind": "Section",
+                    "title": "{booking.nights > 0 ? 在{listing.city}住 {booking.nights} 晚 : 选择入住日期}",
+                    "subtitle": "{booking.checkIn ? {booking.checkIn} – {booking.checkOut} : 添加旅行日期以查看准确价格}",
+                    "children": [
+                      { "id": "calendar-picker", "kind": "DateRangePicker", "bind": ["booking.checkIn", "booking.checkOut"],
+                        "months": { "compact": 1, "regular": 2 }, "disablePast": true,
+                        "assumed": "已被订走的日期是否画删除线？我按“画删除线且不可点”处理。" },
+                      { "id": "calendar-clear", "kind": "Link", "text": "清除日期", "if": "booking.checkIn",
+                        "on": { "tap": { "set": { "booking.checkIn": null, "booking.checkOut": null } } } } ] }
+                ] },
+
+              { "id": "booking-card", "kind": "Card", "only": "regular", "sticky": "top space.12",
+                "padding": "space.6", "radius": "radius.lg", "elevation": "elevation.card", "border": "color.border",
+                "children": [
+                  { "id": "card-price", "kind": "Text", "font": "font.price",
+                    "text": "{booking.total ? {booking.total} 共 {booking.nights} 晚 : 添加日期查看价格}" },
+                  { "id": "card-fields", "kind": "FieldGroup", "border": "color.border", "radius": "radius.sm", "children": [
+                    { "id": "card-checkin", "kind": "DateField", "label": "入住", "bind": "booking.checkIn" },
+                    { "id": "card-checkout", "kind": "DateField", "label": "退房", "bind": "booking.checkOut" },
+                    { "id": "card-guests", "kind": "Stepper", "label": "房客", "bind": "booking.guests",
+                      "min": 1, "max": "{listing.guests}" } ] },
+                  { "ref": "reserve-button" },
+                  { "id": "card-no-charge", "kind": "Text", "text": "你暂时不会被扣款", "if": "booking.available",
+                    "font": "font.caption", "align": "center" },
+                  { "id": "card-breakdown", "kind": "PriceBreakdown", "if": "booking.total",
+                    "assumed": "明细行我按“房费 × 晚数、清洁费、服务费、合计”四行处理，税是否单列待确认。" } ] }
+            ] },
+
+          { "id": "divider-6", "kind": "Divider" },
+
+          { "id": "reviews", "kind": "Section", "if": "listing.reviewCount > 0", "padding": "space.6",
+            "title": "★ {listing.rating} · {listing.reviewCount} 条评价",
+            "children": [
+              { "id": "reviews-breakdown", "kind": "Grid", "columns": { "compact": 2, "regular": 6 },
+                "each": "listing.ratingBreakdown", "item": { "id": "breakdown-{key}", "kind": "Metric", "label": "{key}", "value": "{value}" } },
+              { "id": "reviews-list", "kind": "Carousel", "only": "compact", "each": "listing.reviews", "limit": 6,
+                "item": { "ref": "review-card" } },
+              { "id": "reviews-grid", "kind": "Grid", "only": "regular", "columns": 2, "each": "listing.reviews", "limit": 6,
+                "item": { "ref": "review-card" } },
+              { "id": "reviews-all", "kind": "Button", "variant": "secondary", "text": "显示全部 {listing.reviewCount} 条评价",
+                "on": { "tap": { "open": "sheet-reviews" } } } ] },
+
+          { "id": "map", "kind": "Section", "title": "你将前往的地方", "padding": "space.6", "children": [
+            { "id": "map-view", "kind": "Map", "center": "{listing.location}", "aspectRatio": { "compact": "1:1", "regular": "21:9" },
+              "marker": "{listing.location.approx ? circle : pin}", "interactive": false,
+              "on": { "tap": { "navigate": "FullMap" } } },
+            { "id": "map-caption", "kind": "Text", "text": "{listing.city}，{listing.country}", "font": "font.subhead" } ] },
+
+          { "id": "things-to-know", "kind": "Section", "title": "须知", "padding": "space.6", "children": [
+            { "id": "know-list", "kind": "List", "children": [
+              { "id": "know-rules", "kind": "ListItem", "title": "房屋守则", "trailingIcon": "chevron.right",
+                "on": { "tap": { "open": "sheet-rules" } } },
+              { "id": "know-safety", "kind": "ListItem", "title": "安全与房源", "trailingIcon": "chevron.right",
+                "on": { "tap": { "open": "sheet-safety" } } },
+              { "id": "know-cancel", "kind": "ListItem", "title": "退订政策", "detail": "{listing.cancellationPolicy}",
+                "trailingIcon": "chevron.right", "on": { "tap": { "open": "sheet-cancellation" } } } ] } ] }
+        ] },
+
+      { "id": "booking-bar", "kind": "StickyBar", "edge": "bottom", "only": "compact", "if": "status == loaded",
+        "elevation": "elevation.sticky", "padding": "space.4",
+        "platform": {
+          "ios":     { "$why": "放进底部安全区，避开 Home 指示条" },
+          "android": { "$why": "避开手势导航条（edge-to-edge）" } },
+        "children": [
+          { "id": "bar-price", "kind": "Stack", "children": [
+            { "id": "bar-price-text", "kind": "Text", "font": "font.price",
+              "text": "{booking.total ? {booking.total} : 添加日期查看价格}" },
+            { "id": "bar-dates", "kind": "Link", "if": "booking.checkIn", "font": "font.caption",
+              "text": "{booking.checkIn} – {booking.checkOut}", "on": { "tap": { "scrollTo": "calendar" } } } ] },
+          { "ref": "reserve-button" } ] }
+    ]
+  },
+
+  "components": {
+    "reserve-button": {
+      "id": "reserve-button", "kind": "Button", "variant": "primary",
+      "text": "{!booking.checkIn ? 查看可订日期 : booking.available ? 预订 : 日期不可订}",
+      "disabled": "booking.checkIn && !booking.available",
+      "on": { "tap": { "if": "!booking.checkIn", "then": { "scrollTo": "calendar" },
+                       "else": { "navigate": "Checkout", "with": { "listing": "{listing.id}", "booking": "{booking}" } } } },
+      "$note": "同一个按钮在 booking-bar（手机）和 booking-card（大屏）各出现一次，但同一时刻只显示一个，所以 id 不冲突。"
+    },
+    "review-card": {
+      "id": "review-{index}", "kind": "Card", "padding": "space.4", "border": "color.border", "radius": "radius.md", "children": [
+        { "id": "review-{index}-author", "kind": "Row", "gap": "space.3", "children": [
+          { "id": "review-{index}-avatar", "kind": "Avatar", "image": "{item.avatar}", "size": 40 },
+          { "id": "review-{index}-meta", "kind": "Stack", "children": [
+            { "id": "review-{index}-name", "kind": "Text", "text": "{item.author}", "font": "font.subhead" },
+            { "id": "review-{index}-date", "kind": "Text", "text": "{item.date}", "font": "font.caption", "color": "color.textSecondary" } ] } ] },
+        { "id": "review-{index}-text", "kind": "Text", "text": "{item.text}", "font": "font.body", "maxLines": 4 } ]
+    }
+  },
+
+  "sheets": {
+    "sheet-description":  { "title": "关于此房源", "content": "listing.description 全文" },
+    "sheet-amenities":    { "title": "提供的设施", "content": "listing.amenities 全部，按类别分组",
+                            "assumed": "类别（卫浴、卧室、厨房……）字段数据里还没有，需要后端提供？" },
+    "sheet-reviews":      { "title": "{listing.reviewCount} 条评价", "content": "评分明细 + 全部评价 + 搜索框" },
+    "sheet-rules":        { "title": "房屋守则", "content": "入住/退房时间、禁烟、宠物等" },
+    "sheet-safety":       { "title": "安全与房源", "content": "烟雾报警器、监控设备说明等" },
+    "sheet-cancellation": { "title": "退订政策", "content": "{listing.cancellationPolicy} 详细条款" }
+  },
+
+  "navigatesTo": ["PhotoGallery", "FullMap", "Checkout"]
+}
