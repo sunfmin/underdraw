@@ -358,3 +358,42 @@ fn the_todo_draft_defines_its_own_text_field() {
     let (answer, code) = underdraw(&["check", todo]);
     assert_eq!((code, &answer["findings"]), (0, &json!([])), "{answer:#}");
 }
+
+#[test]
+fn an_overlay_taller_than_what_it_floats_over_is_found() {
+    let menu = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../drafts/menu");
+    let dir = std::env::temp_dir().join(format!("underdraw-{}-tall-sheet", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for file in ["kinds.json", "tokens.json"] {
+        std::fs::copy(menu.join(file), dir.join(file)).unwrap();
+    }
+    let mut screen: Value =
+        serde_json::from_str(&std::fs::read_to_string(menu.join("screen.json")).unwrap()).unwrap();
+    // Behind the sheet, one dish and no cart bar: the page is shorter than the sheet.
+    screen["fixtures"]["sheet-adding"]["sections"] = json!([{ "id": "sides", "title": "小食", "dishes": [
+        { "id": "d4", "name": "煎饺", "description": "", "price": { "amount": 450, "currency": "JPY" } } ] }]);
+    std::fs::write(dir.join("screen.json"), screen.to_string()).unwrap();
+
+    let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(code, 1, "{answer:#}");
+    let problems: Vec<&str> = answer["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["at"] == "dish-sheet")
+        .map(|f| f["problem"].as_str().unwrap())
+        .collect();
+    assert!(
+        problems.iter().any(|p| p.contains("sheet-adding") && p.contains("390") && p.contains("cut")),
+        "{problems:#?}"
+    );
+    assert!(problems.iter().all(|p| p.contains("sheet-adding")), "only the short fixture: {problems:#?}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn the_menu_draft_fits_its_sheet_in_every_state() {
+    let menu = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../drafts/menu");
+    let (answer, code) = underdraw(&["check", menu.to_str().unwrap()]);
+    assert_eq!((code, &answer["findings"]), (0, &json!([])), "{answer:#}");
+}

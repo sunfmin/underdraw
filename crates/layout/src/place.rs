@@ -122,6 +122,8 @@ struct Out {
     /// drawn: an opaque box or a backdrop pinned over one later hides its
     /// marks.
     marked: Vec<Marked>,
+    /// Each node floated over another, by id, and where it went.
+    floated: Vec<(String, Rect)>,
 }
 
 /// A node to number or mark as guessed, unless something drawn later
@@ -184,13 +186,25 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             height: known.height.unwrap_or(height),
         })
     })?;
-    let mut out = Out { draws: Vec::new(), tags: Vec::new(), nodes: Vec::new(), marked: Vec::new() };
+    let mut out = Out {
+        draws: Vec::new(),
+        tags: Vec::new(),
+        nodes: Vec::new(),
+        marked: Vec::new(),
+        floated: Vec::new(),
+    };
     emit(&tree, root, &laid, Rect::default(), None, &mut out)?;
     mark(&mut out);
     let size = tree.layout(laid.id)?.size;
     let mut draws = out.draws;
     draws.append(&mut out.tags);
-    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes })
+    let mut cut = Vec::new();
+    for (id, rect) in out.floated {
+        if rect.y < -0.5 || rect.y + rect.height > size.height + 0.5 {
+            cut.push(id);
+        }
+    }
+    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut })
 }
 
 fn add<'e>(
@@ -235,6 +249,11 @@ fn emit(
     };
     let rect = Rect { x, y, width, height };
     let opaque = elem.looks.iter().any(|look| matches!(look, Look::Box { fill: Some(_), .. }));
+    if let (Some(_), Some(node)) = (elem.pin, elem.source)
+        && !node.id.is_empty()
+    {
+        out.floated.push((node.id.clone(), rect));
+    }
     if elem.pin.is_some() && elem.backdrop {
         out.draws.push(Draw::Box {
             rect: parent,

@@ -112,6 +112,9 @@ pub struct Page {
     pub draws: Vec<Draw>,
     /// Every node with an id, in document order.
     pub nodes: Vec<Placed>,
+    /// The ids of nodes floated over others (overlays) that run off the
+    /// page, so the picture cuts them.
+    pub cut: Vec<String>,
 }
 
 /// Sets text, for layout: the size `text` takes in `font`, wrapped to

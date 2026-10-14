@@ -7,8 +7,8 @@ platforms/*.json and, for kinds of the project's own, kinds.json. How to
 write each file, every kind and every rule: `underdraw check --help`, FORMAT.
 
 NEEDS
-  Nothing to check a description. To render one, a GPU (Metal on macOS,
-  Vulkan or DirectX 12 elsewhere) and system fonts: `underdraw doctor` says.
+  System fonts to check a description; to render one, also a GPU (Metal on
+  macOS, Vulkan or DirectX 12 elsewhere): `underdraw doctor` says.
 
 START HERE
   underdraw check <dir>      read the description and name every fault

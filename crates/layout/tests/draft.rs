@@ -371,3 +371,18 @@ fn an_overlay_anchored_at_the_bottom_spans_it_edge_to_edge() {
     assert_eq!((sheet.x, sheet.width), (body.x, body.width), "as wide as the node, padding and all");
     assert_eq!(sheet.y + sheet.height, body.y + body.height, "on its bottom edge");
 }
+
+#[test]
+fn an_overlay_taller_than_its_node_is_named_as_cut() {
+    let overlay = |lines: usize| {
+        let texts: Vec<Value> = (0..lines)
+            .map(|n| serde_json::json!({ "id": format!("t{n}"), "kind": "Text", "text": "line" }))
+            .collect();
+        tiny(serde_json::json!([{ "id": "body", "kind": "Stack", "children": [
+            { "id": "a", "kind": "Text", "text": "a" }, { "id": "b", "kind": "Text", "text": "b" },
+            { "id": "c", "kind": "Text", "text": "c" } ],
+          "overlay": { "id": "sheet", "kind": "Stack", "anchor": "bottom", "children": texts } }]))
+    };
+    assert_eq!(overlay(1).cut, Vec::<String>::new(), "a short sheet fits");
+    assert_eq!(overlay(12).cut, ["sheet"], "a tall one runs off the top");
+}

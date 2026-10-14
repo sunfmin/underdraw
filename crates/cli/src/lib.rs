@@ -150,10 +150,69 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
     }
 }
 
+/// The widths `check` lays every state out at, to find what the picture
+/// would cut: a phone and a laptop browser, as `render --help` advises.
+const CHECKED_WIDTHS: [u32; 2] = [390, 1120];
+
 fn check(path: &Path) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let kinds = read_kinds(&dir)?;
-    Ok(serde_json::to_value(underdraw_format::check(&screen, kinds.as_ref()))?)
+    Ok(serde_json::to_value(checked(&screen, &dir, kinds.as_ref())?)?)
+}
+
+/// Every fault in the description: what underdraw_format finds, then, when
+/// there is none, every overlay the picture would cut.
+fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<underdraw_format::Checked> {
+    let mut checked = underdraw_format::check(screen, kinds);
+    if checked.ok {
+        let cut = cut_overlays(screen, dir, kinds, &checked)?;
+        if !cut.is_empty() {
+            checked.ok = false;
+            checked.conditions.clear();
+            checked.findings.extend(cut);
+        }
+    }
+    Ok(checked)
+}
+
+/// Every overlay that runs off the page, in each state at each of
+/// `CHECKED_WIDTHS`: laid out in the system's fonts, as `render` does.
+fn cut_overlays(
+    screen: &Value,
+    dir: &Path,
+    kinds: Option<&Value>,
+    checked: &underdraw_format::Checked,
+) -> anyhow::Result<Vec<underdraw_format::Finding>> {
+    let tokens = read_tokens(dir)?;
+    let locale = screen.get("locale").and_then(Value::as_str);
+    let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
+    let states = checked
+        .fixtures
+        .iter()
+        .map(|name| ("fixture", State::Fixture(name)))
+        .chain(checked.phases.iter().map(|name| ("phase", State::Phase(name))));
+    let mut findings = Vec::new();
+    for (what, state) in states {
+        let name = match state {
+            State::Fixture(name) | State::Phase(name) => name,
+        };
+        for width in CHECKED_WIDTHS {
+            let breakpoint = Breakpoint::for_width(&tokens, width);
+            let root =
+                underdraw_format::instantiate(screen, state, breakpoint).map_err(anyhow::Error::msg)?;
+            let page = underdraw_layout::layout(&root, &tokens, kinds, width as f32, &mut typesetter)
+                .map_err(anyhow::Error::msg)?;
+            for id in page.cut {
+                findings.push(underdraw_format::Finding {
+                    at: id,
+                    problem: format!(
+                        "in {what} {name} at width {width} it runs off the page, which is only as tall as its content, so the picture cuts it: give {name} more content behind it, or make it shorter"
+                    ),
+                });
+            }
+        }
+    }
+    Ok(findings)
 }
 
 /// The screen at `path` (a directory or its screen.json), and the directory.
@@ -287,7 +346,7 @@ fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
     let kinds = read_kinds(&dir)?;
-    let checked = underdraw_format::check(&screen, kinds.as_ref());
+    let checked = checked(&screen, &dir, kinds.as_ref())?;
     if !checked.ok {
         bail!(
             "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
