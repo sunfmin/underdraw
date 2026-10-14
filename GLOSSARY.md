@@ -1,52 +1,88 @@
-# Glossary
+# underdraw
 
-**Screen description** — the platform-neutral account of one screen: its data,
-conditions, fixtures and node tree. The single source of truth for that screen.
+Describing a screen once, platform-neutrally, so a person can discuss it as a
+wireframe and each platform can build it the same way.
 
-**Node** — one element of the screen, with a stable **id** that becomes each
-platform's test id.
+## Language
 
-**Kind** — what a node is (`Button`, `TextField`, `List`), named without any
-platform's vocabulary.
+### The description
 
-**Token** — a named design value (`color.primary`, `space.4`). Nodes use
-tokens, never raw values.
+**Screen description**:
+The platform-neutral account of one screen: its data, conditions, fixtures and
+node tree. The single source of truth for that screen.
+_Avoid_: spec
 
-**Platform mapping** — how one platform realises each kind, action and token.
+**Node**:
+One element of the screen, with a stable **id** that becomes each platform's
+test id.
+_Avoid_: element, component, view
 
-**View model** — the data a screen shows, as the screen needs it: the screen's
-`data` and the named `types` it uses. Not an API response.
+**Kind**:
+What a node is (`Button`, `TextField`, `List`), named without any platform's
+vocabulary.
+_Avoid_: widget, component type
 
-**Derived field** — a view-model field computed from other values by the app or
-server, never by the screen.
+**Token**:
+A named design value (`color.primary`, `space.4`) that nodes use instead of raw
+values.
 
-**Fixture** — one sample value of the view model. Each fixture puts the screen
-in one state.
+**Breakpoint**:
+The width class a screen is laid out in (`compact`, `regular`).
 
-**Phase** — a stage before the view model exists, such as loading or error.
-Each phase has its own node tree and reads no data.
+**Assumption**:
+Something the agent guessed and the person has not confirmed.
+_Avoid_: guess, TODO
 
-**Condition** — a named yes/no decision the screen makes, such as `hasDates`.
-Declared once; used by name.
+### Data and decisions
 
-**Template** — a string with placeholders that show data.
+**View model**:
+The data a screen shows, shaped as the screen needs it: its `data` and the named
+`types` it uses.
+_Avoid_: API response, payload
 
-**Cases** — an ordered choice of one value, ending in an `else`.
+**Derived field**:
+A view-model field computed from other values by the app or server, never by
+the screen.
 
-**Assumption** — something the agent guessed and the person has not confirmed.
+**Fixture**:
+One sample value of the view model; each fixture puts the screen in one state.
+_Avoid_: mock data, example
 
-**Breakpoint** — the width class a screen is laid out in (`compact`,
-`regular`), chosen from the width by the tokens.
+**Phase**:
+A stage before the view model exists, such as loading or error, with its own
+node tree that reads no data.
+_Avoid_: status
 
-**Wireframe** — the screen drawn in grays: boxes, text and crossed-out images,
-so the discussion is about structure, not styling.
+**Condition**:
+A named yes/no decision the screen makes, such as `hasDates`, declared once and
+used by name.
+_Avoid_: flag, predicate
 
-**Label** — the number tagged in a wireframe on each node a person can act on,
-in document order. The same number names the node in the picture and in what
-`render` answers.
+**Template**:
+A string with placeholders that show data.
 
-**Handoff** — what one platform is given to build a screen: the generated view
-model, how each node is built there, and the expected states.
+**Cases**:
+An ordered choice of one value, ending in an `else`.
 
-**Expected state** — for one fixture or phase at one breakpoint, which nodes
-are present and what each shows. What a platform's tests assert.
+### Outputs
+
+**Wireframe**:
+The screen drawn in grays (boxes, text and crossed-out images) so the
+discussion is about structure, not styling.
+_Avoid_: mockup, screenshot
+
+**Label**:
+The number tagged in a wireframe on each node a person can act on, in document
+order, naming that node in conversation.
+
+**Platform mapping**:
+How one platform realises each kind, action and token.
+
+**Handoff**:
+What one platform is given to build a screen: the generated view model, how
+each node is built there, and the expected states.
+
+**Expected state**:
+For one fixture or phase at one breakpoint, which nodes are present and what
+each shows; what a platform's tests assert.
+_Avoid_: snapshot
