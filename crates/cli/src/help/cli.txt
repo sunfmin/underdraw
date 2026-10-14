@@ -21,7 +21,10 @@ HOW EACH OPERATION BECOMES A COMMAND
               one or a list is a flag (`--sort <updated|…>`, a list's flag
               given once per value). A parameter of an enum takes one of its
               choices, and a default carries over: "sort": "SortKey =
-              \"updated\"" is `--sort`, default updated.
+              \"updated\"" is `--sort`, default updated. A query that
+              pages ("pages": "cursor") takes --cursor <cursor> (the first
+              page when left out) and --limit <limit> (default: the most
+              its page's list holds), after its own.
   --yes       a "destructive" operation's command does nothing without it
               (`delete <id> --yes`): it cannot be undone, so the CLI asks
               as the screen's confirmation does. Without --yes it exits 1
@@ -40,7 +43,9 @@ HOW EACH OPERATION BECOMES A COMMAND
               it stands, {"result": {"id", "status", "progress", "result",
               "error"}}, running, done or failed alike (exit 0).
   stdout      one JSON object: {"result": <the operation's result>}, or {}
-              for an operation that answers with nothing. Its JSON Schema
+              for an operation that answers with nothing. A paged query's
+              result is its page: {"result": {"docs": […], "next": "p2"}},
+              next null on the last page. Its JSON Schema
               holds the result's type and every type it reaches, so no view
               state and nothing the app derives.
   exit codes  the same as underdraw's own:
@@ -74,6 +79,10 @@ ANSWERS
       for each fixture, each query that fills "data" and needs no argument,
                 given no argument: the result that fixture holds, projected
                 through what the query fills (docs[].doc: each row's doc);
+                a result filled field by field ("from": "listDocs.next")
+                is put together from them, when each of its fields is
+                filled: a paged query's first page, its "next" null in a
+                fixture of the last page and set in one with more to come;
       for each fixture, each command a node of the screen calls there,
                 given what that node passes: exit 1 where its precondition
                 does not hold in the fixture, {} where it holds and the

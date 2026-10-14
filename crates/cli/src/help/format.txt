@@ -19,7 +19,7 @@ SCREEN.JSON
     "data":       {…}, "types": {…},   the view model
     "fixtures":   {…},                 sample view models, one state each
     "conditions": {…},                 every yes/no the screen decides, named
-    "operations": {…},                 the queries and commands it calls (OPERATIONS)
+    "operations": {…},                 the queries and commands it calls (OPERATIONS, PAGING)
     "components": {"name": node, …},   nodes used more than once, by "ref"
     "root":       node,                the screen once data has arrived
     "phases":     {"loading": node, "error": node}
@@ -51,8 +51,9 @@ DATA AND TYPES
              the screen never computes: no arithmetic anywhere. No
              operation's result reaches an app-derived field, and view
              state is never derived by the server.
-    from     on a field of "data" only: the query whose result fills it
-             (OPERATIONS). A field without it is the app's or the screen's.
+    from     on a field of "data" only: the query whose result fills it,
+             or "<query>.<field>" for one field of that result (OPERATIONS).
+             A field without it is the app's or the screen's.
     view     true: view state, held by the screen alone (an open menu, the
              row a popup is about), not domain data. No operation answers
              with it, so keep it out of the types operations return: wrap
@@ -238,6 +239,7 @@ OPERATIONS
     "long"     true: a command that takes long (an export, an import). It
                answers with a job, and what reads the job is derived (below)
     "fails"    each way it can fail: a name and when, {"offline": "…"}
+    "pages"    "cursor", for a query that answers one page at a time (PAGING)
   A query fills the fields of "data" that name it with "from":
     "data":  { "docs": { "type": "DocRow[] ..50", "from": "listDocs" } },
     "types": { "DocRow": { "doc": "Doc",
@@ -245,6 +247,8 @@ OPERATIONS
   The field is of the query's result type, or of a type that wraps it: one
   field of the result's type (here doc), beside only view state and fields
   the app derives. "[]" and "?" match the result's. A command fills no field.
+  "from": "<query>.<field>" fills it with one field of the result instead,
+  of that field's type or wrapping it: "from": "listDocs.next".
   A parameter with a fixed set of choices is an enum in "types", and the
   view model offers the same enum, so a call passes one of them on:
     "types": { "SortKey": "enum(updated, created, title, owner)",
@@ -313,6 +317,32 @@ OPERATIONS
   exists, and a job's running and failing happen inside it.
   Operations live in screen.json, one screen's own, and are not shared
   with other screens.
+
+PAGING
+  A query that answers one page at a time says so, and its result is one
+  page: a type holding exactly one list, the page's rows, with the most a
+  page holds ("..50"), and "next": "string?", where the next page starts,
+  null on the last page.
+    "operations": { "listDocs": { "query": "The team's documents",
+                                  "pages": "cursor", "result": "DocPage" } },
+    "types": { "DocPage": { "docs": "Doc[] ..50", "next": "string?" } },
+    "data":  { "docs": { "type": "DocRow[]", "from": "listDocs.docs" },
+               "next": { "type": "string?", "from": "listDocs.next" } },
+    "conditions": { "hasMore": { "when": "next != null", "label": "More to load" } }
+  "pages" adds two parameters, never written in "params": "cursor"
+  (string?, where the page starts) and "limit" (int 1..50 = 50: as many
+  rows as the page's list may hold). Every call to the query gives cursor:
+  null for the first page (a sort, a retry), or the field of "data" filled
+  from its "next" for the page after it, offered only while that is not
+  null ("load more", or the end of a list):
+    { "id": "load-more", "kind": "Button", "if": "hasMore", "text": "Load more",
+      "on": { "tap": { "call": "listDocs", "with": { "cursor": "{next}" } } } }
+  Give the fixtures both states: one with "next" set (more to come) and one
+  with it null (the last page), so hasMore holds in one and not another.
+  check refuses a paged query whose result has no "next", a call that
+  gives no cursor or another value, and a load more not gated by a
+  condition that tests next != null. `underdraw cli` gives the query
+  --cursor and --limit, and its stdout holds "next" (see cli --help).
 
 COMPONENTS
   "components": { "nav-back": { "id": "nav-back", "kind": "IconButton",

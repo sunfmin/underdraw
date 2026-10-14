@@ -8,8 +8,13 @@
     "summary": "Summary",
     "sort": "Sort",
     "docs": {
-      "type": "DocRow[] ..50",
-      "from": "listDocs"
+      "type": "DocRow[]",
+      "from": "listDocs.docs"
+    },
+    "next": {
+      "type": "string?",
+      "from": "listDocs.next",
+      "doc": "Where the next page of documents starts; null once the last page is loaded"
     },
     "rowMenu": {
       "type": "RowMenu?",
@@ -50,6 +55,10 @@
         "derived": { "app": "rowMenu is open on this document" }
       }
     },
+    "DocPage": {
+      "docs": "Doc[] ..50",
+      "next": "string?"
+    },
     "Doc": {
       "id": "string",
       "title": "string 1..60",
@@ -79,6 +88,10 @@
       "when": "summary.count > 0",
       "label": "Has documents"
     },
+    "hasMore": {
+      "when": "next != null",
+      "label": "More to load"
+    },
     "sortOpen": {
       "when": "sort.menuOpen",
       "label": "Sort menu open"
@@ -102,7 +115,8 @@
       "params": {
         "sort": "SortKey = \"updated\""
       },
-      "result": "Doc[] ..50",
+      "pages": "cursor",
+      "result": "DocPage",
       "fails": {
         "offline": "the server cannot be reached"
       }
@@ -214,6 +228,10 @@
         }
       ],
       "rowMenu": null
+    },
+    "more-to-come": {
+      "$patch": "default",
+      "next": "p2"
     },
     "sort-open": {
       "$patch": "default",
@@ -565,10 +583,25 @@
                 "tap": {
                   "call": "listDocs",
                   "with": {
-                    "sort": "{item.id}"
+                    "sort": "{item.id}",
+                    "cursor": null
                   }
                 }
               }
+            }
+          }
+        }
+      },
+      {
+        "id": "load-more",
+        "kind": "Button",
+        "if": "hasMore",
+        "text": "加载更多",
+        "on": {
+          "tap": {
+            "call": "listDocs",
+            "with": {
+              "cursor": "{next}"
             }
           }
         }
@@ -702,7 +735,8 @@
               "tap": {
                 "call": "listDocs",
                 "with": {
-                  "sort": "updated"
+                  "sort": "updated",
+                  "cursor": null
                 }
               }
             }

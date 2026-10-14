@@ -1,5 +1,5 @@
 //! Derives the export draft's CLI with the real binary — a long command,
-//! its --no-wait and the command that reads its job (docs/adr/0014) — then
+//! its --no-wait and the command that reads its job (docs/adr/0015) — then
 //! runs a hand-written stub CLI through every golden output and holds each
 //! run to it with `compare`; a wrong stub is found out.
 

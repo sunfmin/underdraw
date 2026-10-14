@@ -106,6 +106,13 @@ The screen shows it as view-model data, in fixtures for each status; the
 CLI waits for it, or with `--no-wait` hands it back to read again.
 _Avoid_: task, background operation, status
 
+**Paged query**:
+A query that answers one page at a time (`"pages": "cursor"`): its result
+holds the page's rows and `next`, where the next page starts, null on the
+last page. Every call gives the cursor: null for the first page, or the
+`next` the last page answered with ("load more").
+_Avoid_: pagination, infinite scroll
+
 **Confirmation**:
 The popup that asks before a destructive operation: an overlay with a
 backdrop, opened by its id from the node a person first acts on, whose

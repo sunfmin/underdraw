@@ -1,4 +1,4 @@
-//! `check` on the export draft's long command (docs/adr/0014): its job
+//! `check` on the export draft's long command (docs/adr/0015): its job
 //! type and the query that reads it are derived, and the fixtures must show
 //! the job running, done and failed. Each fault is planted one at a time.
 

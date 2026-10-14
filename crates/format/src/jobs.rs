@@ -1,4 +1,4 @@
-//! Long-running commands (docs/adr/0014): a command marked `"long": true`
+//! Long-running commands (docs/adr/0015): a command marked `"long": true`
 //! answers with a job, and the job's type and the query that reads it are
 //! derived from it here, once, so neither is written by hand. The
 //! description is expanded with them before anything reads it, and `check`
