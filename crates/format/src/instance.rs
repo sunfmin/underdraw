@@ -171,9 +171,26 @@ impl Fill<'_> {
                 for child in &written {
                     node.children.append(&mut self.node(child, scope, key)?);
                 }
+            } else if let ("disabled", Value::String(used)) = (key.as_str(), value) {
+                node.props.insert(key.clone(), Value::Bool(self.holds(used, scope)));
             } else {
                 node.props.insert(key.clone(), self.value(value, scope)?);
             }
+        }
+        // What a bound field shows: the value at its path (or paths).
+        match object.get("bind") {
+            Some(Value::String(path)) => {
+                node.props.insert("value".to_string(), lookup(scope, path).cloned().unwrap_or(Value::Null));
+            }
+            Some(Value::Array(paths)) => {
+                let mut values = Vec::new();
+                for path in paths {
+                    let found = path.as_str().and_then(|path| lookup(scope, path));
+                    values.push(found.cloned().unwrap_or(Value::Null));
+                }
+                node.props.insert("value".to_string(), Value::Array(values));
+            }
+            _ => {}
         }
         // `each` with no `item` template shows the items themselves (photos).
         if let Some(items) = each

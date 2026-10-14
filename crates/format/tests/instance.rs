@@ -64,6 +64,12 @@ fn conditions_breakpoints_and_each_shape_the_tree() {
     // what the agent guessed travels with the node
     assert!(find(&compact, "calendar-picker").unwrap().assumed.is_some());
     assert!(find(&compact, "nav-save").unwrap().interactive);
+    // a use site is decided, a binding shows its value
+    let unavailable = instantiate(&screen, State::Fixture("unavailable"), Breakpoint::Regular).unwrap();
+    assert_eq!(find(&unavailable, "reserve-button").unwrap().props["disabled"], json!(true));
+    assert_eq!(find(&compact, "reserve-button").unwrap().props["disabled"], json!(false));
+    assert_eq!(find(&regular, "card-guests").unwrap().props["value"], json!(2));
+    assert_eq!(find(&compact, "calendar-picker").unwrap().props["value"], json!(["2026-11-12", "2026-11-17"]));
 }
 
 #[test]
