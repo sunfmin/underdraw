@@ -121,3 +121,18 @@ fn every_kind_in_the_draft_is_in_the_catalog() {
         .collect();
     assert!(unknown.is_empty(), "kinds drawn as unknown at {unknown:?}");
 }
+
+#[test]
+fn overlays_sit_in_their_corner() {
+    let page = page(State::Fixture("default"), 390.0);
+    let photos = placed(&page, "photos-carousel").rect;
+    let counter = page.draws.iter().find_map(|d| match d {
+        Draw::Text { text, rect, .. } if text.contains(" / ") => Some(*rect),
+        _ => None,
+    });
+    let counter = counter.expect("the photo counter is drawn");
+    assert!(
+        counter.y > photos.y + photos.height / 2.0 && counter.y + counter.height < photos.y + photos.height
+    );
+    assert!(counter.x > photos.x + photos.width / 2.0);
+}

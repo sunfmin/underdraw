@@ -323,7 +323,8 @@ impl Fill<'_> {
 }
 
 /// An object such as `{"compact": 1, "regular": 2}`: one value per breakpoint.
-fn is_responsive(object: &Map<String, Value>) -> bool {
+/// Whether `object` is a responsive value: keyed by breakpoints only.
+pub(crate) fn is_responsive(object: &Map<String, Value>) -> bool {
     !object.is_empty() && object.keys().all(|k| k == "compact" || k == "regular")
 }
 

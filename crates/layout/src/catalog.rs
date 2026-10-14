@@ -10,7 +10,7 @@ use serde_json::Value;
 use taffy::prelude::*;
 use underdraw_format::Node;
 
-use crate::place::{Elem, Look, Words};
+use crate::place::{Edge, Elem, Look, Pin, Words};
 use crate::tokens::{self, BODY, Tokens};
 use crate::{Align, Font, Ink};
 
@@ -24,9 +24,8 @@ const CAROUSEL_ITEM: f32 = 280.0;
 impl Catalog<'_> {
     pub(crate) fn node<'a>(&self, node: &'a Node) -> Elem<'a> {
         let mut elem = match node.kind.as_str() {
-            "Screen" | "Scroll" | "Stack" | "List" | "Card" | "FieldGroup" => {
-                self.frame(node, column(0.0), 0.0)
-            }
+            "Screen" | "Scroll" | "Stack" | "List" | "FieldGroup" => self.frame(node, column(0.0), 0.0),
+            "Card" => self.frame(node, column(16.0), 16.0),
             "Row" => self.frame(node, row(0.0), 0.0),
             "Section" => self.section(node),
             "NavBar" => {
@@ -130,26 +129,19 @@ impl Catalog<'_> {
         built
     }
 
+    /// `node` floated over its parent at its `anchor`, such as
+    /// "bottom-trailing".
     fn overlay<'a>(&self, node: &'a Node) -> Elem<'a> {
-        let mut elem = self.node(node);
         let anchor = node.props.get("anchor").and_then(Value::as_str).unwrap_or("bottom-trailing");
-        let (inset, away) = (length(16.0), LengthPercentageAuto::auto());
-        let mut style = elem.style.clone();
-        style.position = Position::Absolute;
-        style.inset = taffy::Rect {
-            left: if anchor.contains("trailing") { away } else { inset },
-            right: if anchor.contains("trailing") { inset } else { away },
-            top: if anchor.contains("bottom") { away } else { inset },
-            bottom: if anchor.contains("bottom") { inset } else { away },
-        };
-        elem.style = style;
-        elem
+        let x = if anchor.contains("trailing") { Edge::End } else { Edge::Start };
+        let y = if anchor.contains("bottom") { Edge::End } else { Edge::Start };
+        self.node(node).pinned(Pin { x, y, inset: 16.0 })
     }
 
     fn section<'a>(&self, node: &'a Node) -> Elem<'a> {
         let mut style = column(16.0);
-        let padding = self.tokens.length(node.props.get("padding"), 24.0);
-        style.padding = sides(0.0, padding);
+        let padding = self.tokens.length(node.props.get("padding"), 0.0);
+        style.padding = sides(padding, padding);
         let mut parts = Vec::new();
         let mut heading = Vec::new();
         if let Some(title) = node.props.get("title") {
@@ -341,17 +333,14 @@ impl Catalog<'_> {
         let mut style = Style::default();
         style.aspect_ratio = Some(aspect(node.props.get("aspectRatio")).unwrap_or(4.0 / 3.0));
         let mut counter = Style::default();
-        counter.position = Position::Absolute;
-        counter.inset = taffy::Rect {
-            left: LengthPercentageAuto::auto(),
-            right: length(12.0),
-            top: LengthPercentageAuto::auto(),
-            bottom: length(12.0),
-        };
         counter.padding = sides(10.0, 4.0);
         let font = self.tokens.font(None, "font.caption");
         let words = Elem::text(Style::default(), Words::new(format!("1 / {count}"), font, Ink::Paper));
-        let counter = Elem::new(counter).with(fill(999.0, Ink::Strong)).holding(vec![words]);
+        let counter = Elem::new(counter).with(fill(999.0, Ink::Strong)).holding(vec![words]).pinned(Pin {
+            x: Edge::End,
+            y: Edge::End,
+            inset: 12.0,
+        });
         Elem::new(style).with(fill(0.0, Ink::Fill)).with(Look::Cross(Ink::Line)).holding(vec![counter])
     }
 
@@ -484,17 +473,12 @@ fn map(node: &Node) -> Elem<'_> {
     let mut style = Style::default();
     style.aspect_ratio = Some(aspect(node.props.get("aspectRatio")).unwrap_or(16.0 / 9.0));
     let mut marker = Style::default();
-    marker.position = Position::Absolute;
     marker.size = taffy::Size { width: length(24.0), height: length(24.0) };
-    marker.inset = taffy::Rect {
-        left: percent(0.5),
-        top: percent(0.5),
-        right: LengthPercentageAuto::auto(),
-        bottom: LengthPercentageAuto::auto(),
-    };
-    marker.margin =
-        taffy::Rect { left: length(-12.0), top: length(-12.0), right: length(0.0), bottom: length(0.0) };
-    let marker = Elem::new(marker).with(fill(999.0, Ink::Strong));
+    let marker = Elem::new(marker).with(fill(999.0, Ink::Strong)).pinned(Pin {
+        x: Edge::Center,
+        y: Edge::Center,
+        inset: 0.0,
+    });
     Elem::new(style).with(fill(0.0, Ink::Fill)).holding(vec![marker])
 }
 

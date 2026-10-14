@@ -15,6 +15,10 @@ pub(crate) struct Elem<'a> {
     pub(crate) source: Option<&'a Node>,
     /// Its children are cut to it, with corners of this radius.
     pub(crate) clip: Option<f32>,
+    /// Where it floats over its parent, out of the flow. Taffy only sizes
+    /// it: taffy 0.15 resolves `bottom` against the wrong box when the page
+    /// height is open, so the position is set here instead.
+    pub(crate) pin: Option<Pin>,
     pub(crate) children: Vec<Elem<'a>>,
 }
 
@@ -23,6 +27,22 @@ pub(crate) enum Look {
     Box { radius: f32, fill: Option<Ink>, stroke: Option<Ink>, dashed: bool },
     Cross(Ink),
     TopLine(Ink),
+}
+
+/// A place on the parent: each axis at its start, centre or end, `inset`
+/// in from the edge it sits on.
+#[derive(Clone, Copy)]
+pub(crate) struct Pin {
+    pub(crate) x: Edge,
+    pub(crate) y: Edge,
+    pub(crate) inset: f32,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Edge {
+    Start,
+    Center,
+    End,
 }
 
 pub(crate) struct Words {
@@ -37,7 +57,15 @@ pub(crate) struct Words {
 
 impl<'a> Elem<'a> {
     pub(crate) fn new(style: Style) -> Elem<'a> {
-        Elem { style, looks: Vec::new(), words: None, source: None, clip: None, children: Vec::new() }
+        Elem {
+            style,
+            looks: Vec::new(),
+            words: None,
+            source: None,
+            clip: None,
+            pin: None,
+            children: Vec::new(),
+        }
     }
 
     pub(crate) fn text(style: Style, words: Words) -> Elem<'a> {
@@ -53,6 +81,13 @@ impl<'a> Elem<'a> {
 
     pub(crate) fn holding(mut self, children: Vec<Elem<'a>>) -> Elem<'a> {
         self.children = children;
+        self
+    }
+
+    /// This box floated over its parent at `pin`.
+    pub(crate) fn pinned(mut self, pin: Pin) -> Elem<'a> {
+        self.style.position = taffy::Position::Absolute;
+        self.pin = Some(pin);
         self
     }
 }
@@ -114,7 +149,7 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
         })
     })?;
     let mut out = Out { draws: Vec::new(), tags: Vec::new(), nodes: Vec::new(), next_label: 1 };
-    emit(&tree, root, &laid, (0.0, 0.0), None, &mut out)?;
+    emit(&tree, root, &laid, Rect::default(), None, &mut out)?;
     let size = tree.layout(laid.id)?.size;
     let mut draws = out.draws;
     draws.append(&mut out.tags);
@@ -142,23 +177,26 @@ fn add<'e>(
     Ok(Laid { id, children })
 }
 
-/// Draws `elem`, whose parent's corner is at `origin`, and everything in it.
-/// `clip` is the area it may show in, when an ancestor cuts it.
+/// Draws `elem`, inside `parent`, and everything in it. `clip` is the area
+/// it may show in, when an ancestor cuts it.
 fn emit(
     tree: &TaffyTree<usize>,
     elem: &Elem,
     laid: &Laid,
-    origin: (f32, f32),
+    parent: Rect,
     clip: Option<Rect>,
     out: &mut Out,
 ) -> Result<(), TaffyError> {
     let layout = tree.layout(laid.id)?;
-    let rect = Rect {
-        x: origin.0 + layout.location.x,
-        y: origin.1 + layout.location.y,
-        width: layout.size.width,
-        height: layout.size.height,
+    let (width, height) = (layout.size.width, layout.size.height);
+    let (x, y) = match elem.pin {
+        Some(pin) => (
+            along(pin.x, parent.x, parent.width, width, pin.inset),
+            along(pin.y, parent.y, parent.height, height, pin.inset),
+        ),
+        None => (parent.x + layout.location.x, parent.y + layout.location.y),
     };
+    let rect = Rect { x, y, width, height };
     for look in &elem.looks {
         out.draws.push(match look {
             Look::Box { radius, fill, stroke, dashed } => Draw::Box {
@@ -189,14 +227,13 @@ fn emit(
     if let Some(node) = elem.source {
         record(node, rect, clip, out);
     }
-    let corner = (rect.x, rect.y);
     let (inner, saved) = match elem.clip {
         Some(_) => (Some(cut(rect, clip)), Some(std::mem::take(&mut out.draws))),
         None => (clip, None),
     };
     for index in 0..elem.children.len() {
         if let (Some(child), Some(laid)) = (elem.children.get(index), laid.children.get(index)) {
-            emit(tree, child, laid, corner, inner, out)?;
+            emit(tree, child, laid, rect, inner, out)?;
         }
     }
     if let (Some(radius), Some(saved)) = (elem.clip, saved) {
@@ -245,8 +282,19 @@ fn record(node: &Node, rect: Rect, clip: Option<Rect>, out: &mut Out) {
     }
 }
 
+/// Where a box `size` long starts on a side from `start`, `length` long,
+/// when it sits at `edge`, `inset` in.
+fn along(edge: Edge, start: f32, length: f32, size: f32, inset: f32) -> f32 {
+    match edge {
+        Edge::Start => start + inset,
+        Edge::Center => start + (length - size) / 2.0,
+        Edge::End => start + length - size - inset,
+    }
+}
+
+/// A tag's circle at `x`, `y`, kept on the page.
 fn tag(x: f32, y: f32) -> Rect {
-    Rect { x, y, width: 18.0, height: 18.0 }
+    Rect { x: x.max(1.0), y: y.max(1.0), width: 18.0, height: 18.0 }
 }
 
 fn overlaps(a: Rect, b: Rect) -> bool {
