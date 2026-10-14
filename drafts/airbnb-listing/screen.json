@@ -2,6 +2,7 @@
   "$comment": "Airbnb 房源详情页，平台无关的界面描述。id 即各平台的测试标识（data-testid / accessibilityIdentifier / testTag）。样式只能引用 tokens.json；表达式规则见 docs/format/expressions.md；only 限定断点；platform 是平台局部覆盖；assumed 是 AI 的猜测，渲染为虚线框待用户确认。",
   "screen": "ListingDetail",
   "title": "房源详情",
+  "locale": "zh-CN",
   "tokens": "tokens.json",
 
   "data": {

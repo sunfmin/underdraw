@@ -6,10 +6,12 @@ view model, fixtures, conditions and node tree), usually beside tokens.json
 and platforms/*.json. The format is docs/format/ in the underdraw repo.
 
 NEEDS
-  Nothing to check a description. (Rendering is not built yet.)
+  Nothing to check a description. To render one, a GPU (Metal on macOS,
+  Vulkan or DirectX 12 elsewhere) and system fonts: `underdraw doctor` says.
 
 START HERE
   underdraw check <dir>      read the description and name every fault
+  underdraw render <dir>     then draw it, and show the PNG to the person
 
 WHAT A COMMAND ANSWERS
   One JSON object on stdout. The exit code says which kind:
@@ -22,6 +24,7 @@ WHAT A COMMAND ANSWERS
 COMMANDS
   For the agent writing a description:
     underdraw check <dir>    every fault, and which fixtures each condition holds in
+    underdraw render <dir>   a wireframe PNG of one state, and where each node went
   For whoever installs underdraw:
     underdraw doctor         what underdraw depends on, and the fix of each finding
 

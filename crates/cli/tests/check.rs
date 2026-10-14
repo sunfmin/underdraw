@@ -128,6 +128,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "not a placeholder",
         ),
         (
+            "one-breakpoint",
+            r#""columns": { "compact": ["1fr"], "regular": ["58%", "1fr"] }"#,
+            r#""columns": { "regular": ["58%", "1fr"] }"#,
+            "body.columns",
+            "names both breakpoints",
+        ),
+        (
             "always-true",
             r#""when": "hasDates && !booking.available""#,
             r#""when": "hasDates && !booking.available || true""#,
@@ -173,7 +180,8 @@ fn what_cannot_be_read_is_an_error_with_its_fix() {
 #[test]
 fn doctor_and_version() {
     let (answer, code) = underdraw(&["doctor"]);
-    assert_eq!((code, &answer["ok"], &answer["findings"]), (0, &json!(true), &json!([])));
+    assert_eq!((code, &answer["ok"], &answer["findings"]), (0, &json!(true), &json!([])), "{answer}");
+    assert!(answer["gpu"]["name"].is_string(), "doctor names the GPU render uses: {answer}");
     let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).arg("--version").output().unwrap();
     let version = String::from_utf8(out.stdout).unwrap();
     assert!(version.starts_with(&format!("underdraw {}", env!("CARGO_PKG_VERSION"))), "{version}");

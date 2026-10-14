@@ -34,3 +34,13 @@ Declared once; used by name.
 **Cases** — an ordered choice of one value, ending in an `else`.
 
 **Assumption** — something the agent guessed and the person has not confirmed.
+
+**Breakpoint** — the width class a screen is laid out in (`compact`,
+`regular`), chosen from the width by the tokens.
+
+**Wireframe** — the screen drawn in grays: boxes, text and crossed-out images,
+so the discussion is about structure, not styling.
+
+**Label** — the number tagged in a wireframe on each node a person can act on,
+in document order. The same number names the node in the picture and in what
+`render` answers.

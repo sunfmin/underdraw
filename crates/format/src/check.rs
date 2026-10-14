@@ -146,6 +146,10 @@ impl Walk<'_> {
             Value::Object(object) => object,
             _ => return,
         };
+        if crate::instance::is_responsive(object) && object.len() < 2 {
+            self.findings
+                .add(at, "a responsive value names both breakpoints: {\"compact\": …, \"regular\": …}");
+        }
         let at = object.get("id").and_then(Value::as_str).unwrap_or(at);
         if let Some(name) = object.get("ref") {
             match name.as_str().and_then(|name| self.components.get(name)) {
