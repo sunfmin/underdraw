@@ -63,3 +63,7 @@ The decisions:
   person owns.
 - `handoff` lists the bulk form beside its operation, with `"bulkOf"`; the
   operation says `"bulk"`.
+- A long command ([ADR 0015](0015-a-long-command-answers-with-a-job.md))
+  has no bulk form: it answers with one job, and a bulk form would need
+  one per item. `check` refuses `"long"` and `"bulk"` together until a
+  screen needs both.

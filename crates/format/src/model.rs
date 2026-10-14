@@ -10,6 +10,7 @@ use crate::check::{Checked, Findings, check};
 use crate::conditions::{Condition, Conditions};
 use crate::fixture;
 use crate::instance::{Node, State, build};
+use crate::jobs;
 use crate::operations::Operations;
 use crate::schema::Schema;
 
@@ -34,6 +35,7 @@ impl Model {
             return Err(Box::new(checked));
         }
         let mut findings = Findings::default();
+        let screen = &jobs::expand(screen, &mut findings);
         let schema = Schema::read(screen, &mut findings);
         let fixtures = fixture::read(screen, &schema, &mut findings);
         let conditions = Conditions::read(screen, &schema, &mut findings);

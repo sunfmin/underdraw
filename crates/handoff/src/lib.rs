@@ -71,12 +71,24 @@ pub struct OperationSpec {
     /// precondition, the failures and the result are each item's.
     #[serde(rename = "bulkOf", skip_serializing_if = "Option::is_none")]
     pub bulk_of: Option<String>,
+    /// It takes long: it answers with a job, `{"type": "ExportDocsJob",
+    /// "query": "exportDocsJob"}`, which the screen shows and the query reads
+    /// again until it is done or failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job: Option<Value>,
+    /// For the query derived from a long command: that command.
+    #[serde(rename = "jobOf", skip_serializing_if = "Option::is_none")]
+    pub job_of: Option<String>,
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub fails: Map<String, Value>,
     /// The fields of `data` a query's result fills: `docs`, or `docs[].doc`
-    /// where the field's type wraps the result.
+    /// where the field's type wraps the result; filled by one field of the
+    /// result, `result.next → next`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fills: Vec<String>,
+    /// `cursor` for a query that pages by a cursor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pages: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -239,8 +251,23 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
             destructive: operation.destructive,
             bulk: operation.bulk.clone(),
             bulk_of: operation.bulk_of.as_ref().map(|of| of.operation.clone()),
+            job: match (operation.job_type(), operation.job_query()) {
+                (Some(job), Some(query)) => {
+                    Some(object([("type", Value::from(job)), ("query", Value::from(query))]))
+                }
+                _ => None,
+            },
+            job_of: operation.job_of.clone(),
             fails,
-            fills: operation.fills.iter().map(|fill| fill.path.clone()).collect(),
+            fills: operation
+                .fills
+                .iter()
+                .map(|fill| match &fill.part {
+                    None => fill.path.clone(),
+                    Some(part) => format!("result.{part} → {}", fill.path),
+                })
+                .collect(),
+            pages: operation.pages.then(|| "cursor".to_string()),
         });
     }
     specs

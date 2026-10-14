@@ -59,16 +59,17 @@ fn each_event_names_the_operation_it_calls() {
     );
     assert_eq!(calls("confirm-delete-selected-confirm")[0].1.as_deref(), Some("deleteDocs"));
     assert_eq!(calls("delete-selected")[0].0, "open", "the toolbar's delete only opens its confirmation");
-    assert_eq!(operations[0]["result"], "Doc[]");
+    assert_eq!(operations[0]["result"], "DocPage");
+    assert_eq!(operations[0]["pages"], "cursor");
     assert_eq!(
         operations[0]["params"],
-        json!({ "sort": "SortKey = \"updated\"" }),
-        "a choice's default is shown"
+        json!({ "sort": "SortKey = \"updated\"", "cursor": "string?", "limit": "int = 50" }),
+        "a choice's default is shown, and paging adds cursor and limit"
     );
     assert_eq!(
         operations[0]["fills"],
-        json!(["docs[].doc"]),
-        "the field the query fills, through the wrapper"
+        json!(["result.docs → docs[].doc", "result.next → next"]),
+        "each field of the result fills its own, through the wrapper"
     );
     assert_eq!(operations[3].get("fills"), None, "a command fills no field");
 }
@@ -94,7 +95,13 @@ fn each_state_expects_the_calls_its_nodes_make() {
     assert_eq!(own["nav-new"], json!([{ "on": "tap", "operation": "newDocument", "with": {} }]));
     assert!(!own.contains_key("doc-c-copy"), "copying a link calls no operation");
     let sorting = &state("sort-open").calls;
-    assert_eq!(sorting["sort-title"][0]["with"], json!({ "sort": "title" }));
+    assert_eq!(sorting["sort-title"][0]["with"], json!({ "sort": "title", "cursor": null }));
+    assert_eq!(
+        state("more-to-come").calls["load-more"],
+        json!([{ "on": "tap", "operation": "listDocs", "with": { "cursor": "p2" } }]),
+        "loading more passes on where the last page said the next starts"
+    );
+    assert!(!state("default").calls.contains_key("load-more"), "the last page offers no more");
     assert!(!state("default").calls.contains_key("doc-a-delete"), "a closed menu's items are not present");
     assert_eq!(
         state("confirm-delete-selected").calls["confirm-delete-selected-confirm"],

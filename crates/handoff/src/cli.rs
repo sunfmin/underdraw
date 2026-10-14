@@ -20,6 +20,8 @@ pub const FAILED: u8 = 2;
 pub const YES: &str = "--yes";
 /// What `"error"` says when a destructive command is run without `--yes`.
 const NEEDS_YES: &str = "needs --yes";
+/// The flag that makes a long command hand back its job instead of waiting.
+pub const NO_WAIT: &str = "--no-wait";
 
 #[derive(Debug, Serialize)]
 pub struct Interface {
@@ -50,6 +52,13 @@ pub struct CommandSpec {
     /// done.
     #[serde(rename = "bulkOf", skip_serializing_if = "Option::is_none")]
     pub bulk_of: Option<String>,
+    /// It takes long (docs/adr/0015): it waits for its job and prints the
+    /// result, or, given `--no-wait`, prints the job to read again later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub long: Option<Long>,
+    /// For the command that reads a long command's job: that command.
+    #[serde(rename = "jobOf", skip_serializing_if = "Option::is_none")]
+    pub job_of: Option<String>,
     /// `list [--sort <updated|created|title|owner>]`, `delete <id> --yes`,
     /// `delete-docs <ids>… --yes`.
     pub usage: String,
@@ -64,6 +73,20 @@ pub struct CommandSpec {
     pub fails: Vec<Failure>,
     /// A draft of `<command> --help`.
     pub help: String,
+}
+
+/// What a long command hands back with `--no-wait`, and how to read it again.
+#[derive(Debug, Serialize)]
+pub struct Long {
+    /// The job's type: `ExportDocsJob`.
+    pub job: String,
+    /// The command that reads the job again: `export-job <id>`.
+    pub poll: String,
+    /// What it prints with `--no-wait`: a JSON Schema of `{"result": <job>}`.
+    #[serde(rename = "noWait")]
+    pub no_wait: Value,
+    /// What it prints on stderr while it waits.
+    pub progress: String,
 }
 
 /// One parameter, as a positional argument (written without a default) or
@@ -120,6 +143,9 @@ pub struct Golden {
     /// The arguments include `--yes`.
     #[serde(skip_serializing_if = "is_false")]
     pub yes: bool,
+    /// The arguments include `--no-wait`.
+    #[serde(rename = "noWait", skip_serializing_if = "is_false")]
+    pub no_wait: bool,
     pub exit: u8,
     pub stdout: Value,
 }
@@ -138,6 +164,7 @@ pub fn cli(model: &Model) -> Interface {
         }
     }
     called(model, &commands, &mut golden);
+    polled(model, &commands, &mut golden);
     for spec in &commands {
         for failure in &spec.fails {
             if failure.exit == FAILED && spec.bulk_of.is_none() {
@@ -148,6 +175,7 @@ pub fn cli(model: &Model) -> Interface {
                     args: None,
                     with: None,
                     yes: false,
+                    no_wait: false,
                     exit: failure.exit,
                     stdout: failure.stdout.clone(),
                 });
@@ -160,15 +188,23 @@ pub fn cli(model: &Model) -> Interface {
 /// The first word of `operation`'s name, unless another operation starts
 /// with it too; then the whole name, in kebab case. A bulk form's is always
 /// its whole name (`delete-docs`), and leaves the name of the operation it
-/// is derived from as it was (`delete`).
+/// is derived from as it was (`delete`). The query that reads a long
+/// command's job is that command's name and `-job`.
 fn name(operation: &Operation, all: &[Operation]) -> String {
     if operation.bulk_of.is_some() {
         return kebab(&operation.name);
     }
+    if let Some(command) = &operation.job_of {
+        for other in all {
+            if &other.name == command {
+                return format!("{}-job", name(other, all));
+            }
+        }
+    }
     let word = first_word(&operation.name);
     let mut sharing: u32 = 0;
     for other in all {
-        if other.bulk_of.is_none() && first_word(&other.name) == word {
+        if other.bulk_of.is_none() && other.job_of.is_none() && first_word(&other.name) == word {
             sharing = sharing.saturating_add(1);
         }
     }
@@ -258,8 +294,25 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
     if operation.destructive {
         usage.push_str(&format!(" {YES}"));
     }
-    let stdout = stdout(model, operation, &fails);
-    let help = help(operation, &usage, &args, &fails);
+    let long = match (operation.job_type(), operation.job_query()) {
+        (Some(job), Some(query)) => {
+            usage.push_str(&format!(" [{NO_WAIT}]"));
+            let mut poll = format!("{}-job <id>", name);
+            for other in model.operations.all() {
+                if other.name == query {
+                    poll = format!("{} <id>", self::name(other, model.operations.all()));
+                }
+            }
+            let job_field = Field::of(Base::Named(job.clone()));
+            Some(Long { no_wait: stdout(model, Some(&job_field)), progress: PROGRESS.to_string(), job, poll })
+        }
+        _ => None,
+    };
+    let stdout = match bulk {
+        Some(of) => bulk_stdout(model, operation, of, &fails),
+        None => stdout(model, operation.result.as_ref()),
+    };
+    let help = help(operation, &usage, &args, &fails, long.as_ref());
     CommandSpec {
         name: name.to_string(),
         operation: operation.name.clone(),
@@ -267,6 +320,16 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
         doc: operation.doc.clone(),
         destructive: operation.destructive,
         bulk_of: bulk.map(|of| of.operation.clone()),
+        long,
+        job_of: operation.job_of.as_ref().map(|command| {
+            let mut named = command.clone();
+            for other in model.operations.all() {
+                if &other.name == command {
+                    named = self::name(other, model.operations.all());
+                }
+            }
+            named
+        }),
         usage,
         args,
         stdout,
@@ -334,56 +397,15 @@ fn usage(name: &str, args: &[Arg]) -> String {
 }
 
 /// The schema of `{"result": <result>}`, with every type the result
-/// reaches and no other: so none that holds view state. A bulk form's is
-/// of `{"results": [<one per item>]}`, each item its key, its result when
-/// it has one, and the error it failed with, one of `fails`.
-fn stdout(model: &Model, operation: &Operation, fails: &[Failure]) -> Value {
-    let result = operation.result.as_ref();
+/// reaches and no other: so none that holds view state.
+fn stdout(model: &Model, result: Option<&Field>) -> Value {
     let mut fields = Vec::new();
     if let Some(result) = result {
         fields.push(("result".to_string(), Field { doc: None, derived: None, from: None, ..result.clone() }));
     }
-    let body = match &operation.bulk_of {
-        None => object_of(&fields),
-        Some(of) => {
-            let key = operation
-                .params
-                .iter()
-                .find(|(param, _)| param == &of.keys)
-                .map(|(_, field)| field.element());
-            let key = Field { lo: None, hi: None, ..key.unwrap_or(Field::of(Base::String)) };
-            let mut item = object_of(&[(of.key.clone(), key)]);
-            let mut errors = Vec::new();
-            for failure in fails {
-                if failure.exit == FAILED {
-                    errors.push(Value::from(failure.error.as_str()));
-                }
-            }
-            if let Some(Value::Object(properties)) = item.get_mut("properties") {
-                if let Value::Object(result) = object_of(&fields)
-                    && let Some(Value::Object(answered)) = result.get("properties")
-                {
-                    properties.extend(answered.clone());
-                }
-                properties.insert(
-                    "error".to_string(),
-                    object([("type", Value::from("string")), ("enum", Value::Array(errors))]),
-                );
-            }
-            object([
-                ("type", Value::from("object")),
-                (
-                    "properties",
-                    object([("results", object([("type", Value::from("array")), ("items", item)]))]),
-                ),
-                ("required", Value::from(vec!["results"])),
-                ("additionalProperties", Value::Bool(false)),
-            ])
-        }
-    };
     let mut schema = Map::new();
     schema.insert("$schema".to_string(), Value::from("https://json-schema.org/draft/2020-12/schema"));
-    if let Value::Object(body) = body {
+    if let Value::Object(body) = object_of(&fields) {
         schema.extend(body);
     }
     let mut reached: Vec<String> = Vec::new();
@@ -403,6 +425,39 @@ fn stdout(model: &Model, operation: &Operation, fails: &[Failure]) -> Value {
         }
         schema.insert("$defs".to_string(), Value::Object(defs));
     }
+    Value::Object(schema)
+}
+
+/// The schema of what the bulk form `operation` prints: `{"results": [<one
+/// per item>]}`, each item its key, its result when the operation answers
+/// with one, and the error it was not done with, one of `fails`.
+fn bulk_stdout(model: &Model, operation: &Operation, of: &BulkOf, fails: &[Failure]) -> Value {
+    let Value::Object(mut schema) = stdout(model, operation.result.as_ref()) else {
+        return Value::Null;
+    };
+    let key = operation.params.iter().find(|(param, _)| param == &of.keys).map(|(_, field)| field.element());
+    let key = Field { lo: None, hi: None, ..key.unwrap_or(Field::of(Base::String)) };
+    let mut item = object_of(&[(of.key.clone(), key)]);
+    let mut errors = Vec::new();
+    for failure in fails {
+        if failure.exit == FAILED {
+            errors.push(Value::from(failure.error.as_str()));
+        }
+    }
+    if let Some(Value::Object(properties)) = item.get_mut("properties") {
+        if let Some(result) = schema.get("properties").and_then(|answered| answered.get("result")) {
+            properties.insert("result".to_string(), result.clone());
+        }
+        properties.insert(
+            "error".to_string(),
+            object([("type", Value::from("string")), ("enum", Value::Array(errors))]),
+        );
+    }
+    schema.insert(
+        "properties".to_string(),
+        object([("results", object([("type", Value::from("array")), ("items", item)]))]),
+    );
+    schema.insert("required".to_string(), Value::from(vec!["results"]));
     Value::Object(schema)
 }
 
@@ -432,9 +487,12 @@ fn reach(model: &Model, base: &Base, reached: &mut Vec<String>, money_used: &mut
     }
 }
 
-fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> String {
+/// What a long command prints on stderr while it waits.
+const PROGRESS: &str = "one JSON object a line, each time the job moves: {\"job\": \"<id>\", \"status\": \"running\", \"progress\": 40}";
+
+fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure], long: Option<&Long>) -> String {
     let mut help = format!("{}\n\nUSAGE\n  <cli> {usage}\n", operation.doc);
-    if !args.is_empty() || operation.destructive {
+    if !args.is_empty() || operation.destructive || long.is_some() {
         help.push_str("\nARGUMENTS\n");
         for arg in args {
             let written = match &arg.flag {
@@ -449,6 +507,13 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
             if !arg.choices.is_empty() {
                 said = format!("one of {}", arg.choices.join(", "));
             }
+            if operation.pages && arg.param == "cursor" {
+                said = "where the page starts: the \"next\" the page before answered with; the first page when left out"
+                    .to_string();
+            }
+            if operation.pages && arg.param == "limit" {
+                said = "at most this many rows".to_string();
+            }
             if let Some(default) = &arg.default {
                 said.push_str(&format!("; default {}", text_of(default)));
             }
@@ -462,6 +527,18 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
                 "  {YES}  do it: it cannot be undone; without {YES} nothing is done, and it says what would be\n"
             ));
         }
+        if let Some(long) = long {
+            help.push_str(&format!(
+                "  {NO_WAIT}  do not wait: print the job, {{\"result\": {}}}, and read it again with `<cli> {}`\n",
+                long.job, long.poll
+            ));
+        }
+    }
+    if let Some(long) = long {
+        help.push_str(&format!(
+            "\nWAITING\n  It takes long: it waits for its job to end, and prints its progress on stderr,\n  {}.\n  A job that fails exits 2 with the failure it names.\n",
+            long.progress
+        ));
     }
     let answer = match (&operation.bulk_of, &operation.result) {
         (Some(of), Some(result)) => format!(
@@ -477,6 +554,9 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
         (None, None) => "{}".to_string(),
     };
     help.push_str(&format!("\nANSWERS\n  One JSON object on stdout. Exit 0: {answer}\n"));
+    if operation.pages {
+        help.push_str("  One page at a time: \"next\" is where the next page starts, null on the last; pass it to --cursor for more.\n");
+    }
     for failure in fails {
         help.push_str(&format!("  Exit {}: {}  {}\n", failure.exit, failure.stdout, failure.when));
     }
@@ -493,19 +573,29 @@ fn text_of(value: &Value) -> String {
 
 /// For a query whose result fills `data` and that needs no argument: in
 /// each fixture, the result that fixture holds, projected through what it
-/// fills.
+/// fills; or, filled part by part (`"from": "listDocs.next"`), each part
+/// so, when every field of the result is filled.
 fn queried(model: &Model, operation: &Operation, spec: &CommandSpec, golden: &mut Vec<Golden>) {
     if operation.does != Does::Query {
         return;
     }
-    let Some(fill) = operation.fills.first() else {
+    let Some(paths) = paths(model, operation) else {
         return;
     };
     let Ok(with) = spec.with_args(&[]) else {
         return;
     };
     for (fixture, data) in &model.fixtures {
-        let result = project(data, &fill.path);
+        let result = match &paths {
+            Answer::Whole(path) => project(data, path),
+            Answer::Parts(parts) => {
+                let mut result = Map::new();
+                for (part, path) in parts {
+                    result.insert(part.clone(), project(data, path));
+                }
+                Value::Object(result)
+            }
+        };
         golden.push(Golden {
             command: spec.name.clone(),
             fixture: Some(fixture.clone()),
@@ -513,10 +603,37 @@ fn queried(model: &Model, operation: &Operation, spec: &CommandSpec, golden: &mu
             args: Some(Vec::new()),
             with: Some(with.clone()),
             yes: false,
+            no_wait: false,
             exit: 0,
             stdout: object([("result", result)]),
         });
     }
+}
+
+/// Where in the view model a query's answer is held.
+enum Answer {
+    /// All of it, at one path.
+    Whole(String),
+    /// Each field of it, by name, at its own path.
+    Parts(Vec<(String, String)>),
+}
+
+/// Where the view model holds all of `operation`'s result; none when it
+/// holds none of it, or only some of its fields.
+fn paths(model: &Model, operation: &Operation) -> Option<Answer> {
+    if let Some(fill) = operation.fills.iter().find(|fill| fill.part.is_none()) {
+        return Some(Answer::Whole(fill.path.clone()));
+    }
+    let result = operation.result.as_ref()?;
+    let Some(Shape::Object(fields)) = model.schema.shape(result) else {
+        return None;
+    };
+    let mut parts = Vec::new();
+    for (name, _) in fields {
+        let fill = operation.fills.iter().find(|fill| fill.part.as_deref() == Some(name.as_str()))?;
+        parts.push((name.clone(), fill.path.clone()));
+    }
+    Some(Answer::Parts(parts))
 }
 
 /// The value at `path` (`docs`, `docs[].doc`) in `data`: through `[]`,
@@ -587,9 +704,17 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                 let refused = operation.bulk_of.is_none()
                     && operation.requires.as_ref().is_some_and(|condition| !holds(model, condition, fixture));
                 // A destructive command is run both ways: without --yes and
-                // with it. Any other is run as it is.
-                let runs: &[bool] = if operation.destructive { &[false, true] } else { &[false] };
-                for &yes in runs {
+                // with it; a long one, waiting and with --no-wait. Any other
+                // is run as it is.
+                let mut runs = vec![(false, false)];
+                if operation.destructive {
+                    runs.push((true, false));
+                }
+                if operation.long {
+                    runs.push((operation.destructive, true));
+                }
+                let job = job_in(model, operation, fixture);
+                for (yes, no_wait) in runs {
                     let (exit, stdout) = if refused {
                         let mut stdout = Value::Null;
                         for failure in &spec.fails {
@@ -600,6 +725,27 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                         (REFUSED, stdout)
                     } else if operation.destructive && !yes {
                         (REFUSED, dry_run(operation, with.clone()))
+                    } else if operation.long {
+                        // What the job the fixture holds ends with; none
+                        // where it holds none, or one still running.
+                        let Some(job) = &job else {
+                            continue;
+                        };
+                        match (no_wait, job.get("status").and_then(Value::as_str)) {
+                            (true, _) => (0, object([("result", job.clone())])),
+                            (false, Some("done")) => match &operation.result {
+                                Some(_) => (
+                                    0,
+                                    object([("result", job.get("result").cloned().unwrap_or(Value::Null))]),
+                                ),
+                                None => (0, Value::Object(Map::new())),
+                            },
+                            (false, Some("failed")) => (
+                                FAILED,
+                                object([("error", job.get("error").cloned().unwrap_or(Value::Null))]),
+                            ),
+                            _ => continue,
+                        }
                     } else if operation.result.is_some() {
                         continue;
                     } else if let Some(of) = &operation.bulk_of {
@@ -613,6 +759,7 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                             && known.fixture.as_deref() == Some(fixture.as_str())
                             && known.with.as_ref() == Some(&with)
                             && known.yes == yes
+                            && known.no_wait == no_wait
                         {
                             seen = true;
                         }
@@ -622,6 +769,9 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                         if yes {
                             args.push(YES.to_string());
                         }
+                        if no_wait {
+                            args.push(NO_WAIT.to_string());
+                        }
                         golden.push(Golden {
                             command: spec.name.clone(),
                             fixture: Some(fixture.clone()),
@@ -629,6 +779,7 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                             args: Some(args),
                             with: Some(with.clone()),
                             yes,
+                            no_wait,
                             exit,
                             stdout,
                         });
@@ -682,9 +833,60 @@ fn partly(
             args: Some(args),
             with: Some(with.clone()),
             yes: operation.destructive,
+            no_wait: false,
             exit: FAILED,
             stdout: results(of, ids, Some((0, &failure.error))),
         });
+    }
+}
+
+/// The job of the long command `operation` that `fixture` holds: the value
+/// of the field of `data` of its job type, when it is not null.
+fn job_in(model: &Model, operation: &Operation, fixture: &str) -> Option<Value> {
+    let job = operation.job_type()?;
+    let (_, data) = model.fixtures.iter().find(|(name, _)| name == fixture)?;
+    for (name, field) in model.schema.roots() {
+        if field.base == Base::Named(job.clone())
+            && !field.array
+            && let Some(value) = data.get(&name).filter(|value| value.is_object())
+        {
+            return Some(value.clone());
+        }
+    }
+    None
+}
+
+/// For the command that reads a long command's job: in each fixture that
+/// holds a job, given its id, that job as it stands, running, done or failed.
+fn polled(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
+    for spec in commands {
+        let Some(command) = model.operations.get(&spec.operation).and_then(|query| query.job_of.as_ref())
+        else {
+            continue;
+        };
+        let Some(operation) = model.operations.get(command) else {
+            continue;
+        };
+        for (fixture, _) in &model.fixtures {
+            let Some(job) = job_in(model, operation, fixture) else {
+                continue;
+            };
+            let args = vec![text_of(job.get("id").unwrap_or(&Value::Null))];
+            let Ok(with) = spec.with_args(&args) else {
+                continue;
+            };
+            golden.push(Golden {
+                command: spec.name.clone(),
+                fixture: Some(fixture.clone()),
+                failure: None,
+                args: Some(args),
+                with: Some(with),
+                yes: false,
+                no_wait: false,
+                exit: 0,
+                stdout: object([("result", job)]),
+            });
+        }
     }
 }
 
@@ -704,6 +906,12 @@ impl CommandSpec {
         self.destructive && args.iter().any(|word| word == YES)
     }
 
+    /// Whether `args` give `--no-wait`, which makes a long command print
+    /// its job instead of waiting for it.
+    pub fn no_wait(&self, args: &[String]) -> bool {
+        self.long.is_some() && args.iter().any(|word| word == NO_WAIT)
+    }
+
     /// The parameters `args` (what follows the command's name) give, each
     /// default filled in; why, when they are not this command's arguments.
     /// A destructive command's `--yes` gives none.
@@ -720,7 +928,7 @@ impl CommandSpec {
         while index < args.len() {
             let word = &args[index];
             index = index.saturating_add(1);
-            if self.destructive && word == YES {
+            if (self.destructive && word == YES) || (self.long.is_some() && word == NO_WAIT) {
                 continue;
             }
             if let Some(flag) = word.strip_prefix("--") {

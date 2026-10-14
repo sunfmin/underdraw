@@ -54,6 +54,11 @@ WHAT TRIPS YOU UP
     share, copy). submit, reload, remove and the like are operations.
   - A "call" to an operation with "requires" needs the node gated by that
     condition: "disabled": "!<condition>", or "if": "<condition>".
+  - A query with "pages": "cursor" answers with a page type holding one
+    list (with its most, "Doc[] ..50") and "next": "string?". Every call to
+    it gives "cursor": null for the first page, or "{next}" — the field
+    filled "from": "<query>.next" — under a condition that tests it != null.
+    Do not write cursor or limit in its params: paging adds them.
   - A "call" to a "destructive" operation is made only inside its
     confirmation: an overlay whose kind has a backdrop and that a node
     opens with {"open": "<its id>"}. The menu item or button a person first
@@ -63,5 +68,8 @@ WHAT TRIPS YOU UP
     one long ("string[] 1..") inside a nullable field, and the node is
     gated by a condition testing that field != null ("disabled":
     "!hasSelection"; or an "if" around it). Not its operation's "requires".
+  - A "long" command's job type (ExportDocsJob) and the query that reads
+    it (exportDocsJob) are derived: write neither. A field of "data" holds
+    the job, and fixtures hold it with each "status": running, done, failed.
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.

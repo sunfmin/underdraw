@@ -94,7 +94,7 @@ condition) and named failures; a node calls it with `call`. A query names
 the `data` fields its result fills (`"from"`); a parameter with a fixed set
 of choices is an enum the view model offers too. A **destructive** command
 cannot be undone: the screen calls it only from its confirmation, and its
-CLI command only given `--yes`.
+CLI command only given `--yes`. A **long** command answers with a job.
 _Avoid_: endpoint, API call, action
 
 **Bulk form**:
@@ -109,6 +109,21 @@ _Avoid_: batch operation, multi-action
 The items a person has picked to act on together: view state, null while
 none is picked, so a node that acts on it is gated on it being there.
 _Avoid_: checked items, multi-select state
+**Job**:
+What a long command answers with at once while its work runs on: an id,
+its progress, and whether it is running, done or failed, with the
+command's result once done or the failure it names once failed. Its type
+and the query that reads it are derived from the command, never written.
+The screen shows it as view-model data, in fixtures for each status; the
+CLI waits for it, or with `--no-wait` hands it back to read again.
+_Avoid_: task, background operation, status
+
+**Paged query**:
+A query that answers one page at a time (`"pages": "cursor"`): its result
+holds the page's rows and `next`, where the next page starts, null on the
+last page. Every call gives the cursor: null for the first page, or the
+`next` the last page answered with ("load more").
+_Avoid_: pagination, infinite scroll
 
 **Confirmation**:
 The popup that asks before a destructive operation: an overlay with a

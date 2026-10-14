@@ -37,7 +37,8 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
         ["list"] => {
             let rows = data["docs"].as_array().unwrap();
             let docs: Vec<Value> = if wrong {
-                // Leaks the row's view state, and drops the last document.
+                // Leaks the row's view state, drops the last document, and
+                // never says there is more.
                 rows.iter()
                     .take(rows.len().saturating_sub(1))
                     .map(|row| {
@@ -49,7 +50,8 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
             } else {
                 rows.iter().map(|row| row["doc"].clone()).collect()
             };
-            (json!({ "result": docs }).to_string(), 0)
+            let next = if wrong { Value::Null } else { data["next"].clone() };
+            (json!({ "result": { "docs": docs, "next": next } }).to_string(), 0)
         }
         ["delete", id, rest @ ..] => {
             let may = data["rowMenu"]["docId"] == *id && data["rowMenu"]["canDelete"] == true;
@@ -117,8 +119,9 @@ fn capture(name: &str, argv: &[&str], fail: Option<&str>, run: (String, i32)) ->
 }
 
 /// Each run a test makes: fixture, command line, named failure.
-const RUNS: [(&str, &[&str], Option<&str>); 9] = [
+const RUNS: [(&str, &[&str], Option<&str>); 10] = [
     ("default", &["list"], None),
+    ("more-to-come", &["list"], None),
     ("empty", &["list"], None),
     ("row-menu", &["list"], None),
     ("confirm-delete", &["delete", "c"], None),
@@ -138,11 +141,18 @@ fn the_documents_draft_derives_list_delete_delete_docs_and_new() {
     assert_eq!(
         usages,
         [
-            "list [--sort <updated|created|title|owner>]",
+            "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]",
             "delete <id> --yes",
             "delete-docs <ids>… --yes",
             "new"
         ]
+    );
+    // The paged query's stdout says where the next page starts.
+    let list = &answer["commands"][0]["stdout"];
+    assert_eq!(
+        list["$defs"]["DocPage"]["properties"]["next"]["anyOf"],
+        json!([{ "type": "string" }, { "type": "null" }]),
+        "{list}"
     );
 }
 
@@ -178,8 +188,9 @@ fn a_wrong_stub_is_found_out() {
         }
     }
     for wanted in [
-        ("stdout", "stdout.result"),
-        ("stdout", "stdout.result[0].menuOpen"),
+        ("stdout", "stdout.result.docs"),
+        ("stdout", "stdout.result.docs[0].menuOpen"),
+        ("stdout", "stdout.result.next"),
         ("exit", "exit"),
         ("stdout", "stdout.error"),
         ("stdout", "stdout.dryRun"),

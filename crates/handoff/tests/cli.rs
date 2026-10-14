@@ -25,7 +25,7 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
     assert_eq!(
         usages,
         [
-            ("list", "list [--sort <updated|created|title|owner>]"),
+            ("list", "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]"),
             ("delete", "delete <id> --yes"),
             ("delete-docs", "delete-docs <ids>… --yes"),
             ("new", "new")
@@ -34,8 +34,13 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
     assert_eq!(
         commands[0]["args"],
         json!([{ "param": "sort", "flag": "--sort", "type": "SortKey",
-                 "choices": ["updated", "created", "title", "owner"], "default": "updated" }])
+                 "choices": ["updated", "created", "title", "owner"], "default": "updated" },
+               { "param": "cursor", "flag": "--cursor", "type": "string?" },
+               { "param": "limit", "flag": "--limit", "type": "int", "default": 50 }])
     );
+    let help = commands[0]["help"].as_str().unwrap();
+    assert!(help.contains("--cursor <cursor>  where the page starts"), "{help}");
+    assert!(help.contains("--limit <limit>  at most this many rows; default 50"), "{help}");
     assert_eq!(
         commands[1]["fails"][0],
         json!({ "error": "requires canDelete", "when": "refused before it is tried: \"May delete it\" does not hold",
@@ -78,7 +83,9 @@ fn each_stdout_schema_validates_its_golden_outputs_and_holds_no_view_state() {
 fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
     let interface = interface();
     let golden: Vec<Value> = interface.golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
-    for fixture in ["default", "sort-open", "row-menu", "row-menu-own", "confirm-delete", "empty"] {
+    for fixture in
+        ["default", "more-to-come", "sort-open", "row-menu", "row-menu-own", "confirm-delete", "empty"]
+    {
         assert!(
             golden.iter().any(|g| g["command"] == "list" && g["fixture"] == fixture),
             "no golden list in {fixture}"
@@ -87,14 +94,19 @@ fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
     let list = golden.iter().find(|g| g["command"] == "list" && g["fixture"] == "default").unwrap();
     assert_eq!(list["exit"], 0);
     assert_eq!(
-        list["stdout"]["result"][1],
+        list["stdout"]["result"]["docs"][1],
         json!({
             "id": "b", "title": "Q4 预算与人力规划", "icon": "table_chart", "owner": "王芳",
             "updated": "2026-10-13", "shared": true
         })
     );
     let empty = golden.iter().find(|g| g["command"] == "list" && g["fixture"] == "empty").unwrap();
-    assert_eq!(empty["stdout"], json!({ "result": [] }));
+    assert_eq!(empty["stdout"], json!({ "result": { "docs": [], "next": null } }));
+    // The last page says so with a null next; a page with more to come, where.
+    assert_eq!(list["stdout"]["result"]["next"], Value::Null);
+    let more = golden.iter().find(|g| g["command"] == "list" && g["fixture"] == "more-to-come").unwrap();
+    assert_eq!(more["stdout"]["result"]["next"], "p2");
+    assert_eq!(more["with"], json!({ "sort": "updated", "limit": 50 }));
     let deletes: Vec<(&Value, &Value, &Value, &Value)> = golden
         .iter()
         .filter(|g| g["command"] == "delete" && g.get("fixture").is_some())
@@ -209,11 +221,16 @@ fn arguments_are_read_as_the_command_takes_them() {
     let interface = interface();
     let list = &interface.commands[0];
     let args = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
-    assert_eq!(list.with_args(&[]), Ok(json!({ "sort": "updated" })));
-    assert_eq!(list.with_args(&args(&["--sort", "title"])), Ok(json!({ "sort": "title" })));
-    assert_eq!(list.with_args(&args(&["--sort=owner"])), Ok(json!({ "sort": "owner" })));
+    assert_eq!(list.with_args(&[]), Ok(json!({ "sort": "updated", "limit": 50 })));
+    assert_eq!(list.with_args(&args(&["--sort", "title"])), Ok(json!({ "sort": "title", "limit": 50 })));
+    assert_eq!(list.with_args(&args(&["--sort=owner"])), Ok(json!({ "sort": "owner", "limit": 50 })));
     assert!(list.with_args(&args(&["--sort", "size"])).unwrap_err().contains("one of updated"));
-    assert!(list.with_args(&args(&["--limit", "3"])).is_err());
+    assert_eq!(
+        list.with_args(&args(&["--cursor", "p2", "--limit", "3"])),
+        Ok(json!({ "sort": "updated", "cursor": "p2", "limit": 3 }))
+    );
+    assert!(list.with_args(&args(&["--limit", "many"])).is_err());
+    assert!(list.with_args(&args(&["--page", "2"])).is_err());
     let delete = &interface.commands[1];
     assert_eq!(delete.with_args(&args(&["b"])), Ok(json!({ "id": "b" })));
     assert!(delete.with_args(&[]).unwrap_err().contains("needs <id>"));
