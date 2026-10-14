@@ -34,7 +34,7 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
         return (json!({ "error": failure }).to_string(), if wrong { 1 } else { 2 });
     }
     match argv {
-        ["list"] => {
+        ["list-docs"] => {
             let rows = data["docs"].as_array().unwrap();
             let docs: Vec<Value> = if wrong {
                 // Leaks the row's view state, drops the last document, and
@@ -53,7 +53,7 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
             let next = if wrong { Value::Null } else { data["next"].clone() };
             (json!({ "result": { "docs": docs, "next": next } }).to_string(), 0)
         }
-        ["delete", id, rest @ ..] => {
+        ["delete-doc", id, rest @ ..] => {
             let may = data["rowMenu"]["docId"] == *id && data["rowMenu"]["canDelete"] == true;
             // Deleting cannot be undone: without --yes it only says what it
             // would do. The careless one deletes anyway.
@@ -120,20 +120,20 @@ fn capture(name: &str, argv: &[&str], fail: Option<&str>, run: (String, i32)) ->
 
 /// Each run a test makes: fixture, command line, named failure.
 const RUNS: [(&str, &[&str], Option<&str>); 10] = [
-    ("default", &["list"], None),
-    ("more-to-come", &["list"], None),
-    ("empty", &["list"], None),
-    ("row-menu", &["list"], None),
-    ("confirm-delete", &["delete", "c"], None),
-    ("confirm-delete", &["delete", "c", "--yes"], None),
-    ("default", &["delete", "a"], Some("notFound")),
+    ("default", &["list-docs"], None),
+    ("more-to-come", &["list-docs"], None),
+    ("empty", &["list-docs"], None),
+    ("row-menu", &["list-docs"], None),
+    ("confirm-delete", &["delete-doc", "c"], None),
+    ("confirm-delete", &["delete-doc", "c", "--yes"], None),
+    ("default", &["delete-doc", "a"], Some("notFound")),
     ("confirm-delete-selected", &["delete-docs", "c", "e"], None),
     ("confirm-delete-selected", &["delete-docs", "c", "e", "--yes"], None),
     ("confirm-delete-selected", &["delete-docs", "c", "e", "--yes"], Some("notFound")),
 ];
 
 #[test]
-fn the_documents_draft_derives_list_delete_delete_docs_and_new() {
+fn the_documents_draft_derives_list_docs_delete_doc_delete_docs_and_new_document() {
     let (answer, code) = underdraw(&["cli", DRAFT]);
     assert_eq!(code, 0, "{answer}");
     let usages: Vec<&str> =
@@ -141,10 +141,10 @@ fn the_documents_draft_derives_list_delete_delete_docs_and_new() {
     assert_eq!(
         usages,
         [
-            "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]",
-            "delete <id> --yes",
+            "list-docs [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]",
+            "delete-doc <id> --yes",
             "delete-docs <ids>… --yes",
-            "new"
+            "new-document"
         ]
     );
     // The paged query's stdout says where the next page starts.
@@ -205,11 +205,11 @@ fn a_wrong_stub_is_found_out() {
 
 #[test]
 fn a_command_line_with_no_golden_output_is_refused() {
-    let path = capture("unknown", &["list", "--sort", "size"], None, ("{}".to_string(), 0));
+    let path = capture("unknown", &["list-docs", "--sort", "size"], None, ("{}".to_string(), 0));
     let (answer, code) = underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap()]);
     assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("one of updated"), "{answer}");
-    let path = capture("untested", &["delete", "z", "--yes"], None, ("{}".to_string(), 0));
+    let path = capture("untested", &["delete-doc", "z", "--yes"], None, ("{}".to_string(), 0));
     let (answer, code) = underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap()]);
     assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("no golden output"), "{answer}");
