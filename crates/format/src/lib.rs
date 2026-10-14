@@ -37,6 +37,6 @@ pub use instance::{Node, State, instantiate};
 pub use jobs::{STATES as JOB_STATES, STATUS as JOB_STATUS};
 pub use kinds::{FILTERS, Kinds, LOOK, Takes, Track, takes};
 pub use model::{Model, model};
-pub use operations::{Does, Fill, Operation, Operations};
+pub use operations::{BulkOf, Does, Fill, Operation, Operations};
 pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};

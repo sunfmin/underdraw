@@ -45,8 +45,14 @@ pub struct Operation {
     pub long: bool,
     /// For the query derived from a long command, that command's name.
     pub job_of: Option<String>,
-    /// Each way it can fail, by name, with when.
+    /// Each way it can fail, by name, with when. A bulk form's fail item
+    /// by item.
     pub fails: Vec<(String, String)>,
+    /// The name of its bulk form, for an operation marked `"bulk"`.
+    pub bulk: Option<String>,
+    /// For a bulk form, derived from the operation marked `"bulk"`: what it
+    /// is the bulk form of.
+    pub bulk_of: Option<BulkOf>,
     /// The fields of `data` its result fills, for a query: each written
     /// `"from": <this query>`, or `"from": <this query>.<part>`.
     pub fills: Vec<Fill>,
@@ -54,6 +60,19 @@ pub struct Operation {
     /// answers one page at a time, its result says in `next` where the next
     /// page starts, and it takes the `cursor` and `limit` paging adds.
     pub pages: bool,
+}
+
+/// What a bulk form is derived from: the operation it does for each item,
+/// and the parameter each item goes in.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BulkOf {
+    /// The operation marked `"bulk"`: `deleteDoc`.
+    pub operation: String,
+    /// Its key parameter, the first it takes: `id`. Each item is one value
+    /// of it; every other parameter is the same for all of them.
+    pub key: String,
+    /// The bulk form's list of them: the key's name with an `s`, `ids`.
+    pub keys: String,
 }
 
 /// A field of `data` a query's result fills.
@@ -86,8 +105,19 @@ impl Operation {
 pub struct Operations(Vec<Operation>);
 
 /// The keys an operation is written with.
-const KEYS: [&str; 10] =
-    ["query", "command", "params", "result", "requires", "destructive", "long", "fails", "pages", "$comment"];
+const KEYS: [&str; 11] = [
+    "query",
+    "command",
+    "params",
+    "result",
+    "requires",
+    "destructive",
+    "long",
+    "bulk",
+    "fails",
+    "pages",
+    "$comment",
+];
 
 /// The parameters paging by a cursor adds, which the description does not
 /// write.
@@ -115,7 +145,7 @@ impl Operations {
             };
             for key in body.keys() {
                 if !KEYS.contains(&key.as_str()) && !key.starts_with('$') {
-                    findings.add(&at, &format!("an operation has no {key}: it holds query or command, params, result, requires, destructive, long, fails, pages"));
+                    findings.add(&at, &format!("an operation has no {key}: it holds query or command, params, result, requires, destructive, long, bulk, fails, pages"));
                 }
             }
             let (does, doc) = match (body.get("query"), body.get("command")) {
@@ -221,8 +251,20 @@ impl Operations {
                     "fails names each way it can fail: {\"notFound\": \"the document is gone\"}",
                 ),
             }
-            let fills = Vec::new();
-            read.push(Operation {
+            let bulk = match body.get("bulk") {
+                None => None,
+                Some(Value::String(bulk)) if field::is_identifier(bulk) => Some(bulk.clone()),
+                Some(other) => {
+                    findings.add(
+                        &format!("{at}.bulk"),
+                        &format!(
+                            "{other}: bulk names the operation's bulk form, an identifier such as deleteDocs"
+                        ),
+                    );
+                    None
+                }
+            };
+            let single = Operation {
                 name: name.clone(),
                 does,
                 doc,
@@ -233,9 +275,24 @@ impl Operations {
                 long: long && does == Does::Command,
                 job_of: None,
                 fails,
-                fills,
+                bulk,
+                bulk_of: None,
+                fills: Vec::new(),
                 pages,
-            });
+            };
+            let bulk_form = single.bulk.as_ref().and_then(|bulk| bulk_form(&single, bulk, &at, findings));
+            read.push(single);
+            read.extend(bulk_form);
+        }
+        for form in &read {
+            if let Some(of) = &form.bulk_of
+                && read.iter().filter(|other| other.name == form.name).count() > 1
+            {
+                findings.add(
+                    &format!("operations.{}.bulk", of.operation),
+                    &format!("{} is already an operation: name the bulk form something else", form.name),
+                );
+            }
         }
         let mut long = Vec::new();
         for operation in &read {
@@ -339,6 +396,78 @@ impl Operations {
     pub fn get(&self, name: &str) -> Option<&Operation> {
         self.0.iter().find(|operation| operation.name == name)
     }
+}
+
+/// The bulk form `name` of `single`: its key parameter (the first) made a
+/// list of at least one, every other parameter as it is; its precondition
+/// and failures held item by item, and its result one entry per item. None,
+/// with a finding at `at`, when `single` cannot have one.
+fn bulk_form(single: &Operation, name: &str, at: &str, findings: &mut Findings) -> Option<Operation> {
+    let at = format!("{at}.bulk");
+    if single.does == Does::Query {
+        findings.add(
+            &at,
+            "bulk marks a command: a query only reads, and one that reads many is a query of its own",
+        );
+        return None;
+    }
+    if single.long {
+        findings.add(
+            &at,
+            "a long command answers with one job, and its bulk form would answer with one per item: mark it long or bulk, not both",
+        );
+        return None;
+    }
+    let Some((key, field)) = single.params.first() else {
+        findings.add(
+            &at,
+            "a bulk form takes many of the operation's first parameter, and it has none: give it the one each item is, such as \"id\": \"string\"",
+        );
+        return None;
+    };
+    if field.array || field.nullable || field.default.is_some() {
+        findings.add(
+            &at,
+            &format!(
+                "a bulk form takes many of the operation's first parameter, and {key} is {}: make the first parameter the one each item is, one value and required",
+                field.describe()
+            ),
+        );
+        return None;
+    }
+    let keys = format!("{key}s");
+    if single.params.iter().any(|(param, _)| param == &keys) {
+        findings.add(
+            &at,
+            &format!("the bulk form takes {keys}, and the operation has a parameter of that name already"),
+        );
+        return None;
+    }
+    let mut params = vec![(
+        keys.clone(),
+        Field { array: true, lo: Some(1.0), hi: None, default: None, doc: None, ..field.clone() },
+    )];
+    for (index, (param, field)) in single.params.iter().enumerate() {
+        if index > 0 {
+            params.push((param.clone(), field.clone()));
+        }
+    }
+    Some(Operation {
+        name: name.to_string(),
+        does: single.does,
+        doc: format!("{}: each of several, one by one", single.doc),
+        params,
+        result: single.result.clone(),
+        requires: single.requires.clone(),
+        destructive: single.destructive,
+        long: false,
+        job_of: None,
+        fails: single.fails.clone(),
+        bulk: None,
+        bulk_of: Some(BulkOf { operation: single.name.clone(), key: key.clone(), keys }),
+        fills: Vec::new(),
+        pages: false,
+    })
 }
 
 /// The parameters a query that pages by a cursor takes besides its own:

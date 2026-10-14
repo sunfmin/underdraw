@@ -27,6 +27,9 @@ fn server(fixture: &str) -> Value {
 /// exit code, run as `<cli> <argv>` against `data`. `wrong` plants the
 /// mistakes a careless one makes.
 fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String, i32) {
+    if let ["delete-docs", rest @ ..] = argv {
+        return stub_bulk(data, rest, fail, wrong);
+    }
     if let Some(failure) = fail {
         return (json!({ "error": failure }).to_string(), if wrong { 1 } else { 2 });
     }
@@ -70,6 +73,39 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
     }
 }
 
+/// `delete-docs <ids>… [--yes]`: each picked document deleted, one by one,
+/// `fail` failing the first. The careless one deletes without --yes, and
+/// leaves out the one that failed, exiting 0.
+fn stub_bulk(data: &Value, rest: &[&str], fail: Option<&str>, wrong: bool) -> (String, i32) {
+    let yes = rest.contains(&"--yes");
+    let ids: Vec<&str> = rest.iter().copied().filter(|word| *word != "--yes").collect();
+    if !yes && !wrong {
+        let dry_run = json!({ "operation": "deleteDocs",
+                              "does": "Deletes a document for everyone in the team: each of several, one by one",
+                              "with": { "ids": ids } });
+        return (json!({ "error": "needs --yes", "dryRun": dry_run }).to_string(), 1);
+    }
+    let picked = data["selection"]["ids"].as_array().cloned().unwrap_or_default();
+    let mut results = Vec::new();
+    let mut every = true;
+    for (index, id) in ids.iter().enumerate() {
+        let error = match fail {
+            Some(failure) if index == 0 => Some(failure.to_string()),
+            _ if !picked.contains(&json!(id)) => Some("requires canDelete".to_string()),
+            _ => None,
+        };
+        match error {
+            Some(_) if wrong => {}
+            Some(error) => {
+                every = false;
+                results.push(json!({ "id": id, "error": error }));
+            }
+            None => results.push(json!({ "id": id })),
+        }
+    }
+    (json!({ "results": results }).to_string(), if every { 0 } else { 2 })
+}
+
 fn capture(name: &str, argv: &[&str], fail: Option<&str>, run: (String, i32)) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("underdraw-cli-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -83,7 +119,7 @@ fn capture(name: &str, argv: &[&str], fail: Option<&str>, run: (String, i32)) ->
 }
 
 /// Each run a test makes: fixture, command line, named failure.
-const RUNS: [(&str, &[&str], Option<&str>); 7] = [
+const RUNS: [(&str, &[&str], Option<&str>); 10] = [
     ("default", &["list"], None),
     ("more-to-come", &["list"], None),
     ("empty", &["list"], None),
@@ -91,10 +127,13 @@ const RUNS: [(&str, &[&str], Option<&str>); 7] = [
     ("confirm-delete", &["delete", "c"], None),
     ("confirm-delete", &["delete", "c", "--yes"], None),
     ("default", &["delete", "a"], Some("notFound")),
+    ("confirm-delete-selected", &["delete-docs", "c", "e"], None),
+    ("confirm-delete-selected", &["delete-docs", "c", "e", "--yes"], None),
+    ("confirm-delete-selected", &["delete-docs", "c", "e", "--yes"], Some("notFound")),
 ];
 
 #[test]
-fn the_documents_draft_derives_list_delete_and_new() {
+fn the_documents_draft_derives_list_delete_delete_docs_and_new() {
     let (answer, code) = underdraw(&["cli", DRAFT]);
     assert_eq!(code, 0, "{answer}");
     let usages: Vec<&str> =
@@ -104,6 +143,7 @@ fn the_documents_draft_derives_list_delete_and_new() {
         [
             "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]",
             "delete <id> --yes",
+            "delete-docs <ids>… --yes",
             "new"
         ]
     );
@@ -135,7 +175,7 @@ fn a_wrong_stub_is_found_out() {
         let path = capture(&format!("wrong-{index}"), argv, *fail, run);
         let (answer, code) =
             underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap(), "--fixture", fixture]);
-        if *fixture == "empty" || argv.contains(&"--yes") {
+        if *fixture == "empty" || (argv.contains(&"--yes") && fail.is_none()) {
             assert_eq!(code, 0, "{fixture} {argv:?}: {answer}");
             continue;
         }
@@ -154,6 +194,7 @@ fn a_wrong_stub_is_found_out() {
         ("exit", "exit"),
         ("stdout", "stdout.error"),
         ("stdout", "stdout.dryRun"),
+        ("stdout", "stdout.results"),
     ] {
         assert!(
             found.iter().any(|(check, at)| (check.as_str(), at.as_str()) == wanted),

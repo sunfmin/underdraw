@@ -1,8 +1,9 @@
 //! Compares the documents draft against its hand-written captures on the
 //! web, of the `row-menu-own` state (a row's menu open) and of the
-//! `confirm-delete` state (the delete confirmation open): in each, one whose
-//! interactions call what the description says, and one that gets each call
-//! wrong a different way.
+//! `confirm-delete` state (the delete confirmation open) and of the
+//! `confirm-delete-selected` state (the confirmation to delete the picked
+//! documents open): in each, one whose interactions call what the
+//! description says, and one that gets each call wrong a different way.
 
 use serde_json::{Value, json};
 use underdraw_compare::{Comparison, compare};
@@ -43,6 +44,32 @@ fn calls_made_as_described_have_no_findings() {
     let comparison = run_in("confirm-delete", &read("captures/web-confirm-delete.json")).unwrap();
     assert!(comparison.ok, "{:#?}", comparison.findings);
     assert_eq!(comparison.checked.calls, 2);
+    let comparison =
+        run_in("confirm-delete-selected", &read("captures/web-confirm-delete-selected.json")).unwrap();
+    assert!(comparison.ok, "{:#?}", comparison.findings);
+    assert_eq!(comparison.checked.calls, 2);
+}
+
+#[test]
+fn deleting_the_picked_ones_one_by_one_is_not_the_bulk_call() {
+    let comparison =
+        run_in("confirm-delete-selected", &read("captures/web-confirm-delete-selected-wrong.json")).unwrap();
+    let found: Vec<_> = comparison.findings.iter().map(|f| (f.at.as_str(), f.check)).collect();
+    assert_eq!(
+        found,
+        [
+            ("confirm-delete-selected-confirm", "call-missing"),
+            ("confirm-delete-selected-confirm", "call-extra"),
+            ("confirm-delete-selected-confirm", "call-extra")
+        ],
+        "{:#?}",
+        comparison.findings
+    );
+    assert!(
+        comparison.findings[0].problem.contains(r#"deleteDocs with {"ids":["c","e"]}"#),
+        "{}",
+        comparison.findings[0].problem
+    );
 }
 
 #[test]

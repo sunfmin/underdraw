@@ -27,6 +27,7 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
         [
             ("list", "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]"),
             ("delete", "delete <id> --yes"),
+            ("delete-docs", "delete-docs <ids>… --yes"),
             ("new", "new")
         ]
     );
@@ -131,7 +132,88 @@ fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
         .filter(|g| g.get("failure").is_some())
         .map(|g| (&g["command"], &g["failure"]))
         .collect();
-    assert_eq!(failures.len(), 4, "{failures:?}");
+    assert_eq!(failures.len(), 7, "{failures:?}");
+}
+
+#[test]
+fn a_bulk_form_takes_many_ids_and_answers_for_each() {
+    let interface = interface();
+    let bulk = serde_json::to_value(&interface.commands[2]).unwrap();
+    assert_eq!(
+        (&bulk["name"], &bulk["operation"], &bulk["bulkOf"]),
+        (&json!("delete-docs"), &json!("deleteDocs"), &json!("deleteDoc"))
+    );
+    assert_eq!(bulk["destructive"], true, "deleting many needs --yes as deleting one does");
+    assert_eq!(bulk["args"], json!([{ "param": "ids", "type": "string[]", "repeated": true }]));
+    let fails: Vec<(&Value, &Value)> =
+        bulk["fails"].as_array().unwrap().iter().map(|f| (&f["error"], &f["exit"])).collect();
+    assert_eq!(
+        fails,
+        [
+            (&json!("requires canDelete"), &json!(2)),
+            (&json!("needs --yes"), &json!(1)),
+            (&json!("notFound"), &json!(2)),
+            (&json!("forbidden"), &json!(2))
+        ],
+        "the precondition and each failure are an item's; only --yes refuses the whole command"
+    );
+    let help = bulk["help"].as_str().unwrap();
+    assert!(help.contains("<cli> delete-docs <ids>… --yes"), "{help}");
+    assert!(help.contains("<ids>  string; one or more"), "{help}");
+
+    let args = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+    let command = &interface.commands[2];
+    assert_eq!(command.with_args(&args(&["c", "e", "--yes"])), Ok(json!({ "ids": ["c", "e"] })));
+    assert_eq!(command.with_args(&args(&["c"])), Ok(json!({ "ids": ["c"] })));
+    assert!(command.with_args(&[]).unwrap_err().contains("needs <ids>"), "at least one id");
+
+    let golden: Vec<Value> = interface.golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
+    let runs: Vec<(&Value, &Value, &Value, &Value)> = golden
+        .iter()
+        .filter(|g| g["command"] == "delete-docs")
+        .map(|g| (&g["failure"], &g["args"], &g["exit"], &g["stdout"]))
+        .collect();
+    let picked = json!(["c", "e", "--yes"]);
+    assert_eq!(
+        runs,
+        [
+            (
+                &Value::Null,
+                &json!(["c", "e"]),
+                &json!(1),
+                &json!({ "error": "needs --yes",
+                         "dryRun": { "operation": "deleteDocs",
+                                     "does": "Deletes a document for everyone in the team: each of several, one by one",
+                                     "with": { "ids": ["c", "e"] } } })
+            ),
+            (&Value::Null, &picked, &json!(0), &json!({ "results": [{ "id": "c" }, { "id": "e" }] })),
+            (
+                &json!("requires canDelete"),
+                &picked,
+                &json!(2),
+                &json!({ "results": [{ "id": "c", "error": "requires canDelete" }, { "id": "e" }] })
+            ),
+            (
+                &json!("notFound"),
+                &picked,
+                &json!(2),
+                &json!({ "results": [{ "id": "c", "error": "notFound" }, { "id": "e" }] })
+            ),
+            (
+                &json!("forbidden"),
+                &picked,
+                &json!(2),
+                &json!({ "results": [{ "id": "c", "error": "forbidden" }, { "id": "e" }] })
+            ),
+        ],
+        "the picked documents deleted only from their confirmation, given --yes: all of them, or all but one"
+    );
+    assert!(
+        golden
+            .iter()
+            .filter(|g| g["command"] == "delete-docs")
+            .all(|g| g["fixture"] == "confirm-delete-selected")
+    );
 }
 
 #[test]
@@ -168,8 +250,8 @@ fn deleting_from_the_menu(destructive: bool) -> Value {
     if !destructive {
         text = text.replace(
             r#""destructive": true,
-      "fails""#,
-            r#""fails""#,
+      "bulk""#,
+            r#""bulk""#,
         );
     }
     serde_json::from_str(&text).unwrap()

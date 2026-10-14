@@ -3,7 +3,7 @@
   "title": "团队文档",
   "locale": "zh-CN",
   "tokens": "tokens.json",
-  "$comment": "A team's documents: sorted by a dropdown in the toolbar, each row with a ⋯ menu of actions.",
+  "$comment": "A team's documents: sorted by a dropdown in the toolbar, each row with a ⋯ menu of actions and a box that picks it, to delete several at once.",
   "data": {
     "summary": "Summary",
     "sort": "Sort",
@@ -20,6 +20,11 @@
       "type": "RowMenu?",
       "view": true,
       "doc": "The document whose ⋯ menu is open; null while it is closed"
+    },
+    "selection": {
+      "type": "Selection?",
+      "view": true,
+      "doc": "What the person has picked to act on together; null while nothing is"
     }
   },
   "types": {
@@ -53,6 +58,11 @@
         "type": "bool = false",
         "view": true,
         "derived": { "app": "rowMenu is open on this document" }
+      },
+      "selected": {
+        "type": "bool = false",
+        "view": true,
+        "derived": { "app": "selection holds this document" }
       }
     },
     "DocPage": {
@@ -81,6 +91,20 @@
         "view": true,
         "doc": "The delete confirmation is open for this document"
       }
+    },
+    "Selection": {
+      "ids": {
+        "type": "string[] 1..50",
+        "doc": "The picked documents' ids, in the order shown"
+      },
+      "count": {
+        "type": "int 1..",
+        "derived": { "app": "ids' length" }
+      },
+      "confirming": {
+        "type": "bool = false",
+        "doc": "The confirmation to delete them is open"
+      }
     }
   },
   "conditions": {
@@ -107,6 +131,14 @@
     "confirmingDelete": {
       "when": "canDelete && rowMenu.confirming",
       "label": "Delete confirmation open"
+    },
+    "hasSelection": {
+      "when": "selection != null",
+      "label": "Some documents picked"
+    },
+    "confirmingDeleteSelected": {
+      "when": "hasSelection && selection.confirming",
+      "label": "Confirmation to delete the picked ones open"
     }
   },
   "operations": {
@@ -128,6 +160,7 @@
       },
       "requires": "canDelete",
       "destructive": true,
+      "bulk": "deleteDocs",
       "fails": {
         "notFound": "the document is already gone",
         "forbidden": "the person no longer owns it"
@@ -227,7 +260,8 @@
           }
         }
       ],
-      "rowMenu": null
+      "rowMenu": null,
+      "selection": null
     },
     "more-to-come": {
       "$patch": "default",
@@ -380,6 +414,135 @@
         "confirming": true
       }
     },
+    "some-selected": {
+      "$patch": "default",
+      "docs": [
+        {
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          },
+          "selected": true
+        },
+        {
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          },
+          "selected": true
+        },
+        {
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
+        }
+      ],
+      "selection": {
+        "ids": [
+          "c",
+          "e"
+        ],
+        "count": 2
+      }
+    },
+    "all-selected": {
+      "$patch": "default",
+      "summary": {
+        "count": 3
+      },
+      "docs": [
+        {
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          },
+          "selected": true
+        },
+        {
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          },
+          "selected": true
+        },
+        {
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          },
+          "selected": true
+        }
+      ],
+      "selection": {
+        "ids": [
+          "a",
+          "c",
+          "e"
+        ],
+        "count": 3
+      }
+    },
+    "confirm-delete-selected": {
+      "$patch": "some-selected",
+      "selection": {
+        "ids": [
+          "c",
+          "e"
+        ],
+        "count": 2,
+        "confirming": true
+      }
+    },
     "empty": {
       "$patch": "default",
       "summary": {
@@ -420,6 +583,7 @@
       {
         "id": "toolbar",
         "kind": "Row",
+        "gap": 12,
         "padding": [
           0,
           16,
@@ -433,6 +597,27 @@
             "font": "font.caption",
             "color": "color.textSecondary",
             "text": "共 {summary.count} 个文档"
+          },
+          {
+            "id": "selected-count",
+            "kind": "Text",
+            "if": "hasSelection",
+            "font": "font.caption",
+            "text": "已选 {selection.count} 个"
+          },
+          {
+            "id": "delete-selected",
+            "kind": "Button",
+            "size": "small",
+            "variant": "secondary",
+            "text": "删除所选",
+            "disabled": "!hasSelection",
+            "$why": "greyed while nothing is picked, so the person learns it is there; it only asks, as deleting cannot be undone",
+            "on": {
+              "tap": {
+                "open": "confirm-delete-selected"
+              }
+            }
           }
         ],
         "trailing": {
@@ -477,19 +662,31 @@
               }
             }
           },
-          "trailing": {
-            "id": "doc-{item.doc.id}-more",
-            "kind": "IconButton",
-            "icon": "more_horiz",
-            "on": {
-              "tap": {
-                "open": "row-menu",
-                "with": {
-                  "id": "{item.doc.id}"
+          "trailing": [
+            {
+              "id": "doc-{item.doc.id}-select",
+              "kind": "Checkbox",
+              "checked": "{item.selected}",
+              "on": {
+                "tap": {
+                  "toggle": "item.selected"
+                }
+              }
+            },
+            {
+              "id": "doc-{item.doc.id}-more",
+              "kind": "IconButton",
+              "icon": "more_horiz",
+              "on": {
+                "tap": {
+                  "open": "row-menu",
+                  "with": {
+                    "id": "{item.doc.id}"
+                  }
                 }
               }
             }
-          },
+          ],
           "overlay": {
             "id": "doc-{item.doc.id}-menu",
             "kind": "Menu",
@@ -625,14 +822,15 @@
         }
       }
     ],
-    "overlay": {
-      "id": "confirm-delete",
-      "kind": "Dialog",
-      "if": "confirmingDelete",
-      "anchor": "center",
-      "width": {
-        "compact": "88%",
-        "regular": 400
+    "overlay": [
+      {
+        "id": "confirm-delete",
+        "kind": "Dialog",
+        "if": "confirmingDelete",
+        "anchor": "center",
+        "width": {
+          "compact": "88%",
+          "regular": 400
       },
       "$why": "deleting is for everyone and cannot be undone, so the menu item only asks; this button deletes",
       "children": [
@@ -682,7 +880,66 @@
           ]
         }
       ]
-    }
+      },
+      {
+        "id": "confirm-delete-selected",
+        "kind": "Dialog",
+        "if": "confirmingDeleteSelected",
+        "anchor": "center",
+        "width": {
+          "compact": "88%",
+          "regular": 400
+        },
+        "$why": "deletes every picked document at once, for everyone, and cannot be undone; one the person does not own is left, and the result says so",
+        "children": [
+          {
+            "id": "confirm-delete-selected-title",
+            "kind": "Text",
+            "text": "删除所选的 {selection.count} 个文档？",
+            "font": "font.heading"
+          },
+          {
+            "id": "confirm-delete-selected-detail",
+            "kind": "Text",
+            "text": "团队里的所有人都将无法再打开它们，删除后无法恢复。",
+            "color": "color.textSecondary"
+          },
+          {
+            "id": "confirm-delete-selected-actions",
+            "kind": "Row",
+            "gap": 12,
+            "children": [
+              {
+                "id": "confirm-delete-selected-cancel",
+                "kind": "Button",
+                "variant": "secondary",
+                "text": "取消",
+                "on": {
+                  "tap": {
+                    "close": "confirm-delete-selected"
+                  }
+                }
+              },
+              {
+                "id": "confirm-delete-selected-confirm",
+                "kind": "Button",
+                "variant": "primary",
+                "destructive": true,
+                "text": "删除",
+                "on": {
+                  "tap": {
+                    "call": "deleteDocs",
+                    "with": {
+                      "ids": "{selection.ids}"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "phases": {
     "loading": {
