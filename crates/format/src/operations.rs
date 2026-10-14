@@ -221,7 +221,7 @@ impl Operations {
                 None => (from.as_str(), None),
             };
             let at = format!("data.{name}");
-            let Some(operation) = self.0.iter_mut().find(|operation| &operation.name == query) else {
+            let Some(operation) = self.0.iter_mut().find(|operation| operation.name == query) else {
                 findings.add(
                     &format!("{at}.from"),
                     &format!("{query} is not an operation: from names a query in operations"),
