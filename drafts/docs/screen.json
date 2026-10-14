@@ -468,7 +468,10 @@
                 "text": "重命名",
                 "on": {
                   "tap": {
-                    "rename": "{item.doc.id}"
+                    "open": "rename-dialog",
+                    "with": {
+                      "id": "{item.doc.id}"
+                    }
                   }
                 }
               },
@@ -479,7 +482,10 @@
                 "text": "复制链接",
                 "on": {
                   "tap": {
-                    "copyLink": "{item.doc.id}"
+                    "copy": "Document",
+                    "with": {
+                      "id": "{item.doc.id}"
+                    }
                   }
                 }
               },
@@ -618,7 +624,10 @@
             "text": "重试",
             "on": {
               "tap": {
-                "reload": true
+                "call": "listDocs",
+                "with": {
+                  "sort": "updated"
+                }
               }
             }
           }

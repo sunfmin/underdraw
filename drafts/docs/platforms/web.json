@@ -25,9 +25,7 @@
     "call": "await operations[operation](with), through the app's data layer",
     "navigate": "router.push",
     "toggle": "flip the view-state field",
-    "open": "open the popover, holding which row it is about",
-    "rename": "edit the title in place",
-    "copyLink": "navigator.clipboard.writeText of the document's link",
-    "reload": "fetch the data again"
+    "open": "open the popover or dialog, holding which row it is about",
+    "copy": "navigator.clipboard.writeText of the link router.push would follow"
   }
 }

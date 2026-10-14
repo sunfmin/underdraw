@@ -5,12 +5,13 @@
   "tokens": "tokens.json",
   "$comment": "A delivery app's restaurant menu: dishes grouped by category, a cart bar, and a bottom sheet to choose a dish's size, add-ons and quantity before adding it.",
   "data": {
-    "restaurant": "Restaurant",
+    "restaurant": { "type": "Restaurant", "from": "getMenu" },
     "categories": "Category[] 1..12",
     "sections": "MenuSection[] 1..12",
     "cart": "Cart",
     "customizing": {
       "type": "Customizing?",
+      "view": true,
       "doc": "The dish whose sheet is open; null while no sheet shows"
     }
   },
@@ -132,6 +133,27 @@
     "adding": {
       "when": "sheetOpen && customizing.adding",
       "label": "Adding to cart"
+    }
+  },
+  "operations": {
+    "getMenu": {
+      "query": "The restaurant the screen was opened for, with its menu",
+      "result": "Restaurant",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "addToCart": {
+      "command": "Puts the dish in the cart, in the size and with the add-ons chosen",
+      "params": {
+        "dishId": "string",
+        "quantity": "int 1..20",
+        "note": "string ..40"
+      },
+      "requires": "canAdd",
+      "fails": {
+        "soldOut": "the dish sold out meanwhile"
+      }
     }
   },
   "fixtures": {
@@ -709,8 +731,8 @@
               },
               "on": {
                 "tap": {
-                  "set": "size",
-                  "to": "{item.id}"
+                  "set": "item.selected",
+                  "to": true
                 }
               }
             }
@@ -797,9 +819,11 @@
               },
               "on": {
                 "tap": {
-                  "submit": "addToCart",
+                  "call": "addToCart",
                   "with": {
-                    "id": "{customizing.dishId}"
+                    "dishId": "{customizing.dishId}",
+                    "quantity": "{customizing.quantity}",
+                    "note": "{customizing.note}"
                   }
                 }
               }
@@ -865,7 +889,7 @@
             "text": "重试",
             "on": {
               "tap": {
-                "reload": true
+                "call": "getMenu"
               }
             }
           }

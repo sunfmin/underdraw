@@ -184,21 +184,32 @@ LAYOUT ON A NODE
 ACTIONS
   "on" maps an event (usually "tap") to actions, each "name": argument.
   What reads or changes domain data is an operation, called with "call"
-  (OPERATIONS below). The rest is what the screen does by itself: names are
-  free, and each platform file says how to do each one. Seen in use:
-    "on": { "tap": { "navigate": "Checkout", "with": {"id": "{listing.id}"} } }
-    "on": { "tap": { "toggle": "item.done" } }
-    "on": { "tap": { "set": "composer.text", "to": "" } }
-    "on": { "tap": { "set": {"booking.checkIn": null, "booking.checkOut": null} } }
-    "on": { "tap": { "open": "sheet-reviews" } }    also back, reload, share,
-                                                    scrollTo, submit
+  (OPERATIONS below): saving, deleting, sending a form, loading again
+  (a retry button), choosing what the server keeps (a delivery option, a
+  filter it applies), marking a todo done. Everything else is UI-only,
+  what the screen does by itself, and is one of these:
+    navigate   go to a screen    "navigate": "Checkout", "with": {"id": "{listing.id}"}
+    back       go back           "back": true
+    open       show a popup      "open": "cancel-dialog", "with": {"id": "{item.id}"}
+    close      hide it           "close": "cancel-dialog"
+    scrollTo   scroll to a node  "scrollTo": "calendar"
+    share      the system sheet  "share": "{listing.url}"
+    copy       a screen's link   "copy": "Document", "with": {"id": "{item.doc.id}"}
+    set        write view state  "set": "item.selected", "to": true
+                                 "set": {"booking.checkIn": null, "booking.checkOut": null}
+    toggle     flip view state   "toggle": "sort.menuOpen"
+  set and toggle write only view state: a field marked "view": true, or
+  one inside such a field (DATA AND TYPES), an element of a view-state
+  list included. check refuses any other action name, and set or toggle
+  on domain data: "toggle": "item.done" on a Todo is "call": "toggleTodo".
+  Each platform file says how to do each action it uses, "call" once.
   "with" is passed along with the action. A handler may be cases:
     "on": { "tap": { "cases": [ { "if": "!hasDates", "then": {"scrollTo": "calendar"} },
                                 { "else": {"navigate": "Checkout"} } ] } }
-  Event names are free too: "tap", or "change" on a node with "bind", raised
-  once the person has edited the bound value. Its handler reads the new
-  value through the bound path, so an edit that changes domain data calls
-  the operation that saves it:
+  Event names, unlike action names, are free: "tap", or "change" on a node
+  with "bind", raised once the person has edited the bound value. Its
+  handler reads the new value through the bound path, so an edit that
+  changes domain data calls the operation that saves it:
     { "id": "qty-{index}", "kind": "Stepper", "bind": "item.quantity",
       "on": { "change": { "call": "setQuantity",
                           "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } }
@@ -266,7 +277,7 @@ POPUPS
               "overlay": { "id": "cancel-dialog", "kind": "Dialog", "if": "dialogOpen",
                            "anchor": "center", "children": [ … ] } }
   Inside it, paths through the nullable field are safe: "if" tests it.
-  The button that opens it says so with a free action, { "open": "cancel-dialog" };
+  The button that opens it says so with a UI-only action, { "open": "cancel-dialog" };
   a list of choices inside it is "each" like anywhere else.
   "Dialog" is the project's own kind (kinds.json): a look such as
   { "box": "column", "backdrop": true, "width": "{width|or:88%}",

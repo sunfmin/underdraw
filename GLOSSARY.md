@@ -95,6 +95,12 @@ the `data` fields its result fills (`"from"`); a parameter with a fixed set
 of choices is an enum the view model offers too.
 _Avoid_: endpoint, API call, action
 
+**UI-only action**:
+What a screen does by itself on an event, touching no domain data:
+`navigate`, `back`, `open`, `close`, `scrollTo`, `share`, `copy`, and
+`set` or `toggle` on view state. Anything else is a call to an operation.
+_Avoid_: free action, local action
+
 **Template**:
 A string with placeholders that show data.
 

@@ -88,8 +88,9 @@
   },
 
   "operations": {
-    "getCart":    { "query": "The items in the person's cart, with what each costs and how many are out of stock",
-                    "result": "Cart" },
+    "getCart":    { "query": "The items in the person's cart, with what each costs and how many are out of stock; the screen loads with it, so loading it again loads the whole screen",
+                    "result": "Cart",
+                    "fails": { "offline": "the server cannot be reached" } },
     "getAddress": { "query": "The address the order ships to; null when the person has none yet",
                     "result": "Address?" },
     "listDeliveryOptions": { "query": "The ways the cart can ship, the one the order ships with selected",
@@ -433,7 +434,7 @@
         { "id": "error-state", "kind": "EmptyState", "icon": "cloud_off",
           "title": "订单信息加载失败", "detail": "请检查网络后重试",
           "action": { "id": "error-retry", "kind": "Button", "variant": "primary", "text": "重试",
-                      "on": { "tap": { "reload": true } } } }
+                      "on": { "tap": { "call": "getCart" } } } }
       ]
     }
   }
