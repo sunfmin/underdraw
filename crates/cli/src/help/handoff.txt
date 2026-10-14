@@ -36,9 +36,12 @@ ANSWERS
     "hidden":     [{"id", "why"}, …]: nodes this platform does not build
     "states":     [{"state": {"fixture"} or {"phase"}, "breakpoint",
                     "present": [id, …],
-                    "shows": {id: {"text", "label", "value", "disabled", …}}}, …]
+                    "shows": {id: {"text", "label", "value", "disabled", …}},
+                    "calls": {id: [{"on", "operation", "with"}, …]}}, …]
                   every fixture and phase at both breakpoints: what the real
-                  UI must show, to assert in its tests by test id
+                  UI must show, to assert in its tests by test id; "calls" is
+                  the operation each node calls when acted on, with its
+                  arguments filled for that state (left out when none does)
     "fixtures":   {name: data}: each fixture merged and defaulted, ready to
                   decode into the generated model for previews and tests
     "unconfirmed": [{"id", "assumed"}, …]: guesses the person has not confirmed
@@ -51,7 +54,9 @@ HOW TO USE IT
     with its "implement"; an event with "operation" calls that operation,
     given "with", through the app's data layer.
   - Write one preview or test per state: load its fixture from "fixtures",
-    and assert every "present" id and every value in "shows".
+    and assert every "present" id and every value in "shows". Act on each
+    node in "calls" and assert the app calls that operation with "with"
+    (`underdraw compare` checks both, from a capture).
   - Ask the person about each "unconfirmed" item before building it.
 
 WHAT TRIPS YOU UP

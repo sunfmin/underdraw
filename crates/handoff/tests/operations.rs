@@ -44,3 +44,27 @@ fn each_event_names_the_operation_it_calls() {
     );
     assert_eq!(operations[0]["result"], "Doc[]");
 }
+
+#[test]
+fn each_state_expects_the_calls_its_nodes_make() {
+    let handoff = handoff(
+        &draft("screen.json"),
+        &draft("platforms/web.json"),
+        &draft("tokens.json"),
+        Some(&draft("kinds.json")),
+    )
+    .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    assert!(handoff.ok, "{:#?}", handoff.findings);
+    let state =
+        |fixture: &str| handoff.states.iter().find(|s| s.state == json!({ "fixture": fixture })).unwrap();
+    let own = &state("row-menu-own").calls;
+    assert_eq!(
+        own["doc-c-delete"],
+        json!([{ "on": "tap", "operation": "deleteDoc", "with": { "id": "c" } }])
+    );
+    assert_eq!(own["nav-new"], json!([{ "on": "tap", "operation": "newDocument", "with": {} }]));
+    assert!(!own.contains_key("doc-c-copy"), "copying a link calls no operation");
+    let sorting = &state("sort-open").calls;
+    assert_eq!(sorting["sort-title"][0]["with"], json!({ "sort": "title" }));
+    assert!(!state("default").calls.contains_key("doc-a-delete"), "a closed menu's items are not present");
+}

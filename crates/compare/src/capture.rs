@@ -154,13 +154,17 @@ fn read_acted(value: &Value) -> Result<Acted, String> {
         Some(Value::Array(written)) => {
             for call in written {
                 let Some(operation) = call.get("operation").and_then(Value::as_str) else {
-                    return Err(format!("{id}: each call needs \"operation\": the name of the operation called"));
+                    return Err(format!(
+                        "{id}: each call needs \"operation\": the name of the operation called"
+                    ));
                 };
                 let with = match call.get("with") {
                     None | Some(Value::Null) => Value::Object(serde_json::Map::new()),
                     Some(Value::Object(with)) => Value::Object(with.clone()),
                     Some(_) => {
-                        return Err(format!("{id}: a call's \"with\" is its arguments by parameter name, an object"));
+                        return Err(format!(
+                            "{id}: a call's \"with\" is its arguments by parameter name, an object"
+                        ));
                     }
                 };
                 calls.push(Call { operation: operation.to_string(), with });
