@@ -48,12 +48,20 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
             };
             (json!({ "result": docs }).to_string(), 0)
         }
-        ["delete", id] => {
+        ["delete", id, rest @ ..] => {
             let may = data["rowMenu"]["docId"] == *id && data["rowMenu"]["canDelete"] == true;
-            if may || wrong {
+            // Deleting cannot be undone: without --yes it only says what it
+            // would do. The careless one deletes anyway.
+            let yes = rest == ["--yes"];
+            if !may && !wrong {
+                (json!({ "error": "requires canDelete" }).to_string(), 1)
+            } else if yes || wrong {
                 ("{}".to_string(), 0)
             } else {
-                (json!({ "error": "requires canDelete" }).to_string(), 1)
+                let dry_run = json!({ "operation": "deleteDoc",
+                                      "does": "Deletes a document for everyone in the team",
+                                      "with": { "id": id } });
+                (json!({ "error": "needs --yes", "dryRun": dry_run }).to_string(), 1)
             }
         }
         _ => (json!({ "error": "usage" }).to_string(), 2),
@@ -77,8 +85,8 @@ const RUNS: [(&str, &[&str], Option<&str>); 6] = [
     ("default", &["list"], None),
     ("empty", &["list"], None),
     ("row-menu", &["list"], None),
-    ("row-menu", &["delete", "b"], None),
-    ("row-menu-own", &["delete", "c"], None),
+    ("confirm-delete", &["delete", "c"], None),
+    ("confirm-delete", &["delete", "c", "--yes"], None),
     ("default", &["delete", "a"], Some("notFound")),
 ];
 
@@ -88,7 +96,7 @@ fn the_documents_draft_derives_list_delete_and_new() {
     assert_eq!(code, 0, "{answer}");
     let usages: Vec<&str> =
         answer["commands"].as_array().unwrap().iter().map(|c| c["usage"].as_str().unwrap()).collect();
-    assert_eq!(usages, ["list [--sort <updated|created|title|owner>]", "delete <id>", "new"]);
+    assert_eq!(usages, ["list [--sort <updated|created|title|owner>]", "delete <id> --yes", "new"]);
 }
 
 #[test]
@@ -110,7 +118,7 @@ fn a_wrong_stub_is_found_out() {
         let path = capture(&format!("wrong-{index}"), argv, *fail, run);
         let (answer, code) =
             underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap(), "--fixture", fixture]);
-        if *fixture == "empty" || *fixture == "row-menu-own" {
+        if *fixture == "empty" || argv.contains(&"--yes") {
             assert_eq!(code, 0, "{fixture} {argv:?}: {answer}");
             continue;
         }
@@ -127,6 +135,7 @@ fn a_wrong_stub_is_found_out() {
         ("stdout", "stdout.result[0].menuOpen"),
         ("exit", "exit"),
         ("stdout", "stdout.error"),
+        ("stdout", "stdout.dryRun"),
     ] {
         assert!(
             found.iter().any(|(check, at)| (check.as_str(), at.as_str()) == wanted),
@@ -141,7 +150,7 @@ fn a_command_line_with_no_golden_output_is_refused() {
     let (answer, code) = underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap()]);
     assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("one of updated"), "{answer}");
-    let path = capture("untested", &["delete", "z"], None, ("{}".to_string(), 0));
+    let path = capture("untested", &["delete", "z", "--yes"], None, ("{}".to_string(), 0));
     let (answer, code) = underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap()]);
     assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("no golden output"), "{answer}");

@@ -36,6 +36,9 @@ pub struct Operation {
     pub result: Option<Field>,
     /// The condition that must hold before it may be called.
     pub requires: Option<String>,
+    /// A command that cannot be undone: the screen calls it only from a
+    /// confirmation, and the CLI only given `--yes`.
+    pub destructive: bool,
     /// Each way it can fail, by name, with when.
     pub fails: Vec<(String, String)>,
     /// The fields of `data` its result fills, for a query: each written
@@ -58,7 +61,8 @@ pub struct Fill {
 pub struct Operations(Vec<Operation>);
 
 /// The keys an operation is written with.
-const KEYS: [&str; 7] = ["query", "command", "params", "result", "requires", "fails", "$comment"];
+const KEYS: [&str; 8] =
+    ["query", "command", "params", "result", "requires", "destructive", "fails", "$comment"];
 
 impl Operations {
     pub fn read(
@@ -82,7 +86,7 @@ impl Operations {
             };
             for key in body.keys() {
                 if !KEYS.contains(&key.as_str()) && !key.starts_with('$') {
-                    findings.add(&at, &format!("an operation has no {key}: it holds query or command, params, result, requires, fails"));
+                    findings.add(&at, &format!("an operation has no {key}: it holds query or command, params, result, requires, destructive, fails"));
                 }
             }
             let (does, doc) = match (body.get("query"), body.get("command")) {
@@ -112,6 +116,21 @@ impl Operations {
                     None
                 }
             };
+            let destructive = match body.get("destructive") {
+                None => false,
+                Some(Value::Bool(destructive)) => *destructive,
+                Some(other) => {
+                    findings
+                        .add(&format!("{at}.destructive"), &format!("{other}: destructive is true or false"));
+                    false
+                }
+            };
+            if destructive && does == Does::Query {
+                findings.add(
+                    &format!("{at}.destructive"),
+                    "a query only reads, so nothing it does needs confirming: destructive marks a command",
+                );
+            }
             let mut fails = Vec::new();
             match body.get("fails") {
                 None => {}
@@ -133,7 +152,17 @@ impl Operations {
                 ),
             }
             let fills = Vec::new();
-            read.push(Operation { name: name.clone(), does, doc, params, result, requires, fails, fills });
+            read.push(Operation {
+                name: name.clone(),
+                does,
+                doc,
+                params,
+                result,
+                requires,
+                destructive,
+                fails,
+                fills,
+            });
         }
         let mut operations = Operations(read);
         operations.fill(schema, findings);

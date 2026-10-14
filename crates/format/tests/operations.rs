@@ -53,9 +53,9 @@ fn the_draft_declares_its_operations_and_passes() {
 fn each_planted_fault_is_found_where_it_was_planted() {
     // (name, what the draft says, the fault planted in its place, where it is found, what is said)
     let delete_with = r#""call": "deleteDoc",
-                    "with": {
-                      "id": "{item.doc.id}"
-                    }"#;
+                  "with": {
+                    "id": "{rowMenu.docId}"
+                  }"#;
     let cases = [
         (
             "unknown-param-type",
@@ -214,50 +214,83 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "with-missing-a-parameter",
             delete_with,
             r#""call": "deleteDoc""#,
-            "doc-{item.doc.id}-delete.on.tap.with",
+            "confirm-delete-confirm.on.tap.with",
             "deleteDoc needs id (string)",
         ),
         (
             "with-an-extra-parameter",
             delete_with,
-            r#""call": "deleteDoc", "with": { "id": "{item.doc.id}", "force": true }"#,
-            "doc-{item.doc.id}-delete.on.tap.with.force",
+            r#""call": "deleteDoc", "with": { "id": "{rowMenu.docId}", "force": true }"#,
+            "confirm-delete-confirm.on.tap.with.force",
             "deleteDoc has no parameter force",
         ),
         (
             "with-of-the-wrong-type",
             delete_with,
-            r#""call": "deleteDoc", "with": { "id": "{item.doc.updated}" }"#,
-            "doc-{item.doc.id}-delete.on.tap.with.id",
-            "is date, and the parameter is string",
+            r#""call": "deleteDoc", "with": { "id": "{rowMenu.canDelete}" }"#,
+            "confirm-delete-confirm.on.tap.with.id",
+            "is bool, and the parameter is string",
         ),
         (
             "with-an-object",
             delete_with,
-            r#""call": "deleteDoc", "with": { "id": "{item.doc}" }"#,
-            "doc-{item.doc.id}-delete.on.tap.with.id",
-            "is Doc, and the parameter is string",
+            r#""call": "deleteDoc", "with": { "id": "{rowMenu}" }"#,
+            "confirm-delete-confirm.on.tap.with.id",
+            "is RowMenu?, and the parameter is string",
         ),
         (
             "with-a-path-that-is-not-one",
             delete_with,
-            r#""call": "deleteDoc", "with": { "id": "{item.docId}" }"#,
-            "doc-{item.doc.id}-delete.on.tap.with.id",
-            "item.docId is not a path here",
-        ),
-        (
-            "not-gated",
-            r#""disabled": "!canDelete","#,
-            "",
-            "doc-{item.doc.id}-delete",
-            "calls deleteDoc, which requires canDelete",
+            r#""call": "deleteDoc", "with": { "id": "{rowMenu.id}" }"#,
+            "confirm-delete-confirm.on.tap.with.id",
+            "rowMenu.id is not a path here",
         ),
         (
             "gated-by-another-condition",
-            r#""disabled": "!canDelete","#,
-            r#""disabled": "!rowMenuOpen","#,
-            "doc-{item.doc.id}-delete",
+            r#""if": "confirmingDelete","#,
+            r#""if": "rowMenuOpen","#,
+            "confirm-delete-confirm",
             "calls deleteDoc, which requires canDelete",
+        ),
+        (
+            "destructive-not-a-bool",
+            r#""destructive": true,
+      "fails""#,
+            r#""destructive": "yes",
+      "fails""#,
+            "operations.deleteDoc.destructive",
+            "destructive is true or false",
+        ),
+        (
+            "destructive-query",
+            r#""params": {
+        "sort""#,
+            r#""destructive": true,
+      "params": {
+        "sort""#,
+            "operations.listDocs.destructive",
+            "destructive marks a command",
+        ),
+        (
+            "destructive-called-outside-its-confirmation",
+            r#""open": "confirm-delete""#,
+            r#""call": "deleteDoc""#,
+            "doc-{item.doc.id}-delete",
+            "calls deleteDoc, which is destructive: call it only from inside its confirmation",
+        ),
+        (
+            "confirmation-no-node-opens",
+            r#""open": "confirm-delete""#,
+            r#""open": "confirm""#,
+            "confirm-delete-confirm",
+            "calls deleteDoc, which is destructive",
+        ),
+        (
+            "confirmation-without-a-backdrop",
+            r#""kind": "Dialog""#,
+            r#""kind": "Card""#,
+            "confirm-delete-confirm",
+            "calls deleteDoc, which is destructive",
         ),
         (
             "view-not-a-bool",
@@ -302,8 +335,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         (
             "submit-is-not-free",
             delete_with,
-            r#""submit": "deleteDoc", "with": { "id": "{item.doc.id}" }"#,
-            "doc-{item.doc.id}-delete.on.tap.submit",
+            r#""submit": "deleteDoc", "with": { "id": "{rowMenu.docId}" }"#,
+            "confirm-delete-confirm.on.tap.submit",
             "what reads or changes domain data is an operation, called with \"call\"",
         ),
     ];
@@ -343,8 +376,17 @@ fn a_call_is_gated_by_an_if_or_by_a_condition_that_implies_it() {
                               { "else": { "open": "why-not" } } ]"#,
         ),
     ];
+    // Gating alone: deleteDoc not destructive, and called by the menu item.
+    let direct = DRAFT
+        .replace(
+            r#""destructive": true,
+      "fails""#,
+            r#""fails""#,
+        )
+        .replace(r#""open": "confirm-delete""#, r#""call": "deleteDoc""#);
     for (name, from, to) in cases {
-        let mut screen = planted(name, from, to);
+        assert_eq!(direct.matches(from).count(), 1, "{name}: {from:?} must appear exactly once");
+        let mut screen: Value = serde_json::from_str(&direct.replace(from, to)).unwrap();
         if name == "implied" {
             let delete = "/root/children/2/item/overlay/children/4";
             screen.pointer_mut(delete).unwrap()["disabled"] = Value::from("!mayDeleteNow");

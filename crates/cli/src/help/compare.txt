@@ -29,7 +29,7 @@ THE CAPTURE
         …
       ],
       "acted": [                        optional: each node the test acted on
-        { "id": "doc-c-delete",         its test id
+        { "id": "confirm-delete-confirm", its test id
           "on": "tap",                  the event, as in handoff's "events";
                                         "tap" when left out
           "calls": [                    every operation call the app made in
@@ -74,7 +74,7 @@ ANSWERS
 A CLI'S CAPTURE
   One command run, in one fixture (--fixture; the first when not given):
     {
-      "command": ["delete", "b"],       the command line after the CLI's name
+      "command": ["delete", "b", "--yes"],  the command line after the CLI's name
       "exit": 1,                        the code it exited with
       "stdout": "{\"error\": …}",       what it printed, as text (or the
                                         JSON value it parsed to)
@@ -84,7 +84,8 @@ A CLI'S CAPTURE
     }
   The command line is read as `underdraw cli` says the command takes it,
   defaults filled in, and matched to the golden output of that command, in
-  that fixture, given the same parameters. Exit 2 when it is not one the
+  that fixture, given the same parameters (and, for a destructive command,
+  with --yes or without it, as the run was). Exit 2 when it is not one the
   derived CLI takes, or has no golden output (the error lists the ones
   there are).
   ANSWERS

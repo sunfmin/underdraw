@@ -66,6 +66,11 @@
       "canDelete": {
         "type": "bool = false",
         "derived": { "server": "the person owns the document" }
+      },
+      "confirming": {
+        "type": "bool = false",
+        "view": true,
+        "doc": "The delete confirmation is open for this document"
       }
     }
   },
@@ -85,6 +90,10 @@
     "canDelete": {
       "when": "rowMenuOpen && rowMenu.canDelete",
       "label": "May delete it"
+    },
+    "confirmingDelete": {
+      "when": "canDelete && rowMenu.confirming",
+      "label": "Delete confirmation open"
     }
   },
   "operations": {
@@ -104,6 +113,7 @@
         "id": "string"
       },
       "requires": "canDelete",
+      "destructive": true,
       "fails": {
         "notFound": "the document is already gone",
         "forbidden": "the person no longer owns it"
@@ -344,6 +354,14 @@
         "canDelete": true
       }
     },
+    "confirm-delete": {
+      "$patch": "default",
+      "rowMenu": {
+        "docId": "c",
+        "canDelete": true,
+        "confirming": true
+      }
+    },
     "empty": {
       "$patch": "default",
       "summary": {
@@ -517,7 +535,7 @@
                 "$why": "only the owner may delete; others see it greyed so they know it exists",
                 "on": {
                   "tap": {
-                    "call": "deleteDoc",
+                    "open": "confirm-delete",
                     "with": {
                       "id": "{item.doc.id}"
                     }
@@ -573,7 +591,65 @@
           }
         }
       }
-    ]
+    ],
+    "overlay": {
+      "id": "confirm-delete",
+      "kind": "Dialog",
+      "if": "confirmingDelete",
+      "anchor": "center",
+      "width": {
+        "compact": "88%",
+        "regular": 400
+      },
+      "$why": "deleting is for everyone and cannot be undone, so the menu item only asks; this button deletes",
+      "children": [
+        {
+          "id": "confirm-delete-title",
+          "kind": "Text",
+          "text": "删除这个文档？",
+          "font": "font.heading"
+        },
+        {
+          "id": "confirm-delete-detail",
+          "kind": "Text",
+          "text": "团队里的所有人都将无法再打开它，删除后无法恢复。",
+          "color": "color.textSecondary"
+        },
+        {
+          "id": "confirm-delete-actions",
+          "kind": "Row",
+          "gap": 12,
+          "children": [
+            {
+              "id": "confirm-delete-cancel",
+              "kind": "Button",
+              "variant": "secondary",
+              "text": "取消",
+              "on": {
+                "tap": {
+                  "close": "confirm-delete"
+                }
+              }
+            },
+            {
+              "id": "confirm-delete-confirm",
+              "kind": "Button",
+              "variant": "primary",
+              "destructive": true,
+              "text": "删除",
+              "on": {
+                "tap": {
+                  "call": "deleteDoc",
+                  "with": {
+                    "id": "{rowMenu.docId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
   },
   "phases": {
     "loading": {
