@@ -121,6 +121,11 @@ ANSWERS
                 canDelete" for one refused), the others are done, exit 2.
       "args" are the arguments after the command's name, defaults left
       out; "with" the parameters they give, defaults filled in.
+
+    "fixtures": {name: data}: each fixture with its "$patch" applied and
+                every default filled in, as `underdraw handoff` resolves
+                them, with no platform needed: the data a fake server holds
+                to run the CLI in that fixture.
   }
 
 HOW TO USE IT
@@ -129,7 +134,8 @@ HOW TO USE IT
     screen's operations call.
   - Validate each command's stdout against its "stdout" schema.
   - Test it with the golden outputs: run the CLI on a fixture's data (a fake
-    of the server that answers with it), capture what it printed and its
+    of the server that answers with "fixtures"[<the golden's fixture>]),
+    capture what it printed and its
     exit code, and give it to `underdraw compare` (see its --help, A CLI'S
     CAPTURE). For a named failure, make the fake fail that way.
 

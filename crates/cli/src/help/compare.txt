@@ -116,9 +116,9 @@ HOW TO USE IT
     layer), record what the app called, and put it in "acted". A node acted
     on that is not in "acted" is not checked.
   - In a CLI's test: give the CLI a fake server holding a fixture's data
-    (`underdraw handoff`'s "fixtures"), run each command `underdraw cli`
-    lists a golden output for, write each run as a capture, and fail on
-    exit 1.
+    (`underdraw cli`'s "fixtures", which needs no platform file), run each
+    command `underdraw cli` lists a golden output for, write each run as a
+    capture, and fail on exit 1.
   - Fix the UI, not the capture. When the UI is right and the description is
     not, change the description, `render` it, and show the person.
 

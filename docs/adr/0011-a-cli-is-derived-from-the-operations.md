@@ -50,6 +50,8 @@ The decisions:
 ## Consequences
 
 - A CLI's tests need a fake of the server that holds a fixture's data,
-  as a UI's need one of the operations.
+  as a UI's need one of the operations. `underdraw cli` answers each
+  fixture's data as `handoff` resolves it, so a screen built only as a CLI
+  needs no platform file to get it.
 - A precondition is a condition over the view model, so the CLI must
   answer the same question the screen asks before calling the command.

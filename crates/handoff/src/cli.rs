@@ -31,6 +31,9 @@ pub struct Interface {
     /// What a faithful CLI prints: for each fixture, each query it can
     /// answer and each command its nodes call; and each named failure.
     pub golden: Vec<Golden>,
+    /// Each fixture's data, as `handoff` resolves it: the data a fake
+    /// server holds to run the CLI in that fixture.
+    pub fixtures: Map<String, Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -182,7 +185,7 @@ pub fn cli(model: &Model) -> Interface {
             }
         }
     }
-    Interface { screen: model.screen().to_string(), commands, golden }
+    Interface { screen: model.screen().to_string(), commands, golden, fixtures: crate::fixtures(model) }
 }
 
 /// The first word of `operation`'s name, unless another operation starts
