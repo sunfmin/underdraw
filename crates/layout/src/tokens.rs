@@ -23,15 +23,20 @@ impl Tokens<'_> {
     /// A length: a number as written, or the number a token names; `or`
     /// when there is neither.
     pub(crate) fn length(&self, value: Option<&Value>, or: f32) -> f32 {
-        let found = match value {
-            Some(Value::String(name)) => self.get(name).and_then(Value::as_f64),
-            Some(value) => value.as_f64(),
-            None => None,
-        };
-        match found {
-            Some(n) => n as f32,
+        match value.and_then(|value| self.find_length(value)) {
+            Some(n) => n,
             None => or,
         }
+    }
+
+    /// A length: a number as written, or the number a token names; none
+    /// when `value` is neither.
+    pub(crate) fn find_length(&self, value: &Value) -> Option<f32> {
+        let found = match value {
+            Value::String(name) => self.get(name).and_then(Value::as_f64),
+            value => value.as_f64(),
+        };
+        found.map(|n| n as f32)
     }
 
     /// The font `value` names (`font.subhead`); `or`, a font's token name,

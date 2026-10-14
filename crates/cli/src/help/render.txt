@@ -9,7 +9,8 @@ WHO
 
 READS
   <path>/screen.json and, beside it, tokens.json (spaces, radii, fonts,
-  breakpoints). Refuses a description `check` finds faults in.
+  breakpoints) and kinds.json when there is one (what the project's own
+  kinds look like). Refuses a description `check` finds faults in.
 
 WRITES
   One PNG: --out, or <dir>/renders/<fixture or phase>-<width>.png. Running

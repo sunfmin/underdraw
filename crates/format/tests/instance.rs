@@ -55,14 +55,21 @@ fn conditions_breakpoints_and_each_shape_the_tree() {
     let amenities = find(&compact, "amenities-list").unwrap();
     assert_eq!(amenities.children.len(), 10);
     assert_eq!(amenities.children[9].id, "amenity-9");
+    // a limit may differ per breakpoint: three full rows of three on a desktop
+    let regular = instantiate(&screen, State::Fixture("default"), Breakpoint::Regular).unwrap();
+    assert_eq!(find(&regular, "amenities-list").unwrap().children.len(), 9);
     // the photo carousel holds its photos as items
     assert_eq!(find(&compact, "photos-carousel").unwrap().props["items"].as_array().unwrap().len(), 7);
     // no reviews: the rating bar and the review section are gone, the new-listing line is there
     let new = instantiate(&screen, State::Fixture("new-listing"), Breakpoint::Compact).unwrap();
     assert!(find(&new, "rating-bar").is_none() && find(&new, "reviews").is_none());
     assert!(find(&new, "rating-new").is_some());
-    // what the agent guessed travels with the node
-    assert!(find(&compact, "calendar-picker").unwrap().assumed.is_some());
+    // what the person decided travels with the node, for the platforms to build
+    let calendar = find(&compact, "calendar-picker").unwrap();
+    assert_eq!(
+        (calendar.props["bookedDates"].as_str(), &calendar.assumed),
+        (Some("灰色且不可点，不画删除线"), &None)
+    );
     assert!(find(&compact, "nav-save").unwrap().interactive);
     // a use site is decided, a binding shows its value
     let unavailable = instantiate(&screen, State::Fixture("unavailable"), Breakpoint::Regular).unwrap();

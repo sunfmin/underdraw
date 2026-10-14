@@ -25,8 +25,9 @@ impl Model {
 
 /// `screen` read into its parts; what `check` says of it when it has faults,
 /// since nothing generated from a faulty description can be trusted.
-pub fn model(screen: &Value) -> Result<Model, Box<Checked>> {
-    let checked = check(screen);
+/// `kinds` is the project's kinds.json, when it has one.
+pub fn model(screen: &Value, kinds: Option<&Value>) -> Result<Model, Box<Checked>> {
+    let checked = check(screen, kinds);
     if !checked.ok {
         return Err(Box::new(checked));
     }

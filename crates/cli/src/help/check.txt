@@ -6,7 +6,10 @@ WHO
   The agent that writes the description.
 
 READS
-  <path>/screen.json, or <path> when it is a file. Writes nothing.
+  <path>/screen.json, or <path> when it is a file, and kinds.json beside it
+  when there is one: every node's kind must be defined there or by
+  underdraw, and its looks are checked too (docs/format/kinds.md). Writes
+  nothing.
 
 ANSWERS
   {

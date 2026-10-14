@@ -149,6 +149,20 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "put the template for one element in \"item\"",
         ),
         (
+            "kind-not-defined",
+            r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""kind": "Bagde", "if": "listing.isGuestFavorite""#,
+            "guest-favorite",
+            "kind Bagde is not defined",
+        ),
+        (
+            "limit-not-a-count",
+            r#""limit": { "compact": 10, "regular": 9 }"#,
+            r#""limit": "ten""#,
+            "amenities-list",
+            "limit is a whole number",
+        ),
+        (
             "item-without-each",
             r#""each": "listing.ratingBreakdown", "item""#,
             r#""item""#,
@@ -169,6 +183,55 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         assert!(found, "{name}: expected a finding at {at} saying {said:?}, got {:#}", answer["findings"]);
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+/// The draft with `kinds` written as its kinds.json.
+fn with_kinds(name: &str, kinds: &Value) -> PathBuf {
+    let dir = planted(name, r#""screen": "ListingDetail""#, r#""screen": "ListingDetail""#);
+    std::fs::write(dir.join("kinds.json"), kinds.to_string()).unwrap();
+    dir
+}
+
+#[test]
+fn underdraws_own_kinds_pass_as_a_projects() {
+    let defaults: Value =
+        serde_json::from_str(include_str!("../../format/kinds.json")).expect("the defaults are JSON");
+    let dir = with_kinds("own-kinds", &defaults);
+    let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!((code, &answer["findings"]), (0, &json!([])), "{answer:#}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn each_fault_in_a_projects_kinds_is_found() {
+    let kinds = json!({ "kinds": {
+        "NoLook": { "doc": "forgot its look" },
+        "Wrong": { "look": { "box": "row", "colour": "line", "children": [
+            { "text": "{title|upper}" },
+            { "kind": "Nowhere" },
+            { "cases": [ { "if": "title", "then": "$kids" } ] }
+        ] } }
+    } });
+    let dir = with_kinds("bad-kinds", &kinds);
+    let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(code, 1, "{answer:#}");
+    let expected = [
+        ("kinds.NoLook", "needs \"look\""),
+        ("kinds.Wrong.look", "colour is not a key"),
+        ("kinds.Wrong.look.children[0].text", "upper is not a filter"),
+        ("kinds.Wrong.look.children[1]", "kind Nowhere is not defined"),
+        ("kinds.Wrong.look.children[2].cases", "must be {\"else\""),
+        ("kinds.Wrong.look.children[2].cases[0].then", "$kids is not a look"),
+    ];
+    for (at, said) in expected {
+        let found = answer["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["at"] == at && f["problem"].as_str().unwrap().contains(said));
+        assert!(found, "expected a finding at {at} saying {said:?}, got {:#}", answer["findings"]);
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -218,4 +281,11 @@ fn help_names_exactly_the_commands_that_exist() {
     let mut exist = underdraw::commands();
     exist.sort();
     assert_eq!(named, exist);
+}
+
+#[test]
+fn the_todo_draft_defines_its_own_text_field() {
+    let todo = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/todo");
+    let (answer, code) = underdraw(&["check", todo]);
+    assert_eq!((code, &answer["findings"]), (0, &json!([])), "{answer:#}");
 }

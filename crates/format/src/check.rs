@@ -8,6 +8,7 @@ use serde_json::{Map, Value};
 use crate::conditions::Conditions;
 use crate::field::{Base, Field};
 use crate::fixture;
+use crate::kinds::Kinds;
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
 
@@ -66,15 +67,24 @@ impl Findings {
 /// Every fault in the screen description `screen`: the view model, the
 /// fixtures, the conditions, and every node's paths, templates and cases.
 /// When there is none, which fixtures each condition holds in; a condition
-/// that holds in all of them, or in none, is then itself a fault.
-pub fn check(screen: &Value) -> Checked {
+/// that holds in all of them, or in none, is then itself a fault. Every
+/// node's kind is one `kinds` (the project's kinds.json) or underdraw
+/// defines, and the project's looks are checked too.
+pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     let mut findings = Findings::default();
+    let known = Kinds::read(kinds);
+    known.check(kinds, &mut findings);
     let schema = Schema::read(screen, &mut findings);
     let fixtures = fixture::read(screen, &schema, &mut findings);
     let conditions = Conditions::read(screen, &schema, &mut findings);
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
-    let mut walk =
-        Walk { schema: &schema, conditions: &conditions, components: &components, findings: &mut findings };
+    let mut walk = Walk {
+        schema: &schema,
+        conditions: &conditions,
+        components: &components,
+        kinds: &known,
+        findings: &mut findings,
+    };
     match screen.get("root") {
         Some(root) => walk.node(root, &schema.roots(), &BTreeSet::new(), "root", ""),
         None => walk.findings.add("root", "the screen needs a root node"),
@@ -128,6 +138,7 @@ struct Walk<'a> {
     schema: &'a Schema,
     conditions: &'a Conditions,
     components: &'a Map<String, Value>,
+    kinds: &'a Kinds,
     findings: &'a mut Findings,
 }
 
@@ -158,9 +169,30 @@ impl Walk<'_> {
             }
             return;
         }
+        if let Some(Value::String(kind)) = object.get("kind")
+            && !self.kinds.has(kind)
+        {
+            self.findings.add(
+                at,
+                &format!("kind {kind} is not defined: define its look in kinds.json beside screen.json (docs/format/kinds.md)"),
+            );
+        }
         let mut guarded = guarded.clone();
         if let Some(Value::String(used)) = object.get("if") {
             guarded.extend(self.use_site(used, scope, &format!("{at}.if")));
+        }
+        if let Some(limit) = object.get("limit") {
+            let count = |value: &Value| value.as_u64().is_some();
+            let fits = match limit {
+                Value::Object(object) if crate::instance::is_responsive(object) => object.values().all(count),
+                value => count(value),
+            };
+            if !fits {
+                self.findings.add(
+                    at,
+                    "limit is a whole number, or one per breakpoint: {\"compact\": 10, \"regular\": 9}",
+                );
+            }
         }
         // `item` and `index` exist only in the template `each` repeats.
         let mut item_scope = scope.clone();

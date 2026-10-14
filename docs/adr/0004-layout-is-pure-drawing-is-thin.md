@@ -10,7 +10,7 @@ The steps:
 1. **Instantiate** (`underdraw-format`): the description in one state (a
    fixture or a phase) at one breakpoint becomes a plain tree, with
    conditions decided, `cases` chosen, templates filled and `each` expanded.
-2. **Lay out** (`underdraw-layout`): a catalog says what each kind looks like
+2. **Lay out** (`underdraw-layout`): a catalog (since [ADR 0007](0007-kinds-are-data.md), `kinds.json`) says what each kind looks like
    as boxes, taffy places them, and the answer is a list of things to draw in
    a handful of grays, plus where every node went. Text is measured through a
    `Measure` trait; tests use a stand-in that gives every character half its

@@ -28,6 +28,8 @@ pub const VERSION: &str = env!("UNDERDRAW_VERSION");
 const SCREEN: &str = "screen.json";
 /// The design tokens beside it.
 const TOKENS: &str = "tokens.json";
+/// What the project's own kinds look like, beside the description; optional.
+const KINDS: &str = "kinds.json";
 
 /// `-h` is the one-screen listing; `--help` adds `help.txt`, the guide an
 /// agent reads to learn the tool. Each subcommand's `--help` adds
@@ -148,8 +150,9 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
 }
 
 fn check(path: &Path) -> anyhow::Result<Value> {
-    let (screen, _) = read(path)?;
-    Ok(serde_json::to_value(underdraw_format::check(&screen))?)
+    let (screen, dir) = read(path)?;
+    let kinds = read_kinds(&dir)?;
+    Ok(serde_json::to_value(underdraw_format::check(&screen, kinds.as_ref()))?)
 }
 
 /// The screen at `path` (a directory or its screen.json), and the directory.
@@ -171,8 +174,9 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
+    let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
-    match underdraw_handoff::handoff(&screen, &mapping, &tokens) {
+    match underdraw_handoff::handoff(&screen, &mapping, &tokens, kinds.as_ref()) {
         Ok(handoff) => Ok(serde_json::to_value(handoff)?),
         Err(checked) => bail!(
             "the description has {} finding(s), so what is handed off would be wrong: run `underdraw check {}` and fix them first",
@@ -191,8 +195,9 @@ fn compare(
 ) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
+    let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
-    let checked = underdraw_format::check(&screen);
+    let checked = underdraw_format::check(&screen, kinds.as_ref());
     if !checked.ok {
         bail!(
             "the description has {} finding(s), so it cannot say what the UI should show: run `underdraw check {}` and fix them first",
@@ -211,9 +216,16 @@ fn compare(
         .with_context(|| format!("{} is not JSON: fix the line and column named here", capture.display()))?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    let comparison =
-        underdraw_compare::compare(&screen, &mapping, &tokens, state, &capture_value, &mut typesetter)
-            .map_err(anyhow::Error::msg)?;
+    let comparison = underdraw_compare::compare(
+        &screen,
+        &mapping,
+        &tokens,
+        kinds.as_ref(),
+        state,
+        &capture_value,
+        &mut typesetter,
+    )
+    .map_err(anyhow::Error::msg)?;
     Ok(serde_json::to_value(comparison)?)
 }
 
@@ -242,6 +254,16 @@ fn read_platform(dir: &Path, platform: &str) -> anyhow::Result<Value> {
 }
 
 /// tokens.json beside the description, or no tokens.
+/// kinds.json beside the description, when the project has one.
+fn read_kinds(dir: &Path) -> anyhow::Result<Option<Value>> {
+    match std::fs::read_to_string(dir.join(KINDS)) {
+        Ok(text) => serde_json::from_str(&text)
+            .map(Some)
+            .with_context(|| format!("{} is not JSON", dir.join(KINDS).display())),
+        Err(_) => Ok(None),
+    }
+}
+
 fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
     match std::fs::read_to_string(dir.join(TOKENS)) {
         Ok(text) => {
@@ -263,7 +285,8 @@ struct Wanted {
 fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
-    let checked = underdraw_format::check(&screen);
+    let kinds = read_kinds(&dir)?;
+    let checked = underdraw_format::check(&screen, kinds.as_ref());
     if !checked.ok {
         bail!(
             "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
@@ -276,7 +299,7 @@ fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
     let root = underdraw_format::instantiate(&screen, state, breakpoint).map_err(anyhow::Error::msg)?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    let page = underdraw_layout::layout(&root, &tokens, wanted.width as f32, &mut typesetter)
+    let page = underdraw_layout::layout(&root, &tokens, kinds.as_ref(), wanted.width as f32, &mut typesetter)
         .map_err(anyhow::Error::msg)?;
 
     let gpu = gpu::Gpu::open()?;

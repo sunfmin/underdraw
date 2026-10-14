@@ -69,17 +69,18 @@ const SLACK: f32 = 1.0;
 
 /// How `capture` differs from `screen` in `state` on the platform `mapping`
 /// describes. The wireframe is laid out at the capture's width, text
-/// measured by `measure`. Refused, with why: a description with faults, a
+/// measured by `measure`, each kind drawn as `kinds` says. Refused, with why: a description with faults, a
 /// capture that is not one, a state not shown at that width.
 pub fn compare(
     screen: &Value,
     mapping: &Value,
     tokens: &Value,
+    kinds: Option<&Value>,
     state: State,
     capture: &Value,
     measure: &mut dyn Measure,
 ) -> Result<Comparison, String> {
-    let handed = match handoff(screen, mapping, tokens) {
+    let handed = match handoff(screen, mapping, tokens, kinds) {
         Ok(handed) => handed,
         Err(checked) => {
             return Err(format!(
@@ -104,7 +105,7 @@ pub fn compare(
         return Err(format!("the description does not show {named} at the {breakpoint:?} breakpoint"));
     };
     let root = instantiate(screen, state, breakpoint)?;
-    let page = layout(&root, tokens, capture.width, measure)?;
+    let page = layout(&root, tokens, kinds, capture.width, measure)?;
 
     let mut known = Vec::new();
     for state in &handed.states {
