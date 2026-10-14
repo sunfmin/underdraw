@@ -142,6 +142,15 @@ struct Walk<'a> {
     findings: &'a mut Findings,
 }
 
+/// A fault at `at` when `anchor` is not one of the places an overlay floats.
+fn anchor_fault(anchor: &Value, at: &str, findings: &mut Findings) {
+    if !anchor.as_str().is_some_and(|anchor| crate::instance::ANCHORS.contains(&anchor)) {
+        let anchor = anchor.as_str().map_or_else(|| anchor.to_string(), str::to_string);
+        findings
+            .add(at, &format!("{anchor} is not an anchor: write {}", crate::instance::ANCHORS.join(", ")));
+    }
+}
+
 impl Walk<'_> {
     /// `value`, found under `key`, where `scope` names what paths may start
     /// from and `guarded` the paths known not to be null.
@@ -208,14 +217,14 @@ impl Walk<'_> {
                 );
             }
         }
-        if let Some(anchor) = object.get("anchor")
-            && !anchor.as_str().is_some_and(|anchor| crate::instance::ANCHORS.contains(&anchor))
-        {
-            let anchor = anchor.as_str().map_or_else(|| anchor.to_string(), str::to_string);
-            self.findings.add(
-                &format!("{at}.anchor"),
-                &format!("{anchor} is not an anchor: write {}", crate::instance::ANCHORS.join(", ")),
-            );
+        match object.get("anchor") {
+            Some(Value::Object(per)) if crate::instance::is_responsive(per) => {
+                for (breakpoint, anchor) in per {
+                    anchor_fault(anchor, &format!("{at}.anchor.{breakpoint}"), self.findings);
+                }
+            }
+            Some(anchor) => anchor_fault(anchor, &format!("{at}.anchor"), self.findings),
+            None => {}
         }
         for key in ["columns", "rows"] {
             match object.get(key) {

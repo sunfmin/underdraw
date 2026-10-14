@@ -198,6 +198,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "middle is not an anchor",
         ),
         (
+            "anchor-per-breakpoint",
+            r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""kind": "Badge", "anchor": { "compact": "bottom", "regular": "middle" }, "if": "listing.isGuestFavorite""#,
+            "guest-favorite.anchor.regular",
+            "middle is not an anchor",
+        ),
+        (
             "quoted-track",
             r#""regular": ["58%", "1fr"]"#,
             r#""regular": ["58%", "48"]"#,
