@@ -71,6 +71,11 @@ the screen.
 One sample value of the view model; each fixture puts the screen in one state.
 _Avoid_: mock data, example
 
+**View state**:
+A view-model field only the screen holds, such as an open menu or the row a
+popup is about, marked `"view": true`; never part of an operation's result.
+_Avoid_: UI state, local state
+
 **Phase**:
 A stage before the view model exists, such as loading or error, with its own
 node tree that reads no data.
@@ -80,6 +85,12 @@ _Avoid_: status
 A named yes/no decision the screen makes, such as `hasDates`, declared once and
 used by name.
 _Avoid_: flag, predicate
+
+**Operation**:
+A query (it only reads) or a command (it changes something) behind a screen:
+named, with parameters, a result type, an optional precondition (a
+condition) and named failures; a node calls it with `call`.
+_Avoid_: endpoint, API call, action
 
 **Template**:
 A string with placeholders that show data.

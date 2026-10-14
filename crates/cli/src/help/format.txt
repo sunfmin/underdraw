@@ -19,6 +19,7 @@ SCREEN.JSON
     "data":       {…}, "types": {…},   the view model
     "fixtures":   {…},                 sample view models, one state each
     "conditions": {…},                 every yes/no the screen decides, named
+    "operations": {…},                 the queries and commands it calls (OPERATIONS)
     "components": {"name": node, …},   nodes used more than once, by "ref"
     "root":       node,                the screen once data has arrived
     "phases":     {"loading": node, "error": node}
@@ -35,7 +36,7 @@ DATA AND TYPES
       "Summary": { "remaining": { "type": "int 0..", "derived": "undone todos" } },
       "Plan":    "enum(monthly, yearly)"
     }
-  A field is   type range? default?   or {"type", "doc", "derived"}:
+  A field is   type range? default?   or {"type", "doc", "derived", "view"}:
     type     a built-in, or a named type; "[]" after it: a list; "?": nullable
              ("date?", "Photo[]", "Photo[]?")
     range    lo..hi, either side open: a number's value, a string's length,
@@ -46,6 +47,15 @@ DATA AND TYPES
     doc      one line for the person and the implementing agent
     derived  how the app or server computes it; fixtures supply the value.
              The screen never computes: no arithmetic anywhere.
+    view     true: view state, held by the screen alone (an open menu, the
+             row a popup is about), not domain data. No operation answers
+             with it, so keep it out of the types operations return: wrap
+             the domain type in a row type that adds it.
+               "data":  { "docs": "DocRow[]",
+                          "rowMenu": { "type": "RowMenu?", "view": true } },
+               "types": { "DocRow": { "doc": "Doc",
+                                      "menuOpen": { "type": "bool = false", "view": true } },
+                          "Doc": { "id": "string", "title": "string 1..60" } }
   Built-ins, with how a fixture writes them:
     string "…"   int 3   number 4.92   bool true   date "2026-11-12"
     url "https://…"   image "photo-1.jpg"   icon "wifi" (a Material Symbols
@@ -167,7 +177,9 @@ LAYOUT ON A NODE
 
 ACTIONS
   "on" maps an event (usually "tap") to actions, each "name": argument.
-  Names are free; each platform file says how to do each one. Seen in use:
+  What reads or changes domain data is an operation, called with "call"
+  (OPERATIONS below). The rest is what the screen does by itself: names are
+  free, and each platform file says how to do each one. Seen in use:
     "on": { "tap": { "navigate": "Checkout", "with": {"id": "{listing.id}"} } }
     "on": { "tap": { "toggle": "item.done" } }
     "on": { "tap": { "set": "composer.text", "to": "" } }
@@ -178,6 +190,36 @@ ACTIONS
     "on": { "tap": { "cases": [ { "if": "!hasDates", "then": {"scrollTo": "calendar"} },
                                 { "else": {"navigate": "Checkout"} } ] } }
   A node with "on" or "bind" is one a person can act on.
+
+OPERATIONS
+  The queries and commands behind the screen, declared once and called by
+  name. Each is a query (it only reads) or a command (it changes something):
+    "operations": {
+      "listDocs":  { "query": "The team's documents, in the order sort names",
+                     "params": { "sort": "string" }, "result": "Doc[] ..50" },
+      "deleteDoc": { "command": "Deletes a document for everyone",
+                     "params": { "id": "string" }, "requires": "canDelete",
+                     "fails": { "notFound": "the document is already gone" } }
+    }
+    "query" or "command"   exactly one: what it does, in one line
+    "params"   fields as in "data" (DATA AND TYPES); a named type is in "types"
+    "result"   what it answers with: one of "types", written as a field type
+               ("Doc", "Doc[] ..50", "Doc?"); never a built-in, and holding no
+               view state. A query needs one; a command may have none.
+    "requires" a condition (CONDITIONS) that must hold before it is called
+    "fails"    each way it can fail: a name and when, {"offline": "…"}
+  A node calls one as an action:
+    "on": { "tap": { "call": "deleteDoc", "with": { "id": "{item.doc.id}" } } }
+  "with" gives every parameter but those with a default, and no other. Each
+  value is a template whose type is the parameter's: "{item.doc.id}" for a
+  string; a nullable value only for a nullable parameter; words around a
+  placeholder make a string. A literal works too: "title", 3, true, null.
+  A node that calls an operation with "requires" is gated by that
+  condition, or one whose && chain names it: "disabled": "!canDelete" on
+  the node, or "if": "canDelete" on it or around it (a handler's cases
+  branch counts). check refuses a call that is not.
+  Operations live in screen.json, one screen's own, and are not shared
+  with other screens.
 
 COMPONENTS
   "components": { "nav-back": { "id": "nav-back", "kind": "IconButton",
