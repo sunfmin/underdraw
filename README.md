@@ -16,20 +16,36 @@ Rendering will run on the GPU (wgpu + vello; Metal on macOS).
 
 ## Status
 
-Designing the description format. Nothing is built yet.
+The description format is drafted; `underdraw check` reads it and names every
+fault. Rendering, `handoff` and `compare` are not built yet.
+
+## Build
+
+```sh
+cargo build --release          # target/release/underdraw
+./gate.sh                      # what must pass before anything lands
+```
+
+`gate.sh` runs fmt, clippy, the tests and Flux. The pure crate
+(`crates/format`) must pass Flux with nothing trusted or ignored; `verify.sh`
+refuses any checker other than the pinned one.
+
+## Usage
+
+`underdraw --help` is the manual.
 
 - `drafts/airbnb-listing/` — first draft of the format, modelled on a listing
   detail page. The content is illustrative, written from public knowledge, and
   not affiliated with Airbnb.
 
-Expressions are defined in [docs/format/expressions.md](docs/format/expressions.md)
-([why](docs/adr/0001-expressions-name-conditions-not-logic-in-strings.md)).
-`uv run prototype/check.py drafts/airbnb-listing` checks a draft against it.
+The format: [data](docs/format/data.md) and [expressions](docs/format/expressions.md);
+the reasons are in [docs/adr](docs/adr/).
+`underdraw check drafts/airbnb-listing` checks a draft against it.
 
 ## Open questions
 
-- A formal data schema: types, nullability, optional fields and defaults are
-  still prose (`"int ≥0"`), so the checker infers types from fixtures.
+- Worst-case fixtures generated from ranges (longest title, most items) to
+  catch overflow.
 - A shared icon vocabulary mapped to SF Symbols / Material Symbols / web icons.
 - Localised copy.
 - Sheets are still stubs.

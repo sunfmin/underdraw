@@ -1,0 +1,31 @@
+WHEN
+  After writing or changing a screen description, and before rendering it or
+  handing it off. Run it until it answers "ok": true.
+
+WHO
+  The agent that writes the description.
+
+READS
+  <path>/screen.json, or <path> when it is a file. Writes nothing.
+
+ANSWERS
+  {
+    "screen":     the screen's name, from "screen"
+    "ok":         true when there is no finding
+    "fixtures":   the fixtures' names, in the order written
+    "phases":     the phases' names (trees rendered before data arrives)
+    "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
+                  empty while any finding stands, except a condition that
+                  never varies: then the table shows which fixtures to add
+    "findings":   [{"at": where — a dotted path or a node id,
+                    "problem": what is wrong, and what is allowed instead}, …]
+  }
+
+WHAT TRIPS YOU UP
+  - A text property (text, title, subtitle, label, detail) always shows text:
+    "{booking.total}" there needs |money. Elsewhere a lone placeholder passes
+    the value itself.
+  - A nullable value may be shown only under a condition that tests it
+    != null in its top-level && chain. A negated condition guarantees nothing.
+  - A fixture may leave out only fields with a default; T? defaults to null.
+  - "$patch" starts a fixture from one written above it.
