@@ -40,6 +40,10 @@ WHAT TRIPS YOU UP
   - "$patch" starts a fixture from one written above it.
   - An operation's result holds no view state: a type with a "view" field
     (or one reaching such a type) cannot be returned. Wrap the domain type.
+  - An action that changes domain data is a "call": set and toggle write
+    only view state (a field marked "view": true, or inside one), and
+    every other action is UI-only (navigate, back, open, close, scrollTo,
+    share, copy). submit, reload, remove and the like are operations.
   - A "call" to an operation with "requires" needs the node gated by that
     condition: "disabled": "!<condition>", or "if": "<condition>".
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
