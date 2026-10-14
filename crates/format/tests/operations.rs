@@ -42,7 +42,10 @@ fn the_draft_declares_its_operations_and_passes() {
     let list = model.operations.get("listDocs").unwrap();
     assert_eq!(list.fills, [Fill { field: "docs".to_string(), path: "docs[].doc".to_string() }]);
     let sort = &list.params[0].1;
-    assert_eq!((sort.describe(), sort.default.clone()), ("SortKey".to_string(), Some(Value::from("updated"))));
+    assert_eq!(
+        (sort.describe(), sort.default.clone()),
+        ("SortKey".to_string(), Some(Value::from("updated")))
+    );
     assert!(model.operations.all().iter().filter(|o| o.name != "listDocs").all(|o| o.fills.is_empty()));
 }
 

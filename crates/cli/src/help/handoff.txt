@@ -22,8 +22,12 @@ ANSWERS
                   generated in the platform's language. Save it as is.
     "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
     "operations": [{"name", "does": "query" or "command", "doc", "params":
-                    {name: type}, "result", "requires", "fails": {name: when}}, …]
-                  the queries and commands the screen calls
+                    {name: type, with " = default" when it has one}, "result",
+                    "requires", "fails": {name: when}, "fills": [path, …]}, …]
+                  the queries and commands the screen calls. "fills": the
+                  fields of "data" a query's result lands in, "docs" or,
+                  through a wrapper type, "docs[].doc": map the answer there,
+                  and derive the rest of the view model in the app.
     "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
     "nodes":      [{"id", "kind", "parent", "slot",
                     "implement": how the platform builds this kind,

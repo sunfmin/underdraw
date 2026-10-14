@@ -80,7 +80,10 @@ fn property(field: &Field) -> Value {
     if field.nullable {
         schema = object([("anyOf", Value::Array(vec![schema, object([("type", Value::from("null"))])]))]);
     }
-    let derived = field.derived.as_ref().map(|derived| format!("Derived by the {}: {}", derived.by.name(), derived.how));
+    let derived = field
+        .derived
+        .as_ref()
+        .map(|derived| format!("Derived by the {}: {}", derived.by.name(), derived.how));
     let description: Vec<&str> = [field.doc.as_deref(), derived.as_deref()].into_iter().flatten().collect();
     if let Value::Object(map) = &mut schema {
         if !description.is_empty() {

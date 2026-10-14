@@ -149,7 +149,10 @@ impl Operations {
             };
             let at = format!("data.{name}");
             let Some(operation) = self.0.iter_mut().find(|operation| &operation.name == query) else {
-                findings.add(&format!("{at}.from"), &format!("{query} is not an operation: from names a query in operations"));
+                findings.add(
+                    &format!("{at}.from"),
+                    &format!("{query} is not an operation: from names a query in operations"),
+                );
                 continue;
             };
             if operation.does != Does::Query {
@@ -210,10 +213,14 @@ fn through(schema: &Schema, field: &Field, result: &Field) -> Result<Option<Stri
     };
     let answered: Vec<&(String, Field)> = fields
         .iter()
-        .filter(|(_, inner)| !inner.view && !inner.derived.as_ref().is_some_and(|derived| derived.by == By::App))
+        .filter(|(_, inner)| {
+            !inner.view && !inner.derived.as_ref().is_some_and(|derived| derived.by == By::App)
+        })
         .collect();
     match answered.as_slice() {
-        [(name, inner)] if inner.base == result.base && !inner.array && !inner.nullable => Ok(Some(name.clone())),
+        [(name, inner)] if inner.base == result.base && !inner.array && !inner.nullable => {
+            Ok(Some(name.clone()))
+        }
         _ => Err(()),
     }
 }

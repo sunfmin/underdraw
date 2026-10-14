@@ -145,7 +145,12 @@ impl Schema {
         self.reaches_in(field.base.name(), &wanted, &mut Vec::new())
     }
 
-    fn reaches_in(&self, type_name: &str, wanted: &dyn Fn(&Field) -> bool, seen: &mut Vec<String>) -> Option<String> {
+    fn reaches_in(
+        &self,
+        type_name: &str,
+        wanted: &dyn Fn(&Field) -> bool,
+        seen: &mut Vec<String>,
+    ) -> Option<String> {
         if seen.iter().any(|name| name == type_name) {
             return None;
         }

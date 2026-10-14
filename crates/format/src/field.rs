@@ -142,7 +142,9 @@ pub fn read(spec: &Value) -> Result<Field, String> {
                 .keys()
                 .find(|key| !matches!(key.as_str(), "type" | "doc" | "derived" | "from" | "view"))
             {
-                return Err(format!("a field object holds only type, doc, derived, from and view, not {key}"));
+                return Err(format!(
+                    "a field object holds only type, doc, derived, from and view, not {key}"
+                ));
             }
             let mut field = match object.get("type") {
                 Some(Value::String(text)) => parse(text)?,
@@ -156,7 +158,9 @@ pub fn read(spec: &Value) -> Result<Field, String> {
             field.from = match object.get("from") {
                 None => None,
                 Some(Value::String(query)) => Some(query.clone()),
-                Some(_) => return Err("from names the query that fills it: \"from\": \"listDocs\"".to_string()),
+                Some(_) => {
+                    return Err("from names the query that fills it: \"from\": \"listDocs\"".to_string());
+                }
             };
             field.view = match object.get("view") {
                 None => false,
@@ -171,7 +175,8 @@ pub fn read(spec: &Value) -> Result<Field, String> {
 
 /// `{"app": how}` or `{"server": how}`: who derives a field, and how.
 fn derived(written: &Value) -> Result<Derived, String> {
-    let entry = written.as_object().filter(|object| object.len() == 1).and_then(|object| object.iter().next());
+    let entry =
+        written.as_object().filter(|object| object.len() == 1).and_then(|object| object.iter().next());
     match entry {
         Some((by, Value::String(how))) if by == "app" => Ok(Derived { by: By::App, how: how.clone() }),
         Some((by, Value::String(how))) if by == "server" => Ok(Derived { by: By::Server, how: how.clone() }),
