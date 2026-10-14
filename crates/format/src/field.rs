@@ -64,8 +64,11 @@ pub struct Field {
     pub default: Option<Value>,
     /// What it means, when the description says.
     pub doc: Option<String>,
-    /// How the app or server computes it, for a derived field.
-    pub derived: Option<String>,
+    /// Who computes it and how, for a derived field.
+    pub derived: Option<Derived>,
+    /// The query whose result fills it: for a field of `data` the server
+    /// answers, never one the screen or the app holds.
+    pub from: Option<String>,
     /// True of view state: what only the screen holds (an open menu, a
     /// popup's subject), never domain data an operation answers with.
     pub view: bool,
@@ -82,6 +85,7 @@ impl Field {
             default: None,
             doc: None,
             derived: None,
+            from: None,
             view: false,
         }
     }
@@ -104,23 +108,56 @@ impl Field {
     }
 }
 
+/// Who computes a derived field: the app, for the screen alone, or the
+/// server, which answers with it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum By {
+    App,
+    Server,
+}
+
+impl By {
+    pub fn name(self) -> &'static str {
+        match self {
+            By::App => "app",
+            By::Server => "server",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Derived {
+    pub by: By,
+    /// How, in one line: `docs' length`.
+    pub how: String,
+}
+
 /// Reads a field written either as a type string or as an object with `type`,
-/// and optionally `doc`, `derived` and `view`.
+/// and optionally `doc`, `derived`, `from` and `view`.
 pub fn read(spec: &Value) -> Result<Field, String> {
     match spec {
         Value::String(text) => parse(text),
         Value::Object(object) => {
-            if let Some(key) =
-                object.keys().find(|key| !matches!(key.as_str(), "type" | "doc" | "derived" | "view"))
+            if let Some(key) = object
+                .keys()
+                .find(|key| !matches!(key.as_str(), "type" | "doc" | "derived" | "from" | "view"))
             {
-                return Err(format!("a field object holds only type, doc, derived and view, not {key}"));
+                return Err(format!("a field object holds only type, doc, derived, from and view, not {key}"));
             }
             let mut field = match object.get("type") {
                 Some(Value::String(text)) => parse(text)?,
                 _ => return Err("a field object needs a `type` string".to_string()),
             };
             field.doc = object.get("doc").and_then(Value::as_str).map(str::to_string);
-            field.derived = object.get("derived").and_then(Value::as_str).map(str::to_string);
+            field.derived = match object.get("derived") {
+                None => None,
+                Some(written) => Some(derived(written)?),
+            };
+            field.from = match object.get("from") {
+                None => None,
+                Some(Value::String(query)) => Some(query.clone()),
+                Some(_) => return Err("from names the query that fills it: \"from\": \"listDocs\"".to_string()),
+            };
             field.view = match object.get("view") {
                 None => false,
                 Some(Value::Bool(view)) => *view,
@@ -129,6 +166,16 @@ pub fn read(spec: &Value) -> Result<Field, String> {
             Ok(field)
         }
         _ => Err("a field is a type string, or an object with a `type`".to_string()),
+    }
+}
+
+/// `{"app": how}` or `{"server": how}`: who derives a field, and how.
+fn derived(written: &Value) -> Result<Derived, String> {
+    let entry = written.as_object().filter(|object| object.len() == 1).and_then(|object| object.iter().next());
+    match entry {
+        Some((by, Value::String(how))) if by == "app" => Ok(Derived { by: By::App, how: how.clone() }),
+        Some((by, Value::String(how))) if by == "server" => Ok(Derived { by: By::Server, how: how.clone() }),
+        _ => Err("derived says who computes it, and how: {\"app\": \"docs' length\"} for what the app works out for the screen, {\"server\": \"the person owns it\"} for what the server answers with".to_string()),
     }
 }
 
@@ -183,6 +230,7 @@ pub fn parse(text: &str) -> Result<Field, String> {
         default,
         doc: None,
         derived: None,
+        from: None,
         view: false,
     })
 }

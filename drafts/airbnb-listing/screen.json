@@ -49,9 +49,9 @@
       "checkIn": "date?",
       "checkOut": "date?",
       "guests": { "type": "int 1..16", "doc": "不超过 listing.guests" },
-      "nights": { "type": "int 0..", "derived": "checkOut − checkIn 的晚数；未选日期为 0" },
+      "nights": { "type": "int 0..", "derived": { "app": "checkOut − checkIn 的晚数；未选日期为 0" } },
       "available": { "type": "bool", "doc": "所选日期是否可订；未选日期时为 true" },
-      "total": { "type": "money?", "derived": "可订时的总价（含清洁费、服务费）；否则为 null" }
+      "total": { "type": "money?", "derived": { "server": "可订时的总价（含清洁费、服务费）；否则为 null" } }
     }
   },
 

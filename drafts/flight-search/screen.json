@@ -30,11 +30,11 @@
     },
     "SortOption": {
       "label": "string 1..6",
-      "detail": { "type": "string 1..30", "derived": "按这种排法排第一的航班的价格和时长，例：¥1,280 · 2小时55分" },
+      "detail": { "type": "string 1..30", "derived": { "server": "按这种排法排第一的航班的价格和时长，例：¥1,280 · 2小时55分" } },
       "selected": "bool"
     },
     "Filters": {
-      "activeCount": { "type": "int 0..", "derived": "勾选了几项筛选；直飞算一项" },
+      "activeCount": { "type": "int 0..", "derived": { "app": "勾选了几项筛选；直飞算一项" } },
       "nonstopOnly": "bool",
       "stops": "FilterOption[] 1..",
       "airlines": "FilterOption[]",
@@ -46,7 +46,7 @@
       "checked": "bool"
     },
     "Results": {
-      "total": { "type": "int 0..", "derived": "筛选之后剩下的航班数" },
+      "total": { "type": "int 0..", "derived": { "server": "筛选之后剩下的航班数" } },
       "partial": { "type": "bool", "doc": "有航空公司还没返回报价，结果可能不全" },
       "flights": "Flight[]"
     },
@@ -60,12 +60,12 @@
       "departCode": "string 3..3",
       "arriveCode": "string 3..3",
       "nextDay": { "type": "bool", "doc": "到达是出发的第二天（当地时间）" },
-      "duration": { "type": "string 1..12", "derived": "全程时长，例：2小时55分" },
+      "duration": { "type": "string 1..12", "derived": { "server": "全程时长，例：2小时55分" } },
       "nonstop": "bool",
-      "stopsText": { "type": "string 1..20", "derived": "直飞；或 经停 1 次 · 上海" },
+      "stopsText": { "type": "string 1..20", "derived": { "app": "直飞；或 经停 1 次 · 上海" } },
       "price": { "type": "money", "doc": "每位成人，含税" },
       "seatsLeft": "int 0..9",
-      "fewSeats": { "type": "bool", "derived": "seatsLeft ≤ 5 时为 true" },
+      "fewSeats": { "type": "bool", "derived": { "app": "seatsLeft ≤ 5 时为 true" } },
       "includesBag": "bool",
       "isCheapest": { "type": "bool", "doc": "由后端在全部结果里标出，前端不自己比" },
       "isFastest": { "type": "bool", "doc": "同上" }

@@ -61,6 +61,10 @@ pub struct OperationSpec {
     pub requires: Option<String>,
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub fails: Map<String, Value>,
+    /// The fields of `data` a query's result fills: `docs`, or `docs[].doc`
+    /// where the field's type wraps the result.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fills: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -199,7 +203,11 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
     for operation in model.operations.all() {
         let mut params = Map::new();
         for (name, field) in &operation.params {
-            params.insert(name.clone(), Value::from(field.describe()));
+            let default = match &field.default {
+                Some(default) if !default.is_null() => format!(" = {default}"),
+                _ => String::new(),
+            };
+            params.insert(name.clone(), Value::from(format!("{}{default}", field.describe())));
         }
         let mut fails = Map::new();
         for (name, when) in &operation.fails {
@@ -213,6 +221,7 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
             result: operation.result.as_ref().map(|field| field.describe()),
             requires: operation.requires.clone(),
             fails,
+            fills: operation.fills.iter().map(|fill| fill.path.clone()).collect(),
         });
     }
     specs
