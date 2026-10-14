@@ -92,8 +92,17 @@ A query (it only reads) or a command (it changes something) behind a screen:
 named, with parameters, a result type, an optional precondition (a
 condition) and named failures; a node calls it with `call`. A query names
 the `data` fields its result fills (`"from"`); a parameter with a fixed set
-of choices is an enum the view model offers too.
+of choices is an enum the view model offers too. A **destructive** command
+cannot be undone: the screen calls it only from its confirmation, and its
+CLI command only given `--yes`.
 _Avoid_: endpoint, API call, action
+
+**Confirmation**:
+The popup that asks before a destructive operation: an overlay with a
+backdrop, opened by its id from the node a person first acts on, whose
+button is the only node that calls the operation. Its CLI form is `--yes`;
+without it the command prints a dry run.
+_Avoid_: alert, prompt
 
 **Template**:
 A string with placeholders that show data.
@@ -129,7 +138,8 @@ _Avoid_: snapshot
 What a CLI derived from the operations must print for one command, and the
 code it exits with: in one fixture, a query's result projected from that
 fixture's data, or a command's refusal where its precondition does not
-hold; or, for a named failure, its error.
+hold, or a destructive command's dry run without `--yes`; or, for a named
+failure, its error.
 _Avoid_: expected output, snapshot
 
 **Capture** — the elements of a running UI in one state, read by test id:

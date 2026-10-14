@@ -50,5 +50,9 @@ WHAT TRIPS YOU UP
     and every "with" for it, a path of that enum or a member literal.
   - A "call" to an operation with "requires" needs the node gated by that
     condition: "disabled": "!<condition>", or "if": "<condition>".
+  - A "call" to a "destructive" operation is made only inside its
+    confirmation: an overlay whose kind has a backdrop and that a node
+    opens with {"open": "<its id>"}. The menu item or button a person first
+    acts on opens it instead (OPERATIONS below).
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.
