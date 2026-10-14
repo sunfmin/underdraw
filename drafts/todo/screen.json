@@ -6,7 +6,11 @@
   "data": {
     "todos": "Todo[] ..200",
     "summary": "Summary",
-    "composer": "Composer"
+    "composer": {
+      "type": "Composer",
+      "view": true,
+      "doc": "正在输入的一项，只在这个屏幕上"
+    }
   },
   "types": {
     "Todo": {
@@ -52,6 +56,26 @@
     "canAdd": {
       "when": "composer.canSubmit",
       "label": "可以添加"
+    }
+  },
+  "operations": {
+    "addTodo": {
+      "command": "添加一项待办，排在最后",
+      "params": {
+        "title": "string 1..80"
+      },
+      "result": "Todo",
+      "requires": "canAdd"
+    },
+    "toggleTodo": {
+      "command": "把一项待办标为完成，或者标回未完成",
+      "params": {
+        "id": "string"
+      },
+      "result": "Todo",
+      "fails": {
+        "notFound": "这一项已经被删掉了"
+      }
     }
   },
   "fixtures": {
@@ -177,8 +201,10 @@
             "disabled": "!canAdd",
             "on": {
               "tap": {
-                "set": "composer.text",
-                "to": ""
+                "call": "addTodo",
+                "with": {
+                  "title": "{composer.text}"
+                }
               }
             }
           }
@@ -227,7 +253,10 @@
               },
               "on": {
                 "tap": {
-                  "toggle": "item.done"
+                  "call": "toggleTodo",
+                  "with": {
+                    "id": "{item.id}"
+                  }
                 }
               }
             }

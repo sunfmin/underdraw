@@ -46,8 +46,8 @@
     "Location": { "lat": "number -90..90", "lng": "number -180..180",
                   "approx": { "type": "bool", "doc": "预订前只显示大概位置" } },
     "Booking": {
-      "checkIn": "date?",
-      "checkOut": "date?",
+      "checkIn": { "type": "date?", "view": true, "doc": "客人在日历上选的入住日" },
+      "checkOut": { "type": "date?", "view": true, "doc": "客人在日历上选的退房日" },
       "guests": { "type": "int 1..16", "doc": "不超过 listing.guests" },
       "nights": { "type": "int 0..", "derived": "checkOut − checkIn 的晚数；未选日期为 0" },
       "available": { "type": "bool", "doc": "所选日期是否可订；未选日期时为 true" },
@@ -60,6 +60,11 @@
     "hasDates":         { "when": "booking.checkIn != null && booking.checkOut != null", "label": "已选日期" },
     "canReserve":       { "when": "hasDates && booking.available && booking.total != null", "label": "可以预订" },
     "datesUnavailable": { "when": "hasDates && !booking.available", "label": "所选日期不可订" }
+  },
+
+  "operations": {
+    "getListing": { "query": "打开这一页的房源", "result": "Listing", "fails": { "offline": "连不上服务器" } },
+    "toggleSaved": { "command": "把房源加入心愿单，或者移出", "params": { "id": "string" } }
   },
 
   "fixtures": {
@@ -114,7 +119,7 @@
       "id": "listing-detail-error", "kind": "Screen", "children": [
         { "id": "nav-error", "kind": "NavBar", "leading": [ { "ref": "nav-back" } ], "platform": { "web": { "hidden": true } } },
         { "id": "error-state", "kind": "EmptyState", "icon": "warning", "title": "房源加载失败", "detail": "请检查网络后重试。",
-          "action": { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "reload": true } } } } ] }
+          "action": { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "call": "getListing" } } } } ] }
   },
 
   "root": {
@@ -127,7 +132,7 @@
         "trailing": [ { "id": "nav-share", "kind": "IconButton", "icon": "ios_share", "label": "分享",
                         "on": { "tap": { "share": "{listing.url}" } } },
                       { "id": "nav-save", "kind": "IconButton", "icon": { "cases": [ { "if": "listing.isSaved", "then": "favorite.fill" }, { "else": "favorite" } ] }, "label": "收藏",
-                        "on": { "tap": { "toggle": "listing.isSaved" } } } ] },
+                        "on": { "tap": { "call": "toggleSaved", "with": { "id": "{listing.id}" } } } } ] },
 
       { "id": "content", "kind": "Scroll",
         "children": [

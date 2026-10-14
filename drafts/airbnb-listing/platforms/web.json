@@ -37,7 +37,7 @@
   },
   "actions": {
     "navigate": "router.push", "back": "history.back", "open": "<dialog> 模态框（桌面居中，手机从底部弹出）",
-    "share": "navigator.share，不支持时复制链接并提示", "toggle": "乐观更新 + API 调用",
-    "scrollTo": "element.scrollIntoView({behavior: 'smooth'})", "reload": "重新请求数据", "set": "更新本地状态"
+    "share": "navigator.share，不支持时复制链接并提示", "toggle": "本地状态取反",
+    "scrollTo": "element.scrollIntoView({behavior: 'smooth'})", "call": "数据层同名的 async 函数，请求 API；命令乐观更新", "set": "更新本地状态"
   }
 }

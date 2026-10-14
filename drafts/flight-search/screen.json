@@ -78,6 +78,19 @@
     "partialResults": { "when": "results.partial && !noResults", "label": "部分航空公司未返回" }
   },
 
+  "operations": {
+    "searchFlights": { "query": "这次搜索的航班，按选中的筛选和排法",
+                       "params": { "date": { "type": "date?", "doc": "换一天搜；null 时沿用搜索的那天" },
+                                   "sort": { "type": "int? 0..", "doc": "第几种排法；null 时沿用当前的" } },
+                       "result": "Results", "fails": { "offline": "连不上服务器" } },
+    "toggleFilter":  { "command": "勾上或取消一项筛选，回答筛选后的结果",
+                       "params": { "group": { "type": "string", "doc": "stops、airlines 或 departWindows" },
+                                   "option": { "type": "string", "doc": "这一项的 label" } },
+                       "result": "Results" },
+    "toggleNonstop": { "command": "只看直飞，或者取消", "result": "Results" },
+    "clearFilters":  { "command": "取消全部筛选", "result": "Results" }
+  },
+
   "fixtures": {
     "default": {
       "search": { "from": { "code": "PVG", "city": "上海" }, "to": { "code": "NRT", "city": "东京" },
@@ -167,7 +180,7 @@
       "id": "results-error", "kind": "Screen", "children": [
         { "id": "nav-error", "kind": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ] },
         { "id": "error-state", "kind": "EmptyState", "icon": "warning", "title": "航班搜索失败", "detail": "请检查网络后重试。",
-          "children": [ { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "reload": true } } } ] } ] }
+          "children": [ { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "call": "searchFlights" } } } ] } ] }
   },
 
   "root": {
@@ -190,14 +203,14 @@
           { "id": "search-to", "kind": "SearchField", "label": "到达", "value": "{search.to.city} {search.to.code}" },
           { "id": "search-date", "kind": "SearchField", "label": "日期", "value": "{search.date|date}" },
           { "id": "search-who", "kind": "SearchField", "label": "乘客与舱位", "value": "{search.passengers} 位 · {search.cabin}" },
-          { "id": "search-go", "kind": "Button", "variant": "primary", "text": "重新搜索", "on": { "tap": { "submit": "search" } } } ] },
+          { "id": "search-go", "kind": "Button", "variant": "primary", "text": "重新搜索", "on": { "tap": { "call": "searchFlights" } } } ] },
 
       { "id": "content", "kind": "Scroll", "children": [
 
         { "id": "day-strip", "kind": "Strip", "each": "days", "padding": "space.4",
           "item": { "id": "day-{index}", "kind": "DayPrice", "date": "{item.date|date:short}", "selected": "{item.selected}",
                     "price": { "cases": [ { "if": "item.soldOut", "then": "售罄" }, { "else": "{item.lowest|money}" } ] },
-                    "on": { "tap": { "set": { "search.date": "{item.date}" } } } } },
+                    "on": { "tap": { "call": "searchFlights", "with": { "date": "{item.date}" } } } } },
 
         { "id": "divider-days", "kind": "Divider" },
 
@@ -210,19 +223,19 @@
                 "subtitle": { "cases": [ { "if": "hasFilters", "then": "已选 {filters.activeCount} 项" }, { "else": "全部航班" } ] },
                 "children": [
                   { "id": "filter-clear", "kind": "Link", "if": "hasFilters", "text": "清除全部筛选",
-                    "on": { "tap": { "clearFilters": true } } } ] },
+                    "on": { "tap": { "call": "clearFilters" } } } ] },
               { "id": "filter-stops", "kind": "Section", "title": "经停", "gap": "space.1", "children": [
                 { "id": "filter-stops-list", "kind": "List", "each": "filters.stops",
                   "item": { "id": "stop-{index}", "kind": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
-                            "checked": "{item.checked}", "on": { "tap": { "toggle": "item.checked" } } } } ] },
+                            "checked": "{item.checked}", "on": { "tap": { "call": "toggleFilter", "with": { "group": "stops", "option": "{item.label}" } } } } } ] },
               { "id": "filter-airlines", "kind": "Section", "title": "航空公司", "gap": "space.1", "children": [
                 { "id": "filter-airlines-list", "kind": "List", "each": "filters.airlines",
                   "item": { "id": "airline-{index}", "kind": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
-                            "checked": "{item.checked}", "on": { "tap": { "toggle": "item.checked" } } } } ] },
+                            "checked": "{item.checked}", "on": { "tap": { "call": "toggleFilter", "with": { "group": "airlines", "option": "{item.label}" } } } } } ] },
               { "id": "filter-times", "kind": "Section", "title": "起飞时间", "children": [
                 { "id": "filter-times-grid", "kind": "Grid", "columns": 2, "gap": "space.2", "each": "filters.departWindows",
                   "item": { "id": "window-{index}", "kind": "Chip", "text": "{item.label}", "selected": "{item.checked}",
-                            "on": { "tap": { "toggle": "item.checked" } } } } ] } ] },
+                            "on": { "tap": { "call": "toggleFilter", "with": { "group": "departWindows", "option": "{item.label}" } } } } } ] } ] },
 
             { "id": "results", "kind": "Stack", "gap": "space.4", "children": [
 
@@ -231,13 +244,13 @@
                   "text": { "cases": [ { "if": "hasFilters", "then": "筛选 · {filters.activeCount}" }, { "else": "筛选" } ] },
                   "on": { "tap": { "open": "sheet-filters" } } },
                 { "id": "chip-nonstop", "kind": "Chip", "text": "直飞", "selected": "{filters.nonstopOnly}",
-                  "on": { "tap": { "toggle": "filters.nonstopOnly" } } },
+                  "on": { "tap": { "call": "toggleNonstop" } } },
                 { "id": "chip-airlines", "kind": "Chip", "text": "航空公司", "menu": true, "on": { "tap": { "open": "sheet-filters" } } },
                 { "id": "chip-times", "kind": "Chip", "text": "起飞时间", "menu": true, "on": { "tap": { "open": "sheet-filters" } } } ] },
 
               { "id": "sort-tabs", "kind": "Row", "gap": "space.2", "each": "sortOptions",
                 "item": { "id": "sort-{index}", "kind": "SortTab", "label": "{item.label}", "detail": "{item.detail}",
-                          "selected": "{item.selected}", "on": { "tap": { "sortBy": "{index}" } } } },
+                          "selected": "{item.selected}", "on": { "tap": { "call": "searchFlights", "with": { "sort": "{index}" } } } } },
 
               { "id": "partial-notice", "kind": "Row", "if": "partialResults", "padding": "space.3",
                 "border": "color.border", "radius": "radius.sm", "children": [
@@ -253,7 +266,7 @@
               { "id": "no-results", "kind": "EmptyState", "if": "noResults", "icon": "flight",
                 "title": "没有符合筛选条件的航班", "detail": "试试放宽经停、航空公司或起飞时间。",
                 "children": [ { "id": "no-results-clear", "kind": "Button", "variant": "secondary", "text": "清除全部筛选",
-                                "on": { "tap": { "clearFilters": true } } } ] } ] } ] } ] } ]
+                                "on": { "tap": { "call": "clearFilters" } } } ] } ] } ] } ] } ]
   },
 
   "components": {

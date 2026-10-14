@@ -82,6 +82,20 @@
     "canPlace": { "when": "hasAddress && !hasUnavailable", "label": "Order can be placed" }
   },
 
+  "operations": {
+    "getCheckout": { "query": "The cart being checked out, with its delivery, promo and payment", "result": "Cart",
+                     "fails": { "offline": "the server cannot be reached" } },
+    "removeItem": { "command": "Takes an item out of the cart", "params": { "id": "string" }, "result": "Cart" },
+    "chooseDelivery": { "command": "Delivers the order by this option", "params": { "id": "string" }, "result": "Delivery" },
+    "applyPromo": { "command": "Applies a promo code to the order", "params": { "code": "string 1..20" }, "result": "Promo",
+                    "fails": { "invalid": "the code does not exist, has expired, or does not cover these items" } },
+    "removePromo": { "command": "Takes the promo code off the order", "result": "Promo" },
+    "choosePayment": { "command": "Pays for the order by this method", "params": { "method": { "type": "string", "doc": "a PaymentOption id: card, alipay or wechat" } },
+                       "result": "Payment" },
+    "placeOrder": { "command": "Places the order and starts payment", "requires": "canPlace",
+                    "fails": { "outOfStock": "an item sold out meanwhile", "paymentRefused": "the payment did not go through" } }
+  },
+
   "fixtures": {
     "default": {
       "cart": {
@@ -191,7 +205,7 @@
       "id": "place-order", "kind": "Button", "variant": "primary",
       "text": "提交订单 · {summary.total|money}",
       "disabled": "!canPlace",
-      "on": { "tap": { "submit": "PlaceOrder" } }
+      "on": { "tap": { "call": "placeOrder" } }
     },
     "place-hint": {
       "id": "place-hint", "kind": "Text", "if": "!canPlace", "font": "font.caption", "color": "color.danger",
@@ -264,7 +278,7 @@
                       "trailing": [
                         { "id": "item-{index}-qty", "kind": "Stepper", "if": "item.inStock", "bind": "item.quantity" },
                         { "id": "item-{index}-remove", "kind": "Button", "if": "!item.inStock", "variant": "secondary", "size": "small", "text": "移除",
-                          "on": { "tap": { "remove": "item", "with": { "id": "{item.id}" } } } }
+                          "on": { "tap": { "call": "removeItem", "with": { "id": "{item.id}" } } } }
                       ]
                     }
                   }
@@ -284,7 +298,7 @@
                         { "if": "item.free", "then": "免运费" },
                         { "else": "{item.price|money}" }
                       ] },
-                      "on": { "tap": { "select": "delivery", "with": { "id": "{item.id}" } } }
+                      "on": { "tap": { "call": "chooseDelivery", "with": { "id": "{item.id}" } } }
                     }
                   }
                 ]
@@ -300,14 +314,14 @@
                           { "else": null }
                         ] } },
                       { "id": "promo-apply", "kind": "Button", "variant": "secondary", "text": "使用",
-                        "on": { "tap": { "submit": "ApplyPromo" } } }
+                        "on": { "tap": { "call": "applyPromo", "with": { "code": "{promo.code}" } } } }
                     ] },
                   { "id": "promo-applied", "kind": "ListItem", "if": "promoApplied",
                     "leadingIcon": "sell",
                     "title": "{promo.code} 已使用",
                     "detail": "立减 {promo.discount|money}",
                     "trailingIcon": "close",
-                    "on": { "tap": { "submit": "RemovePromo" } } }
+                    "on": { "tap": { "call": "removePromo" } } }
                 ]
               },
               {
@@ -320,7 +334,7 @@
                       "selected": "{item.selected}",
                       "icon": "{item.icon}",
                       "title": "{item.label}",
-                      "on": { "tap": { "set": "payment.method", "to": "{item.id}" } }
+                      "on": { "tap": { "call": "choosePayment", "with": { "method": "{item.id}" } } }
                     }
                   },
                   { "id": "card-saved", "kind": "ListItem", "if": "cardSaved",
@@ -372,7 +386,7 @@
             ] },
           { "id": "bar-submit", "kind": "Button", "variant": "primary", "text": "提交订单",
             "disabled": "!canPlace",
-            "on": { "tap": { "submit": "PlaceOrder" } } }
+            "on": { "tap": { "call": "placeOrder" } } }
         ]
       }
     ]
@@ -395,7 +409,7 @@
         { "id": "error-state", "kind": "EmptyState", "icon": "cloud_off",
           "title": "订单信息加载失败", "detail": "请检查网络后重试",
           "action": { "id": "error-retry", "kind": "Button", "variant": "primary", "text": "重试",
-                      "on": { "tap": { "reload": true } } } }
+                      "on": { "tap": { "call": "getCheckout" } } } }
       ]
     }
   }
