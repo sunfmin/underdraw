@@ -191,6 +191,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "a slot holds nodes, not cases",
         ),
         (
+            "anchor-not-a-place",
+            r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""kind": "Badge", "anchor": "middle", "if": "listing.isGuestFavorite""#,
+            "guest-favorite.anchor",
+            "middle is not an anchor",
+        ),
+        (
             "quoted-track",
             r#""regular": ["58%", "1fr"]"#,
             r#""regular": ["58%", "48"]"#,

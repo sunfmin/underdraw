@@ -678,7 +678,8 @@
       "width": {
         "compact": "88%",
         "regular": 480
-      }
+      },
+      "anchor": "center"
     }
   },
   "phases": {
