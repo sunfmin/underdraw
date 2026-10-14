@@ -1,5 +1,5 @@
 {
-  "$comment": "Airbnb 房源详情页，平台无关的界面描述。id 即各平台的测试标识（data-testid / accessibilityIdentifier / testTag）。样式只能引用 tokens.json；{a.b} 是数据绑定；if 是显示条件；only 限定断点；platform 是平台局部覆盖；assumed 是 AI 的猜测，渲染为虚线框待用户确认。",
+  "$comment": "Airbnb 房源详情页，平台无关的界面描述。id 即各平台的测试标识（data-testid / accessibilityIdentifier / testTag）。样式只能引用 tokens.json；表达式规则见 docs/format/expressions.md；only 限定断点；platform 是平台局部覆盖；assumed 是 AI 的猜测，渲染为虚线框待用户确认。",
   "screen": "ListingDetail",
   "title": "房源详情",
   "tokens": "tokens.json",
@@ -22,9 +22,9 @@
       "host": { "name": "string", "avatar": "Image", "isSuperhost": "bool", "yearsHosting": "int ≥0" },
       "highlights": "{icon, title, detail}[] 0–3",
       "description": "string",
-      "amenities": "{icon, label, unavailable: bool}[]",
-      "ratingBreakdown": "{cleanliness, accuracy, checkIn, communication, location, value: number 0–5}",
-      "reviews": "{author, avatar, date, text}[]",
+      "amenities": "{icon, label, unavailable: bool}[]  每项必须写 unavailable（数据格式还没有缺省值的概念）",
+      "ratingBreakdown": "{label, value: number 0–5}[]",
+      "reviews": "{author, avatar, date: date, text}[]",
       "location": { "lat": "number", "lng": "number", "approx": "bool  入住前只显示大概位置" },
       "nightlyPrice": "Money",
       "cancellationPolicy": "string"
@@ -37,6 +37,16 @@
       "available": "bool, 所选日期是否可订",
       "total": "Money | null, 派生"
     }
+  },
+
+  "conditions": {
+    "loading":          { "when": "status == \"loading\"", "label": "加载中" },
+    "loadFailed":       { "when": "status == \"error\"",   "label": "加载失败" },
+    "loaded":           { "when": "status == \"loaded\"",  "label": "已加载" },
+    "hasReviews":       { "when": "listing.reviewCount > 0 && listing.rating != null", "label": "有评价" },
+    "hasDates":         { "when": "booking.checkIn != null && booking.checkOut != null", "label": "已选日期" },
+    "canReserve":       { "when": "hasDates && booking.available && booking.total != null", "label": "可以预订" },
+    "datesUnavailable": { "when": "hasDates && !booking.available", "label": "所选日期不可订" }
   },
 
   "fixtures": {
@@ -57,17 +67,18 @@
         ],
         "description": "公寓位于安静的住宅街，步行 6 分钟到涩谷站……（约 800 字）",
         "amenities": [
-          { "icon": "wifi", "label": "Wi‑Fi" }, { "icon": "kitchen", "label": "厨房" },
-          { "icon": "washer", "label": "洗衣机" }, { "icon": "ac", "label": "空调" },
-          { "icon": "tv", "label": "电视" }, { "icon": "desk", "label": "专用工作区" },
-          { "icon": "hairdryer", "label": "吹风机" }, { "icon": "elevator", "label": "电梯" },
-          { "icon": "smoke", "label": "烟雾报警器" }, { "icon": "parking", "label": "免费停车", "unavailable": true },
-          { "icon": "…", "label": "…共 45 项" }
+          { "icon": "wifi", "label": "Wi‑Fi", "unavailable": false }, { "icon": "kitchen", "label": "厨房", "unavailable": false },
+          { "icon": "washer", "label": "洗衣机", "unavailable": false }, { "icon": "ac", "label": "空调", "unavailable": false },
+          { "icon": "tv", "label": "电视", "unavailable": false }, { "icon": "desk", "label": "专用工作区", "unavailable": false },
+          { "icon": "hairdryer", "label": "吹风机", "unavailable": false }, { "icon": "elevator", "label": "电梯", "unavailable": false },
+          { "icon": "smoke", "label": "烟雾报警器", "unavailable": false }, { "icon": "parking", "label": "免费停车", "unavailable": true },
+          { "icon": "…", "label": "…共 45 项", "unavailable": false }
         ],
-        "ratingBreakdown": { "cleanliness": 4.9, "accuracy": 4.9, "checkIn": 5.0, "communication": 5.0, "location": 4.9, "value": 4.8 },
+        "ratingBreakdown": [ { "label": "干净卫生", "value": 4.9 }, { "label": "如实描述", "value": 4.9 }, { "label": "入住顺利", "value": 5.0 },
+                             { "label": "沟通顺畅", "value": 5.0 }, { "label": "交通便利", "value": 4.9 }, { "label": "性价比", "value": 4.8 } ],
         "reviews": [
-          { "author": "Mei", "avatar": "r1.jpg", "date": "2026 年 9 月", "text": "位置太方便了，房间比照片还干净……" },
-          { "author": "Tom", "avatar": "r2.jpg", "date": "2026 年 9 月", "text": "Great host, quick replies……" }
+          { "author": "Mei", "avatar": "r1.jpg", "date": "2026-09-14", "text": "位置太方便了，房间比照片还干净……" },
+          { "author": "Tom", "avatar": "r2.jpg", "date": "2026-09-03", "text": "Great host, quick replies……" }
         ],
         "location": { "lat": 35.658, "lng": 139.701, "approx": true },
         "nightlyPrice": { "amount": 18500, "currency": "JPY" },
@@ -93,17 +104,17 @@
                         "platform": { "android": { "$why": "安卓同时响应系统返回手势" } } } ],
         "trailing": [ { "id": "nav-share", "kind": "IconButton", "icon": "share", "label": "分享",
                         "on": { "tap": { "share": "{listing.url}" } } },
-                      { "id": "nav-save", "kind": "IconButton", "icon": "{listing.isSaved ? heart.fill : heart}", "label": "收藏",
+                      { "id": "nav-save", "kind": "IconButton", "icon": { "cases": [ { "if": "listing.isSaved", "then": "heart.fill" }, { "else": "heart" } ] }, "label": "收藏",
                         "on": { "tap": { "toggle": "listing.isSaved" } } } ] },
 
-      { "id": "loading-skeleton", "kind": "Skeleton", "if": "status == loading",
+      { "id": "loading-skeleton", "kind": "Skeleton", "if": "loading",
         "shape": ["image 4:3", "line 70%", "line 40%", "line 90%", "line 90%"] },
 
-      { "id": "error-state", "kind": "EmptyState", "if": "status == error",
+      { "id": "error-state", "kind": "EmptyState", "if": "loadFailed",
         "icon": "warning", "title": "房源加载失败", "detail": "请检查网络后重试。",
         "action": { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "reload": true } } } },
 
-      { "id": "content", "kind": "Scroll", "if": "status == loaded",
+      { "id": "content", "kind": "Scroll", "if": "loaded",
         "children": [
 
           { "id": "photos-carousel", "kind": "ImageCarousel", "only": "compact",
@@ -131,15 +142,15 @@
                       "text": "{listing.guests} 位房客 · {listing.bedrooms} 间卧室 · {listing.beds} 张床 · {listing.baths} 间卫生间" } ] },
 
                   { "id": "rating-bar", "kind": "Row", "gap": "space.4", "padding": "space.4",
-                    "border": "color.border", "radius": "radius.md", "if": "listing.reviewCount > 0",
+                    "border": "color.border", "radius": "radius.md", "if": "hasReviews",
                     "on": { "tap": { "open": "sheet-reviews" } },
                     "children": [
                       { "id": "guest-favorite", "kind": "Badge", "if": "listing.isGuestFavorite", "text": "房客推荐",
                         "assumed": "徽章的显示条件我猜是 isGuestFavorite，由后端决定；还是前端按 rating ≥ 4.9 自己算？" },
-                      { "id": "rating-value", "kind": "Rating", "value": "{listing.rating}", "showStars": true },
+                      { "id": "rating-value", "kind": "Rating", "value": "{listing.rating}", "showStars": true, "$note": "整个字符串只有一个占位符，传的是数值本身" },
                       { "id": "rating-count", "kind": "Text", "text": "{listing.reviewCount} 条评价", "font": "font.subhead", "underline": true } ] },
 
-                  { "id": "rating-new", "kind": "Text", "if": "listing.reviewCount == 0", "text": "★ 新房源 · 暂无评价",
+                  { "id": "rating-new", "kind": "Text", "if": "!hasReviews", "text": "★ 新房源 · 暂无评价",
                     "font": "font.subhead" },
 
                   { "id": "divider-1", "kind": "Divider" },
@@ -150,7 +161,8 @@
                     { "id": "host-text", "kind": "Stack", "children": [
                       { "id": "host-name", "kind": "Text", "text": "房东：{listing.host.name}", "font": "font.subhead" },
                       { "id": "host-meta", "kind": "Text", "font": "font.caption", "color": "color.textSecondary",
-                        "text": "{listing.host.isSuperhost ? 超赞房东 · : }已接待 {listing.host.yearsHosting} 年" } ] } ] },
+                        "text": { "cases": [ { "if": "listing.host.isSuperhost", "then": "超赞房东 · 已接待 {listing.host.yearsHosting} 年" },
+                                          { "else": "已接待 {listing.host.yearsHosting} 年" } ] } } ] } ] },
 
                   { "id": "divider-2", "kind": "Divider" },
 
@@ -173,19 +185,20 @@
                       "item": { "id": "amenity-{index}", "kind": "ListItem", "leadingIcon": "{item.icon}", "title": "{item.label}",
                                 "strikethrough": "{item.unavailable}" } },
                     { "id": "amenities-all", "kind": "Button", "variant": "secondary",
-                      "text": "显示全部 {listing.amenities.length} 项设施",
+                      "text": "显示全部 {listing.amenities|count} 项设施",
                       "on": { "tap": { "open": "sheet-amenities" } } } ] },
 
                   { "id": "divider-5", "kind": "Divider" },
 
                   { "id": "calendar", "kind": "Section",
-                    "title": "{booking.nights > 0 ? 在{listing.city}住 {booking.nights} 晚 : 选择入住日期}",
-                    "subtitle": "{booking.checkIn ? {booking.checkIn} – {booking.checkOut} : 添加旅行日期以查看准确价格}",
+                    "title": { "cases": [ { "if": "hasDates", "then": "在{listing.city}住 {booking.nights} 晚" }, { "else": "选择入住日期" } ] },
+                    "subtitle": { "cases": [ { "if": "hasDates", "then": "{booking.checkIn|date} – {booking.checkOut|date}" },
+                                      { "else": "添加旅行日期以查看准确价格" } ] },
                     "children": [
                       { "id": "calendar-picker", "kind": "DateRangePicker", "bind": ["booking.checkIn", "booking.checkOut"],
                         "months": { "compact": 1, "regular": 2 }, "disablePast": true,
                         "assumed": "已被订走的日期是否画删除线？我按“画删除线且不可点”处理。" },
-                      { "id": "calendar-clear", "kind": "Link", "text": "清除日期", "if": "booking.checkIn",
+                      { "id": "calendar-clear", "kind": "Link", "text": "清除日期", "if": "hasDates",
                         "on": { "tap": { "set": { "booking.checkIn": null, "booking.checkOut": null } } } } ] }
                 ] },
 
@@ -193,26 +206,28 @@
                 "padding": "space.6", "radius": "radius.lg", "elevation": "elevation.card", "border": "color.border",
                 "children": [
                   { "id": "card-price", "kind": "Text", "font": "font.price",
-                    "text": "{booking.total ? {booking.total} 共 {booking.nights} 晚 : 添加日期查看价格}" },
+                    "text": { "cases": [ { "if": "canReserve", "then": "{booking.total|money} 共 {booking.nights} 晚" },
+                                      { "if": "datesUnavailable", "then": "所选日期不可订" },
+                                      { "else": "{listing.nightlyPrice|money} / 晚" } ] } },
                   { "id": "card-fields", "kind": "FieldGroup", "border": "color.border", "radius": "radius.sm", "children": [
                     { "id": "card-checkin", "kind": "DateField", "label": "入住", "bind": "booking.checkIn" },
                     { "id": "card-checkout", "kind": "DateField", "label": "退房", "bind": "booking.checkOut" },
                     { "id": "card-guests", "kind": "Stepper", "label": "房客", "bind": "booking.guests",
                       "min": 1, "max": "{listing.guests}" } ] },
                   { "ref": "reserve-button" },
-                  { "id": "card-no-charge", "kind": "Text", "text": "你暂时不会被扣款", "if": "booking.available",
+                  { "id": "card-no-charge", "kind": "Text", "text": "你暂时不会被扣款", "if": "canReserve",
                     "font": "font.caption", "align": "center" },
-                  { "id": "card-breakdown", "kind": "PriceBreakdown", "if": "booking.total",
+                  { "id": "card-breakdown", "kind": "PriceBreakdown", "if": "canReserve",
                     "assumed": "明细行我按“房费 × 晚数、清洁费、服务费、合计”四行处理，税是否单列待确认。" } ] }
             ] },
 
           { "id": "divider-6", "kind": "Divider" },
 
-          { "id": "reviews", "kind": "Section", "if": "listing.reviewCount > 0", "padding": "space.6",
-            "title": "★ {listing.rating} · {listing.reviewCount} 条评价",
+          { "id": "reviews", "kind": "Section", "if": "hasReviews", "padding": "space.6",
+            "title": "★ {listing.rating|number:2} · {listing.reviewCount} 条评价",
             "children": [
               { "id": "reviews-breakdown", "kind": "Grid", "columns": { "compact": 2, "regular": 6 },
-                "each": "listing.ratingBreakdown", "item": { "id": "breakdown-{key}", "kind": "Metric", "label": "{key}", "value": "{value}" } },
+                "each": "listing.ratingBreakdown", "item": { "id": "breakdown-{index}", "kind": "Metric", "label": "{item.label}", "value": "{item.value|number:1}" } },
               { "id": "reviews-list", "kind": "Carousel", "only": "compact", "each": "listing.reviews", "limit": 6,
                 "item": { "ref": "review-card" } },
               { "id": "reviews-grid", "kind": "Grid", "only": "regular", "columns": 2, "each": "listing.reviews", "limit": 6,
@@ -222,7 +237,7 @@
 
           { "id": "map", "kind": "Section", "title": "你将前往的地方", "padding": "space.6", "children": [
             { "id": "map-view", "kind": "Map", "center": "{listing.location}", "aspectRatio": { "compact": "1:1", "regular": "21:9" },
-              "marker": "{listing.location.approx ? circle : pin}", "interactive": false,
+              "marker": { "cases": [ { "if": "listing.location.approx", "then": "circle" }, { "else": "pin" } ] }, "interactive": false,
               "on": { "tap": { "navigate": "FullMap" } } },
             { "id": "map-caption", "kind": "Text", "text": "{listing.city}，{listing.country}", "font": "font.subhead" } ] },
 
@@ -236,7 +251,7 @@
                 "trailingIcon": "chevron.right", "on": { "tap": { "open": "sheet-cancellation" } } } ] } ] }
         ] },
 
-      { "id": "booking-bar", "kind": "StickyBar", "edge": "bottom", "only": "compact", "if": "status == loaded",
+      { "id": "booking-bar", "kind": "StickyBar", "edge": "bottom", "only": "compact", "if": "loaded",
         "elevation": "elevation.sticky", "padding": "space.4",
         "platform": {
           "ios":     { "$why": "放进底部安全区，避开 Home 指示条" },
@@ -244,9 +259,9 @@
         "children": [
           { "id": "bar-price", "kind": "Stack", "children": [
             { "id": "bar-price-text", "kind": "Text", "font": "font.price",
-              "text": "{booking.total ? {booking.total} : 添加日期查看价格}" },
-            { "id": "bar-dates", "kind": "Link", "if": "booking.checkIn", "font": "font.caption",
-              "text": "{booking.checkIn} – {booking.checkOut}", "on": { "tap": { "scrollTo": "calendar" } } } ] },
+              "text": { "cases": [ { "if": "canReserve", "then": "{booking.total|money}" }, { "else": "{listing.nightlyPrice|money} / 晚" } ] } },
+            { "id": "bar-dates", "kind": "Link", "if": "hasDates", "font": "font.caption",
+              "text": "{booking.checkIn|date:short} – {booking.checkOut|date:short}", "on": { "tap": { "scrollTo": "calendar" } } } ] },
           { "ref": "reserve-button" } ] }
     ]
   },
@@ -254,10 +269,10 @@
   "components": {
     "reserve-button": {
       "id": "reserve-button", "kind": "Button", "variant": "primary",
-      "text": "{!booking.checkIn ? 查看可订日期 : booking.available ? 预订 : 日期不可订}",
-      "disabled": "booking.checkIn && !booking.available",
-      "on": { "tap": { "if": "!booking.checkIn", "then": { "scrollTo": "calendar" },
-                       "else": { "navigate": "Checkout", "with": { "listing": "{listing.id}", "booking": "{booking}" } } } },
+      "text": { "cases": [ { "if": "!hasDates", "then": "查看可订日期" }, { "if": "canReserve", "then": "预订" }, { "else": "日期不可订" } ] },
+      "disabled": "datesUnavailable",
+      "on": { "tap": { "cases": [ { "if": "!hasDates", "then": { "scrollTo": "calendar" } },
+                                  { "else": { "navigate": "Checkout", "with": { "listing": "{listing.id}", "booking": "{booking}" } } } ] } },
       "$note": "同一个按钮在 booking-bar（手机）和 booking-card（大屏）各出现一次，但同一时刻只显示一个，所以 id 不冲突。"
     },
     "review-card": {
@@ -266,7 +281,7 @@
           { "id": "review-{index}-avatar", "kind": "Avatar", "image": "{item.avatar}", "size": 40 },
           { "id": "review-{index}-meta", "kind": "Stack", "children": [
             { "id": "review-{index}-name", "kind": "Text", "text": "{item.author}", "font": "font.subhead" },
-            { "id": "review-{index}-date", "kind": "Text", "text": "{item.date}", "font": "font.caption", "color": "color.textSecondary" } ] } ] },
+            { "id": "review-{index}-date", "kind": "Text", "text": "{item.date|date}", "font": "font.caption", "color": "color.textSecondary" } ] } ] },
         { "id": "review-{index}-text", "kind": "Text", "text": "{item.text}", "font": "font.body", "maxLines": 4 } ]
     }
   },
