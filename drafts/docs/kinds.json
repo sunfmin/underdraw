@@ -1,0 +1,36 @@
+{ "kinds": {
+  "SortButton": {
+    "doc": "The sort control: the current order and a chevron; it opens the sort menu.",
+    "look": { "box": "row", "gap": 4, "padding": [6, 8, 6, 12], "radius": 8, "stroke": "line", "items": "center", "children": [
+      { "text": "{text}", "font": "font.caption" },
+      { "kind": "Glyph", "icon": "{trailingIcon|or:expand_more}", "size": 18 } ] } },
+  "DocRow": {
+    "doc": "One document: its type icon, title, who owns it and when it changed, a shared badge, then the row's slots (its ⋯ button, and its menu when open).",
+    "look": { "box": "row", "gap": 12, "padding": [12, 8, 12, 16], "topLine": "line", "items": "center", "children": [
+      { "kind": "Glyph", "icon": "{leadingIcon}", "size": 28 },
+      { "box": "column", "gap": 2, "grow": 1, "shrink": 1, "children": [
+        { "box": "row", "gap": 8, "items": "center", "children": [
+          { "text": "{title}", "font": "font.subhead", "maxLines": 1 },
+          { "if": "shared", "box": "row", "padding": [1, 6], "radius": 999, "stroke": "line",
+            "children": [ { "text": "共享", "font": "font.caption", "ink": "muted" } ] } ] },
+        { "text": "{detail}", "font": "font.caption", "ink": "muted", "maxLines": 1 } ] },
+      "$children" ] } },
+  "Menu": {
+    "doc": "A dropdown menu: a raised panel of items under the control that opened it; tapping outside or choosing an item closes it. No backdrop.",
+    "look": { "box": "column", "width": "{width|or:220}", "padding": [4, 0], "radius": 8,
+              "fill": "paper", "stroke": "line", "children": ["$children"] } },
+  "MenuItem": {
+    "doc": "One menu item: an icon, its label, and a check when it is the current choice. A destructive item is shown in the danger colour.",
+    "look": { "box": "row", "gap": 12, "padding": [10, 16], "items": "center", "children": [
+      { "if": "leadingIcon", "kind": "Glyph", "icon": "{leadingIcon}", "size": 20 },
+      { "box": "row", "grow": 1, "children": [
+        { "text": "{text}", "ink": { "cases": [ { "if": "disabled", "then": "muted" }, { "else": "text" } ] } } ] },
+      { "if": "selected", "kind": "Glyph", "icon": "check", "size": 20 } ] } },
+  "Dialog": {
+    "doc": "A modal dialog centred over a dimmed backdrop; it blocks the screen until dismissed.",
+    "look": { "box": "column", "backdrop": true, "width": "{width|or:88%}", "gap": 16, "padding": 24,
+              "radius": 16, "fill": "paper", "stroke": "line", "children": ["$children"] } },
+  "MenuDivider": {
+    "doc": "A line between groups of menu items.",
+    "look": { "box": "row", "height": 1, "margin": [4, 0], "fill": "line" } }
+} }

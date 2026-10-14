@@ -1,0 +1,714 @@
+{
+  "screen": "DocumentList",
+  "title": "团队文档",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "$comment": "A team's documents: sorted by a dropdown in the toolbar, each row with a ⋯ menu of actions.",
+  "data": {
+    "summary": "Summary",
+    "sort": "Sort",
+    "docs": {
+      "type": "DocRow[] ..50",
+      "from": "listDocs"
+    },
+    "rowMenu": {
+      "type": "RowMenu?",
+      "view": true,
+      "doc": "The document whose ⋯ menu is open; null while it is closed"
+    }
+  },
+  "types": {
+    "Summary": {
+      "count": {
+        "type": "int 0..",
+        "derived": { "app": "docs' length" }
+      }
+    },
+    "Sort": {
+      "label": {
+        "type": "string 1..8",
+        "derived": { "app": "the selected option's label" }
+      },
+      "menuOpen": {
+        "type": "bool = false",
+        "view": true,
+        "doc": "The sort menu is open"
+      },
+      "options": "SortOption[] 2..6"
+    },
+    "SortOption": {
+      "id": "SortKey",
+      "label": "string 1..8",
+      "selected": "bool = false"
+    },
+    "SortKey": "enum(updated, created, title, owner)",
+    "DocRow": {
+      "doc": "Doc",
+      "menuOpen": {
+        "type": "bool = false",
+        "view": true,
+        "derived": { "app": "rowMenu is open on this document" }
+      }
+    },
+    "Doc": {
+      "id": "string",
+      "title": "string 1..60",
+      "icon": {
+        "type": "icon",
+        "doc": "description / table_chart / slideshow, by the document's type"
+      },
+      "owner": "string 1..20",
+      "updated": "date",
+      "shared": "bool = false"
+    },
+    "RowMenu": {
+      "docId": "string",
+      "canDelete": {
+        "type": "bool = false",
+        "derived": { "server": "the person owns the document" }
+      },
+      "confirming": {
+        "type": "bool = false",
+        "view": true,
+        "doc": "The delete confirmation is open for this document"
+      }
+    }
+  },
+  "conditions": {
+    "hasDocs": {
+      "when": "summary.count > 0",
+      "label": "Has documents"
+    },
+    "sortOpen": {
+      "when": "sort.menuOpen",
+      "label": "Sort menu open"
+    },
+    "rowMenuOpen": {
+      "when": "rowMenu != null",
+      "label": "A row's menu is open"
+    },
+    "canDelete": {
+      "when": "rowMenuOpen && rowMenu.canDelete",
+      "label": "May delete it"
+    },
+    "confirmingDelete": {
+      "when": "canDelete && rowMenu.confirming",
+      "label": "Delete confirmation open"
+    }
+  },
+  "operations": {
+    "listDocs": {
+      "query": "The team's documents, in the order sort names",
+      "params": {
+        "sort": "SortKey = \"updated\""
+      },
+      "result": "Doc[] ..50",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "deleteDoc": {
+      "command": "Deletes a document for everyone in the team",
+      "params": {
+        "id": "string"
+      },
+      "requires": "canDelete",
+      "destructive": true,
+      "fails": {
+        "notFound": "the document is already gone",
+        "forbidden": "the person no longer owns it"
+      }
+    },
+    "newDocument": {
+      "command": "Creates an empty document owned by the person, and answers with it",
+      "result": "Doc",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "summary": {
+        "count": 6
+      },
+      "sort": {
+        "label": "最近修改",
+        "options": [
+          {
+            "id": "updated",
+            "label": "最近修改",
+            "selected": true
+          },
+          {
+            "id": "created",
+            "label": "创建时间"
+          },
+          {
+            "id": "title",
+            "label": "名称"
+          },
+          {
+            "id": "owner",
+            "label": "所有者"
+          }
+        ]
+      },
+      "docs": [
+        {
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          }
+        },
+        {
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          }
+        },
+        {
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
+        }
+      ],
+      "rowMenu": null
+    },
+    "sort-open": {
+      "$patch": "default",
+      "sort": {
+        "menuOpen": true
+      }
+    },
+    "row-menu": {
+      "$patch": "default",
+      "docs": [
+        {
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          },
+          "menuOpen": true
+        },
+        {
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          }
+        },
+        {
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          }
+        },
+        {
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
+        }
+      ],
+      "rowMenu": {
+        "docId": "b"
+      }
+    },
+    "row-menu-own": {
+      "$patch": "default",
+      "docs": [
+        {
+          "doc": {
+            "id": "a",
+            "title": "2027 年度产品路线图",
+            "icon": "slideshow",
+            "owner": "我",
+            "updated": "2026-10-14",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "b",
+            "title": "Q4 预算与人力规划",
+            "icon": "table_chart",
+            "owner": "王芳",
+            "updated": "2026-10-13",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "c",
+            "title": "新员工入职手册",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-10"
+          },
+          "menuOpen": true
+        },
+        {
+          "doc": {
+            "id": "d",
+            "title": "客户访谈记录：东京 · 第三轮",
+            "icon": "description",
+            "owner": "Tanaka",
+            "updated": "2026-10-08",
+            "shared": true
+          }
+        },
+        {
+          "doc": {
+            "id": "e",
+            "title": "设计评审纪要",
+            "icon": "description",
+            "owner": "我",
+            "updated": "2026-10-02"
+          }
+        },
+        {
+          "doc": {
+            "id": "f",
+            "title": "竞品价格对比",
+            "icon": "table_chart",
+            "owner": "李雷",
+            "updated": "2026-09-28"
+          }
+        }
+      ],
+      "rowMenu": {
+        "docId": "c",
+        "canDelete": true
+      }
+    },
+    "confirm-delete": {
+      "$patch": "default",
+      "rowMenu": {
+        "docId": "c",
+        "canDelete": true,
+        "confirming": true
+      }
+    },
+    "empty": {
+      "$patch": "default",
+      "summary": {
+        "count": 0
+      },
+      "docs": []
+    }
+  },
+  "components": {
+    "nav": {
+      "id": "nav",
+      "kind": "NavBar",
+      "children": {
+        "id": "nav-title",
+        "kind": "Text",
+        "text": "团队文档",
+        "font": "font.heading"
+      },
+      "trailing": {
+        "id": "nav-new",
+        "kind": "IconButton",
+        "icon": "add",
+        "on": {
+          "tap": {
+            "call": "newDocument"
+          }
+        }
+      }
+    }
+  },
+  "root": {
+    "id": "docs",
+    "kind": "Screen",
+    "children": [
+      {
+        "ref": "nav"
+      },
+      {
+        "id": "toolbar",
+        "kind": "Row",
+        "padding": [
+          0,
+          16,
+          8,
+          16
+        ],
+        "children": [
+          {
+            "id": "doc-count",
+            "kind": "Text",
+            "font": "font.caption",
+            "color": "color.textSecondary",
+            "text": "共 {summary.count} 个文档"
+          }
+        ],
+        "trailing": {
+          "id": "sort-button",
+          "kind": "SortButton",
+          "text": "排序：{sort.label}",
+          "trailingIcon": {
+            "cases": [
+              {
+                "if": "sortOpen",
+                "then": "expand_less"
+              },
+              {
+                "else": "expand_more"
+              }
+            ]
+          },
+          "on": {
+            "tap": {
+              "toggle": "sort.menuOpen"
+            }
+          }
+        }
+      },
+      {
+        "id": "list",
+        "kind": "Stack",
+        "if": "hasDocs",
+        "each": "docs",
+        "item": {
+          "id": "doc-{item.doc.id}",
+          "kind": "DocRow",
+          "leadingIcon": "{item.doc.icon}",
+          "title": "{item.doc.title}",
+          "shared": "{item.doc.shared}",
+          "detail": "{item.doc.owner} · {item.doc.updated|date}",
+          "on": {
+            "tap": {
+              "navigate": "Document",
+              "with": {
+                "id": "{item.doc.id}"
+              }
+            }
+          },
+          "trailing": {
+            "id": "doc-{item.doc.id}-more",
+            "kind": "IconButton",
+            "icon": "more_horiz",
+            "on": {
+              "tap": {
+                "open": "row-menu",
+                "with": {
+                  "id": "{item.doc.id}"
+                }
+              }
+            }
+          },
+          "overlay": {
+            "id": "doc-{item.doc.id}-menu",
+            "kind": "Menu",
+            "if": "item.menuOpen",
+            "anchor": "top-trailing",
+            "dismiss": "tap outside or choose an item",
+            "children": [
+              {
+                "id": "doc-{item.doc.id}-rename",
+                "kind": "MenuItem",
+                "leadingIcon": "edit",
+                "text": "重命名",
+                "on": {
+                  "tap": {
+                    "open": "rename-dialog",
+                    "with": {
+                      "id": "{item.doc.id}"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "doc-{item.doc.id}-copy",
+                "kind": "MenuItem",
+                "leadingIcon": "link",
+                "text": "复制链接",
+                "on": {
+                  "tap": {
+                    "copy": "Document",
+                    "with": {
+                      "id": "{item.doc.id}"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "doc-{item.doc.id}-move",
+                "kind": "MenuItem",
+                "leadingIcon": "drive_file_move",
+                "text": "移动到…",
+                "on": {
+                  "tap": {
+                    "navigate": "MoveDocument",
+                    "with": {
+                      "id": "{item.doc.id}"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "doc-{item.doc.id}-divider",
+                "kind": "MenuDivider"
+              },
+              {
+                "id": "doc-{item.doc.id}-delete",
+                "kind": "MenuItem",
+                "leadingIcon": "delete",
+                "text": "删除",
+                "destructive": true,
+                "disabled": "!canDelete",
+                "$why": "only the owner may delete; others see it greyed so they know it exists",
+                "on": {
+                  "tap": {
+                    "open": "confirm-delete",
+                    "with": {
+                      "id": "{item.doc.id}"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "overlay": {
+          "id": "sort-menu",
+          "kind": "Menu",
+          "if": "sortOpen",
+          "anchor": "top-trailing",
+          "width": 180,
+          "dismiss": "tap outside or choose an option",
+          "children": {
+            "id": "sort-options",
+            "kind": "Stack",
+            "each": "sort.options",
+            "item": {
+              "id": "sort-{item.id}",
+              "kind": "MenuItem",
+              "text": "{item.label}",
+              "selected": "{item.selected}",
+              "on": {
+                "tap": {
+                  "call": "listDocs",
+                  "with": {
+                    "sort": "{item.id}"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "empty",
+        "kind": "EmptyState",
+        "if": "!hasDocs",
+        "icon": "folder_open",
+        "title": "还没有文档",
+        "detail": "新建一个，或者把文件拖到这里",
+        "action": {
+          "id": "empty-new",
+          "kind": "Button",
+          "text": "新建文档",
+          "on": {
+            "tap": {
+              "call": "newDocument"
+            }
+          }
+        }
+      }
+    ],
+    "overlay": {
+      "id": "confirm-delete",
+      "kind": "Dialog",
+      "if": "confirmingDelete",
+      "anchor": "center",
+      "width": {
+        "compact": "88%",
+        "regular": 400
+      },
+      "$why": "deleting is for everyone and cannot be undone, so the menu item only asks; this button deletes",
+      "children": [
+        {
+          "id": "confirm-delete-title",
+          "kind": "Text",
+          "text": "删除这个文档？",
+          "font": "font.heading"
+        },
+        {
+          "id": "confirm-delete-detail",
+          "kind": "Text",
+          "text": "团队里的所有人都将无法再打开它，删除后无法恢复。",
+          "color": "color.textSecondary"
+        },
+        {
+          "id": "confirm-delete-actions",
+          "kind": "Row",
+          "gap": 12,
+          "children": [
+            {
+              "id": "confirm-delete-cancel",
+              "kind": "Button",
+              "variant": "secondary",
+              "text": "取消",
+              "on": {
+                "tap": {
+                  "close": "confirm-delete"
+                }
+              }
+            },
+            {
+              "id": "confirm-delete-confirm",
+              "kind": "Button",
+              "variant": "primary",
+              "destructive": true,
+              "text": "删除",
+              "on": {
+                "tap": {
+                  "call": "deleteDoc",
+                  "with": {
+                    "id": "{rowMenu.docId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "phases": {
+    "loading": {
+      "id": "loading",
+      "kind": "Screen",
+      "children": [
+        {
+          "ref": "nav"
+        },
+        {
+          "id": "sk",
+          "kind": "Stack",
+          "padding": 16,
+          "children": [
+            {
+              "id": "sk-lines",
+              "kind": "Skeleton",
+              "shape": [
+                "line 30%",
+                "line 90%",
+                "line 60%",
+                "line 90%",
+                "line 60%",
+                "line 90%",
+                "line 60%"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "error": {
+      "id": "error",
+      "kind": "Screen",
+      "children": [
+        {
+          "ref": "nav"
+        },
+        {
+          "id": "err",
+          "kind": "EmptyState",
+          "icon": "cloud_off",
+          "title": "文档加载失败",
+          "detail": "检查网络后重试",
+          "action": {
+            "id": "retry",
+            "kind": "Button",
+            "text": "重试",
+            "on": {
+              "tap": {
+                "call": "listDocs",
+                "with": {
+                  "sort": "updated"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

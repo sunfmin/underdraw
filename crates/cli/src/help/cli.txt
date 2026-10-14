@@ -1,0 +1,92 @@
+WHEN
+  Once the screen's operations are agreed, when the same queries and
+  commands are also wanted on the command line: the screen and its CLI come
+  from one description, so they cannot drift apart. Run it again after every
+  change to the operations or the fixtures.
+
+WHO
+  The agent that builds the CLI, and its tests.
+
+READS
+  <path>/screen.json: its "operations", "types", "conditions", "fixtures" and
+  each query's "from". Writes nothing. Refuses a description `check` finds
+  faults in.
+
+HOW EACH OPERATION BECOMES A COMMAND
+  name        the operation's first word: listDocs is `list`, deleteDoc is
+              `delete`. When two operations start with the same word, each
+              is its whole name in kebab case (list-docs, list-owners).
+  arguments   each parameter, in the order written. One without a default
+              is positional (`delete <id>`); one with a default, a nullable
+              one or a list is a flag (`--sort <updated|…>`, a list's flag
+              given once per value). A parameter of an enum takes one of its
+              choices, and a default carries over: "sort": "SortKey =
+              \"updated\"" is `--sort`, default updated.
+  --yes       a "destructive" operation's command does nothing without it
+              (`delete <id> --yes`): it cannot be undone, so the CLI asks
+              as the screen's confirmation does. Without --yes it exits 1
+              and prints what it would do, as a dry run:
+                {"error": "needs --yes",
+                 "dryRun": {"operation": "deleteDoc", "does": "Deletes a document…",
+                            "with": {"id": "c"}}}
+  stdout      one JSON object: {"result": <the operation's result>}, or {}
+              for an operation that answers with nothing. Its JSON Schema
+              holds the result's type and every type it reaches, so no view
+              state and nothing the app derives.
+  exit codes  the same as underdraw's own:
+                0  the result
+                1  refused before it was tried: its "requires" condition
+                   does not hold, {"error": "requires canDelete"}; or,
+                   after that, a destructive command given no --yes
+                   ({"error": "needs --yes", "dryRun": …})
+                2  tried, and failed in one of its "fails". {"error": "notFound"}
+
+ANSWERS
+  {
+    "screen"
+    "commands": [{"name", "operation", "does": "query" or "command", "doc",
+                  "destructive": true (only when it is),
+                  "usage": "delete <id> --yes",
+                  "args": [{"param", "flag" (none when positional), "type",
+                            "choices", "default", "repeated"}, …],
+                  "stdout": the JSON Schema of what it prints on exit 0,
+                  "fails": [{"error", "when", "exit", "stdout"}, …]:
+                           its precondition first, then its dry run when it
+                           is destructive, then each named failure,
+                  "help": a draft of the command's --help}, …]
+    "golden":   [{"command", "fixture" or "failure", "args", "with", "yes",
+                  "exit", "stdout"}, …]: what a faithful CLI prints:
+      for each fixture, each query that fills "data" and needs no argument,
+                given no argument: the result that fixture holds, projected
+                through what the query fills (docs[].doc: each row's doc);
+      for each fixture, each command a node of the screen calls there,
+                given what that node passes: exit 1 where its precondition
+                does not hold in the fixture, {} where it holds and the
+                command answers with nothing (a command that answers with
+                something has no golden output: the fixture does not hold it).
+                A destructive command has two: without --yes, its dry run
+                where the precondition holds; with --yes ("yes": true), as
+                above. Where it does not hold, both are refused;
+      for each named failure, whatever the command is given: exit 2.
+      "args" are the arguments after the command's name, defaults left
+      out; "with" the parameters they give, defaults filled in.
+  }
+
+HOW TO USE IT
+  - Build the CLI from "commands": its names, arguments, help and exit
+    codes. Implement each command once, in the same domain layer the
+    screen's operations call.
+  - Validate each command's stdout against its "stdout" schema.
+  - Test it with the golden outputs: run the CLI on a fixture's data (a fake
+    of the server that answers with it), capture what it printed and its
+    exit code, and give it to `underdraw compare` (see its --help, A CLI'S
+    CAPTURE). For a named failure, make the fake fail that way.
+
+WHAT TRIPS YOU UP
+  - The fixtures are the screen's: a query's golden output exists only for
+    a query whose result fills a field of "data" ("from").
+  - A precondition is a condition over the view model: the CLI must answer
+    the same question the screen asks (does the person own the document?)
+    before it calls the command.
+  - A destructive command checks its precondition first, then --yes: a
+    dry run says only what would be done, never what would be refused.
