@@ -112,6 +112,39 @@ impl Schema {
         }
     }
 
+    /// Whether `name` is a declared type.
+    pub fn has(&self, name: &str) -> bool {
+        self.shapes.contains_key(name)
+    }
+
+    /// The first field marked view state inside a value of `field`'s type,
+    /// as a dotted path from that type (`Doc.menuOpen`); none when every
+    /// field it can reach is domain data.
+    pub fn view_state(&self, field: &Field) -> Option<String> {
+        self.view_state_in(field.base.name(), &mut Vec::new())
+    }
+
+    fn view_state_in(&self, type_name: &str, seen: &mut Vec<String>) -> Option<String> {
+        if seen.iter().any(|name| name == type_name) {
+            return None;
+        }
+        seen.push(type_name.to_string());
+        let Some(Shape::Object(fields)) = self.shapes.get(type_name) else {
+            return None;
+        };
+        for (name, field) in fields {
+            if field.view {
+                return Some(format!("{type_name}.{name}"));
+            }
+            if let Base::Named(inner) = &field.base
+                && let Some(found) = self.view_state_in(inner, seen)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+
     pub fn resolve(&self, scope: &Scope, path: &str) -> Option<Resolved> {
         let mut segments = path.split('.');
         let first = segments.next()?;

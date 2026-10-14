@@ -10,6 +10,7 @@ use crate::check::{Checked, Findings, check};
 use crate::conditions::{Condition, Conditions};
 use crate::fixture;
 use crate::instance::{Node, State, build};
+use crate::operations::Operations;
 use crate::schema::Schema;
 
 pub struct Model {
@@ -18,6 +19,7 @@ pub struct Model {
     pub checked: Checked,
     pub schema: Schema,
     pub conditions: Conditions,
+    pub operations: Operations,
     /// Every fixture by name, in the order written, merged and defaulted.
     pub fixtures: Vec<(String, Value)>,
     description: Value,
@@ -35,7 +37,8 @@ impl Model {
         let schema = Schema::read(screen, &mut findings);
         let fixtures = fixture::read(screen, &schema, &mut findings);
         let conditions = Conditions::read(screen, &schema, &mut findings);
-        Ok(Model { checked, schema, conditions, fixtures, description: screen.clone() })
+        let operations = Operations::read(screen, &schema, &conditions, &mut findings);
+        Ok(Model { checked, schema, conditions, operations, fixtures, description: screen.clone() })
     }
 
     /// The screen's name.
