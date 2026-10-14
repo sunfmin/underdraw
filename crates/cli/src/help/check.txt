@@ -21,6 +21,10 @@ ANSWERS
                     "problem": what is wrong, and what is allowed instead}, …]
   }
 
+EXIT
+  0 when "ok" is true, 1 when there are findings (the answer above is still
+  printed in full), 2 when the description could not be read or parsed.
+
 WHAT TRIPS YOU UP
   - A text property (text, title, subtitle, label, detail) always shows text:
     "{booking.total}" there needs |money. Elsewhere a lone placeholder passes
