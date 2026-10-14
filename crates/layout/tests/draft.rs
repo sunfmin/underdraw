@@ -303,3 +303,30 @@ fn a_dialog_hides_the_tags_of_what_it_covers() {
     let tags = page.draws.iter().filter(|d| matches!(d, Draw::Tag { .. })).count();
     assert_eq!(tags, next as usize - 1, "a tag for each number, none for what is covered");
 }
+
+#[test]
+fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
+    let kinds = serde_json::json!({ "kinds": { "Dialog": { "look": {
+        "box": "column", "backdrop": true, "width": "80%", "padding": 16, "fill": "paper",
+        "children": ["$children"] } } } });
+    let button = |id: &str| serde_json::json!({ "id": id, "kind": "Button", "text": id, "on": { "tap": { "go": id } } });
+    let buttons: Vec<Value> = ["a", "b", "c", "d", "e"].map(button).into();
+    let page = tiny_with(
+        serde_json::json!([{ "id": "body", "kind": "Stack", "gap": 8, "children": buttons,
+            "overlay": { "id": "dialog", "kind": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
+        Some(&kinds),
+    );
+    let body = placed(&page, "body").rect;
+    let scrim = page.draws.iter().position(
+        |d| matches!(d, Draw::Box { rect, fill: Some(underdraw_layout::Ink::Scrim), .. } if *rect == body),
+    );
+    let dialog = page.draws.iter().position(
+        |d| matches!(d, Draw::Box { rect, fill: Some(underdraw_layout::Ink::Paper), .. } if *rect == placed(&page, "dialog").rect),
+    );
+    assert!(
+        scrim.is_some() && scrim < dialog,
+        "the scrim covers body, under the dialog: {scrim:?} {dialog:?}"
+    );
+    let labels: Vec<_> = ["a", "b", "c", "d", "e", "ok"].map(|id| placed(&page, id).label).into();
+    assert_eq!(labels, [None, None, None, None, None, Some(1)], "behind a backdrop nothing can be acted on");
+}

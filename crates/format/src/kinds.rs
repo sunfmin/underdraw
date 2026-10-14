@@ -13,7 +13,7 @@ const DEFAULTS: &str = include_str!("../kinds.json");
 
 /// Every key a look may hold: what underdraw-layout reads. A look with
 /// `kind` holds that kind's props instead.
-pub const LOOK_KEYS: [&str; 42] = [
+pub const LOOK_KEYS: [&str; 43] = [
     "if",
     "cases",
     "repeat",
@@ -55,6 +55,7 @@ pub const LOOK_KEYS: [&str; 42] = [
     "span",
     "overflowX",
     "pin",
+    "backdrop",
     "itemWidth",
 ];
 

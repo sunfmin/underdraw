@@ -22,6 +22,9 @@ pub(crate) struct Elem<'a> {
     /// it: taffy 0.15 resolves `bottom` against the wrong box when the page
     /// height is open, so the position is set here instead.
     pub(crate) pin: Option<Pin>,
+    /// When pinned: the parent is dimmed under it, and nothing on the
+    /// parent can be acted on (a dialog).
+    pub(crate) backdrop: bool,
     pub(crate) children: Vec<Elem<'a>>,
 }
 
@@ -68,6 +71,7 @@ impl<'a> Elem<'a> {
             assumed: None,
             clip: None,
             pin: None,
+            backdrop: false,
             children: Vec::new(),
         }
     }
@@ -214,6 +218,16 @@ fn emit(
     };
     let rect = Rect { x, y, width, height };
     let opaque = elem.looks.iter().any(|look| matches!(look, Look::Box { fill: Some(_), .. }));
+    if elem.pin.is_some() && elem.backdrop {
+        out.draws.push(Draw::Box {
+            rect: parent,
+            radius: 0.0,
+            fill: Some(Ink::Scrim),
+            stroke: None,
+            dashed: false,
+        });
+        cover(parent, out);
+    }
     if elem.pin.is_some() && opaque {
         cover(rect, out);
     }

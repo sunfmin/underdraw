@@ -236,6 +236,7 @@ impl Catalog<'_> {
             }
         }
         elem = elem.holding(children);
+        elem.backdrop = get("backdrop") == Value::Bool(true);
         elem.clip = match get("clip") {
             Value::Bool(false) => None,
             Value::Null => clip,

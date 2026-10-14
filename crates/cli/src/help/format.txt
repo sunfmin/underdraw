@@ -196,14 +196,15 @@ POPUPS
   The button that opens it says so with a free action, { "open": "cancel-dialog" };
   a list of choices inside it is "each" like anywhere else.
   "Dialog" is the project's own kind (kinds.json): a look such as
-  { "box": "column", "width": "{width|or:88%}", "padding": 24, "radius": 16,
-    "fill": "paper", "stroke": "line", "children": ["$children"] }, with
+  { "box": "column", "backdrop": true, "width": "{width|or:88%}",
+    "padding": 24, "radius": 16, "fill": "paper", "stroke": "line",
+    "children": ["$children"] }, with
   "width": {"compact": "88%", "regular": 480} on the node.
-  What the wireframe does not show, so write it in the kind's "doc":
   - "anchor" places it: "center" for a dialog, "bottom-leading" for a
     sheet. On a Screen, the middle is the middle of the whole page, which
     is as tall as its content.
-  - No backdrop: an ink is opaque, so a full-size fill hides the screen.
+  - "backdrop": true dims the screen behind it; what is behind gets no
+    number, since nothing there can be acted on while it is open.
 
 PHASES
   "phases": { "loading": { "id": "loading", "kind": "Screen", "children": [
@@ -320,6 +321,8 @@ KINDS.JSON
     overflowX            "clip": a row that runs off the edge
     pin                  {"x": "end", "y": "end", "inset": 12}: floats over the
                          parent; each axis start | center | end
+    backdrop             true, on an overlay: a see-through dark over the node
+                         it floats over, and nothing there can be acted on
     itemWidth            every child this wide, not shrinking
     frame                true: the node's padding, gap, radius, border and
                          elevation override the look's (containers)
