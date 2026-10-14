@@ -177,6 +177,44 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "data.rowMenu",
             "view is true or false",
         ),
+        (
+            "toggle-domain-data",
+            r#""toggle": "sort.menuOpen""#,
+            r#""toggle": "summary.count""#,
+            "sort-button.on.tap.toggle",
+            "toggle writes summary.count, which is domain data",
+        ),
+        (
+            "set-domain-data",
+            r#""toggle": "sort.menuOpen""#,
+            r#""set": "sort.label", "to": "名称""#,
+            "sort-button.on.tap.set",
+            "set writes sort.label, which is domain data",
+        ),
+        (
+            "set-a-path-that-is-not-one",
+            r#""toggle": "sort.menuOpen""#,
+            r#""set": { "sort.open": true }"#,
+            "sort-button.on.tap.set",
+            "sort.open is not one",
+        ),
+        (
+            "reload-is-not-free",
+            r#""call": "listDocs",
+                "with": {
+                  "sort": "updated"
+                }"#,
+            r#""reload": true"#,
+            "retry.on.tap.reload",
+            "reload is not an action the screen does by itself",
+        ),
+        (
+            "submit-is-not-free",
+            delete_with,
+            r#""submit": "deleteDoc", "with": { "id": "{item.doc.id}" }"#,
+            "doc-{item.doc.id}-delete.on.tap.submit",
+            "what reads or changes domain data is an operation, called with \"call\"",
+        ),
     ];
     for (name, from, to, at, said) in cases {
         let checked = check(&planted(name, from, to), Some(&kinds()));
@@ -221,6 +259,23 @@ fn a_call_is_gated_by_an_if_or_by_a_condition_that_implies_it() {
             screen.pointer_mut(delete).unwrap()["disabled"] = Value::from("!mayDeleteNow");
         }
         let checked = check(&screen, Some(&kinds()));
+        assert!(checked.ok, "{name}: {:#?}", checked.findings);
+    }
+}
+
+#[test]
+fn set_and_toggle_write_view_state_and_the_rest_moves_the_ui() {
+    let cases = [
+        // a field marked view
+        ("view-field", r#""toggle": "sort.menuOpen""#, r#""set": "sort.menuOpen", "to": false"#),
+        // a field inside one marked view
+        ("inside-view-state", r#""toggle": "sort.menuOpen""#, r#""set": { "rowMenu.docId": "d1" }"#),
+        // actions that touch no data
+        ("copy", r#""toggle": "sort.menuOpen""#, r#""copy": "DocumentList""#),
+        ("close", r#""toggle": "sort.menuOpen""#, r#""close": "sort-menu""#),
+    ];
+    for (name, from, to) in cases {
+        let checked = check(&planted(name, from, to), Some(&kinds()));
         assert!(checked.ok, "{name}: {:#?}", checked.findings);
     }
 }
