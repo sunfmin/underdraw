@@ -138,7 +138,7 @@ fn each_planted_fault_is_found_where_it_was_planted() {
     for (name, from, to, at, said) in cases {
         let dir = planted(name, from, to);
         let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
-        assert_eq!(code, 0, "{name}: a faulty description is an answer, not an error");
+        assert_eq!(code, 1, "{name}: findings exit 1, so a gate stops on them");
         assert_eq!(answer["ok"], false, "{name}: {answer:#}");
         let found = answer["findings"]
             .as_array()
@@ -153,14 +153,14 @@ fn each_planted_fault_is_found_where_it_was_planted() {
 #[test]
 fn what_cannot_be_read_is_an_error_with_its_fix() {
     let (answer, code) = underdraw(&["check", "/nonexistent/screen"]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("pass a screen's directory"), "{answer}");
 
     let dir = std::env::temp_dir().join(format!("underdraw-{}-not-json", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("screen.json"), "{ nope").unwrap();
     let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("is not JSON"), "{answer}");
     assert!(answer["error"].as_str().unwrap().contains("line 1"), "{answer}");
     std::fs::remove_dir_all(dir).unwrap();

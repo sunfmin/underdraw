@@ -12,10 +12,11 @@ START HERE
   underdraw check <dir>      read the description and name every fault
 
 WHAT A COMMAND ANSWERS
-  One JSON object on stdout, exit 0. A command that could not do its work
-  answers {"error": "…"} with a non-zero exit; the message says what fixes it.
-  A description with faults is not an error: `check` answers "ok": false and
-  lists them, with exit 0.
+  One JSON object on stdout. The exit code says which kind:
+    0  the answer, and nothing is wrong
+    1  the answer names faults ("ok": false); it is printed in full
+    2  the command could not do its work: {"error": "…"}, saying what fixes it
+  So a gate can run `underdraw check <dir>` and stop on any non-zero exit.
   Exceptions: --help and --version print text.
 
 COMMANDS
