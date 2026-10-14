@@ -145,6 +145,32 @@ impl Schema {
         None
     }
 
+    /// Whether the path `path` is in view state: it, or a field it passes
+    /// through (`rowMenu` in `rowMenu.docId`), is marked view. A path that
+    /// is not one is not.
+    pub fn in_view_state(&self, scope: &Scope, path: &str) -> bool {
+        let mut segments = path.split('.');
+        let Some(first) = segments.next() else {
+            return false;
+        };
+        let Some((_, root)) = scope.iter().rev().find(|(name, _)| name == first) else {
+            return false;
+        };
+        let mut field = root.clone();
+        let mut view = field.view;
+        for segment in segments {
+            let Some(Shape::Object(fields)) = self.shape(&field) else {
+                return false;
+            };
+            let Some((_, next)) = fields.iter().find(|(name, _)| name == segment) else {
+                return false;
+            };
+            field = next.clone();
+            view = view || field.view;
+        }
+        view
+    }
+
     pub fn resolve(&self, scope: &Scope, path: &str) -> Option<Resolved> {
         let mut segments = path.split('.');
         let first = segments.next()?;
