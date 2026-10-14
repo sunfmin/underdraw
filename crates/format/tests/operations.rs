@@ -34,13 +34,37 @@ fn the_draft_declares_its_operations_and_passes() {
     assert_eq!(
         read,
         [
-            ("listDocs", Does::Query, None, Some("Doc[]".to_string())),
+            ("listDocs", Does::Query, None, Some("DocPage".to_string())),
             ("deleteDoc", Does::Command, Some("canDelete"), None),
             ("newDocument", Does::Command, None, Some("Doc".to_string())),
         ]
     );
     let list = model.operations.get("listDocs").unwrap();
-    assert_eq!(list.fills, [Fill { field: "docs".to_string(), path: "docs[].doc".to_string() }]);
+    assert_eq!(
+        list.fills,
+        [
+            Fill {
+                field: "docs".to_string(),
+                part: Some("docs".to_string()),
+                path: "docs[].doc".to_string()
+            },
+            Fill { field: "next".to_string(), part: Some("next".to_string()), path: "next".to_string() },
+        ]
+    );
+    // Paging by a cursor adds the cursor and the limit, by default as many
+    // rows as a page may hold.
+    assert!(list.pages);
+    let params: Vec<_> =
+        list.params.iter().map(|(name, field)| (name.as_str(), field.describe(), field.hi)).collect();
+    assert_eq!(
+        params,
+        [
+            ("sort", "SortKey".to_string(), None),
+            ("cursor", "string?".to_string(), None),
+            ("limit", "int".to_string(), Some(50.0))
+        ]
+    );
+    assert_eq!(list.params[2].1.default, Some(Value::from(50)));
     let sort = &list.params[0].1;
     assert_eq!(
         (sort.describe(), sort.default.clone()),
@@ -87,35 +111,35 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "from-an-unknown-operation",
-            r#""from": "listDocs""#,
-            r#""from": "fetchDocs""#,
+            r#""from": "listDocs.docs""#,
+            r#""from": "fetchDocs.docs""#,
             "data.docs.from",
             "fetchDocs is not an operation",
         ),
         (
             "from-a-command",
-            r#""from": "listDocs""#,
+            r#""from": "listDocs.docs""#,
             r#""from": "newDocument""#,
             "data.docs.from",
             "newDocument is a command",
         ),
         (
             "filled-field-not-the-result",
-            r#""type": "DocRow[] ..50",
+            r#""type": "DocRow[]",
       "from""#,
             r#""type": "DocRow",
       "from""#,
             "data.docs",
-            "is DocRow, and listDocs answers with Doc[]",
+            "is DocRow, and listDocs.docs answers with Doc[]",
         ),
         (
             "filled-field-of-another-type",
-            r#""type": "DocRow[] ..50",
+            r#""type": "DocRow[]",
       "from""#,
-            r#""type": "SortOption[] ..50",
+            r#""type": "SortOption[]",
       "from""#,
             "data.docs",
-            "is SortOption[], and listDocs answers with Doc[]",
+            "is SortOption[], and listDocs.docs answers with Doc[]",
         ),
         (
             "from-on-a-type's-field",
@@ -151,22 +175,22 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "unknown-result-type",
-            r#""result": "Doc[] ..50""#,
-            r#""result": "Docs[] ..50""#,
+            r#""result": "DocPage""#,
+            r#""result": "DocPages""#,
             "operations.listDocs.result",
-            "unknown type Docs",
+            "unknown type DocPages",
         ),
         (
             "built-in-result",
-            r#""result": "Doc[] ..50""#,
+            r#""result": "DocPage""#,
             r#""result": "string""#,
             "operations.listDocs.result",
             "a result is one of types",
         ),
         (
             "result-holds-view-state",
-            r#""result": "Doc[] ..50""#,
-            r#""result": "DocRow[] ..50""#,
+            r#""result": "DocPage""#,
+            r#""result": "DocRow""#,
             "operations.listDocs.result",
             "DocRow holds view state (DocRow.menuOpen)",
         ),
@@ -326,7 +350,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "reload-is-not-free",
             r#""call": "listDocs",
                 "with": {
-                  "sort": "updated"
+                  "sort": "updated",
+                  "cursor": null
                 }"#,
             r#""reload": true"#,
             "retry.on.tap.reload",
@@ -338,6 +363,76 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             r#""submit": "deleteDoc", "with": { "id": "{rowMenu.docId}" }"#,
             "confirm-delete-confirm.on.tap.submit",
             "what reads or changes domain data is an operation, called with \"call\"",
+        ),
+        (
+            "pages-by-another-means",
+            r#""pages": "cursor""#,
+            r#""pages": "offset""#,
+            "operations.listDocs.pages",
+            "pages is \"cursor\"",
+        ),
+        (
+            "a-command-that-pages",
+            r#""command": "Deletes a document for everyone in the team","#,
+            r#""command": "Deletes a document for everyone in the team", "pages": "cursor","#,
+            "operations.deleteDoc.pages",
+            "only a query pages",
+        ),
+        (
+            "paging-written-in-params",
+            r#""sort": "SortKey = \"updated\"""#,
+            r#""sort": "SortKey = \"updated\"", "cursor": "string?""#,
+            "operations.listDocs.params.cursor",
+            "pages adds cursor and limit itself",
+        ),
+        (
+            "a-paged-result-without-next",
+            r#""next": "string?""#,
+            r#""after": "string?""#,
+            "operations.listDocs.result",
+            "DocPage has no \"next\": \"string?\"",
+        ),
+        (
+            "a-paged-result-that-is-a-list",
+            r#""result": "DocPage""#,
+            r#""result": "Doc[] ..50""#,
+            "operations.listDocs.result",
+            "listDocs pages, so it answers with one page",
+        ),
+        (
+            "a-page-without-its-most-rows",
+            r#""docs": "Doc[] ..50""#,
+            r#""docs": "Doc[]""#,
+            "operations.listDocs.result",
+            "DocPage.docs says how many rows a page holds at most",
+        ),
+        (
+            "from-a-part-that-is-not-one",
+            r#""from": "listDocs.next""#,
+            r#""from": "listDocs.after""#,
+            "data.next.from",
+            "after is not a field of listDocs's result (DocPage)",
+        ),
+        (
+            "load-more-without-the-cursor",
+            r#""cursor": "{next}""#,
+            r#""sort": "title""#,
+            "load-more.on.tap.with",
+            "listDocs pages: give cursor, null for the first page, or \"{next}\"",
+        ),
+        (
+            "load-more-with-another-cursor",
+            r#""cursor": "{next}""#,
+            r#""cursor": "p2""#,
+            "load-more.on.tap.with.cursor",
+            "the cursor is null for the first page, or \"{next}\"",
+        ),
+        (
+            "load-more-past-the-last-page",
+            r#""if": "hasMore","#,
+            "",
+            "load-more.on.tap.with.cursor",
+            "next is null on the last page: offer more only while it is not",
         ),
     ];
     for (name, from, to, at, said) in cases {

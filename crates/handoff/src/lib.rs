@@ -67,9 +67,13 @@ pub struct OperationSpec {
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub fails: Map<String, Value>,
     /// The fields of `data` a query's result fills: `docs`, or `docs[].doc`
-    /// where the field's type wraps the result.
+    /// where the field's type wraps the result; filled by one field of the
+    /// result, `result.next → next`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fills: Vec<String>,
+    /// `cursor` for a query that pages by a cursor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pages: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -231,7 +235,15 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
             requires: operation.requires.clone(),
             destructive: operation.destructive,
             fails,
-            fills: operation.fills.iter().map(|fill| fill.path.clone()).collect(),
+            fills: operation
+                .fills
+                .iter()
+                .map(|fill| match &fill.part {
+                    None => fill.path.clone(),
+                    Some(part) => format!("result.{part} → {}", fill.path),
+                })
+                .collect(),
+            pages: operation.pages.then(|| "cursor".to_string()),
         });
     }
     specs
