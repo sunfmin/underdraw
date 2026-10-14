@@ -143,6 +143,10 @@ const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
 const INERT: [&str; 10] = ["$comment", "$note", "$why", "assumed", "id", "kind", "ref", "only", "each", "if"];
 
+/// The actions that only move the UI and touch no data. With `set` and
+/// `toggle` on view state, they are all a screen does by itself.
+const UI_ONLY: [&str; 7] = ["navigate", "back", "open", "close", "scrollTo", "share", "copy"];
+
 /// What is known where a node is reached: the paths tested `!= null`, and
 /// the conditions that hold, by the `if`s around it; and whether it is
 /// inside a confirmation.
@@ -299,7 +303,10 @@ impl Walk<'_> {
                             &format!("{path} may be null; guard it with a condition testing != null"),
                         );
                     }
-                    item_scope.push(("item".to_string(), resolved.field.element()));
+                    // An element of a list in view state is view state too.
+                    let mut element = resolved.field.element();
+                    element.view = self.schema.in_view_state(scope, path);
+                    item_scope.push(("item".to_string(), element));
                     item_scope.push(("index".to_string(), Field::of(Base::Int)));
                 }
                 _ => self.findings.add(at, &format!("each iterates an array, and {path} is not one")),
@@ -383,7 +390,59 @@ impl Walk<'_> {
         }
         match actions.get("call") {
             Some(called) => self.call(called, actions.get("with"), scope, known, at, node),
-            None => self.node(handler, scope, known, at, ""),
+            None => {
+                self.ui_only(actions, scope, at);
+                self.node(handler, scope, known, at, "")
+            }
+        }
+    }
+
+    /// The actions at `at` other than `call`: each is one the screen does by
+    /// itself, and `set` and `toggle` write only view state. What reads or
+    /// changes domain data is an operation.
+    fn ui_only(&mut self, actions: &Map<String, Value>, scope: &Scope, at: &str) {
+        for (name, argument) in actions {
+            let at = format!("{at}.{name}");
+            let written: Vec<&str> = match (name.as_str(), argument) {
+                ("with" | "to", _) => continue,
+                (name, _) if UI_ONLY.contains(&name) => continue,
+                ("set", Value::Object(paths)) => paths.keys().map(String::as_str).collect(),
+                ("set" | "toggle", Value::String(path)) => vec![path.as_str()],
+                ("set", _) => {
+                    self.findings.add(
+                        &at,
+                        "set names a path, with \"to\" for its value, or is an object of path: value",
+                    );
+                    continue;
+                }
+                ("toggle", _) => {
+                    self.findings.add(&at, "toggle names a Bool path");
+                    continue;
+                }
+                (name, _) => {
+                    self.findings.add(
+                        &at,
+                        &format!(
+                            "{name} is not an action the screen does by itself ({}, or set / toggle on view state): what reads or changes domain data is an operation, called with \"call\"",
+                            UI_ONLY.join(", ")
+                        ),
+                    );
+                    continue;
+                }
+            };
+            for path in written {
+                if self.schema.resolve(scope, path).is_none() {
+                    self.findings
+                        .add(&at, &format!("{name} writes a field of the view model, and {path} is not one"));
+                } else if !self.schema.in_view_state(scope, path) {
+                    self.findings.add(
+                        &at,
+                        &format!(
+                            "{name} writes {path}, which is domain data: changing it is a command, called with \"call\"; or, if only the screen holds it, mark the field \"view\": true"
+                        ),
+                    );
+                }
+            }
         }
     }
 

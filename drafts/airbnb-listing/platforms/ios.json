@@ -39,7 +39,7 @@
   "actions": {
     "navigate": "NavigationLink(value:) / path.append", "back": "dismiss()",
     "open": ".sheet + .presentationDetents([.large])",
-    "share": "ShareLink(item: url)", "toggle": "乐观更新 + 触感反馈 .sensoryFeedback",
-    "scrollTo": "ScrollViewReader.scrollTo(id)", "reload": "重新执行 .task", "set": "@State 赋值"
+    "share": "ShareLink(item: url)", "toggle": "@State 取反",
+    "scrollTo": "ScrollViewReader.scrollTo(id)", "call": "数据层同名的 async throws 方法；命令乐观更新 + 触感反馈 .sensoryFeedback", "set": "@State 赋值"
   }
 }

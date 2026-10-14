@@ -28,8 +28,6 @@
     "toggle": "flip the view-state field",
     "open": "open the popover or dialog, holding which row it is about",
     "close": "close the dialog",
-    "rename": "edit the title in place",
-    "copyLink": "navigator.clipboard.writeText of the document's link",
-    "reload": "fetch the data again"
+    "copy": "navigator.clipboard.writeText of the link router.push would follow"
   }
 }

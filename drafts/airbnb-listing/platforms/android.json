@@ -39,7 +39,7 @@
   "actions": {
     "navigate": "navController.navigate(route)", "back": "系统返回 + navController.popBackStack()",
     "open": "ModalBottomSheet", "share": "Intent.ACTION_SEND + createChooser",
-    "toggle": "乐观更新 + HapticFeedback", "scrollTo": "LazyListState.animateScrollToItem",
-    "reload": "ViewModel 重新加载", "set": "ViewModel 状态更新"
+    "toggle": "ViewModel 状态取反", "scrollTo": "LazyListState.animateScrollToItem",
+    "call": "Repository 同名的 suspend 函数，由 ViewModel 调用；命令乐观更新 + HapticFeedback", "set": "ViewModel 状态更新"
   }
 }

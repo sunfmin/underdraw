@@ -48,6 +48,10 @@ WHAT TRIPS YOU UP
     type whose one other-than-view, other-than-app-derived field is it.
   - A parameter whose type is an enum takes only its members: its default,
     and every "with" for it, a path of that enum or a member literal.
+  - An action that changes domain data is a "call": set and toggle write
+    only view state (a field marked "view": true, or inside one), and
+    every other action is UI-only (navigate, back, open, close, scrollTo,
+    share, copy). submit, reload, remove and the like are operations.
   - A "call" to an operation with "requires" needs the node gated by that
     condition: "disabled": "!<condition>", or "if": "<condition>".
   - A "call" to a "destructive" operation is made only inside its

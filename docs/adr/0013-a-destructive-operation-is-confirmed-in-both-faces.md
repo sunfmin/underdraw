@@ -13,7 +13,7 @@ The decisions:
   `requires` and `fails`. Only a command can be destructive: a query only
   reads.
 - **In the screen, only its confirmation calls it.** A confirmation is a
-  popup as POPUPS already describes it — an overlay, opened by a free
+  popup as POPUPS already describes it — an overlay, opened by a UI-only
   `{"open": "<id>"}` action, shown under a condition a fixture makes hold —
   whose kind's look has `"backdrop": true`, so nothing behind it can be
   acted on while it asks. `check` refuses a call to a destructive

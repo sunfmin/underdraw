@@ -104,6 +104,12 @@ button is the only node that calls the operation. Its CLI form is `--yes`;
 without it the command prints a dry run.
 _Avoid_: alert, prompt
 
+**UI-only action**:
+What a screen does by itself on an event, touching no domain data:
+`navigate`, `back`, `open`, `close`, `scrollTo`, `share`, `copy`, and
+`set` or `toggle` on view state. Anything else is a call to an operation.
+_Avoid_: free action, local action
+
 **Template**:
 A string with placeholders that show data.
 
