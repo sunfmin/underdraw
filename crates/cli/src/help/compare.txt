@@ -85,7 +85,8 @@ A CLI'S CAPTURE
   The command line is read as `underdraw cli` says the command takes it,
   defaults filled in, and matched to the golden output of that command, in
   that fixture, given the same parameters (and, for a destructive command,
-  with --yes or without it, as the run was). Exit 2 when it is not one the
+  with --yes or without it, and for a long one, with --no-wait or without
+  it, as the run was). Exit 2 when it is not one the
   derived CLI takes, or has no golden output (the error lists the ones
   there are).
   ANSWERS

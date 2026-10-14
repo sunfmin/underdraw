@@ -20,6 +20,8 @@ pub const FAILED: u8 = 2;
 pub const YES: &str = "--yes";
 /// What `"error"` says when a destructive command is run without `--yes`.
 const NEEDS_YES: &str = "needs --yes";
+/// The flag that makes a long command hand back its job instead of waiting.
+pub const NO_WAIT: &str = "--no-wait";
 
 #[derive(Debug, Serialize)]
 pub struct Interface {
@@ -45,6 +47,13 @@ pub struct CommandSpec {
     /// and says what it would do, as a dry run.
     #[serde(skip_serializing_if = "is_false")]
     pub destructive: bool,
+    /// It takes long (docs/adr/0015): it waits for its job and prints the
+    /// result, or, given `--no-wait`, prints the job to read again later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub long: Option<Long>,
+    /// For the command that reads a long command's job: that command.
+    #[serde(rename = "jobOf", skip_serializing_if = "Option::is_none")]
+    pub job_of: Option<String>,
     /// `list [--sort <updated|created|title|owner>]`, `delete <id> --yes`.
     pub usage: String,
     pub args: Vec<Arg>,
@@ -57,6 +66,20 @@ pub struct CommandSpec {
     pub fails: Vec<Failure>,
     /// A draft of `<command> --help`.
     pub help: String,
+}
+
+/// What a long command hands back with `--no-wait`, and how to read it again.
+#[derive(Debug, Serialize)]
+pub struct Long {
+    /// The job's type: `ExportDocsJob`.
+    pub job: String,
+    /// The command that reads the job again: `export-job <id>`.
+    pub poll: String,
+    /// What it prints with `--no-wait`: a JSON Schema of `{"result": <job>}`.
+    #[serde(rename = "noWait")]
+    pub no_wait: Value,
+    /// What it prints on stderr while it waits.
+    pub progress: String,
 }
 
 /// One parameter, as a positional argument (written without a default) or
@@ -110,6 +133,9 @@ pub struct Golden {
     /// The arguments include `--yes`.
     #[serde(skip_serializing_if = "is_false")]
     pub yes: bool,
+    /// The arguments include `--no-wait`.
+    #[serde(rename = "noWait", skip_serializing_if = "is_false")]
+    pub no_wait: bool,
     pub exit: u8,
     pub stdout: Value,
 }
@@ -128,6 +154,7 @@ pub fn cli(model: &Model) -> Interface {
         }
     }
     called(model, &commands, &mut golden);
+    polled(model, &commands, &mut golden);
     for spec in &commands {
         for failure in &spec.fails {
             if failure.exit == FAILED {
@@ -138,6 +165,7 @@ pub fn cli(model: &Model) -> Interface {
                     args: None,
                     with: None,
                     yes: false,
+                    no_wait: false,
                     exit: failure.exit,
                     stdout: failure.stdout.clone(),
                 });
@@ -148,12 +176,20 @@ pub fn cli(model: &Model) -> Interface {
 }
 
 /// The first word of `operation`'s name, unless another operation starts
-/// with it too; then the whole name, in kebab case.
+/// with it too; then the whole name, in kebab case. The query that reads a
+/// long command's job is that command's name and `-job`.
 fn name(operation: &Operation, all: &[Operation]) -> String {
+    if let Some(command) = &operation.job_of {
+        for other in all {
+            if &other.name == command {
+                return format!("{}-job", name(other, all));
+            }
+        }
+    }
     let word = first_word(&operation.name);
     let mut sharing: u32 = 0;
     for other in all {
-        if first_word(&other.name) == word {
+        if other.job_of.is_none() && first_word(&other.name) == word {
             sharing = sharing.saturating_add(1);
         }
     }
@@ -227,14 +263,38 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
     if operation.destructive {
         usage.push_str(&format!(" {YES}"));
     }
+    let long = match (operation.job_type(), operation.job_query()) {
+        (Some(job), Some(query)) => {
+            usage.push_str(&format!(" [{NO_WAIT}]"));
+            let mut poll = format!("{}-job <id>", name);
+            for other in model.operations.all() {
+                if other.name == query {
+                    poll = format!("{} <id>", self::name(other, model.operations.all()));
+                }
+            }
+            let job_field = Field::of(Base::Named(job.clone()));
+            Some(Long { no_wait: stdout(model, Some(&job_field)), progress: PROGRESS.to_string(), job, poll })
+        }
+        _ => None,
+    };
     let stdout = stdout(model, operation.result.as_ref());
-    let help = help(operation, &usage, &args, &fails);
+    let help = help(operation, &usage, &args, &fails, long.as_ref());
     CommandSpec {
         name: name.to_string(),
         operation: operation.name.clone(),
         does: operation.does.name().to_string(),
         doc: operation.doc.clone(),
         destructive: operation.destructive,
+        long,
+        job_of: operation.job_of.as_ref().map(|command| {
+            let mut named = command.clone();
+            for other in model.operations.all() {
+                if &other.name == command {
+                    named = self::name(other, model.operations.all());
+                }
+            }
+            named
+        }),
         usage,
         args,
         stdout,
@@ -333,9 +393,12 @@ fn reach(model: &Model, base: &Base, reached: &mut Vec<String>, money_used: &mut
     }
 }
 
-fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> String {
+/// What a long command prints on stderr while it waits.
+const PROGRESS: &str = "one JSON object a line, each time the job moves: {\"job\": \"<id>\", \"status\": \"running\", \"progress\": 40}";
+
+fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure], long: Option<&Long>) -> String {
     let mut help = format!("{}\n\nUSAGE\n  <cli> {usage}\n", operation.doc);
-    if !args.is_empty() || operation.destructive {
+    if !args.is_empty() || operation.destructive || long.is_some() {
         help.push_str("\nARGUMENTS\n");
         for arg in args {
             let written = match &arg.flag {
@@ -366,6 +429,18 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
                 "  {YES}  do it: it cannot be undone; without {YES} nothing is done, and it says what would be\n"
             ));
         }
+        if let Some(long) = long {
+            help.push_str(&format!(
+                "  {NO_WAIT}  do not wait: print the job, {{\"result\": {}}}, and read it again with `<cli> {}`\n",
+                long.job, long.poll
+            ));
+        }
+    }
+    if let Some(long) = long {
+        help.push_str(&format!(
+            "\nWAITING\n  It takes long: it waits for its job to end, and prints its progress on stderr,\n  {}.\n  A job that fails exits 2 with the failure it names.\n",
+            long.progress
+        ));
     }
     let answer = match &operation.result {
         Some(result) => format!("{{\"result\": {}}}", result.describe()),
@@ -421,6 +496,7 @@ fn queried(model: &Model, operation: &Operation, spec: &CommandSpec, golden: &mu
             args: Some(Vec::new()),
             with: Some(with.clone()),
             yes: false,
+            no_wait: false,
             exit: 0,
             stdout: object([("result", result)]),
         });
@@ -519,9 +595,17 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                 let refused =
                     operation.requires.as_ref().is_some_and(|condition| !holds(model, condition, fixture));
                 // A destructive command is run both ways: without --yes and
-                // with it. Any other is run as it is.
-                let runs: &[bool] = if operation.destructive { &[false, true] } else { &[false] };
-                for &yes in runs {
+                // with it; a long one, waiting and with --no-wait. Any other
+                // is run as it is.
+                let mut runs = vec![(false, false)];
+                if operation.destructive {
+                    runs.push((true, false));
+                }
+                if operation.long {
+                    runs.push((operation.destructive, true));
+                }
+                let job = job_in(model, operation, fixture);
+                for (yes, no_wait) in runs {
                     let (exit, stdout) = if refused {
                         let mut stdout = Value::Null;
                         for failure in &spec.fails {
@@ -532,6 +616,27 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                         (REFUSED, stdout)
                     } else if operation.destructive && !yes {
                         (REFUSED, dry_run(operation, with.clone()))
+                    } else if operation.long {
+                        // What the job the fixture holds ends with; none
+                        // where it holds none, or one still running.
+                        let Some(job) = &job else {
+                            continue;
+                        };
+                        match (no_wait, job.get("status").and_then(Value::as_str)) {
+                            (true, _) => (0, object([("result", job.clone())])),
+                            (false, Some("done")) => match &operation.result {
+                                Some(_) => (
+                                    0,
+                                    object([("result", job.get("result").cloned().unwrap_or(Value::Null))]),
+                                ),
+                                None => (0, Value::Object(Map::new())),
+                            },
+                            (false, Some("failed")) => (
+                                FAILED,
+                                object([("error", job.get("error").cloned().unwrap_or(Value::Null))]),
+                            ),
+                            _ => continue,
+                        }
                     } else if operation.result.is_none() {
                         (0, Value::Object(Map::new()))
                     } else {
@@ -543,6 +648,7 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                             && known.fixture.as_deref() == Some(fixture.as_str())
                             && known.with.as_ref() == Some(&with)
                             && known.yes == yes
+                            && known.no_wait == no_wait
                         {
                             seen = true;
                         }
@@ -552,6 +658,9 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                         if yes {
                             args.push(YES.to_string());
                         }
+                        if no_wait {
+                            args.push(NO_WAIT.to_string());
+                        }
                         golden.push(Golden {
                             command: spec.name.clone(),
                             fixture: Some(fixture.clone()),
@@ -559,12 +668,63 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                             args: Some(args),
                             with: Some(with.clone()),
                             yes,
+                            no_wait,
                             exit,
                             stdout,
                         });
                     }
                 }
             }
+        }
+    }
+}
+
+/// The job of the long command `operation` that `fixture` holds: the value
+/// of the field of `data` of its job type, when it is not null.
+fn job_in(model: &Model, operation: &Operation, fixture: &str) -> Option<Value> {
+    let job = operation.job_type()?;
+    let (_, data) = model.fixtures.iter().find(|(name, _)| name == fixture)?;
+    for (name, field) in model.schema.roots() {
+        if field.base == Base::Named(job.clone())
+            && !field.array
+            && let Some(value) = data.get(&name).filter(|value| value.is_object())
+        {
+            return Some(value.clone());
+        }
+    }
+    None
+}
+
+/// For the command that reads a long command's job: in each fixture that
+/// holds a job, given its id, that job as it stands, running, done or failed.
+fn polled(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
+    for spec in commands {
+        let Some(command) = model.operations.get(&spec.operation).and_then(|query| query.job_of.as_ref())
+        else {
+            continue;
+        };
+        let Some(operation) = model.operations.get(command) else {
+            continue;
+        };
+        for (fixture, _) in &model.fixtures {
+            let Some(job) = job_in(model, operation, fixture) else {
+                continue;
+            };
+            let args = vec![text_of(job.get("id").unwrap_or(&Value::Null))];
+            let Ok(with) = spec.with_args(&args) else {
+                continue;
+            };
+            golden.push(Golden {
+                command: spec.name.clone(),
+                fixture: Some(fixture.clone()),
+                failure: None,
+                args: Some(args),
+                with: Some(with),
+                yes: false,
+                no_wait: false,
+                exit: 0,
+                stdout: object([("result", job)]),
+            });
         }
     }
 }
@@ -585,6 +745,12 @@ impl CommandSpec {
         self.destructive && args.iter().any(|word| word == YES)
     }
 
+    /// Whether `args` give `--no-wait`, which makes a long command print
+    /// its job instead of waiting for it.
+    pub fn no_wait(&self, args: &[String]) -> bool {
+        self.long.is_some() && args.iter().any(|word| word == NO_WAIT)
+    }
+
     /// The parameters `args` (what follows the command's name) give, each
     /// default filled in; why, when they are not this command's arguments.
     /// A destructive command's `--yes` gives none.
@@ -601,7 +767,7 @@ impl CommandSpec {
         while index < args.len() {
             let word = &args[index];
             index = index.saturating_add(1);
-            if self.destructive && word == YES {
+            if (self.destructive && word == YES) || (self.long.is_some() && word == NO_WAIT) {
                 continue;
             }
             if let Some(flag) = word.strip_prefix("--") {

@@ -105,11 +105,13 @@ pub fn compare_cli(
         None => {
             let with = spec.with_args(args)?;
             let yes = spec.yes(args);
+            let no_wait = spec.no_wait(args);
             for candidate in &interface.golden {
                 if candidate.command == spec.name
                     && candidate.fixture.as_deref() == Some(fixture)
                     && candidate.with.as_ref() == Some(&with)
                     && candidate.yes == yes
+                    && candidate.no_wait == no_wait
                 {
                     golden = Some(candidate);
                 }

@@ -9,6 +9,7 @@ use crate::breakpoint::{self, Breakpoint};
 use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
+use crate::jobs;
 use crate::kinds::{Kinds, track_faults};
 use crate::operations::Operations;
 use crate::overlay::Anchor;
@@ -76,12 +77,14 @@ impl Findings {
 /// defines, and the project's looks are checked too.
 pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     let mut findings = Findings::default();
+    let screen = &jobs::expand(screen, &mut findings);
     let known = Kinds::read(kinds);
     known.check(kinds, &mut findings);
     let schema = Schema::read(screen, &mut findings);
     let fixtures = fixture::read(screen, &schema, &mut findings);
     let conditions = Conditions::read(screen, &schema, &mut findings);
     let operations = Operations::read(screen, &schema, &conditions, &mut findings);
+    jobs::check(&operations, &schema, &fixtures, &mut findings);
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
     let mut opened = BTreeSet::new();
     collect_opened(screen, &mut opened);

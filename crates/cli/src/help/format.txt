@@ -236,6 +236,8 @@ OPERATIONS
     "destructive"  true: a command that cannot be undone (deleting, sending,
                paying). Only its confirmation may call it (below), and its
                CLI command does nothing without --yes (`underdraw cli --help`)
+    "long"     true: a command that takes long (an export, an import). It
+               answers with a job, and what reads the job is derived (below)
     "fails"    each way it can fail: a name and when, {"offline": "…"}
     "pages"    "cursor", for a query that answers one page at a time (PAGING)
   A query fills the fields of "data" that name it with "from":
@@ -282,6 +284,37 @@ OPERATIONS
   so the popup's "if" gates the call too, and a fixture that opens it.
   check refuses a call to a destructive operation anywhere else, a menu
   without a backdrop included.
+  A long command ("long": true) answers with a job at once, and the job
+  runs on. Two things are derived from it, so neither is written by hand
+  (check refuses a type or an operation of either name):
+    the job's type, its name and Job:  "ExportDocsJob": {
+        "id": "string", "status": "JobStatus", "progress": "int 0..100",
+        "result": "Archive?",   what the command answers with, once done
+                                (left out when it answers with nothing)
+        "error": "string?" }    which of its "fails" it ended in, once failed
+      with "JobStatus": "enum(running, done, failed)", one for every job;
+    the query that reads it, its name and Job:  "exportDocsJob":
+      { "query": "Reads the job exportDocs started…", "params": { "id": "string" },
+        "result": "ExportDocsJob", "fails": { "notFound": "no job has this id" } }
+  The screen shows the job through the view model, as anything else: a
+  field of "data" holds it, conditions read its status, and fixtures show
+  it running, done and failed (check requires all three):
+    "operations": { "exportDocs": { "command": "Exports every document…",
+                    "result": "Archive", "long": true,
+                    "fails": { "tooLarge": "over 2 GB" } } },
+    "data":       { …, "job": "ExportDocsJob?" },      null before it is started
+    "conditions": { "exporting": { "when": "job != null && job.status == \"running\"", … },
+                    "exported":  { "when": "job != null && job.status == \"done\"
+                                            && job.result != null", … },
+                    "exportFailed": { "when": "job != null && job.status == \"failed\"", … } },
+    "fixtures":   { …, "running": { "$patch": "default",
+                                    "job": { "id": "j42", "status": "running", "progress": 40 } },
+                    "done":   { …, "status": "done", "progress": 100, "result": {…} },
+                    "failed": { …, "status": "failed", "progress": 65, "error": "tooLarge" } }
+  A node shows the progress with "{job.progress}" under "if": "exporting".
+  A done job holds its result; a failed one names one of the command's
+  "fails". Loading and error stay phases: they come before the view model
+  exists, and a job's running and failing happen inside it.
   Operations live in screen.json, one screen's own, and are not shared
   with other screens.
 

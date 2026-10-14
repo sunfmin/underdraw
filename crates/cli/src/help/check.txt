@@ -63,5 +63,8 @@ WHAT TRIPS YOU UP
     confirmation: an overlay whose kind has a backdrop and that a node
     opens with {"open": "<its id>"}. The menu item or button a person first
     acts on opens it instead (OPERATIONS below).
+  - A "long" command's job type (ExportDocsJob) and the query that reads
+    it (exportDocsJob) are derived: write neither. A field of "data" holds
+    the job, and fixtures hold it with each "status": running, done, failed.
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.
