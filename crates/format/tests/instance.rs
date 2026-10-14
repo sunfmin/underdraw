@@ -69,7 +69,10 @@ fn conditions_breakpoints_and_each_shape_the_tree() {
     assert_eq!(find(&unavailable, "reserve-button").unwrap().props["disabled"], json!(true));
     assert_eq!(find(&compact, "reserve-button").unwrap().props["disabled"], json!(false));
     assert_eq!(find(&regular, "card-guests").unwrap().props["value"], json!(2));
-    assert_eq!(find(&compact, "calendar-picker").unwrap().props["value"], json!(["2026-11-12", "2026-11-17"]));
+    assert_eq!(
+        find(&compact, "calendar-picker").unwrap().props["value"],
+        json!(["2026-11-12", "2026-11-17"])
+    );
 }
 
 #[test]

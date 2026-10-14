@@ -9,7 +9,7 @@ PATH="$HOME/.cargo/bin:$PATH"
 RUSTUP_TOOLCHAIN=nightly-2026-09-25
 export PATH RUSTUP_TOOLCHAIN
 cargo fmt --all --check
-# Flux builds under a directory of its own, so it checks the pure crate while
+# Flux builds under a directory of its own, so it checks the pure crates while
 # everything below runs; what it came to is read at the end.
 flux_log=$(mktemp)
 ./verify.sh >"$flux_log" 2>&1 &
@@ -19,19 +19,21 @@ flux_pid=$!
 trap 'kill "$flux_pid" 2>/dev/null || true; rm -f "$flux_log"' EXIT
 cargo clippy --workspace --all-targets --quiet -- -D warnings
 cargo nextest run --workspace --cargo-quiet --status-level fail --final-status-level fail --show-progress none
-# Every function of the pure crate is checked: none is taken on trust. Flux
-# says so itself in the summary that ends its run on a crate; the pure crate
-# is checked last, so its summary is the last one.
+# Every function of each pure crate is checked: none is taken on trust. Flux
+# says so itself in the summary that ends its run on a crate; verify.sh names
+# the crate before each run.
 wait "$flux_pid" && flux_status=0 || flux_status=$?
-summary=$(grep '^summary\.' "$flux_log" | tail -1)
 if [ "$flux_status" -ne 0 ]; then
     cat "$flux_log" >&2
     exit "$flux_status"
 fi
-case "$summary" in
-*"; 0 trusted; 0 ignored."*) echo "gate: Flux: $summary" ;;
-*)
-    echo "gate: the pure crate must not exempt anything from Flux, and Flux reports: ${summary:-no summary}" >&2
-    exit 1
-    ;;
-esac
+for crate in underdraw-format underdraw-layout; do
+    summary=$(awk -v crate="$crate" '/^verify: crate / { at = $3 } /^summary\./ && at == crate { s = $0 } END { print s }' "$flux_log")
+    case "$summary" in
+    *"; 0 trusted; 0 ignored."*) echo "gate: Flux: $crate: $summary" ;;
+    *)
+        echo "gate: $crate must not exempt anything from Flux, and Flux reports: ${summary:-no summary}" >&2
+        exit 1
+        ;;
+    esac
+done
