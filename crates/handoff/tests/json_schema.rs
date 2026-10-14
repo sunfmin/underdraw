@@ -84,7 +84,7 @@ fn each_type_is_bounded_as_check_bounds_it() {
             "price": "money",
             "plan": "Plan",
             "tags": "string[] ..2",
-            "owner": { "type": "Owner?", "doc": "Who owns it", "derived": "from the session" }
+            "owner": { "type": "Owner?", "doc": "Who owns it", "derived": { "server": "from the session" } }
         },
         "types": {
             "Plan": "enum(monthly, yearly)",
@@ -125,6 +125,6 @@ fn each_type_is_bounded_as_check_bounds_it() {
         assert_eq!(agree(&screen, None, &data), Ok(valid), "{change}");
     }
     let schema = json_schema(&model(&screen, None).unwrap_or_else(|c| panic!("{:?}", c.findings)));
-    assert_eq!(schema["properties"]["owner"]["description"], "Who owns it. Derived: from the session");
+    assert_eq!(schema["properties"]["owner"]["description"], "Who owns it. Derived by the server: from the session");
     assert_eq!(schema["properties"]["on"]["default"], false);
 }
