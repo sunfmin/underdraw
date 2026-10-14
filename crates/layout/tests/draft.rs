@@ -357,3 +357,17 @@ fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
         "still a guess in the answer"
     );
 }
+
+#[test]
+fn an_overlay_anchored_at_the_bottom_spans_it_edge_to_edge() {
+    let page = tiny(serde_json::json!([
+        { "id": "body", "kind": "Stack", "padding": [0, 16], "children": [
+            { "id": "a", "kind": "Text", "text": "a" }, { "id": "b", "kind": "Text", "text": "b" },
+            { "id": "c", "kind": "Text", "text": "c" } ],
+          "overlay": { "id": "sheet", "kind": "Card", "anchor": "bottom", "children": [
+            { "id": "sheet-text", "kind": "Text", "text": "?" } ] } }
+    ]));
+    let (body, sheet) = (placed(&page, "body").rect, placed(&page, "sheet").rect);
+    assert_eq!((sheet.x, sheet.width), (body.x, body.width), "as wide as the node, padding and all");
+    assert_eq!(sheet.y + sheet.height, body.y + body.height, "on its bottom edge");
+}
