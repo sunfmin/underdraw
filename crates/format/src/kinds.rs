@@ -164,8 +164,12 @@ impl Kinds {
                         && !LOOK_KEYS.contains(&key.as_str())
                         && !NOTES.contains(&key.as_str())
                     {
-                        findings
-                            .add(at, &format!("{key} is not a key a look reads; see docs/format/kinds.md"));
+                        findings.add(
+                            at,
+                            &format!(
+                                "{key} is not a key a look reads; see `underdraw check --help`, KINDS.JSON"
+                            ),
+                        );
                     }
                     if nested.is_some()
                         && icons::is_icon_key(key)

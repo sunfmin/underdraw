@@ -174,7 +174,7 @@ impl Walk<'_> {
         {
             self.findings.add(
                 at,
-                &format!("kind {kind} is not defined: define its look in kinds.json beside screen.json (docs/format/kinds.md)"),
+                &format!("kind {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, KINDS.JSON)"),
             );
         }
         let mut guarded = guarded.clone();

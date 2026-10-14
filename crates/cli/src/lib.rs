@@ -33,7 +33,8 @@ const KINDS: &str = "kinds.json";
 
 /// `-h` is the one-screen listing; `--help` adds `help.txt`, the guide an
 /// agent reads to learn the tool. Each subcommand's `--help` adds
-/// `help/<name>.txt`.
+/// `help/<name>.txt`; `check --help` also adds `help/format.txt`, the
+/// reference for writing a description.
 #[derive(Parser)]
 #[command(name = "underdraw", version = VERSION, about, long_about = include_str!("help.txt"), disable_help_subcommand = true)]
 struct Cli {
@@ -44,7 +45,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Check a screen description: every fault, and which fixtures each condition holds in
-    #[command(after_long_help = include_str!("help/check.txt"))]
+    #[command(after_long_help = concat!(include_str!("help/check.txt"), include_str!("help/format.txt")))]
     Check {
         /// The screen's directory, which holds screen.json, or the screen.json itself
         path: PathBuf,
