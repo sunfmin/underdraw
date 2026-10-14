@@ -39,8 +39,12 @@ pub struct Operation {
     /// Each way it can fail, by name, with when.
     pub fails: Vec<(String, String)>,
     /// The fields of `data` its result fills, for a query: each written
-    /// `"from": <this query>`.
+    /// `"from": <this query>`, or `"from": <this query>.<part>`.
     pub fills: Vec<Fill>,
+    /// True of a query that pages by a cursor (`"pages": "cursor"`): it
+    /// answers one page at a time, its result says in `next` where the next
+    /// page starts, and it takes the `cursor` and `limit` paging adds.
+    pub pages: bool,
 }
 
 /// A field of `data` a query's result fills.
@@ -48,6 +52,9 @@ pub struct Operation {
 pub struct Fill {
     /// The field, a root of `data`: `docs`.
     pub field: String,
+    /// The field of the result that fills it, when it is filled by one
+    /// part of the result (`"from": "listDocs.next"`) rather than all of it.
+    pub part: Option<String>,
     /// Where in the view model the result lands: the field itself (`docs`)
     /// when it is of the result's type, or the field of each element (`[]`)
     /// that holds it when its type wraps the result's: `docs[].doc` for
@@ -58,7 +65,11 @@ pub struct Fill {
 pub struct Operations(Vec<Operation>);
 
 /// The keys an operation is written with.
-const KEYS: [&str; 7] = ["query", "command", "params", "result", "requires", "fails", "$comment"];
+const KEYS: [&str; 8] = ["query", "command", "params", "result", "requires", "fails", "pages", "$comment"];
+
+/// The parameters paging by a cursor adds, which the description does not
+/// write.
+pub const PAGING: [&str; 2] = ["cursor", "limit"];
 
 impl Operations {
     pub fn read(
@@ -96,10 +107,37 @@ impl Operations {
                     (Does::Command, String::new())
                 }
             };
-            let params = params(body.get("params"), schema, &format!("{at}.params"), findings);
+            let mut params = params(body.get("params"), schema, &format!("{at}.params"), findings);
             let result = result(body.get("result"), schema, &format!("{at}.result"), findings);
             if does == Does::Query && result.is_none() && body.get("result").is_none() {
                 findings.add(&at, "a query answers with something: give it a \"result\", one of types");
+            }
+            let pages = match body.get("pages") {
+                None => false,
+                Some(Value::String(by)) if by == "cursor" => true,
+                Some(_) => {
+                    findings.add(
+                        &format!("{at}.pages"),
+                        "pages is \"cursor\": the query answers one page at a time, and says in next where the next one starts",
+                    );
+                    false
+                }
+            };
+            if pages && does != Does::Query {
+                findings.add(&format!("{at}.pages"), "only a query pages: a command changes something once");
+            }
+            if pages {
+                for added in PAGING {
+                    if params.iter().any(|(param, _)| param == added) {
+                        findings.add(
+                            &format!("{at}.params.{added}"),
+                            "pages adds cursor and limit itself: leave them out of params",
+                        );
+                    }
+                }
+                if let Some(result) = &result {
+                    params.extend(paging(schema, name, result, &format!("{at}.result"), findings));
+                }
             }
             let requires = match body.get("requires") {
                 None => None,
@@ -133,7 +171,17 @@ impl Operations {
                 ),
             }
             let fills = Vec::new();
-            read.push(Operation { name: name.clone(), does, doc, params, result, requires, fails, fills });
+            read.push(Operation {
+                name: name.clone(),
+                does,
+                doc,
+                params,
+                result,
+                requires,
+                fails,
+                fills,
+                pages,
+            });
         }
         let mut operations = Operations(read);
         operations.fill(schema, findings);
@@ -142,10 +190,15 @@ impl Operations {
 
     /// Each field of `data` written `"from": <query>`, to that query: the
     /// query exists, and its result is of the field's type or wrapped by it.
+    /// Written `"from": <query>.<part>`, the same of that field of its result.
     fn fill(&mut self, schema: &Schema, findings: &mut Findings) {
         for (name, field) in schema.roots() {
-            let Some(query) = &field.from else {
+            let Some(from) = &field.from else {
                 continue;
+            };
+            let (query, part) = match from.split_once('.') {
+                Some((query, part)) => (query, Some(part)),
+                None => (from.as_str(), None),
             };
             let at = format!("data.{name}");
             let Some(operation) = self.0.iter_mut().find(|operation| &operation.name == query) else {
@@ -170,18 +223,40 @@ impl Operations {
                 // The query's own finding says it answers with nothing.
                 continue;
             };
+            let result = match part {
+                None => result.clone(),
+                Some(part) => match schema.shape(result) {
+                    Some(Shape::Object(fields))
+                        if !result.nullable
+                            && let Some((_, inner)) = fields.iter().find(|(inner, _)| inner == part) =>
+                    {
+                        inner.clone()
+                    }
+                    _ => {
+                        findings.add(
+                            &format!("{at}.from"),
+                            &format!(
+                                "{part} is not a field of {query}'s result ({}): from names a query, or one field of its result, \"listDocs.next\"",
+                                result.describe()
+                            ),
+                        );
+                        continue;
+                    }
+                },
+            };
+            let result = &result;
             match through(schema, &field, result) {
                 Ok(through) => {
                     let path = match through {
                         None => name.clone(),
                         Some(through) => format!("{name}{}.{through}", if field.array { "[]" } else { "" }),
                     };
-                    operation.fills.push(Fill { field: name.clone(), path });
+                    operation.fills.push(Fill { field: name.clone(), part: part.map(str::to_string), path });
                 }
                 Err(()) => findings.add(
                     &at,
                     &format!(
-                        "is {}, and {query} answers with {}: a field a query fills is of the result's type, or of a type that wraps it (one field of that type, beside view state and what the app derives)",
+                        "is {}, and {from} answers with {}: a field a query fills is of the result's type, or of a type that wraps it (one field of that type, beside view state and what the app derives)",
                         field.describe(),
                         result.describe()
                     ),
@@ -197,6 +272,62 @@ impl Operations {
     pub fn get(&self, name: &str) -> Option<&Operation> {
         self.0.iter().find(|operation| operation.name == name)
     }
+}
+
+/// The parameters a query that pages by a cursor takes besides its own:
+/// `cursor`, where the page starts (null for the first), and `limit`, how
+/// many rows it holds at most, by default as many as its list may hold.
+/// Its result is one page: an object of one list, its rows, and `next`.
+fn paging(
+    schema: &Schema,
+    query: &str,
+    result: &Field,
+    at: &str,
+    findings: &mut Findings,
+) -> Vec<(String, Field)> {
+    let shape = if result.nullable { None } else { schema.shape(result) };
+    let Some(Shape::Object(fields)) = shape else {
+        findings.add(
+            at,
+            &format!(
+                "{query} pages, so it answers with one page: a type holding its rows' list and \"next\": \"string?\", not {}",
+                result.describe()
+            ),
+        );
+        return Vec::new();
+    };
+    let page = result.base.name();
+    let next = fields.iter().find(|(name, _)| name == "next").map(|(_, next)| next);
+    if !next.is_some_and(|next| next.base == Base::String && next.nullable && !next.array) {
+        findings.add(
+            at,
+            &format!(
+                "{page} has no \"next\": \"string?\": a paged query's result says where the next page starts, and null on the last page"
+            ),
+        );
+    }
+    let lists: Vec<&(String, Field)> = fields.iter().filter(|(_, inner)| inner.array).collect();
+    let [(rows, list)] = lists.as_slice() else {
+        findings.add(at, &format!("{page} holds exactly one list, the page's rows, beside next"));
+        return Vec::new();
+    };
+    let Some(most) = list.hi else {
+        findings.add(
+            at,
+            &format!(
+                "{page}.{rows} says how many rows a page holds at most, which is limit's default: \"{}[] ..50\"",
+                list.base.name()
+            ),
+        );
+        return Vec::new();
+    };
+    let mut added = Vec::new();
+    for (name, written) in [("cursor", "string?".to_string()), ("limit", format!("int 1..{most} = {most}"))] {
+        if let Ok(field) = field::parse(&written) {
+            added.push((name.to_string(), field));
+        }
+    }
+    added
 }
 
 /// How `field` holds `result`: as it is (none), or through the one field of

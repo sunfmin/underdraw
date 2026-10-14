@@ -304,6 +304,13 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
             if !arg.choices.is_empty() {
                 said = format!("one of {}", arg.choices.join(", "));
             }
+            if operation.pages && arg.param == "cursor" {
+                said = "where the page starts: the \"next\" the page before answered with; the first page when left out"
+                    .to_string();
+            }
+            if operation.pages && arg.param == "limit" {
+                said = "at most this many rows".to_string();
+            }
             if let Some(default) = &arg.default {
                 said.push_str(&format!("; default {}", text_of(default)));
             }
@@ -318,6 +325,9 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
         None => "{}".to_string(),
     };
     help.push_str(&format!("\nANSWERS\n  One JSON object on stdout. Exit 0: {answer}\n"));
+    if operation.pages {
+        help.push_str("  One page at a time: \"next\" is where the next page starts, null on the last; pass it to --cursor for more.\n");
+    }
     for failure in fails {
         help.push_str(&format!("  Exit {}: {}  {}\n", failure.exit, failure.stdout, failure.when));
     }
@@ -334,19 +344,29 @@ fn text_of(value: &Value) -> String {
 
 /// For a query whose result fills `data` and that needs no argument: in
 /// each fixture, the result that fixture holds, projected through what it
-/// fills.
+/// fills; or, filled part by part (`"from": "listDocs.next"`), each part
+/// so, when every field of the result is filled.
 fn queried(model: &Model, operation: &Operation, spec: &CommandSpec, golden: &mut Vec<Golden>) {
     if operation.does != Does::Query {
         return;
     }
-    let Some(fill) = operation.fills.first() else {
+    let Some(paths) = paths(model, operation) else {
         return;
     };
     let Ok(with) = spec.with_args(&[]) else {
         return;
     };
     for (fixture, data) in &model.fixtures {
-        let result = project(data, &fill.path);
+        let result = match &paths {
+            Answer::Whole(path) => project(data, path),
+            Answer::Parts(parts) => {
+                let mut result = Map::new();
+                for (part, path) in parts {
+                    result.insert(part.clone(), project(data, path));
+                }
+                Value::Object(result)
+            }
+        };
         golden.push(Golden {
             command: spec.name.clone(),
             fixture: Some(fixture.clone()),
@@ -357,6 +377,32 @@ fn queried(model: &Model, operation: &Operation, spec: &CommandSpec, golden: &mu
             stdout: object([("result", result)]),
         });
     }
+}
+
+/// Where in the view model a query's answer is held.
+enum Answer {
+    /// All of it, at one path.
+    Whole(String),
+    /// Each field of it, by name, at its own path.
+    Parts(Vec<(String, String)>),
+}
+
+/// Where the view model holds all of `operation`'s result; none when it
+/// holds none of it, or only some of its fields.
+fn paths(model: &Model, operation: &Operation) -> Option<Answer> {
+    if let Some(fill) = operation.fills.iter().find(|fill| fill.part.is_none()) {
+        return Some(Answer::Whole(fill.path.clone()));
+    }
+    let result = operation.result.as_ref()?;
+    let Some(Shape::Object(fields)) = model.schema.shape(result) else {
+        return None;
+    };
+    let mut parts = Vec::new();
+    for (name, _) in fields {
+        let fill = operation.fills.iter().find(|fill| fill.part.as_deref() == Some(name.as_str()))?;
+        parts.push((name.clone(), fill.path.clone()));
+    }
+    Some(Answer::Parts(parts))
 }
 
 /// The value at `path` (`docs`, `docs[].doc`) in `data`: through `[]`,

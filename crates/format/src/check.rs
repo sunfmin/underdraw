@@ -457,13 +457,84 @@ impl Walk<'_> {
                 );
             }
         }
+        let next = format!("{}.next", operation.name);
+        let next = self
+            .schema
+            .roots()
+            .into_iter()
+            .find(|(_, field)| field.from.as_deref() == Some(next.as_str()))
+            .map(|(root, _)| root);
+        if operation.pages && !given.contains_key("cursor") {
+            self.findings.add(
+                &format!("{at}.with"),
+                &format!(
+                    "{} pages: give cursor, null for the first page, or \"{{{}}}\" for the page after the last one loaded",
+                    operation.name,
+                    next.clone().unwrap_or_else(|| format!("<the field filled from {}.next>", operation.name))
+                ),
+            );
+        }
         for (name, value) in given {
             let at = format!("{at}.with.{name}");
             let Some((_, param)) = operation.params.iter().find(|(param, _)| param == name) else {
                 self.findings.add(&at, &format!("{} has no parameter {name}", operation.name));
                 continue;
             };
-            self.argument(value, param, scope, known, &at);
+            if operation.pages && name == "cursor" {
+                self.cursor(value, &operation.name, next.as_deref(), scope, known, &at);
+            } else {
+                self.argument(value, param, scope, known, &at);
+            }
+        }
+    }
+
+    /// The cursor given to the paged query `query`: null for its first page,
+    /// or the field of `data` its last page's `next` fills (`next`), and only
+    /// where that is known not to be null.
+    fn cursor(
+        &mut self,
+        value: &Value,
+        query: &str,
+        next: Option<&str>,
+        scope: &Scope,
+        known: &Known,
+        at: &str,
+    ) {
+        if value.is_null() {
+            return;
+        }
+        let Some(next) = next else {
+            return self.findings.add(
+                at,
+                &format!(
+                    "the cursor is null for the first page, or where {query}'s last page said the next starts: fill a field of data from it, \"from\": \"{query}.next\", and pass that"
+                ),
+            );
+        };
+        let whole = value.as_str().and_then(|text| {
+            let placeholders = template::placeholders(text).ok()?;
+            match placeholders.as_slice() {
+                [placeholder]
+                    if text.starts_with('{') && text.ends_with('}') && placeholder.format.is_none() =>
+                {
+                    Some(placeholder.path.clone())
+                }
+                _ => None,
+            }
+        });
+        if whole.as_deref() != Some(next) || self.schema.resolve(scope, next).is_none() {
+            return self.findings.add(
+                at,
+                &format!("the cursor is null for the first page, or \"{{{next}}}\": where {query}'s last page said the next starts"),
+            );
+        }
+        if !known.not_null.contains(next) {
+            self.findings.add(
+                at,
+                &format!(
+                    "{next} is null on the last page: offer more only while it is not, under a condition that tests {next} != null"
+                ),
+            );
         }
     }
 
