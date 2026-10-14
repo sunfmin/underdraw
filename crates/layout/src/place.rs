@@ -25,6 +25,9 @@ pub(crate) struct Elem<'a> {
     /// When pinned: the parent is dimmed under it, and nothing on the
     /// parent can be acted on (a dialog).
     pub(crate) backdrop: bool,
+    /// It is a popup (a node in an `overlay` slot): drawn after the whole
+    /// page, so nothing that comes after its node covers it.
+    pub(crate) on_top: bool,
     pub(crate) children: Vec<Elem<'a>>,
 }
 
@@ -72,6 +75,7 @@ impl<'a> Elem<'a> {
             clip: None,
             pin: None,
             backdrop: false,
+            on_top: false,
             children: Vec::new(),
         }
     }
@@ -193,7 +197,14 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
         marked: Vec::new(),
         floated: Vec::new(),
     };
-    emit(&tree, root, &laid, Rect::default(), None, &mut out)?;
+    let mut later = Vec::new();
+    emit(&tree, root, &laid, Rect::default(), None, &mut out, &mut later)?;
+    // Popups, in the order they were met; a popup inside one is met then.
+    let mut next = 0;
+    while let Some(&(elem, laid, parent)) = later.get(next) {
+        emit(&tree, elem, laid, parent, None, &mut out, &mut later)?;
+        next += 1;
+    }
     mark(&mut out);
     let size = tree.layout(laid.id)?.size;
     let mut draws = out.draws;
@@ -228,15 +239,17 @@ fn add<'e>(
     Ok(Laid { id, children })
 }
 
-/// Draws `elem`, inside `parent`, and everything in it. `clip` is the area
-/// it may show in, when an ancestor cuts it.
-fn emit(
+/// Draws `elem`, inside `parent`, and everything in it but its popups,
+/// which go to `later` with the box they float over. `clip` is the area it
+/// may show in, when an ancestor cuts it.
+fn emit<'t, 'n>(
     tree: &TaffyTree<usize>,
-    elem: &Elem,
-    laid: &Laid,
+    elem: &'t Elem<'n>,
+    laid: &'t Laid,
     parent: Rect,
     clip: Option<Rect>,
     out: &mut Out,
+    later: &mut Vec<(&'t Elem<'n>, &'t Laid, Rect)>,
 ) -> Result<(), TaffyError> {
     let layout = tree.layout(laid.id)?;
     let (width, height) = (layout.size.width, layout.size.height);
@@ -304,7 +317,11 @@ fn emit(
     };
     for index in 0..elem.children.len() {
         if let (Some(child), Some(laid)) = (elem.children.get(index), laid.children.get(index)) {
-            emit(tree, child, laid, rect, inner, out)?;
+            if child.on_top {
+                later.push((child, laid, rect));
+            } else {
+                emit(tree, child, laid, rect, inner, out, later)?;
+            }
         }
     }
     if let (Some(radius), Some(saved)) = (elem.clip, saved) {

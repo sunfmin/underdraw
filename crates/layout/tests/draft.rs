@@ -386,3 +386,32 @@ fn an_overlay_taller_than_its_node_is_named_as_cut() {
     assert_eq!(overlay(1).cut, Vec::<String>::new(), "a short sheet fits");
     assert_eq!(overlay(12).cut, ["sheet"], "a tall one runs off the top");
 }
+
+#[test]
+fn an_overlay_is_drawn_over_what_comes_after_its_node() {
+    let kinds = serde_json::json!({ "kinds": { "Menu": { "look": {
+        "box": "column", "width": 200, "padding": 8, "fill": "paper", "stroke": "line",
+        "children": ["$children"] } } } });
+    let row = |id: &str, menu: bool| {
+        let mut row = serde_json::json!({ "id": id, "kind": "Row", "padding": 8, "on": { "tap": { "go": id } },
+            "children": [{ "id": format!("{id}-text"), "kind": "Text", "text": id }] });
+        if menu {
+            row["overlay"] = serde_json::json!({ "id": "menu", "kind": "Menu", "anchor": "top-trailing", "children": [
+                { "id": "m1", "kind": "Text", "text": "one" }, { "id": "m2", "kind": "Text", "text": "two" },
+                { "id": "m3", "kind": "Text", "text": "three" }, { "id": "m4", "kind": "Text", "text": "four" } ] });
+        }
+        row
+    };
+    let page = tiny_with(
+        serde_json::json!([{ "id": "list", "kind": "Stack", "children": [row("a", true), row("b", false), row("c", false)] }]),
+        Some(&kinds),
+    );
+    let menu = placed(&page, "menu").rect;
+    let at = |wanted: &dyn Fn(&Draw) -> bool| page.draws.iter().position(wanted).unwrap();
+    let menu_box = at(&|d| matches!(d, Draw::Box { rect, fill: Some(_), .. } if *rect == menu));
+    let later_text = at(&|d| matches!(d, Draw::Text { text, .. } if text == "b"));
+    assert!(menu_box > later_text, "the menu is drawn after the row below its own: {menu_box} {later_text}");
+    let b = placed(&page, "b").rect;
+    assert!(b.y < menu.y + menu.height, "the menu reaches over row b");
+    assert_eq!(placed(&page, "b").label, None, "row b, under the menu, has no number");
+}
