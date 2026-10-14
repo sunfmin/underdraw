@@ -64,6 +64,14 @@ pub struct OperationSpec {
     /// It cannot be undone: the screen calls it only from its confirmation.
     #[serde(skip_serializing_if = "is_false")]
     pub destructive: bool,
+    /// It takes long: it answers with a job, `{"type": "ExportDocsJob",
+    /// "query": "exportDocsJob"}`, which the screen shows and the query reads
+    /// again until it is done or failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job: Option<Value>,
+    /// For the query derived from a long command: that command.
+    #[serde(rename = "jobOf", skip_serializing_if = "Option::is_none")]
+    pub job_of: Option<String>,
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub fails: Map<String, Value>,
     /// The fields of `data` a query's result fills: `docs`, or `docs[].doc`
@@ -230,6 +238,13 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
             result: operation.result.as_ref().map(|field| field.describe()),
             requires: operation.requires.clone(),
             destructive: operation.destructive,
+            job: match (operation.job_type(), operation.job_query()) {
+                (Some(job), Some(query)) => {
+                    Some(object([("type", Value::from(job)), ("query", Value::from(query))]))
+                }
+                _ => None,
+            },
+            job_of: operation.job_of.clone(),
             fails,
             fills: operation.fills.iter().map(|fill| fill.path.clone()).collect(),
         });
