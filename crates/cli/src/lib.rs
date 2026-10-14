@@ -71,6 +71,12 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// The view model as a JSON Schema, to validate API responses and other data against
+    #[command(after_long_help = include_str!("help/schema.txt"))]
+    Schema {
+        /// The screen's directory, which holds screen.json, or the screen.json itself
+        path: PathBuf,
+    },
     /// Everything an agent needs to build the screen on one platform: model code, tokens, nodes, states to test
     #[command(after_long_help = include_str!("help/handoff.txt"))]
     Handoff {
@@ -129,6 +135,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         Command::Render { path, fixture, phase, width, scale, out } => {
             render(&path, Wanted { fixture, phase, width, scale, out })
         }
+        Command::Schema { path } => schema(&path),
         Command::Handoff { path, platform } => handoff(&path, &platform),
         Command::Compare { path, platform, capture, fixture, phase } => {
             compare(&path, &platform, &capture, fixture, phase)
@@ -229,6 +236,19 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
     })?;
     let dir = file.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     Ok((screen, dir))
+}
+
+fn schema(path: &Path) -> anyhow::Result<Value> {
+    let (screen, dir) = read(path)?;
+    let kinds = read_kinds(&dir)?;
+    match underdraw_format::model(&screen, kinds.as_ref()) {
+        Ok(model) => Ok(json!({ "screen": model.screen, "schema": underdraw_handoff::json_schema(&model) })),
+        Err(checked) => bail!(
+            "the description has {} finding(s), so a schema derived from it would be wrong: run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        ),
+    }
 }
 
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {

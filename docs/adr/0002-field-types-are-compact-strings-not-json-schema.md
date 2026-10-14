@@ -19,5 +19,5 @@ or `derived`.
 
 ## Consequences
 
-It is our grammar to define, document and parse; JSON Schema can be derived
-from it if a consumer needs one.
+It is our grammar to define, document and parse; JSON Schema is derived
+from it for consumers that need one: `underdraw schema <dir>`.

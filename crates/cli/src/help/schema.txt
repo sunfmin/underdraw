@@ -1,0 +1,42 @@
+WHEN
+  When data the screen will show must be validated outside underdraw: an
+  API's responses in its contract tests, fixtures or mock data written by
+  hand, a JSON editor. Run it again whenever the view model changes; never
+  edit the schema by hand.
+
+WHO
+  The agent building the screen or the API that feeds it.
+
+READS
+  <path>/screen.json (and kinds.json beside it). Writes nothing. Refuses a
+  description `check` finds faults in.
+
+ANSWERS
+  {
+    "screen": the screen's name
+    "schema": a JSON Schema (draft 2020-12) of the root model, the object
+              a fixture's "data" holds: each root field under "properties",
+              each named type and "money" under "$defs". Save it as is,
+              e.g. `underdraw schema <dir> | jq .schema > model.schema.json`.
+  }
+
+HOW EACH TYPE BECOMES SCHEMA
+  string, image, icon   "type": "string"; a range bounds the length
+  url                   "type": "string", "format": "uri"
+  date                  a string matching YYYY-MM-DD
+  int, number           "integer" / "number"; a range bounds the value
+  bool                  "boolean"
+  money                 {"$ref": "#/$defs/money"}: {"amount", "currency" of 3}
+  Name                  {"$ref": "#/$defs/Name"}: an object or an enum
+  T[]                   an array of T; a range bounds the count
+  T?                    T or null
+  A field without a default is required; no object takes a field it does
+  not declare. "doc" and "derived" become "description"; a default becomes
+  "default".
+
+WHAT TRIPS YOU UP
+  - The schema checks what `check` checks of a fixture's data, except that
+    an icon is a known Material Symbols name: that, only `check` knows.
+  - Validators treat "format": "uri" as a note unless told to assert it.
+  - A field with a default may be left out, as in a fixture; data an API
+    sends that must always carry it needs no default in the description.

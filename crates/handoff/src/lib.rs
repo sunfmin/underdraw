@@ -7,6 +7,7 @@ extern crate flux_alloc;
 extern crate flux_core;
 
 mod code;
+mod json_schema;
 mod nodes;
 
 use serde::Serialize;
@@ -14,6 +15,7 @@ use serde_json::{Map, Value};
 use underdraw_format::{Breakpoint, Checked, Finding, Model, Node, State, instantiate};
 
 pub use code::Language;
+pub use json_schema::json_schema;
 pub use nodes::{Event, Hidden, Spec};
 
 #[derive(Debug, Serialize)]
