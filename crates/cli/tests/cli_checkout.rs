@@ -182,6 +182,16 @@ fn the_checkout_draft_derives_queries_and_the_forms_commands() {
             && g["args"] == json!(["FALL2025"])),
         "{answer}"
     );
+    // Where no code is typed the apply button is disabled: the screen never
+    // calls apply with "", which its own parameter (string 1..20) refuses.
+    assert!(
+        !answer["golden"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["command"] == "apply" && g["args"] == json!([""])),
+        "{answer}"
+    );
 }
 
 #[test]

@@ -59,6 +59,12 @@ The decisions:
   server's refusal is one of `fails`.
 - Gating accepts the same condition, or one whose top-level `&&` chain
   names it, as conditions guard nulls already.
+- A fitting type includes the range: a value given to `string 1..20`
+  lies inside it wherever the node can call it. A typed `string ..20`
+  passes only on a node gated by a condition that narrows it
+  (`code != ""`), so the CLI derived from the operations never has to
+  accept an argument its own parameter refuses, and it refuses one
+  outside the range.
 - [ADR 0010](0010-the-view-model-says-what-each-query-fills.md) extends
   this: which `data` field a query fills, who derives a derived field, and
   a parameter's choices as an enum.

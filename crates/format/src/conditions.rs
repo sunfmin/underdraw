@@ -111,6 +111,58 @@ impl Conditions {
         found
     }
 
+    /// The range `field`, at `path`, is known to lie in wherever each of
+    /// `held` holds: its own, narrowed by each comparison of `path` with a
+    /// literal in a held condition's top-level `&&` chain. `!= ""` makes a
+    /// string at least one long; `== "…"` gives its length; `<`, `<=`, `>`,
+    /// `>=` and `==` bound a number.
+    pub fn narrowed(&self, held: &BTreeSet<String>, path: &str, field: &Field) -> (Option<f64>, Option<f64>) {
+        let (mut lo, mut hi) = (field.lo, field.hi);
+        let numeric = matches!(field.base, Base::Int | Base::Number);
+        let int = field.base == Base::Int;
+        for name in held {
+            let Some(condition) = self.get(name) else {
+                continue;
+            };
+            let mut chain = vec![&condition.when];
+            while let Some(expr) = chain.pop() {
+                let (op, literal) = match expr {
+                    Expr::And(items) => {
+                        chain.extend(items);
+                        continue;
+                    }
+                    Expr::Atom(Atom::Group(inner)) => {
+                        chain.push(inner);
+                        continue;
+                    }
+                    Expr::Compare(op, Atom::Name(name), literal) if name == path => (*op, literal),
+                    Expr::Compare(op, literal, Atom::Name(name)) if name == path => (op.flipped(), literal),
+                    _ => continue,
+                };
+                let (at_least, at_most) = match (op, literal) {
+                    (Op::Ne, Atom::Str(s)) if s.is_empty() && !numeric => (Some(1.0), None),
+                    (Op::Eq, Atom::Str(s)) if !numeric => {
+                        let length = s.chars().count() as f64;
+                        (Some(length), Some(length))
+                    }
+                    (Op::Eq, Atom::Num(n)) if numeric => (Some(*n), Some(*n)),
+                    (Op::Ge, Atom::Num(n)) if numeric => (Some(if int { n.ceil() } else { *n }), None),
+                    (Op::Gt, Atom::Num(n)) if numeric => (Some(if int { n.floor() + 1.0 } else { *n }), None),
+                    (Op::Le, Atom::Num(n)) if numeric => (None, Some(if int { n.floor() } else { *n })),
+                    (Op::Lt, Atom::Num(n)) if numeric => (None, Some(if int { n.ceil() - 1.0 } else { *n })),
+                    _ => continue,
+                };
+                if let Some(at_least) = at_least {
+                    lo = Some(lo.map_or(at_least, |lo| lo.max(at_least)));
+                }
+                if let Some(at_most) = at_most {
+                    hi = Some(hi.map_or(at_most, |hi| hi.min(at_most)));
+                }
+            }
+        }
+        (lo, hi)
+    }
+
     fn collect_implied(&self, name: &str, found: &mut BTreeSet<String>) {
         let Some(condition) = self.get(name) else {
             return;

@@ -54,6 +54,9 @@ WHAT TRIPS YOU UP
     share, copy). submit, reload, remove and the like are operations.
   - A "call" to an operation with "requires" needs the node gated by that
     condition: "disabled": "!<condition>", or "if": "<condition>".
+  - A "call" gives each parameter a value whose range lies inside the
+    parameter's: "{code}" of "string ..20" passes "string 1..20" only
+    under a condition testing code != "" ("disabled": "!hasCode").
   - A query with "pages": "cursor" answers with a page type holding one
     list (with its most, "Doc[] ..50") and "next": "string?". Every call to
     it gives "cursor": null for the first page, or "{next}" — the field

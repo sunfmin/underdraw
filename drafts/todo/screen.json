@@ -54,7 +54,7 @@
       "label": "有已完成的"
     },
     "canAdd": {
-      "when": "composer.canSubmit",
+      "when": "composer.text != \"\" && composer.canSubmit",
       "label": "可以添加"
     }
   },

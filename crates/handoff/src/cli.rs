@@ -103,6 +103,11 @@ pub struct Arg {
     pub type_name: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<String>,
+    /// What a value may be, as the type writes it (`1..20`): a number's
+    /// value, a string's length, a list's count. Outside it, the command
+    /// refuses the arguments as it refuses any that are not its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
     /// A list: the flag is given once per value; positional, each value
@@ -234,6 +239,7 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
             param: param.clone(),
             flag: if positional { None } else { Some(format!("--{}", kebab(param))) },
             type_name: field.describe(),
+            range: field.range(),
             choices,
             default,
             repeated: field.array,
@@ -984,6 +990,19 @@ impl CommandSpec {
             }
         }
         for arg in &self.args {
+            if let Some(Value::Array(values)) = with.get(&arg.param)
+                && arg.repeated
+                && !arg.field.holds_size(values.len() as f64)
+            {
+                return Err(format!(
+                    "{} takes {} {}, not {}: {}",
+                    self.name,
+                    arg.range.as_deref().unwrap_or_default(),
+                    arg.param,
+                    values.len(),
+                    self.usage
+                ));
+            }
             if with.contains_key(&arg.param) {
                 continue;
             }
@@ -1049,13 +1068,25 @@ impl Arg {
                 Err(format!("{at} is one of {}, not {text:?}", self.choices.join(", ")))
             };
         }
+        let range = self.range.as_deref().unwrap_or_default();
         match self.field.base {
-            Base::Int => text
-                .parse::<i64>()
-                .map(Value::from)
-                .map_err(|_| format!("{at} is a whole number, not {text:?}")),
-            Base::Number => {
-                text.parse::<f64>().map(Value::from).map_err(|_| format!("{at} is a number, not {text:?}"))
+            Base::Int | Base::Number => {
+                let value = if self.field.base == Base::Int {
+                    text.parse::<i64>()
+                        .map(Value::from)
+                        .map_err(|_| format!("{at} is a whole number, not {text:?}"))?
+                } else {
+                    text.parse::<f64>()
+                        .map(Value::from)
+                        .map_err(|_| format!("{at} is a number, not {text:?}"))?
+                };
+                // A list's range is its count, held by with_args.
+                match value.as_f64() {
+                    Some(n) if !self.repeated && !self.field.holds_size(n) => {
+                        Err(format!("{at} is {range}, not {text}"))
+                    }
+                    _ => Ok(value),
+                }
             }
             Base::Bool => match text {
                 "true" => Ok(Value::Bool(true)),
@@ -1064,6 +1095,9 @@ impl Arg {
             },
             Base::Money | Base::Named(_) => serde_json::from_str(text)
                 .map_err(|_| format!("{at} is a JSON value of {}, not {text:?}", self.type_name)),
+            _ if !self.repeated && !self.field.holds_size(text.chars().count() as f64) => {
+                Err(format!("{at} is {range} long, not {text:?}"))
+            }
             _ => Ok(Value::from(text)),
         }
     }

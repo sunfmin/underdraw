@@ -63,6 +63,17 @@ impl Op {
         }
     }
 
+    /// The same comparison with its sides swapped: `0 < x` is `x > 0`.
+    pub fn flipped(self) -> Op {
+        match self {
+            Op::Lt => Op::Gt,
+            Op::Le => Op::Ge,
+            Op::Gt => Op::Lt,
+            Op::Ge => Op::Le,
+            same => same,
+        }
+    }
+
     pub fn orders(self) -> bool {
         matches!(self, Op::Lt | Op::Le | Op::Gt | Op::Ge)
     }

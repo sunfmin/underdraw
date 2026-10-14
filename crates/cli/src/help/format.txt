@@ -265,6 +265,13 @@ OPERATIONS
   value is a template whose type is the parameter's: "{item.doc.id}" for a
   string; a nullable value only for a nullable parameter; words around a
   placeholder make a string. A literal works too: "title", 3, true, null.
+  Its range lies inside the parameter's wherever the node can call it: a
+  string's length, a number's value. A value of "string ..20" is not one
+  of "string 1..20", since it may be "". Gate the node by a condition
+  that narrows it, "disabled": "!hasCode" with "hasCode" when
+  "code != \"\""; a condition's && chain narrows a value by != "" (at
+  least one long), == a literal, and <, <=, >, >= a number. check refuses
+  a call whose value may fall outside.
   A node that calls an operation with "requires" is gated by that
   condition, or one whose && chain names it: "disabled": "!canDelete" on
   the node, or "if": "canDelete" on it or around it (a handler's cases

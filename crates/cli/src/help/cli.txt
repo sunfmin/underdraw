@@ -24,7 +24,11 @@ HOW EACH OPERATION BECOMES A COMMAND
               \"updated\"" is `--sort`, default updated. A query that
               pages ("pages": "cursor") takes --cursor <cursor> (the first
               page when left out) and --limit <limit> (default: the most
-              its page's list holds), after its own.
+              its page's list holds), after its own. A parameter with a
+              range ("string 1..20") carries it as "range": "1..20" — a
+              number's value, a string's length, a list's count — and the
+              command refuses a value outside it, as it refuses any
+              argument that is not one of its own.
   --yes       a "destructive" operation's command does nothing without it
               (`delete <id> --yes`): it cannot be undone, so the CLI asks
               as the screen's confirmation does. Without --yes it exits 1
@@ -80,7 +84,7 @@ ANSWERS
                   "jobOf": the long command whose job it reads (only then),
                   "usage": "delete <id> --yes",
                   "args": [{"param", "flag" (none when positional), "type",
-                            "choices", "default", "repeated"}, …],
+                            "choices", "range", "default", "repeated"}, …],
                   "stdout": the JSON Schema of what it prints on exit 0,
                   "fails": [{"error", "when", "exit", "stdout"}, …]:
                            its precondition first, then its dry run when it

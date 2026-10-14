@@ -106,6 +106,22 @@ impl Field {
         let null = if self.nullable { "?" } else { "" };
         format!("{}{array}{null}", self.base.name())
     }
+
+    /// The range as written, either side open: `1..20`, `..20`, `0..`;
+    /// none when both are.
+    pub fn range(&self) -> Option<String> {
+        if self.lo.is_none() && self.hi.is_none() {
+            return None;
+        }
+        let side = |bound: Option<f64>| bound.map(|bound| bound.to_string()).unwrap_or_default();
+        Some(format!("{}..{}", side(self.lo), side(self.hi)))
+    }
+
+    /// Whether `size` (a number's value, a string's length, a list's count)
+    /// lies inside the range.
+    pub fn holds_size(&self, size: f64) -> bool {
+        self.lo.is_none_or(|lo| size >= lo) && self.hi.is_none_or(|hi| size <= hi)
+    }
 }
 
 /// Who computes a derived field: the app, for the screen alone, or the
