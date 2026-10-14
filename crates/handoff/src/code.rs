@@ -92,6 +92,9 @@ fn header(screen: &str, language: Language) -> String {
         Language::TypeScript => {}
         Language::Swift => out.push_str("\nimport Foundation\n"),
         Language::Kotlin => {
+            // A path through a parent already tested for null keeps its `?.`,
+            // which Kotlin warns of; generated code must build warning-free.
+            out.push_str("\n@file:Suppress(\"UNNECESSARY_SAFE_CALL\")\n");
             out.push_str("\nimport kotlinx.datetime.LocalDate\nimport kotlinx.serialization.Serializable\n")
         }
     }

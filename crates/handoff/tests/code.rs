@@ -56,6 +56,7 @@ fn swift() {
 fn kotlin() {
     let code = code("kotlin");
     for line in [
+        "@file:Suppress(\"UNNECESSARY_SAFE_CALL\")",
         "enum class Plan { monthly, yearly }",
         "val user: User? = null,",
         "val default: Boolean = false,",

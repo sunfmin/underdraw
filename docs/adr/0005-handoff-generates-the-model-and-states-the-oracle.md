@@ -31,8 +31,9 @@ it needs to build it the same way every time:
 ## Consequences
 
 - The conditions' `holds_in` is the generated functions' test: run each
-  condition over the fixtures and compare. This was done for Swift and
-  TypeScript on the airbnb draft; Kotlin has not yet been compiled.
+  condition over the fixtures and compare. This was done on the airbnb
+  draft for all three: Swift (`swiftc`), TypeScript (`tsc --strict`) and
+  Kotlin (`kotlinc -Werror`, with kotlinx.serialization and kotlinx.datetime).
 - A gap in a platform file is a finding, not an error: the rest of the answer
   is still useful while the mapping is filled in.
 - A faulty description is refused: nothing generated from it can be trusted.
