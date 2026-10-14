@@ -17,6 +17,8 @@ START HERE
                              once agreed: what to build, and what to test it against
   underdraw compare <dir> --platform ios --capture c.json
                              once built: how the running UI differs from it
+  underdraw cli <dir>        the same operations as a command-line interface,
+                             with the golden output of each fixture
 
 WHAT A COMMAND ANSWERS
   One JSON object on stdout. The exit code says which kind:
@@ -37,6 +39,12 @@ COMMANDS
                              and what each state must show
     underdraw compare <dir> --platform <name> --capture <file>
                              how the running UI, captured in one state, differs
+  For the agent building a CLI from the same operations:
+    underdraw cli <dir>      one command per operation: arguments, stdout schema,
+                             exit codes, a help draft, and golden outputs
+    underdraw compare <dir> --capture <file> --fixture <name>
+                             how the running CLI's stdout and exit code, for one
+                             command in one fixture, differ from the golden output
   For whoever installs underdraw:
     underdraw doctor         what underdraw depends on, and the fix of each finding
 

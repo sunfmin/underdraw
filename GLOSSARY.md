@@ -125,6 +125,14 @@ each shows, and which operation each calls when acted on; what a platform's
 tests assert.
 _Avoid_: snapshot
 
+**Golden output**:
+What a CLI derived from the operations must print for one command, and the
+code it exits with: in one fixture, a query's result projected from that
+fixture's data, or a command's refusal where its precondition does not
+hold; or, for a named failure, its error.
+_Avoid_: expected output, snapshot
+
 **Capture** — the elements of a running UI in one state, read by test id:
 where each is, what it says, whether it can be used; and, for each node the
-test acted on, the operations the app called.
+test acted on, the operations the app called. A CLI's capture is one command
+run in one fixture: the command line, its exit code and what it printed.

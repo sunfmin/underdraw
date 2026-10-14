@@ -2,13 +2,17 @@ WHEN
   After building a state of the screen on a platform, and after every change
   to it: is the real UI what the person agreed to? Once per state you can put
   the UI in (each fixture, each phase), at the width you ran it at.
+  Or, for a CLI derived with `underdraw cli`: once per command run in a
+  fixture, is what it printed the golden output? (A CLI'S CAPTURE, below.)
 
 WHO
-  The agent that builds the real UI, from its UI tests.
+  The agent that builds the real UI, from its UI tests; or the CLI, from its
+  tests.
 
 READS
   <path>/screen.json, tokens.json, platforms/<platform>.json, and the capture
   file. Writes nothing. Refuses a description `check` finds faults in.
+  A capture holding "exit" is a CLI's, and needs no --platform.
 
 THE CAPTURE
   The UI's elements that have a test id, read by the platform's UI test tool
@@ -67,6 +71,37 @@ ANSWERS
   }
   Exit 1 when there is a finding.
 
+A CLI'S CAPTURE
+  One command run, in one fixture (--fixture; the first when not given):
+    {
+      "command": ["delete", "b"],       the command line after the CLI's name
+      "exit": 1,                        the code it exited with
+      "stdout": "{\"error\": …}",       what it printed, as text (or the
+                                        JSON value it parsed to)
+      "failure": "notFound"             optional: the named failure the test
+                                        made the fake server fail with; then
+                                        the fixture and arguments do not matter
+    }
+  The command line is read as `underdraw cli` says the command takes it,
+  defaults filled in, and matched to the golden output of that command, in
+  that fixture, given the same parameters. Exit 2 when it is not one the
+  derived CLI takes, or has no golden output (the error lists the ones
+  there are).
+  ANSWERS
+  {
+    "screen", "command"
+    "ok":       true when it exited with the golden code and printed the
+                golden stdout
+    "state":    {"fixture"} or {"failure"}
+    "golden":   the golden output compared with
+    "checked":  {"exit", "stdout"}: how many values were compared
+    "findings": [{"at", "check", "problem"}, …], where check is
+      exit      it exited with another code; at is "exit"
+      stdout    a value differs, is missing or is extra; at is its JSON
+                path, as stdout.result[2].title
+  }
+  Exit 1 when there is a finding.
+
 HOW TO USE IT
   - In a UI test: load a fixture from `underdraw handoff`'s "fixtures", show
     the screen, dump its elements into a capture, run compare with that
@@ -75,6 +110,10 @@ HOW TO USE IT
     handoff's state lists under "calls" (and any other you wire to the data
     layer), record what the app called, and put it in "acted". A node acted
     on that is not in "acted" is not checked.
+  - In a CLI's test: give the CLI a fake server holding a fixture's data
+    (`underdraw handoff`'s "fixtures"), run each command `underdraw cli`
+    lists a golden output for, write each run as a capture, and fail on
+    exit 1.
   - Fix the UI, not the capture. When the UI is right and the description is
     not, change the description, `render` it, and show the person.
 

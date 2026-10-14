@@ -10,6 +10,7 @@ extern crate flux_alloc;
 extern crate flux_core;
 
 mod capture;
+mod cli;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -18,6 +19,7 @@ use underdraw_handoff::{Expected, handoff};
 use underdraw_layout::{Measure, Page, Rect, layout};
 
 pub use capture::{Acted, Call, Capture, Element};
+pub use cli::{CliChecked, CliComparison, compare_cli};
 
 #[derive(Debug, Serialize)]
 pub struct Comparison {
@@ -55,7 +57,7 @@ pub struct Finding {
     pub at: String,
     /// Which check found it: `present`, `absent`, `duplicate`, `text`,
     /// `enabled`, `order`, `inside`, `call-missing`, `call-extra` or
-    /// `call-with`.
+    /// `call-with`; of a CLI's run, `exit` or `stdout`.
     pub check: &'static str,
     pub problem: String,
 }
