@@ -95,6 +95,13 @@ the `data` fields its result fills (`"from"`); a parameter with a fixed set
 of choices is an enum the view model offers too.
 _Avoid_: endpoint, API call, action
 
+**Paged query**:
+A query that answers one page at a time (`"pages": "cursor"`): its result
+holds the page's rows and `next`, where the next page starts, null on the
+last page. Every call gives the cursor: null for the first page, or the
+`next` the last page answered with ("load more").
+_Avoid_: pagination, infinite scroll
+
 **UI-only action**:
 What a screen does by itself on an event, touching no domain data:
 `navigate`, `back`, `open`, `close`, `scrollTo`, `share`, `copy`, and
