@@ -27,7 +27,10 @@ if [ "$flux_status" -ne 0 ]; then
     cat "$flux_log" >&2
     exit "$flux_status"
 fi
-for crate in underdraw-format underdraw-layout underdraw-handoff; do
+# The pure crates are the ones whose Cargo.toml turns Flux on.
+pure=$(awk 'FNR == 1 { split(FILENAME, path, "/") } /^\[package\.metadata\.flux\]/ { print path[2] }' crates/*/Cargo.toml)
+for dir in $pure; do
+    crate=underdraw-$dir
     summary=$(awk -v crate="$crate" '/^verify: crate / { at = $3 } /^summary\./ && at == crate { s = $0 } END { print s }' "$flux_log")
     case "$summary" in
     *"; 0 trusted; 0 ignored."*) echo "gate: Flux: $crate: $summary" ;;

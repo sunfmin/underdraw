@@ -1,7 +1,8 @@
 //! The effect layer: reads the screen description from disk, asks the pure
-//! crates what is wrong with it (`underdraw-format`) and where everything
-//! goes (`underdraw-layout`), draws it on the GPU, and prints the answer as
-//! one JSON object.
+//! crates what is wrong with it (`underdraw-format`), where everything goes
+//! (`underdraw-layout`), what to hand off (`underdraw-handoff`) and how a
+//! capture differs (`underdraw-compare`), draws on the GPU, and prints the
+//! answer as one JSON object.
 
 mod gpu;
 mod paint;
@@ -76,6 +77,24 @@ enum Command {
         #[arg(long)]
         platform: String,
     },
+    /// How a running UI differs from the description in one state: a capture of its elements against what that state shows
+    #[command(after_long_help = include_str!("help/compare.txt"))]
+    Compare {
+        /// The screen's directory, which holds screen.json, tokens.json and platforms/<platform>.json
+        path: PathBuf,
+        /// The platform the UI runs on: the name of a file in <dir>/platforms
+        #[arg(long)]
+        platform: String,
+        /// The capture: a JSON file of the UI's elements, written as `underdraw compare --help` says
+        #[arg(long)]
+        capture: PathBuf,
+        /// The fixture whose data the UI showed; the first fixture when neither this nor --phase is given
+        #[arg(long, conflicts_with = "phase")]
+        fixture: Option<String>,
+        /// The phase the UI was in instead, such as loading
+        #[arg(long)]
+        phase: Option<String>,
+    },
     /// Read what underdraw depends on, change nothing, and name the fix of each finding
     #[command(after_long_help = include_str!("help/doctor.txt"))]
     Doctor,
@@ -108,6 +127,9 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             render(&path, Wanted { fixture, phase, width, scale, out })
         }
         Command::Handoff { path, platform } => handoff(&path, &platform),
+        Command::Compare { path, platform, capture, fixture, phase } => {
+            compare(&path, &platform, &capture, fixture, phase)
+        }
         Command::Doctor => Ok(doctor()),
     };
     match answer {
@@ -149,6 +171,55 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
+    let mapping = read_platform(&dir, platform)?;
+    match underdraw_handoff::handoff(&screen, &mapping, &tokens) {
+        Ok(handoff) => Ok(serde_json::to_value(handoff)?),
+        Err(checked) => bail!(
+            "the description has {} finding(s), so what is handed off would be wrong: run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        ),
+    }
+}
+
+fn compare(
+    path: &Path,
+    platform: &str,
+    capture: &Path,
+    fixture: Option<String>,
+    phase: Option<String>,
+) -> anyhow::Result<Value> {
+    let (screen, dir) = read(path)?;
+    let tokens = read_tokens(&dir)?;
+    let mapping = read_platform(&dir, platform)?;
+    let checked = underdraw_format::check(&screen);
+    if !checked.ok {
+        bail!(
+            "the description has {} finding(s), so it cannot say what the UI should show: run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        );
+    }
+    let (state, _) = pick(&checked, &fixture, &phase)?;
+    let text = std::fs::read_to_string(capture).with_context(|| {
+        format!(
+            "cannot read {}: pass the capture file `underdraw compare --help` describes",
+            capture.display()
+        )
+    })?;
+    let capture_value: Value = serde_json::from_str(&text)
+        .with_context(|| format!("{} is not JSON: fix the line and column named here", capture.display()))?;
+    let locale = screen.get("locale").and_then(Value::as_str);
+    let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
+    let comparison =
+        underdraw_compare::compare(&screen, &mapping, &tokens, state, &capture_value, &mut typesetter)
+            .map_err(anyhow::Error::msg)?;
+    Ok(serde_json::to_value(comparison)?)
+}
+
+/// platforms/<platform>.json beside the description; refused with the
+/// platforms there are, when it is not one of them.
+fn read_platform(dir: &Path, platform: &str) -> anyhow::Result<Value> {
     let platforms = dir.join("platforms");
     let file = platforms.join(format!("{platform}.json"));
     let text = match std::fs::read_to_string(&file) {
@@ -167,16 +238,7 @@ fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
             bail!("there is no {}: the platforms here are {known:?}", file.display());
         }
     };
-    let mapping: Value =
-        serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))?;
-    match underdraw_handoff::handoff(&screen, &mapping, &tokens) {
-        Ok(handoff) => Ok(serde_json::to_value(handoff)?),
-        Err(checked) => bail!(
-            "the description has {} finding(s), so what is handed off would be wrong: run `underdraw check {}` and fix them first",
-            checked.findings.len(),
-            path.display()
-        ),
-    }
+    serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
 }
 
 /// tokens.json beside the description, or no tokens.
@@ -209,20 +271,7 @@ fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
             path.display()
         );
     }
-    let (state, name) = match (&wanted.phase, &wanted.fixture) {
-        (Some(phase), _) if checked.phases.contains(phase) => (State::Phase(phase), phase.clone()),
-        (Some(phase), _) => bail!("there is no phase {phase:?}; the phases are {:?}", checked.phases),
-        (None, Some(fixture)) if checked.fixtures.contains(fixture) => {
-            (State::Fixture(fixture), fixture.clone())
-        }
-        (None, Some(fixture)) => {
-            bail!("there is no fixture {fixture:?}; the fixtures are {:?}", checked.fixtures)
-        }
-        (None, None) => match checked.fixtures.first() {
-            Some(first) => (State::Fixture(first), first.clone()),
-            None => bail!("the description has no fixture to draw; add one under \"fixtures\""),
-        },
-    };
+    let (state, name) = pick(&checked, &wanted.fixture, &wanted.phase)?;
     let breakpoint = Breakpoint::for_width(&tokens, wanted.width);
     let root = underdraw_format::instantiate(&screen, state, breakpoint).map_err(anyhow::Error::msg)?;
     let locale = screen.get("locale").and_then(Value::as_str);
@@ -259,6 +308,29 @@ fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
         "pixels": [pixels_wide, pixels_high],
         "nodes": page.nodes,
     }))
+}
+
+/// The state `--fixture` or `--phase` names, and its name; the first
+/// fixture when neither does.
+fn pick<'a>(
+    checked: &'a underdraw_format::Checked,
+    fixture: &'a Option<String>,
+    phase: &'a Option<String>,
+) -> anyhow::Result<(State<'a>, String)> {
+    Ok(match (phase, fixture) {
+        (Some(phase), _) if checked.phases.contains(phase) => (State::Phase(phase), phase.clone()),
+        (Some(phase), _) => bail!("there is no phase {phase:?}; the phases are {:?}", checked.phases),
+        (None, Some(fixture)) if checked.fixtures.contains(fixture) => {
+            (State::Fixture(fixture), fixture.clone())
+        }
+        (None, Some(fixture)) => {
+            bail!("there is no fixture {fixture:?}; the fixtures are {:?}", checked.fixtures)
+        }
+        (None, None) => match checked.fixtures.first() {
+            Some(first) => (State::Fixture(first), first.clone()),
+            None => bail!("the description has no fixture; add one under \"fixtures\""),
+        },
+    })
 }
 
 /// What underdraw depends on. Checking needs nothing outside the files it is
