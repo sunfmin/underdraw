@@ -12,6 +12,7 @@ mod conditions;
 mod expr;
 mod field;
 mod fixture;
+pub mod icons;
 mod instance;
 mod kinds;
 mod model;

@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 
+use parley::fontique::Blob;
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontFamily, FontWeight, Language, Layout, LayoutContext,
     LineHeight, StyleProperty,
@@ -24,6 +25,20 @@ fn families(locale: Option<&str>) -> &'static str {
         "system-ui, Hiragino Sans GB, Heiti SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif"
     }
 }
+
+/// The fonts an icon is set in (underdraw_format::icons): on their own, so
+/// that its line takes their heights and the icon sits in the middle of it.
+const ICON_FAMILIES: &str = "Material Symbols, Material Symbols Fill";
+
+/// Whether `text` is icons only: every character one the icon fonts hold,
+/// in the Private Use Areas, where no other font puts anything.
+fn is_icons(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| matches!(c, '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}'))
+}
+
+/// Material Symbols, outlined and solid, made by scripts/material-symbols.py.
+const ICON_FONTS: [&[u8]; 2] =
+    [include_bytes!("../fonts/material-symbols.ttf"), include_bytes!("../fonts/material-symbols-fill.ttf")];
 
 pub struct Typesetter {
     fonts: FontContext,
@@ -47,13 +62,18 @@ impl Typesetter {
             })?),
             None => None,
         };
-        Ok(Typesetter { fonts: FontContext::new(), layouts: LayoutContext::new(), locale, families })
+        let mut fonts = FontContext::new();
+        for font in ICON_FONTS {
+            fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(font)), None);
+        }
+        Ok(Typesetter { fonts, layouts: LayoutContext::new(), locale, families })
     }
 
     /// `text` in `font`, broken into lines no wider than `max_width`.
     pub fn set(&mut self, text: &str, font: Font, max_width: Option<f32>, align: Align) -> Layout<()> {
         let mut builder = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Borrowed(self.families))));
+        let families = if is_icons(text) { ICON_FAMILIES } else { self.families };
+        builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Borrowed(families))));
         builder.push_default(StyleProperty::FontSize(font.size));
         builder.push_default(StyleProperty::Locale(self.locale));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(f32::from(font.weight))));

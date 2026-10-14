@@ -284,6 +284,9 @@ impl Walk<'_> {
             Ok(placeholders) => placeholders,
             Err(problem) => return self.findings.add(at, &problem),
         };
+        if placeholders.is_empty() && crate::icons::is_icon_key(key) && !crate::icons::known(text) {
+            self.findings.add(at, &crate::icons::unknown(text));
+        }
         let whole =
             placeholders.len() == 1 && text.starts_with('{') && text.ends_with('}') && !TEXT.contains(&key);
         for placeholder in placeholders {

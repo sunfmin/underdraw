@@ -39,9 +39,14 @@ impl Tokens<'_> {
         found.map(|n| n as f32)
     }
 
-    /// The font `value` names (`font.subhead`); `or`, a font's token name,
-    /// when it names none.
+    /// The font `value` names (`font.subhead`), or the body font at the
+    /// size `value` gives (`24`, as tall as its line: an icon in its square);
+    /// `or`, a font's token name, when it names none.
     pub(crate) fn font(&self, value: Option<&Value>, or: &str) -> Font {
+        if let Some(size) = value.and_then(Value::as_f64) {
+            let size = size as f32;
+            return Font { size, weight: BODY.weight, line_height: size };
+        }
         let name = value.and_then(Value::as_str).unwrap_or(or);
         let Some(font) = self.get(name) else {
             return BODY;

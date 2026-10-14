@@ -1,10 +1,5 @@
 {
   "$comment": "What each kind looks like in a wireframe: underdraw's defaults. A project's kinds.json adds kinds and replaces these by name. The look vocabulary is docs/format/kinds.md.",
-  "icons": {
-    "back": "‹", "close": "×", "share": "↑", "heart": "♡", "heart.fill": "♥",
-    "chevron.right": "›", "warning": "!", "minus": "−", "plus": "+", "star": "★", "": "",
-    "*.fill": "◆", "*": "◇"
-  },
   "kinds": {
     "Screen":     { "look": { "box": "column", "frame": true, "fill": "paper", "children": ["$children"] } },
     "Scroll":     { "look": { "box": "column", "frame": true, "children": ["$children"] } },
@@ -57,13 +52,13 @@
       }
     },
     "Glyph": {
-      "doc": "An icon's stand-in character in the middle of a square of size.",
+      "doc": "An icon in the middle of a square of size, as big as the square unless font says a smaller size.",
       "look": { "box": "row", "justify": "center", "size": "{size|or:24}", "shrink": 0, "fill": "{background}", "radius": 999,
-                "children": [ { "text": "{icon|glyph}", "font": "{font|or:font.subhead}", "align": "center" } ] }
+                "children": [ { "text": "{icon|glyph}", "font": { "cases": [ { "if": "font", "then": "{font}" }, { "else": "{size|or:24}" } ] }, "align": "center" } ] }
     },
     "IconButton": {
       "look": { "box": "row", "justify": "center", "size": 40, "shrink": 0, "radius": 20, "fill": "paper", "stroke": "line",
-                "children": [ { "text": "{icon|glyph}", "font": "font.subhead", "align": "center" } ] }
+                "children": [ { "text": "{icon|glyph}", "font": 24, "align": "center" } ] }
     },
     "Avatar":  { "look": { "self": "start", "size": "{size|or:40}", "fill": "fill", "radius": 999 } },
     "Divider": { "look": { "height": 1, "fill": "line" } },
@@ -82,7 +77,7 @@
     },
     "EmptyState": {
       "look": { "box": "column", "gap": 8, "items": "center", "padding": 24, "children": [
-        { "kind": "Glyph", "icon": "{icon}", "size": 48, "font": "font.heading", "background": "fill" },
+        { "kind": "Glyph", "icon": "{icon}", "size": 48, "font": 28, "background": "fill" },
         { "text": "{title}", "font": "font.subhead", "align": "center" },
         { "if": "detail", "text": "{detail}", "font": "font.body", "ink": "muted", "align": "center" },
         "$children" ] }
@@ -128,9 +123,9 @@
       "look": { "box": "row", "justify": "between", "padding": [8, 12], "children": [
         { "text": "{label}", "font": "font.body" },
         { "box": "row", "gap": 12, "children": [
-          { "kind": "Glyph", "icon": "minus", "size": 32, "font": "font.body" },
+          { "kind": "Glyph", "icon": "remove", "size": 32, "font": 20 },
           { "text": "{value}", "font": "font.body" },
-          { "kind": "Glyph", "icon": "plus", "size": 32, "font": "font.body" } ] } ] }
+          { "kind": "Glyph", "icon": "add", "size": 32, "font": 20 } ] } ] }
     },
     "PriceBreakdown": {
       "doc": "Lines of a price: each of lines and then total, named, beside a gray amount; gray bars for the names too when lines are not given.",

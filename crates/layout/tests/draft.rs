@@ -167,10 +167,39 @@ fn texts(page: &Page) -> Vec<&str> {
 fn a_filled_icon_reads_apart_from_its_outline() {
     let page = tiny(serde_json::json!([
         { "id": "open", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
-        { "id": "done", "kind": "ListItem", "leadingIcon": "checkmark.circle.fill", "title": "b" }
+        { "id": "done", "kind": "ListItem", "leadingIcon": "check_circle.fill", "title": "b" }
     ]));
     let texts = texts(&page);
-    assert!(texts.contains(&"◇") && texts.contains(&"◆"), "{texts:?}");
+    // Material Symbols' circle (U+EF4A) outlined, and its check_circle
+    // (U+F0BE) solid, moved to U+F0000 + it where the solid font has it.
+    assert!(texts.contains(&"\u{ef4a}") && texts.contains(&"\u{ff0be}"), "{texts:?}");
+}
+
+#[test]
+fn an_icon_is_as_big_as_its_square() {
+    let page = tiny(serde_json::json!([
+        { "id": "row", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
+        { "id": "big", "kind": "Glyph", "icon": "flight", "size": 48 }
+    ]));
+    let size = |glyph: &str| {
+        page.draws.iter().find_map(|d| match d {
+            Draw::Text { text, font, .. } if text == glyph => Some(font.size),
+            _ => None,
+        })
+    };
+    // Material Symbols' circle (U+EF4A) in ListItem's 24 square, and flight
+    // (U+E539) in a 48 one.
+    assert_eq!((size("\u{ef4a}"), size("\u{e539}")), (Some(24.0), Some(48.0)));
+}
+
+#[test]
+fn a_nodes_padding_takes_sides_as_a_looks_does() {
+    let page = tiny(serde_json::json!([
+        { "id": "body", "kind": "Stack", "padding": [0, "space.4"], "children": [
+            { "id": "line", "kind": "Text", "text": "a" } ] }
+    ]));
+    let (body, line) = (placed(&page, "body").rect, placed(&page, "line").rect);
+    assert_eq!((line.x, line.width, line.y), (16.0, 390.0 - 32.0, body.y), "16 either side, none above");
 }
 
 #[test]

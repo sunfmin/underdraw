@@ -189,45 +189,56 @@
         "kind": "Divider"
       },
       {
-        "id": "todo-empty",
-        "kind": "EmptyState",
-        "if": "!hasTodos",
-        "icon": "checklist",
-        "title": "还没有待办",
-        "detail": "在上面输入一项，点「添加」。"
-      },
-      {
-        "id": "todo-list",
-        "kind": "List",
-        "if": "hasTodos",
-        "each": "todos",
-        "item": {
-          "id": "todo-{index}",
-          "kind": "ListItem",
-          "title": "{item.title}",
-          "leadingIcon": {
-            "cases": [
-              {
-                "if": "item.done",
-                "then": "checkmark.circle.fill"
-              },
-              {
-                "else": "circle"
-              }
-            ]
+        "id": "todo-body",
+        "kind": "Stack",
+        "padding": [
+          0,
+          "space.4"
+        ],
+        "gap": "space.2",
+        "children": [
+          {
+            "id": "todo-empty",
+            "kind": "EmptyState",
+            "if": "!hasTodos",
+            "icon": "checklist",
+            "title": "还没有待办",
+            "detail": "在上面输入一项，点「添加」。"
           },
-          "on": {
-            "tap": {
-              "toggle": "item.done"
+          {
+            "id": "todo-list",
+            "kind": "List",
+            "if": "hasTodos",
+            "each": "todos",
+            "item": {
+              "id": "todo-{index}",
+              "kind": "ListItem",
+              "title": "{item.title}",
+              "leadingIcon": {
+                "cases": [
+                  {
+                    "if": "item.done",
+                    "then": "check_circle.fill"
+                  },
+                  {
+                    "else": "circle"
+                  }
+                ]
+              },
+              "on": {
+                "tap": {
+                  "toggle": "item.done"
+                }
+              }
             }
+          },
+          {
+            "id": "clear-completed",
+            "kind": "Link",
+            "if": "hasCompleted",
+            "text": "清除已完成（{summary.completed}）"
           }
-        }
-      },
-      {
-        "id": "clear-completed",
-        "kind": "Link",
-        "if": "hasCompleted",
-        "text": "清除已完成（{summary.completed}）"
+        ]
       }
     ]
   },
