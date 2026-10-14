@@ -12,7 +12,7 @@ mod nodes;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Checked, Finding, Model, Node, State, instantiate};
+use underdraw_format::{Breakpoint, Checked, Condition, Finding, Model, Node, State};
 
 pub use code::Language;
 pub use json_schema::json_schema;
@@ -30,7 +30,8 @@ pub struct Handoff {
     pub rules: Map<String, Value>,
     /// The generated source file: the view model's types and the conditions.
     pub code: Code,
-    pub conditions: Vec<Meaning>,
+    /// Each condition and the fixtures it holds in.
+    pub conditions: Vec<Condition>,
     pub tokens: Vec<TokenName>,
     pub nodes: Vec<Spec>,
     pub hidden: Vec<Hidden>,
@@ -46,14 +47,6 @@ pub struct Handoff {
 pub struct Code {
     pub file: String,
     pub text: String,
-}
-
-/// A condition: what it means, and the fixtures it holds in.
-#[derive(Debug, Serialize)]
-pub struct Meaning {
-    pub name: String,
-    pub label: String,
-    pub holds_in: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -136,8 +129,7 @@ pub fn handoff(
     if let Some(root) = screen.get("root") {
         walk.node(root, None, "root");
     }
-    let phases = phases(screen);
-    for phase in &phases {
+    for phase in &model.checked.phases {
         if let Some(tree) = screen.pointer(&format!("/phases/{phase}")) {
             walk.node(tree, None, "phase");
         }
@@ -151,7 +143,7 @@ pub fn handoff(
         }
     }
     let hidden_ids = ids(&walk.hidden);
-    let states = states(screen, &model, &phases, &hidden_ids);
+    let states = states(&model, &hidden_ids);
     let mut fixtures = Map::new();
     for (name, data) in &model.fixtures {
         fixtures.insert(name.clone(), data.clone());
@@ -164,14 +156,14 @@ pub fn handoff(
     }
     let root = code::root_name(&model);
     Ok(Handoff {
-        screen: model.screen.clone(),
+        screen: model.screen().to_string(),
         platform: platform.clone(),
         language: language_name,
         ok: findings.is_empty(),
         findings,
         rules,
         code: Code { file: language.file(&root), text: code::file(&model, language) },
-        conditions: meanings(&model),
+        conditions: model.checked.conditions.clone(),
         tokens: token_names(tokens, pattern.unwrap_or("{group}.{name}"), language),
         nodes: walk.specs,
         hidden: walk.hidden,
@@ -185,18 +177,6 @@ fn text(value: &Value, key: &str) -> String {
     value.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
-fn phases(screen: &Value) -> Vec<String> {
-    let mut names = Vec::new();
-    if let Some(Value::Object(phases)) = screen.get("phases") {
-        for name in phases.keys() {
-            if !name.starts_with('$') {
-                names.push(name.clone());
-            }
-        }
-    }
-    names
-}
-
 fn ids(hidden: &[Hidden]) -> Vec<String> {
     let mut ids = Vec::new();
     for node in hidden {
@@ -205,33 +185,16 @@ fn ids(hidden: &[Hidden]) -> Vec<String> {
     ids
 }
 
-fn meanings(model: &Model) -> Vec<Meaning> {
-    let mut meanings = Vec::new();
-    for definition in model.conditions() {
-        let mut holds_in = Vec::new();
-        for (name, data) in &model.fixtures {
-            if model.conditions.holds(&definition.name, data) {
-                holds_in.push(name.clone());
-            }
-        }
-        meanings.push(Meaning { name: definition.name.clone(), label: definition.label.clone(), holds_in });
-    }
-    meanings
-}
-
 /// Each fixture, then each phase, at each breakpoint.
-fn states(screen: &Value, model: &Model, phases: &[String], hidden: &[String]) -> Vec<Expected> {
-    let mut wanted = Vec::new();
-    for (name, _) in &model.fixtures {
-        wanted.push((State::Fixture(name), object([("fixture", Value::from(name.as_str()))])));
-    }
-    for name in phases {
-        wanted.push((State::Phase(name), object([("phase", Value::from(name.as_str()))])));
-    }
+fn states(model: &Model, hidden: &[String]) -> Vec<Expected> {
     let mut expected = Vec::new();
-    for (state, named) in wanted {
+    for state in model.states() {
+        let named = match state {
+            State::Fixture(name) => object([("fixture", Value::from(name))]),
+            State::Phase(name) => object([("phase", Value::from(name))]),
+        };
         for breakpoint in Breakpoint::ALL {
-            let Ok(root) = instantiate(screen, state, breakpoint) else {
+            let Ok(root) = model.instantiate(state, breakpoint) else {
                 continue;
             };
             let mut present = Vec::new();

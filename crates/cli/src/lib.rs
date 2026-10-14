@@ -192,7 +192,9 @@ fn schema(path: &Path) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let kinds = read_kinds(&dir)?;
     match underdraw_format::model(&screen, kinds.as_ref()) {
-        Ok(model) => Ok(json!({ "screen": model.screen, "schema": underdraw_handoff::json_schema(&model) })),
+        Ok(model) => {
+            Ok(json!({ "screen": model.screen(), "schema": underdraw_handoff::json_schema(&model) }))
+        }
         Err(checked) => bail!(
             "the description has {} finding(s), so a schema derived from it would be wrong: run `underdraw check {}` and fix them first",
             checked.findings.len(),

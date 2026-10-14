@@ -90,3 +90,26 @@ fn a_phase_is_its_own_tree() {
     assert!(instantiate(&draft(), State::Phase("nope"), Breakpoint::Compact).is_err());
     assert!(instantiate(&draft(), State::Fixture("nope"), Breakpoint::Compact).is_err());
 }
+
+#[test]
+fn a_model_shows_each_fixture_then_each_phase_as_instantiate_does() {
+    let screen = draft();
+    let model = underdraw_format::model(&screen, None).unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let names: Vec<String> = model.states().iter().map(|state| format!("{state:?}")).collect();
+    assert_eq!(
+        names,
+        [
+            "Fixture(\"default\")",
+            "Fixture(\"no-dates\")",
+            "Fixture(\"unavailable\")",
+            "Fixture(\"new-listing\")",
+            "Phase(\"loading\")",
+            "Phase(\"error\")"
+        ]
+    );
+    for state in model.states() {
+        for breakpoint in Breakpoint::ALL {
+            assert_eq!(model.instantiate(state, breakpoint), instantiate(&screen, state, breakpoint));
+        }
+    }
+}

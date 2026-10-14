@@ -34,7 +34,7 @@ impl Language {
 
 /// The name of the root type: the screen's name and `Model`.
 pub fn root_name(model: &Model) -> String {
-    format!("{}Model", model.screen)
+    format!("{}Model", model.screen())
 }
 
 /// The whole file: a header, the root type, each named type, then the
@@ -42,7 +42,7 @@ pub fn root_name(model: &Model) -> String {
 pub fn file(model: &Model, language: Language) -> String {
     let root = root_name(model);
     let mut out = String::new();
-    out.push_str(&header(&model.screen, language));
+    out.push_str(&header(model.screen(), language));
     out.push_str(&object(language, &root, &model.schema.roots()));
     let mut money = false;
     for (name, shape) in model.schema.types() {

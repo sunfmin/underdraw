@@ -2,7 +2,7 @@
 //! overlay a picture would cut, which only laying each state out can show.
 
 use serde_json::Value;
-use underdraw_format::{Breakpoint, Checked, Finding, State, instantiate};
+use underdraw_format::{Breakpoint, Checked, Finding, Model, State};
 
 use crate::{Measure, layout};
 
@@ -20,22 +20,18 @@ pub fn check(
     kinds: Option<&Value>,
     measure: &mut dyn Measure,
 ) -> Result<Checked, String> {
-    let mut checked = underdraw_format::check(screen, kinds);
-    if !checked.ok {
-        return Ok(checked);
-    }
-    let states = checked
-        .fixtures
-        .iter()
-        .map(|name| ("fixture", State::Fixture(name)))
-        .chain(checked.phases.iter().map(|name| ("phase", State::Phase(name))));
+    let model = match Model::read(screen, underdraw_format::check(screen, kinds)) {
+        Ok(model) => model,
+        Err(checked) => return Ok(*checked),
+    };
     let mut cut = Vec::new();
-    for (what, state) in states {
-        let name = match state {
-            State::Fixture(name) | State::Phase(name) => name,
+    for state in model.states() {
+        let (what, name) = match state {
+            State::Fixture(name) => ("fixture", name),
+            State::Phase(name) => ("phase", name),
         };
         for width in CHECKED_WIDTHS {
-            let root = instantiate(screen, state, Breakpoint::for_width(tokens, width))?;
+            let root = model.instantiate(state, Breakpoint::for_width(tokens, width))?;
             let page = layout(&root, tokens, kinds, width as f32, measure)?;
             for id in page.cut {
                 cut.push(Finding {
@@ -47,6 +43,7 @@ pub fn check(
             }
         }
     }
+    let mut checked = model.checked;
     if !cut.is_empty() {
         checked.ok = false;
         checked.conditions.clear();

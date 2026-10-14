@@ -32,7 +32,8 @@ pub struct Checked {
     pub findings: Vec<Finding>,
 }
 
-#[derive(Debug, Serialize)]
+/// A condition: what it means, and the fixtures it holds in.
+#[derive(Clone, Debug, Serialize)]
 pub struct Condition {
     pub name: String,
     pub label: String,

@@ -49,17 +49,30 @@ const STRUCTURE: [&str; 11] =
 
 /// The screen `screen` in `state`, at `breakpoint`. The description is
 /// expected to have passed `check`; what it cannot make sense of is an error.
+/// A screen read more than once is better read once: `Model::instantiate`.
 pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Result<Node, String> {
     let mut ignored = Findings::default();
     let schema = Schema::read(screen, &mut ignored);
     let conditions = Conditions::read(screen, &schema, &mut ignored);
+    let fixtures = fixture::read(screen, &schema, &mut ignored);
+    build(screen, &conditions, &fixtures, state, breakpoint)
+}
+
+/// The screen `screen` in `state`, at `breakpoint`, with its conditions and
+/// fixtures already read.
+pub(crate) fn build(
+    screen: &Value,
+    conditions: &Conditions,
+    fixtures: &[(String, Value)],
+    state: State,
+    breakpoint: Breakpoint,
+) -> Result<Node, String> {
     let (tree, data) = match state {
         State::Fixture(name) => {
-            let fixtures = fixture::read(screen, &schema, &mut ignored);
             let mut found = None;
             for (fixture, data) in fixtures {
                 if fixture == name {
-                    found = Some(data);
+                    found = Some(data.clone());
                 }
             }
             let data = found.ok_or_else(|| format!("there is no fixture {name}"))?;
@@ -76,7 +89,7 @@ pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Resu
         }
     };
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
-    let fill = Fill { conditions: &conditions, components: &components, breakpoint };
+    let fill = Fill { conditions, components: &components, breakpoint };
     let mut built = fill.node(tree, &data, "root")?;
     built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
 }
