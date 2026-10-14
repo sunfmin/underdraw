@@ -43,10 +43,22 @@ fn each_event_names_the_operation_it_calls() {
         operations[1],
         json!({
             "name": "deleteDoc", "does": "command", "doc": "Deletes a document for everyone in the team",
-            "params": { "id": "string" }, "requires": "canDelete", "destructive": true,
+            "params": { "id": "string" }, "requires": "canDelete", "destructive": true, "bulk": "deleteDocs",
             "fails": { "notFound": "the document is already gone", "forbidden": "the person no longer owns it" }
         })
     );
+    assert_eq!(
+        operations[2],
+        json!({
+            "name": "deleteDocs", "does": "command",
+            "doc": "Deletes a document for everyone in the team: each of several, one by one",
+            "params": { "ids": "string[]" }, "requires": "canDelete", "destructive": true, "bulkOf": "deleteDoc",
+            "fails": { "notFound": "the document is already gone", "forbidden": "the person no longer owns it" }
+        }),
+        "the bulk form, derived: many ids, and each item's precondition and failures"
+    );
+    assert_eq!(calls("confirm-delete-selected-confirm")[0].1.as_deref(), Some("deleteDocs"));
+    assert_eq!(calls("delete-selected")[0].0, "open", "the toolbar's delete only opens its confirmation");
     assert_eq!(operations[0]["result"], "Doc[]");
     assert_eq!(
         operations[0]["params"],
@@ -58,7 +70,7 @@ fn each_event_names_the_operation_it_calls() {
         json!(["docs[].doc"]),
         "the field the query fills, through the wrapper"
     );
-    assert_eq!(operations[2].get("fills"), None, "a command fills no field");
+    assert_eq!(operations[3].get("fills"), None, "a command fills no field");
 }
 
 #[test]
@@ -84,4 +96,9 @@ fn each_state_expects_the_calls_its_nodes_make() {
     let sorting = &state("sort-open").calls;
     assert_eq!(sorting["sort-title"][0]["with"], json!({ "sort": "title" }));
     assert!(!state("default").calls.contains_key("doc-a-delete"), "a closed menu's items are not present");
+    assert_eq!(
+        state("confirm-delete-selected").calls["confirm-delete-selected-confirm"],
+        json!([{ "on": "tap", "operation": "deleteDocs", "with": { "ids": ["c", "e"] } }]),
+        "the bulk form, given the selection"
+    );
 }

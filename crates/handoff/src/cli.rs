@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Base, Does, Field, Model, Operation, Shape};
+use underdraw_format::{Base, BulkOf, Does, Field, Model, Operation, Shape};
 
 use crate::json_schema::{MONEY, def, money, object_of};
 use crate::{is_false, kebab, object};
@@ -45,7 +45,13 @@ pub struct CommandSpec {
     /// and says what it would do, as a dry run.
     #[serde(skip_serializing_if = "is_false")]
     pub destructive: bool,
-    /// `list [--sort <updated|created|title|owner>]`, `delete <id> --yes`.
+    /// For a bulk form: the operation it does for each id it is given. It
+    /// answers with one result per item, and exits 0 only when each was
+    /// done.
+    #[serde(rename = "bulkOf", skip_serializing_if = "Option::is_none")]
+    pub bulk_of: Option<String>,
+    /// `list [--sort <updated|created|title|owner>]`, `delete <id> --yes`,
+    /// `delete-docs <ids>… --yes`.
     pub usage: String,
     pub args: Vec<Arg>,
     /// What it prints on success: a JSON Schema of `{"result": …}`, or of
@@ -53,14 +59,16 @@ pub struct CommandSpec {
     pub stdout: Value,
     /// Every way it ends without its result: its precondition first, then
     /// its dry run without `--yes` when it is destructive, then each named
-    /// failure.
+    /// failure. A bulk form's precondition and named failures are an
+    /// item's: exit 2, the others still tried.
     pub fails: Vec<Failure>,
     /// A draft of `<command> --help`.
     pub help: String,
 }
 
 /// One parameter, as a positional argument (written without a default) or
-/// a flag (with one, or nullable, or a list).
+/// a flag (with one, or nullable, or a list); a bulk form's ids are
+/// positional, as many as are given.
 #[derive(Debug, Serialize)]
 pub struct Arg {
     pub param: String,
@@ -74,7 +82,8 @@ pub struct Arg {
     pub choices: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
-    /// A list: the flag is given once per value.
+    /// A list: the flag is given once per value; positional, each value
+    /// is one argument.
     #[serde(skip_serializing_if = "is_false")]
     pub repeated: bool,
     #[serde(skip)]
@@ -93,7 +102,8 @@ pub struct Failure {
 }
 
 /// What a faithful CLI prints for one command: in one fixture, given
-/// `args`, or in one named failure, whatever it is given.
+/// `args`, or in one named failure, whatever it is given. A bulk form's
+/// named failure is in one fixture, given `args`: the first item fails.
 #[derive(Debug, Serialize)]
 pub struct Golden {
     pub command: String,
@@ -130,7 +140,7 @@ pub fn cli(model: &Model) -> Interface {
     called(model, &commands, &mut golden);
     for spec in &commands {
         for failure in &spec.fails {
-            if failure.exit == FAILED {
+            if failure.exit == FAILED && spec.bulk_of.is_none() {
                 golden.push(Golden {
                     command: spec.name.clone(),
                     fixture: None,
@@ -148,12 +158,17 @@ pub fn cli(model: &Model) -> Interface {
 }
 
 /// The first word of `operation`'s name, unless another operation starts
-/// with it too; then the whole name, in kebab case.
+/// with it too; then the whole name, in kebab case. A bulk form's is always
+/// its whole name (`delete-docs`), and leaves the name of the operation it
+/// is derived from as it was (`delete`).
 fn name(operation: &Operation, all: &[Operation]) -> String {
+    if operation.bulk_of.is_some() {
+        return kebab(&operation.name);
+    }
     let word = first_word(&operation.name);
     let mut sharing: u32 = 0;
     for other in all {
-        if first_word(&other.name) == word {
+        if other.bulk_of.is_none() && first_word(&other.name) == word {
             sharing = sharing.saturating_add(1);
         }
     }
@@ -172,11 +187,13 @@ fn first_word(name: &str) -> String {
 }
 
 fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
+    let bulk = operation.bulk_of.as_ref();
     let mut args = Vec::new();
     for (param, field) in &operation.params {
         let choices = model.schema.members(field).map(<[String]>::to_vec).unwrap_or_default();
         let default = field.default.clone().filter(|default| !default.is_null());
-        let positional = default.is_none() && !field.nullable && !field.array;
+        let ids = bulk.is_some_and(|of| &of.keys == param);
+        let positional = ids || (default.is_none() && !field.nullable && !field.array);
         args.push(Arg {
             param: param.clone(),
             flag: if positional { None } else { Some(format!("--{}", kebab(param))) },
@@ -196,11 +213,19 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
             }
         }
         let error = format!("requires {condition}");
-        fails.push(Failure {
-            stdout: object([("error", Value::from(error.as_str()))]),
-            error,
-            when: format!("refused before it is tried: \"{label}\" does not hold"),
-            exit: REFUSED,
+        fails.push(match bulk {
+            None => Failure {
+                stdout: object([("error", Value::from(error.as_str()))]),
+                error,
+                when: format!("refused before it is tried: \"{label}\" does not hold"),
+                exit: REFUSED,
+            },
+            Some(of) => Failure {
+                stdout: item_failed(of, &error),
+                error,
+                when: format!("an item \"{label}\" does not hold for is refused; the others are still tried"),
+                exit: FAILED,
+            },
         });
     }
     if operation.destructive {
@@ -218,16 +243,22 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
     for (failure, when) in &operation.fails {
         fails.push(Failure {
             error: failure.clone(),
-            when: when.clone(),
+            when: match bulk {
+                None => when.clone(),
+                Some(_) => format!("{when}, for an item; the others are still tried"),
+            },
             exit: FAILED,
-            stdout: object([("error", Value::from(failure.as_str()))]),
+            stdout: match bulk {
+                None => object([("error", Value::from(failure.as_str()))]),
+                Some(of) => item_failed(of, failure),
+            },
         });
     }
     let mut usage = usage(name, &args);
     if operation.destructive {
         usage.push_str(&format!(" {YES}"));
     }
-    let stdout = stdout(model, operation.result.as_ref());
+    let stdout = stdout(model, operation, &fails);
     let help = help(operation, &usage, &args, &fails);
     CommandSpec {
         name: name.to_string(),
@@ -235,6 +266,7 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
         does: operation.does.name().to_string(),
         doc: operation.doc.clone(),
         destructive: operation.destructive,
+        bulk_of: bulk.map(|of| of.operation.clone()),
         usage,
         args,
         stdout,
@@ -259,12 +291,38 @@ fn dry_run(operation: &Operation, with: Value) -> Value {
     ])
 }
 
-/// `delete <id>`, `list [--sort <updated|created>]`.
+/// What a bulk form prints when one item failed with `error`: that item's
+/// result, standing for every item's.
+fn item_failed(of: &BulkOf, error: &str) -> Value {
+    let item =
+        object([(of.key.as_str(), Value::from(format!("<{}>", of.key))), ("error", Value::from(error))]);
+    object([("results", Value::Array(vec![item]))])
+}
+
+/// What a bulk form prints for `ids`, each done but the one at `failed`,
+/// which failed with the error given.
+fn results(of: &BulkOf, ids: &[Value], failed: Option<(usize, &str)>) -> Value {
+    let mut items = Vec::new();
+    for (index, id) in ids.iter().enumerate() {
+        let mut item = Map::new();
+        item.insert(of.key.clone(), id.clone());
+        if let Some((at, error)) = failed
+            && at == index
+        {
+            item.insert("error".to_string(), Value::from(error));
+        }
+        items.push(Value::Object(item));
+    }
+    object([("results", Value::Array(items))])
+}
+
+/// `delete <id>`, `list [--sort <updated|created>]`, `delete-docs <ids>…`.
 fn usage(name: &str, args: &[Arg]) -> String {
     let mut usage = name.to_string();
     for arg in args {
         let value = if arg.choices.is_empty() { arg.param.clone() } else { arg.choices.join("|") };
         match &arg.flag {
+            None if arg.repeated => usage.push_str(&format!(" <{value}>…")),
             None => usage.push_str(&format!(" <{value}>")),
             Some(flag) => {
                 let more = if arg.repeated { " …" } else { "" };
@@ -276,15 +334,56 @@ fn usage(name: &str, args: &[Arg]) -> String {
 }
 
 /// The schema of `{"result": <result>}`, with every type the result
-/// reaches and no other: so none that holds view state.
-fn stdout(model: &Model, result: Option<&Field>) -> Value {
+/// reaches and no other: so none that holds view state. A bulk form's is
+/// of `{"results": [<one per item>]}`, each item its key, its result when
+/// it has one, and the error it failed with, one of `fails`.
+fn stdout(model: &Model, operation: &Operation, fails: &[Failure]) -> Value {
+    let result = operation.result.as_ref();
     let mut fields = Vec::new();
     if let Some(result) = result {
         fields.push(("result".to_string(), Field { doc: None, derived: None, from: None, ..result.clone() }));
     }
+    let body = match &operation.bulk_of {
+        None => object_of(&fields),
+        Some(of) => {
+            let key = operation
+                .params
+                .iter()
+                .find(|(param, _)| param == &of.keys)
+                .map(|(_, field)| field.element());
+            let key = Field { lo: None, hi: None, ..key.unwrap_or(Field::of(Base::String)) };
+            let mut item = object_of(&[(of.key.clone(), key)]);
+            let mut errors = Vec::new();
+            for failure in fails {
+                if failure.exit == FAILED {
+                    errors.push(Value::from(failure.error.as_str()));
+                }
+            }
+            if let Some(Value::Object(properties)) = item.get_mut("properties") {
+                if let Value::Object(result) = object_of(&fields)
+                    && let Some(Value::Object(answered)) = result.get("properties")
+                {
+                    properties.extend(answered.clone());
+                }
+                properties.insert(
+                    "error".to_string(),
+                    object([("type", Value::from("string")), ("enum", Value::Array(errors))]),
+                );
+            }
+            object([
+                ("type", Value::from("object")),
+                (
+                    "properties",
+                    object([("results", object([("type", Value::from("array")), ("items", item)]))]),
+                ),
+                ("required", Value::from(vec!["results"])),
+                ("additionalProperties", Value::Bool(false)),
+            ])
+        }
+    };
     let mut schema = Map::new();
     schema.insert("$schema".to_string(), Value::from("https://json-schema.org/draft/2020-12/schema"));
-    if let Value::Object(body) = object_of(&fields) {
+    if let Value::Object(body) = body {
         schema.extend(body);
     }
     let mut reached: Vec<String> = Vec::new();
@@ -342,7 +441,11 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
                 None => format!("<{}>", arg.param),
                 Some(flag) => format!("{flag} <{}>", arg.param),
             };
-            let mut said = arg.type_name.clone();
+            let mut said = if arg.repeated && arg.flag.is_none() {
+                arg.field.element().describe()
+            } else {
+                arg.type_name.clone()
+            };
             if !arg.choices.is_empty() {
                 said = format!("one of {}", arg.choices.join(", "));
             }
@@ -350,7 +453,7 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
                 said.push_str(&format!("; default {}", text_of(default)));
             }
             if arg.repeated {
-                said.push_str("; give it once per value");
+                said.push_str(if arg.flag.is_some() { "; give it once per value" } else { "; one or more" });
             }
             help.push_str(&format!("  {written}  {said}\n"));
         }
@@ -360,9 +463,18 @@ fn help(operation: &Operation, usage: &str, args: &[Arg], fails: &[Failure]) -> 
             ));
         }
     }
-    let answer = match &operation.result {
-        Some(result) => format!("{{\"result\": {}}}", result.describe()),
-        None => "{}".to_string(),
+    let answer = match (&operation.bulk_of, &operation.result) {
+        (Some(of), Some(result)) => format!(
+            "{{\"results\": [{{\"{}\", \"result\": {}}}, …]}}, one per item in the order given, each done; exit 2 when any was not, it with \"error\"",
+            of.key,
+            result.describe()
+        ),
+        (Some(of), None) => format!(
+            "{{\"results\": [{{\"{}\"}}, …]}}, one per item in the order given, each done; exit 2 when any was not, it with \"error\"",
+            of.key
+        ),
+        (None, Some(result)) => format!("{{\"result\": {}}}", result.describe()),
+        (None, None) => "{}".to_string(),
     };
     help.push_str(&format!("\nANSWERS\n  One JSON object on stdout. Exit 0: {answer}\n"));
     for failure in fails {
@@ -470,8 +582,10 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                 let Ok(with) = spec.with_args(&args) else {
                     continue;
                 };
-                let refused =
-                    operation.requires.as_ref().is_some_and(|condition| !holds(model, condition, fixture));
+                // A bulk form's precondition is each item's: the fixture's
+                // selection is of items it holds for.
+                let refused = operation.bulk_of.is_none()
+                    && operation.requires.as_ref().is_some_and(|condition| !holds(model, condition, fixture));
                 // A destructive command is run both ways: without --yes and
                 // with it. Any other is run as it is.
                 let runs: &[bool] = if operation.destructive { &[false, true] } else { &[false] };
@@ -486,10 +600,12 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                         (REFUSED, stdout)
                     } else if operation.destructive && !yes {
                         (REFUSED, dry_run(operation, with.clone()))
-                    } else if operation.result.is_none() {
-                        (0, Value::Object(Map::new()))
-                    } else {
+                    } else if operation.result.is_some() {
                         continue;
+                    } else if let Some(of) = &operation.bulk_of {
+                        (0, results(of, ids(&with, of), None))
+                    } else {
+                        (0, Value::Object(Map::new()))
                     };
                     let mut seen = false;
                     for known in golden.iter() {
@@ -518,8 +634,57 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                         });
                     }
                 }
+                if let Some(of) = &operation.bulk_of {
+                    partly(spec, operation, of, fixture, &args, &with, golden);
+                }
             }
         }
+    }
+}
+
+/// The ids a bulk form's parameters `with` give.
+fn ids<'a>(with: &'a Value, of: &BulkOf) -> &'a [Value] {
+    with.get(&of.keys).and_then(Value::as_array).map_or(&[], Vec::as_slice)
+}
+
+/// For a bulk form called with at least two ids, once for each way an item
+/// can fail, the first time a fixture's call gives them: the first item
+/// fails that way, the others are done, and it exits 2.
+fn partly(
+    spec: &CommandSpec,
+    operation: &Operation,
+    of: &BulkOf,
+    fixture: &str,
+    args: &[String],
+    with: &Value,
+    golden: &mut Vec<Golden>,
+) {
+    let ids = ids(with, of);
+    if ids.len() < 2 || operation.result.is_some() {
+        return;
+    }
+    for failure in &spec.fails {
+        if failure.exit != FAILED
+            || golden
+                .iter()
+                .any(|known| known.command == spec.name && known.failure.as_ref() == Some(&failure.error))
+        {
+            continue;
+        }
+        let mut args = args.to_vec();
+        if operation.destructive {
+            args.push(YES.to_string());
+        }
+        golden.push(Golden {
+            command: spec.name.clone(),
+            fixture: Some(fixture.to_string()),
+            failure: Some(failure.error.clone()),
+            args: Some(args),
+            with: Some(with.clone()),
+            yes: operation.destructive,
+            exit: FAILED,
+            stdout: results(of, ids, Some((0, &failure.error))),
+        });
     }
 }
 
@@ -597,8 +762,17 @@ impl CommandSpec {
                         self.name, self.usage
                     ));
                 };
-                next_positional = next_positional.saturating_add(1);
-                with.insert(arg.param.clone(), arg.read(word)?);
+                let value = arg.read(word)?;
+                if arg.repeated {
+                    // As many as are given: each is one more.
+                    let entry = with.entry(arg.param.clone()).or_insert_with(|| Value::Array(Vec::new()));
+                    if let Value::Array(values) = entry {
+                        values.push(value);
+                    }
+                } else {
+                    next_positional = next_positional.saturating_add(1);
+                    with.insert(arg.param.clone(), value);
+                }
             }
         }
         for arg in &self.args {
@@ -627,6 +801,11 @@ impl CommandSpec {
                 continue;
             };
             match &arg.flag {
+                None if arg.repeated => {
+                    for value in value.as_array().map_or(&[][..], Vec::as_slice) {
+                        args.push(text_of(value));
+                    }
+                }
                 None => args.push(text_of(value)),
                 Some(flag) => {
                     if arg.default.as_ref() == Some(value) || value.is_null() {

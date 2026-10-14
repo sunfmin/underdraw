@@ -95,8 +95,19 @@ pub fn compare_cli(
     let mut golden: Option<&Golden> = None;
     let state = match &failure {
         Some(failure) => {
+            // A bulk form's failure is one item's, in one fixture, given
+            // the ids its command line gives; any other's, whatever it is
+            // given.
+            let with = spec.with_args(args).ok();
+            let yes = spec.yes(args);
             for candidate in &interface.golden {
-                if candidate.command == spec.name && candidate.failure.as_ref() == Some(failure) {
+                if candidate.command == spec.name
+                    && candidate.failure.as_ref() == Some(failure)
+                    && (candidate.fixture.is_none()
+                        || (candidate.fixture.as_deref() == Some(fixture)
+                            && candidate.with == with
+                            && candidate.yes == yes))
+                {
                     golden = Some(candidate);
                 }
             }
@@ -107,6 +118,7 @@ pub fn compare_cli(
             let yes = spec.yes(args);
             for candidate in &interface.golden {
                 if candidate.command == spec.name
+                    && candidate.failure.is_none()
                     && candidate.fixture.as_deref() == Some(fixture)
                     && candidate.with.as_ref() == Some(&with)
                     && candidate.yes == yes

@@ -36,6 +36,7 @@ fn the_draft_declares_its_operations_and_passes() {
         [
             ("listDocs", Does::Query, None, Some("Doc[]".to_string())),
             ("deleteDoc", Does::Command, Some("canDelete"), None),
+            ("deleteDocs", Does::Command, Some("canDelete"), None),
             ("newDocument", Does::Command, None, Some("Doc".to_string())),
         ]
     );
@@ -47,6 +48,16 @@ fn the_draft_declares_its_operations_and_passes() {
         ("SortKey".to_string(), Some(Value::from("updated")))
     );
     assert!(model.operations.all().iter().filter(|o| o.name != "listDocs").all(|o| o.fills.is_empty()));
+    let delete = model.operations.get("deleteDoc").unwrap();
+    assert_eq!(delete.bulk.as_deref(), Some("deleteDocs"));
+    let bulk = model.operations.get("deleteDocs").unwrap();
+    let of = bulk.bulk_of.as_ref().unwrap();
+    assert_eq!((of.operation.as_str(), of.key.as_str(), of.keys.as_str()), ("deleteDoc", "id", "ids"));
+    let params: Vec<_> =
+        bulk.params.iter().map(|(name, field)| (name.as_str(), field.describe(), field.lo)).collect();
+    assert_eq!(params, [("ids", "string[]".to_string(), Some(1.0))], "a list of at least one");
+    assert!(bulk.destructive, "a bulk delete is as destructive as deleting one");
+    assert_eq!(bulk.fails, delete.fails, "each item fails as one does");
 }
 
 #[test]
@@ -255,11 +266,81 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         (
             "destructive-not-a-bool",
             r#""destructive": true,
-      "fails""#,
+      "bulk""#,
             r#""destructive": "yes",
-      "fails""#,
+      "bulk""#,
             "operations.deleteDoc.destructive",
             "destructive is true or false",
+        ),
+        (
+            "bulk-not-a-name",
+            r#""bulk": "deleteDocs""#,
+            r#""bulk": true"#,
+            "operations.deleteDoc.bulk",
+            "bulk names the operation's bulk form",
+        ),
+        (
+            "bulk-name-taken",
+            r#""bulk": "deleteDocs""#,
+            r#""bulk": "newDocument""#,
+            "operations.deleteDoc.bulk",
+            "newDocument is already an operation",
+        ),
+        (
+            "bulk-query",
+            r#""params": {
+        "sort""#,
+            r#""bulk": "listMany",
+      "params": {
+        "sort""#,
+            "operations.listDocs.bulk",
+            "bulk marks a command",
+        ),
+        (
+            "bulk-key-with-a-default",
+            r#""id": "string"
+      },"#,
+            r#""id": "string = \"a\""
+      },"#,
+            "operations.deleteDoc.bulk",
+            "make the first parameter the one each item is",
+        ),
+        (
+            "bulk-confirmation-without-a-backdrop",
+            r#""id": "confirm-delete-selected",
+        "kind": "Dialog""#,
+            r#""id": "confirm-delete-selected",
+        "kind": "Card""#,
+            "confirm-delete-selected-confirm",
+            "calls deleteDocs, which is destructive",
+        ),
+        (
+            "bulk-call-not-gated",
+            r#""if": "confirmingDeleteSelected","#,
+            r#""if": "confirmingDelete","#,
+            "confirm-delete-selected-confirm",
+            "calls deleteDocs with selection.ids, and is not gated on a non-empty selection",
+        ),
+        (
+            "bulk-call-on-a-selection-that-may-be-empty",
+            r#""type": "string[] 1..50""#,
+            r#""type": "string[] ..50""#,
+            "confirm-delete-selected-confirm",
+            "is not gated on a non-empty selection",
+        ),
+        (
+            "bulk-call-not-given-the-selection",
+            r#""ids": "{selection.ids}""#,
+            r#""ids": "c""#,
+            "confirm-delete-selected-confirm",
+            "give ids the selection, as one path",
+        ),
+        (
+            "bulk-call-given-domain-data",
+            r#""ids": "{selection.ids}""#,
+            r#""ids": "{docs}""#,
+            "confirm-delete-selected-confirm",
+            "calls deleteDocs with docs, which is domain data",
         ),
         (
             "destructive-query",
@@ -287,8 +368,10 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "confirmation-without-a-backdrop",
-            r#""kind": "Dialog""#,
-            r#""kind": "Card""#,
+            r#""id": "confirm-delete",
+        "kind": "Dialog""#,
+            r#""id": "confirm-delete",
+        "kind": "Card""#,
             "confirm-delete-confirm",
             "calls deleteDoc, which is destructive",
         ),
@@ -376,12 +459,13 @@ fn a_call_is_gated_by_an_if_or_by_a_condition_that_implies_it() {
                               { "else": { "open": "why-not" } } ]"#,
         ),
     ];
-    // Gating alone: deleteDoc not destructive, and called by the menu item.
+    // Gating alone: deleteDoc (and so deleteDocs) not destructive, and
+    // called by the menu item.
     let direct = DRAFT
         .replace(
             r#""destructive": true,
-      "fails""#,
-            r#""fails""#,
+      "bulk""#,
+            r#""bulk""#,
         )
         .replace(r#""open": "confirm-delete""#, r#""call": "deleteDoc""#);
     for (name, from, to) in cases {

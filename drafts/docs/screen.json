@@ -19,7 +19,7 @@
     "selection": {
       "type": "Selection?",
       "view": true,
-      "doc": "The documents the person has picked to act on together; null while none is"
+      "doc": "What the person has picked to act on together; null while nothing is"
     }
   },
   "types": {

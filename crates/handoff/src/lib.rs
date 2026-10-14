@@ -64,6 +64,13 @@ pub struct OperationSpec {
     /// It cannot be undone: the screen calls it only from its confirmation.
     #[serde(skip_serializing_if = "is_false")]
     pub destructive: bool,
+    /// The name of its bulk form, which does it for each of several items.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bulk: Option<String>,
+    /// For a bulk form: the operation it does for each item, which the
+    /// precondition, the failures and the result are each item's.
+    #[serde(rename = "bulkOf", skip_serializing_if = "Option::is_none")]
+    pub bulk_of: Option<String>,
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub fails: Map<String, Value>,
     /// The fields of `data` a query's result fills: `docs`, or `docs[].doc`
@@ -230,6 +237,8 @@ fn operations(model: &Model) -> Vec<OperationSpec> {
             result: operation.result.as_ref().map(|field| field.describe()),
             requires: operation.requires.clone(),
             destructive: operation.destructive,
+            bulk: operation.bulk.clone(),
+            bulk_of: operation.bulk_of.as_ref().map(|of| of.operation.clone()),
             fails,
             fills: operation.fills.iter().map(|fill| fill.path.clone()).collect(),
         });
