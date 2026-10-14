@@ -4,7 +4,7 @@
 //! description is expanded with them before anything reads it, and `check`
 //! holds the fixtures to showing the job running, done and failed.
 
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::check::Findings;
 use crate::field::Base;
@@ -62,46 +62,58 @@ pub(crate) fn expand(screen: &Value, findings: &mut Findings) -> Value {
             findings.add(&format!("types.{type_name}"), &derived_from(name));
         }
         let mut fields = Map::new();
-        fields.insert(
-            "id".to_string(),
-            json!({ "type": "string", "doc": "The job's id, to read it again by" }),
-        );
+        fields.insert("id".to_string(), field("string", "The job's id, to read it again by".to_string()));
         fields.insert(
             "status".to_string(),
-            json!({ "type": STATUS, "doc": "running until it ends, then done or failed" }),
+            field(STATUS, "running until it ends, then done or failed".to_string()),
         );
         fields.insert(
             "progress".to_string(),
-            json!({ "type": "int 0..100", "doc": "How far along it is, in percent" }),
+            field("int 0..100", "How far along it is, in percent".to_string()),
         );
         if let Some(result) = result {
             fields.insert(
                 "result".to_string(),
-                json!({ "type": nullable(result), "doc": format!("What {name} answers with, once done") }),
+                field(&nullable(result), format!("What {name} answers with, once done")),
             );
         }
         fields.insert(
             "error".to_string(),
-            json!({ "type": "string?", "doc": format!("Which of {name}'s fails it ended in, once failed") }),
+            field("string?", format!("Which of {name}'s fails it ended in, once failed")),
         );
         types.insert(type_name.clone(), Value::Object(fields));
         let query = job_query(name);
         if operations.contains_key(&query) {
             findings.add(&format!("operations.{query}"), &derived_from(name));
         }
-        operations.insert(
-            query,
-            json!({
-                "query": format!("Reads the job {name} started: how far along it is, and how it ended"),
-                "params": { "id": "string" },
-                "result": type_name,
-                "fails": { "notFound": "no job has this id" }
-            }),
+        let mut body = Map::new();
+        body.insert(
+            "query".to_string(),
+            Value::from(format!("Reads the job {name} started: how far along it is, and how it ended")),
         );
+        body.insert("params".to_string(), pair("id", "string"));
+        body.insert("result".to_string(), Value::from(type_name));
+        body.insert("fails".to_string(), pair("notFound", "no job has this id"));
+        operations.insert(query, Value::Object(body));
     }
     root.insert("types".to_string(), Value::Object(types));
     root.insert("operations".to_string(), Value::Object(operations));
     expanded
+}
+
+/// A field written with its type and what it means.
+fn field(type_name: &str, doc: String) -> Value {
+    let mut field = Map::new();
+    field.insert("type".to_string(), Value::from(type_name));
+    field.insert("doc".to_string(), Value::from(doc));
+    Value::Object(field)
+}
+
+/// `{key: value}`.
+fn pair(key: &str, value: &str) -> Value {
+    let mut pair = Map::new();
+    pair.insert(key.to_string(), Value::from(value));
+    Value::Object(pair)
 }
 
 fn take_object(root: &mut Map<String, Value>, key: &str) -> Map<String, Value> {
