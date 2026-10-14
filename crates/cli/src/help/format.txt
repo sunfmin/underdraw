@@ -281,10 +281,11 @@ TOKENS.JSON
   as text.
 
 KINDS.JSON
-  The project's own kinds, and replacements for built-ins by name:
+  The project's own kinds, and replacements for built-ins by name. A kind
+  is never a guess: write its whole look; check refuses "assumed" on a kind
+  (a node may still carry one).
     { "kinds": { "Chip": {
         "doc": "A filter as a pill: filled when on.",
-        "assumed": "why this look is a guess (optional)",
         "look": { "box": "row", "gap": 6, "padding": [6, 12], "radius": 999,
                   "fill":  { "cases": [ { "if": "selected", "then": "strong" }, { "else": null } ] },
                   "stroke": { "cases": [ { "if": "selected", "then": null }, { "else": "line" } ] },

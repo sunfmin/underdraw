@@ -231,16 +231,6 @@ fn a_projects_kind_is_drawn_from_its_look() {
 }
 
 #[test]
-fn a_kind_still_assumed_is_drawn_as_a_guess() {
-    let kinds = serde_json::json!({ "kinds": { "Chip": {
-        "assumed": "drawn like a Badge until the person says otherwise",
-        "look": { "text": "{text}" } } } });
-    let page = tiny_with(serde_json::json!([{ "id": "chip", "kind": "Chip", "text": "新" }]), Some(&kinds));
-    let assumed = placed(&page, "chip").assumed.as_deref().unwrap_or_default();
-    assert!(assumed.contains("until the person says otherwise"), "{assumed:?}");
-}
-
-#[test]
 fn a_grid_track_is_a_share_a_part_or_points() {
     let page = tiny(serde_json::json!([
         { "id": "grid", "kind": "Grid", "gap": 0, "columns": ["1fr", 48, "50%"], "children": [
