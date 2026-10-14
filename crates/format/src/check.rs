@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use crate::conditions::Conditions;
 use crate::field::{Base, Field};
 use crate::fixture;
-use crate::kinds::Kinds;
+use crate::kinds::{Kinds, track_faults};
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
 
@@ -197,6 +197,17 @@ impl Walk<'_> {
                     at,
                     "limit is a whole number, or one per breakpoint: {\"compact\": 10, \"regular\": 9}",
                 );
+            }
+        }
+        for key in ["columns", "rows"] {
+            match object.get(key) {
+                Some(Value::Object(per)) if crate::instance::is_responsive(per) => {
+                    for (breakpoint, tracks) in per {
+                        track_faults(tracks, &format!("{at}.{key}.{breakpoint}"), self.findings);
+                    }
+                }
+                Some(tracks) => track_faults(tracks, &format!("{at}.{key}"), self.findings),
+                None => {}
             }
         }
         // `item` and `index` exist only in the template `each` repeats.

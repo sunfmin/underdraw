@@ -9,7 +9,7 @@
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{Kinds, Node};
+use underdraw_format::{Kinds, Node, Track};
 
 use crate::place::{Edge, Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
@@ -753,14 +753,16 @@ fn sides<T: FromLength>(top: f32, right: f32, bottom: f32, left: f32) -> taffy::
     taffy::Rect { left: length(left), right: length(right), top: length(top), bottom: length(bottom) }
 }
 
-/// Grid tracks written "58%" or "1fr".
+/// Grid tracks written "1fr", "58%" or 48 points; `check` has refused
+/// anything else, which is drawn as "1fr".
 fn tracks(widths: &[Value]) -> Vec<GridTemplateComponent<String>> {
     let mut tracks = Vec::new();
     for width in widths {
-        let width = width.as_str().unwrap_or("1fr");
-        tracks.push(match width.strip_suffix('%') {
-            Some(share) => percent(share.parse::<f32>().unwrap_or(100.0) / 100.0),
-            None => fr(width.trim_end_matches("fr").parse::<f32>().unwrap_or(1.0)),
+        tracks.push(match Track::read(width) {
+            Some(Track::Part(part)) => percent(part),
+            Some(Track::Points(points)) => length(points),
+            Some(Track::Fr(share)) => fr(share),
+            None => fr(1.0),
         });
     }
     tracks

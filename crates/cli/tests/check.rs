@@ -190,6 +190,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "nav.leading",
             "a slot holds nodes, not cases",
         ),
+        (
+            "quoted-track",
+            r#""regular": ["58%", "1fr"]"#,
+            r#""regular": ["58%", "48"]"#,
+            "body.columns.regular[1]",
+            "\"48\" is not a grid track",
+        ),
     ];
     for (name, from, to, at, said) in cases {
         let dir = planted(name, from, to);
@@ -231,7 +238,8 @@ fn each_fault_in_a_projects_kinds_is_found() {
             { "text": "{title|upper}" },
             { "kind": "Nowhere" },
             { "cases": [ { "if": "title", "then": "$kids" } ] },
-            { "kind": "Glyph", "icon": "chevron.right" }
+            { "kind": "Glyph", "icon": "chevron.right" },
+            { "box": "grid", "columns": ["2fr", "{width}", 48, "48"], "rows": ["1.5fr", "wide"] }
         ] } }
     }, "icons": { "checklist": "☑" } });
     let dir = with_kinds("bad-kinds", &kinds);
@@ -245,6 +253,8 @@ fn each_fault_in_a_projects_kinds_is_found() {
         ("kinds.Wrong.look.children[2].cases", "must be {\"else\""),
         ("kinds.Wrong.look.children[2].cases[0].then", "$kids is not a look"),
         ("kinds.Wrong.look.children[3].icon", "chevron.right is not a Material Symbols icon"),
+        ("kinds.Wrong.look.children[4].columns[3]", "\"48\" is not a grid track"),
+        ("kinds.Wrong.look.children[4].rows[1]", "\"wide\" is not a grid track"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {

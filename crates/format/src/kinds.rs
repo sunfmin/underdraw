@@ -65,6 +65,52 @@ const NOTES: [&str; 2] = ["$comment", "doc"];
 pub const FILTERS: [&str; 10] =
     ["or", "count", "first", "last", "head", "tail", "slashes", "glyph", "atLeast", "atMost"];
 
+/// One grid track, in `columns` or `rows`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Track {
+    /// "2fr": a share of the width left over.
+    Fr(f32),
+    /// "40%": a part of the parent, 0 to 1.
+    Part(f32),
+    /// 48: a width in points.
+    Points(f32),
+}
+
+impl Track {
+    /// `value` as a track, or None when it is not one ("48", "wide").
+    pub fn read(value: &Value) -> Option<Track> {
+        if let Some(points) = value.as_f64() {
+            return (points >= 0.0).then_some(Track::Points(points as f32));
+        }
+        let text = value.as_str()?;
+        let (number, track): (&str, fn(f32) -> Track) =
+            match (text.strip_suffix("fr"), text.strip_suffix('%')) {
+                (Some(share), _) => (share, Track::Fr),
+                (_, Some(percent)) => (percent, |percent| Track::Part(percent / 100.0)),
+                _ => return None,
+            };
+        let number = number.parse::<f32>().ok().filter(|n| n.is_finite() && *n >= 0.0)?;
+        Some(track(number))
+    }
+}
+
+/// Every entry of `tracks`, at `at`, that is not a track. A count is not a
+/// list and passes; a placeholder is filled later and passes.
+pub(crate) fn track_faults(tracks: &Value, at: &str, findings: &mut Findings) {
+    let Value::Array(tracks) = tracks else {
+        return;
+    };
+    for (index, track) in tracks.iter().enumerate() {
+        let template = track.as_str().is_some_and(|text| text.contains('{'));
+        if !template && Track::read(track).is_none() {
+            findings.add(
+                &format!("{at}[{index}]"),
+                &format!("{track} is not a grid track: write \"2fr\", \"40%\" or a number of points, 48"),
+            );
+        }
+    }
+}
+
 /// Every kind there is.
 pub struct Kinds {
     kinds: Map<String, Value>,
@@ -178,6 +224,9 @@ impl Kinds {
                         && !icons::known(icon)
                     {
                         findings.add(&format!("{at}.{key}"), &icons::unknown(icon));
+                    }
+                    if nested.is_none() && (key == "columns" || key == "rows") {
+                        track_faults(value, &format!("{at}.{key}"), findings);
                     }
                     if key != "pin" && !NOTES.contains(&key.as_str()) {
                         self.look_faults(value, &format!("{at}.{key}"), findings);
