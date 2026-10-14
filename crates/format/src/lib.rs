@@ -17,6 +17,7 @@ pub mod icons;
 mod instance;
 mod kinds;
 mod model;
+mod overlay;
 mod schema;
 mod template;
 
@@ -30,7 +31,8 @@ pub use check::{Checked, Condition, Finding, check};
 pub use conditions::{Condition as Definition, Conditions};
 pub use expr::{Atom, Expr, Op};
 pub use field::{Base, Field};
-pub use instance::{ANCHORS, Node, State, instantiate};
+pub use instance::{Node, State, instantiate};
 pub use kinds::{FILTERS, Kinds, LOOK_KEYS, Track};
 pub use model::{Model, model};
+pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};

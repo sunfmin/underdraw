@@ -9,14 +9,17 @@
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{ANCHORS, Kinds, Node, Track};
+use underdraw_format::{Anchor, Edge, Kinds, Node, Track};
 
-use crate::place::{Edge, Elem, Look, Pin, Words};
+use crate::place::{Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
 use crate::{Align, Ink};
 
 /// The most a `repeat` makes, so a wrong count cannot run away.
 const MOST_REPEATED: u64 = 1000;
+
+/// How far in from its node's edges an overlay that is not flush stands.
+const OVERLAY_INSET: f32 = 16.0;
 
 /// What a look reads: the props of the kind it draws, the names a `repeat`
 /// binds (`n` from 1, `index` from 0, `item`), and the node whose children
@@ -339,11 +342,8 @@ impl Catalog<'_> {
         let Value::Object(pin) = pin else {
             return elem;
         };
-        let edge = |key: &str| match pin.get(key).and_then(Value::as_str) {
-            Some("center") => Edge::Center,
-            Some("end") => Edge::End,
-            _ => Edge::Start,
-        };
+        let edge =
+            |key: &str| pin.get(key).and_then(Value::as_str).and_then(Edge::parse).unwrap_or(Edge::Start);
         let inset = self.tokens.length(pin.get("inset"), 0.0);
         elem.pinned(Pin { x: edge("x"), y: edge("y"), inset })
     }
@@ -399,22 +399,16 @@ impl Catalog<'_> {
         }
         for child in &node.children {
             if child.slot == "overlay" {
-                let anchor = child.props.get("anchor").and_then(Value::as_str).unwrap_or(ANCHORS[0]);
-                let (x, y, inset) = match anchor {
-                    "center" => (Edge::Center, Edge::Center, 16.0),
-                    "bottom" => (Edge::Start, Edge::End, 0.0),
-                    corner => (
-                        if corner.contains("trailing") { Edge::End } else { Edge::Start },
-                        if corner.contains("bottom") { Edge::End } else { Edge::Start },
-                        16.0,
-                    ),
-                };
+                let placement = Anchor::of(&child.props).placement();
                 let mut elem = self.node(child);
-                if anchor == "bottom" {
+                let inset = if placement.flush {
                     elem.style.size.width = percent(1.0);
-                }
+                    0.0
+                } else {
+                    OVERLAY_INSET
+                };
                 elem.on_top = true;
-                built.push(elem.pinned(Pin { x, y, inset }));
+                built.push(elem.pinned(Pin { x: placement.x, y: placement.y, inset }));
             }
         }
         built

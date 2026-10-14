@@ -112,6 +112,12 @@ pub(crate) fn track_faults(tracks: &Value, at: &str, findings: &mut Findings) {
     }
 }
 
+/// Whether a box in a look asks for a backdrop and does not float by its
+/// own `pin`: only a kind's whole look, put in an `overlay`, may.
+fn backdrop_without_pin(look: &Map<String, Value>) -> bool {
+    look.get("backdrop") == Some(&Value::Bool(true)) && !look.contains_key("pin")
+}
+
 /// Every kind there is.
 pub struct Kinds {
     kinds: Map<String, Value>,
@@ -151,8 +157,7 @@ impl Kinds {
     /// Whether `kind`'s whole look has a backdrop, which draws only when its
     /// node is in an `overlay`.
     pub fn backdrop(&self, kind: &str) -> bool {
-        self.look(kind)
-            .is_some_and(|look| look.get("backdrop") == Some(&Value::Bool(true)) && look.get("pin").is_none())
+        self.look(kind).and_then(Value::as_object).is_some_and(backdrop_without_pin)
     }
 
     /// Every fault in the looks of `project`'s kinds, at `kinds.<Name>…`:
@@ -204,7 +209,7 @@ impl Kinds {
             }
             Value::Object(object) => {
                 let nested = object.get("kind").and_then(Value::as_str);
-                if !top && object.get("backdrop") == Some(&Value::Bool(true)) && !object.contains_key("pin") {
+                if !top && backdrop_without_pin(object) {
                     findings.add(
                         at,
                         "backdrop is drawn only by a box that floats: the whole look of a kind put in \"overlay\", or a box with \"pin\"",

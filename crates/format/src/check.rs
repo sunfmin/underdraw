@@ -10,6 +10,7 @@ use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::kinds::{Kinds, track_faults};
+use crate::overlay::Anchor;
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
 
@@ -143,15 +144,6 @@ struct Walk<'a> {
     findings: &'a mut Findings,
 }
 
-/// A fault at `at` when `anchor` is not one of the places an overlay floats.
-fn anchor_fault(anchor: &Value, at: &str, findings: &mut Findings) {
-    if !anchor.as_str().is_some_and(|anchor| crate::instance::ANCHORS.contains(&anchor)) {
-        let anchor = anchor.as_str().map_or_else(|| anchor.to_string(), str::to_string);
-        findings
-            .add(at, &format!("{anchor} is not an anchor: write {}", crate::instance::ANCHORS.join(", ")));
-    }
-}
-
 impl Walk<'_> {
     /// `value`, found under `key`, where `scope` names what paths may start
     /// from and `guarded` the paths known not to be null.
@@ -221,7 +213,7 @@ impl Walk<'_> {
         }
         if let Some(anchor) = object.get("anchor") {
             for (at, anchor) in breakpoint::each(anchor, &format!("{at}.anchor")) {
-                anchor_fault(anchor, &at, self.findings);
+                Anchor::fault(anchor, &at, self.findings);
             }
         }
         for key in ["columns", "rows"] {
