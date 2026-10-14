@@ -139,13 +139,18 @@ fn overlays_sit_in_their_corner() {
 
 /// A screen of `children` with no data, laid out at a phone's width.
 fn tiny(children: Value) -> Page {
+    tiny_with(children, None)
+}
+
+/// The same, with `kinds` as the project's kinds.json.
+fn tiny_with(children: Value, kinds: Option<&Value>) -> Page {
     let screen = serde_json::json!({
         "screen": "Tiny", "data": {}, "types": {}, "fixtures": { "default": {} }, "conditions": {},
         "root": { "id": "tiny", "kind": "Screen", "children": children }
     });
     let tokens = read("tokens.json");
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
-    layout(&root, &tokens, None, 390.0, &mut Fixed).unwrap()
+    layout(&root, &tokens, kinds, 390.0, &mut Fixed).unwrap()
 }
 
 fn texts(page: &Page) -> Vec<&str> {
@@ -178,4 +183,30 @@ fn a_kind_not_in_the_catalog_is_drawn_as_a_guess() {
         .iter()
         .any(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(underdraw_layout::Ink::Assumed), .. }));
     assert!(marked, "drawn in the colour of a guess");
+}
+
+#[test]
+fn a_projects_kind_is_drawn_from_its_look() {
+    let kinds = serde_json::json!({ "kinds": { "TextField": { "look": {
+        "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line",
+        "children": [ { "text": "{placeholder}", "ink": "muted" } ] } } } });
+    let row = serde_json::json!([{ "id": "composer", "kind": "Row", "gap": 12, "children": [
+        { "id": "input", "kind": "TextField", "placeholder": "添加一项待办" },
+        { "id": "add", "kind": "Button", "text": "添加" } ] }]);
+    let page = tiny_with(row, Some(&kinds));
+    let (input, add) = (placed(&page, "input"), placed(&page, "add"));
+    assert_eq!(input.assumed, None, "a defined kind is no guess");
+    assert_eq!(input.rect.x + input.rect.width + 12.0, add.rect.x, "the field fills up to the button");
+    assert_eq!(add.rect.x + add.rect.width, 390.0, "the button ends the row");
+    assert!(texts(&page).contains(&"添加一项待办"), "{:?}", texts(&page));
+}
+
+#[test]
+fn a_kind_still_assumed_is_drawn_as_a_guess() {
+    let kinds = serde_json::json!({ "kinds": { "Chip": {
+        "assumed": "drawn like a Badge until the person says otherwise",
+        "look": { "text": "{text}" } } } });
+    let page = tiny_with(serde_json::json!([{ "id": "chip", "kind": "Chip", "text": "新" }]), Some(&kinds));
+    let assumed = placed(&page, "chip").assumed.as_deref().unwrap_or_default();
+    assert!(assumed.contains("until the person says otherwise"), "{assumed:?}");
 }

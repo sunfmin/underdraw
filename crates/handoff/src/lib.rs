@@ -82,8 +82,13 @@ const SHOWN: [&str; 7] = ["text", "title", "subtitle", "label", "detail", "value
 
 /// The handoff of `screen` to the platform `mapping` describes, with
 /// `tokens`. A description with faults is refused with what `check` says.
-pub fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handoff, Box<Checked>> {
-    let model = underdraw_format::model(screen)?;
+pub fn handoff(
+    screen: &Value,
+    mapping: &Value,
+    tokens: &Value,
+    kinds: Option<&Value>,
+) -> Result<Handoff, Box<Checked>> {
+    let model = underdraw_format::model(screen, kinds)?;
     let mut findings = Vec::new();
     let platform = text(mapping, "platform");
     let language_name = text(mapping, "language");

@@ -9,73 +9,14 @@
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::Node;
+use underdraw_format::{Kinds, Node};
 
 use crate::place::{Edge, Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
 use crate::{Align, Ink};
 
-/// The kinds underdraw ships; a project's kinds.json goes over them.
-const DEFAULTS: &str = include_str!("../kinds.json");
-
 /// The most a `repeat` makes, so a wrong count cannot run away.
 const MOST_REPEATED: u64 = 1000;
-
-/// Every kind there is, and the glyphs icons stand in as.
-pub(crate) struct Kinds {
-    kinds: Map<String, Value>,
-    icons: Map<String, Value>,
-}
-
-impl Kinds {
-    /// underdraw's kinds, with `project`'s (its kinds.json) over them by
-    /// name.
-    pub(crate) fn new(project: Option<&Value>) -> Result<Kinds, String> {
-        let defaults: Value =
-            serde_json::from_str(DEFAULTS).map_err(|e| format!("underdraw's kinds.json: {e}"))?;
-        let mut kinds = Kinds { kinds: Map::new(), icons: Map::new() };
-        kinds.add(&defaults);
-        if let Some(project) = project {
-            kinds.add(project);
-        }
-        Ok(kinds)
-    }
-
-    fn add(&mut self, file: &Value) {
-        if let Some(Value::Object(kinds)) = file.get("kinds") {
-            for (name, kind) in kinds {
-                self.kinds.insert(name.clone(), kind.clone());
-            }
-        }
-        if let Some(Value::Object(icons)) = file.get("icons") {
-            for (name, glyph) in icons {
-                self.icons.insert(name.clone(), glyph.clone());
-            }
-        }
-    }
-
-    /// The character standing in for `icon`: its own, else the one for a
-    /// suffix it ends with (`*.fill`), else the one for any (`*`).
-    fn glyph(&self, icon: &str) -> String {
-        if let Some(glyph) = self.icons.get(icon).and_then(Value::as_str) {
-            return glyph.to_string();
-        }
-        let mut found = None;
-        let mut longest = 0;
-        for (pattern, glyph) in &self.icons {
-            if let Some(suffix) = pattern.strip_prefix('*')
-                && !suffix.is_empty()
-                && icon.ends_with(suffix)
-                && suffix.len() > longest
-            {
-                longest = suffix.len();
-                found = glyph.as_str();
-            }
-        }
-        let any = self.icons.get("*").and_then(Value::as_str);
-        found.or(any).unwrap_or("").to_string()
-    }
-}
 
 /// What a look reads: the props of the kind it draws, the names a `repeat`
 /// binds (`n` from 1, `index` from 0, `item`), and the node whose children
@@ -112,12 +53,11 @@ impl Catalog<'_> {
     /// `node` drawn as its kind's look says, tagged as the node; a box with
     /// the kind's name, marked as a guess, when no kind has that name.
     pub(crate) fn node<'a>(&self, node: &'a Node) -> Elem<'a> {
-        let mut elem = match self.kinds.kinds.get(&node.kind) {
-            Some(kind) => {
+        let mut elem = match self.kinds.look(&node.kind) {
+            Some(look) => {
                 let scope = Scope { props: &node.props, vars: Map::new(), node: Some(node) };
-                let look = kind.get("look").unwrap_or(&Value::Null);
                 let mut elem = self.one(look, &scope);
-                elem.assumed = kind.get("assumed").and_then(Value::as_str).map(str::to_string);
+                elem.assumed = self.kinds.assumed(&node.kind).map(str::to_string);
                 elem
             }
             None => {
@@ -220,7 +160,7 @@ impl Catalog<'_> {
                 props.insert(key.clone(), self.resolve(value, scope));
             }
         }
-        match self.kinds.kinds.get(name).and_then(|kind| kind.get("look")) {
+        match self.kinds.look(name) {
             Some(look) => {
                 let inner = Scope { props: &props, vars: Map::new(), node: None };
                 self.one(look, &inner)

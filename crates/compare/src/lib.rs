@@ -80,7 +80,7 @@ pub fn compare(
     capture: &Value,
     measure: &mut dyn Measure,
 ) -> Result<Comparison, String> {
-    let handed = match handoff(screen, mapping, tokens) {
+    let handed = match handoff(screen, mapping, tokens, kinds) {
         Ok(handed) => handed,
         Err(checked) => {
             return Err(format!(

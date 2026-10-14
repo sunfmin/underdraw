@@ -38,7 +38,7 @@ fn faithful(state: State, width: f32) -> Value {
         State::Fixture(name) => json!({ "fixture": name }),
         State::Phase(name) => json!({ "phase": name }),
     };
-    let handed = handoff(&screen, &mapping, &tokens).unwrap();
+    let handed = handoff(&screen, &mapping, &tokens, None).unwrap();
     let expected = handed.states.iter().find(|s| s.state == named && s.breakpoint == breakpoint).unwrap();
     let page =
         layout(&instantiate(&screen, state, breakpoint).unwrap(), &tokens, None, width, &mut Fixed).unwrap();

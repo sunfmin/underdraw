@@ -150,8 +150,9 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
 }
 
 fn check(path: &Path) -> anyhow::Result<Value> {
-    let (screen, _) = read(path)?;
-    Ok(serde_json::to_value(underdraw_format::check(&screen))?)
+    let (screen, dir) = read(path)?;
+    let kinds = read_kinds(&dir)?;
+    Ok(serde_json::to_value(underdraw_format::check(&screen, kinds.as_ref()))?)
 }
 
 /// The screen at `path` (a directory or its screen.json), and the directory.
@@ -173,8 +174,9 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
+    let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
-    match underdraw_handoff::handoff(&screen, &mapping, &tokens) {
+    match underdraw_handoff::handoff(&screen, &mapping, &tokens, kinds.as_ref()) {
         Ok(handoff) => Ok(serde_json::to_value(handoff)?),
         Err(checked) => bail!(
             "the description has {} finding(s), so what is handed off would be wrong: run `underdraw check {}` and fix them first",
@@ -195,7 +197,7 @@ fn compare(
     let tokens = read_tokens(&dir)?;
     let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
-    let checked = underdraw_format::check(&screen);
+    let checked = underdraw_format::check(&screen, kinds.as_ref());
     if !checked.ok {
         bail!(
             "the description has {} finding(s), so it cannot say what the UI should show: run `underdraw check {}` and fix them first",
@@ -284,7 +286,7 @@ fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
     let kinds = read_kinds(&dir)?;
-    let checked = underdraw_format::check(&screen);
+    let checked = underdraw_format::check(&screen, kinds.as_ref());
     if !checked.ok {
         bail!(
             "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",

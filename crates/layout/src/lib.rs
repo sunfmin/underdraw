@@ -130,7 +130,7 @@ pub fn layout(
     measure: &mut dyn Measure,
 ) -> Result<Page, String> {
     let tokens = tokens::Tokens(tokens);
-    let kinds = look::Kinds::new(kinds)?;
+    let kinds = underdraw_format::Kinds::read(kinds);
     let elem = look::Catalog { tokens: &tokens, kinds: &kinds }.node(root);
     place::place(&elem, width, measure).map_err(|e| format!("layout failed: {e}"))
 }
