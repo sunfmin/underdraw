@@ -1,12 +1,11 @@
 # Field types are compact strings, not JSON Schema
 
-The first draft described data in prose (`"int ≥1"`, `"number 0–5, 可为空"`), so
-nothing could check a fixture or an expression, and whether a missing field
-meant `false` or "unknown" was undefined.
-
-We write each field as a one-line type — `"string 1..50"`, `"number? 0..5"`,
-`"bool = false"` — with every object and enum named in `types`. A field becomes
-an object only to add `doc` or `derived`.
+Each field is a one-line type — `"string 1..50"`, `"number? 0..5"`,
+`"bool = false"` — with every object and enum named in `types`, because the
+first draft's prose types (`"int ≥1"`, `"number 0–5, 可为空"`) could not be
+checked, and JSON Schema is too long per field and says far more than the
+three platforms' model types can. A field becomes an object only to add `doc`
+or `derived`.
 
 ## Considered options
 
@@ -20,8 +19,5 @@ an object only to add `doc` or `derived`.
 
 ## Consequences
 
-- One field, one line: the shape of the view model fits on one screen.
-- The notation maps one-to-one onto Swift, Kotlin and TypeScript types.
-- Ranges give the renderer the extremes to try (longest title, most photos).
-- It is our grammar to define, document and parse; JSON Schema can be derived
-  from it if a consumer needs one.
+It is our grammar to define, document and parse; JSON Schema can be derived
+from it if a consumer needs one.

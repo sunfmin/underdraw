@@ -1,9 +1,13 @@
 # Compare checks relations, not pixels
 
-`underdraw compare` says how a running UI differs from the description in
-one state. It reads a **capture**: the UI's elements by test id, each with
-its frame and, when the platform's tool reads them, its text and whether it
-is enabled, written in one form for every platform. It checks:
+`underdraw compare` checks a running UI against one state of the description
+by what is there, what it says, and relative order and nesting — not pixels,
+sizes or spacing — because the wireframe's pixels and sizes are guesses,
+while order and nesting are what the person agreed to.
+
+It reads a **capture**: the UI's elements by test id, each with its frame
+and, when the platform's tool reads them, its text and whether it is enabled,
+written in one form for every platform. It checks:
 
 - **what is there**: every node the state shows has an element, once, and
   nothing the state hides does;
@@ -20,8 +24,7 @@ is enabled, written in one form for every platform. It checks:
   pass a right UI passes a wrong one.
 - **Compare sizes and spacing too.** The wireframe's sizes come from the
   catalog's guesses and a stand-in font, not the platform's components. A
-  check against them fails a correct UI. Order and nesting are what the
-  person agreed to when they looked at the picture; those are checked.
+  check against them fails a correct UI.
 - **Read each platform's own dump** (XCUITest's tree, a uiautomator XML,
   the DOM). Three parsers in underdraw, each tied to a tool's output format.
   Instead the agent writes the capture from its UI test, where the tool is
