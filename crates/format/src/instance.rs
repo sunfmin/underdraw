@@ -6,8 +6,9 @@
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use crate::breakpoint::{self, Breakpoint};
 use crate::check::Findings;
-use crate::conditions::Conditions;
+use crate::conditions::{Conditions, UseSite};
 use crate::fixture;
 use crate::schema::{Schema, object};
 use crate::template::{self, Decimals, Format};
@@ -19,36 +20,6 @@ pub enum State<'a> {
     Fixture(&'a str),
     /// A phase before data arrives, such as `loading`.
     Phase(&'a str),
-}
-
-/// The width class a responsive value is chosen by (`only`, and objects such
-/// as `{"compact": 1, "regular": 2}`).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Breakpoint {
-    Compact,
-    Regular,
-}
-
-impl Breakpoint {
-    fn key(self) -> &'static str {
-        match self {
-            Breakpoint::Compact => "compact",
-            Breakpoint::Regular => "regular",
-        }
-    }
-
-    /// The breakpoint `tokens` gives `width`: the first of `breakpoint.*`
-    /// whose `[min, max]` holds it (a null max is open). Compact when tokens
-    /// say nothing.
-    pub fn for_width(tokens: &Value, width: u32) -> Breakpoint {
-        let regular = tokens.pointer("/breakpoint/regular").and_then(Value::as_array);
-        let min = regular.and_then(|range| range.first()).and_then(Value::as_u64);
-        match min {
-            Some(min) if u64::from(width) >= min => Breakpoint::Regular,
-            _ => Breakpoint::Compact,
-        }
-    }
 }
 
 /// One node of a screen in one state.
@@ -72,27 +43,36 @@ pub struct Node {
 /// Keys that hold child nodes.
 pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
 
-/// Where an overlay floats over its node: a corner, the middle, or along
-/// the bottom edge from side to side (a sheet). The first is the default.
-pub const ANCHORS: [&str; 6] =
-    ["bottom-trailing", "top-leading", "top-trailing", "bottom-leading", "center", "bottom"];
 /// Keys that only steer how the tree is built.
 const STRUCTURE: [&str; 11] =
     ["id", "kind", "ref", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
 
 /// The screen `screen` in `state`, at `breakpoint`. The description is
 /// expected to have passed `check`; what it cannot make sense of is an error.
+/// A screen read more than once is better read once: `Model::instantiate`.
 pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Result<Node, String> {
     let mut ignored = Findings::default();
     let schema = Schema::read(screen, &mut ignored);
     let conditions = Conditions::read(screen, &schema, &mut ignored);
+    let fixtures = fixture::read(screen, &schema, &mut ignored);
+    build(screen, &conditions, &fixtures, state, breakpoint)
+}
+
+/// The screen `screen` in `state`, at `breakpoint`, with its conditions and
+/// fixtures already read.
+pub(crate) fn build(
+    screen: &Value,
+    conditions: &Conditions,
+    fixtures: &[(String, Value)],
+    state: State,
+    breakpoint: Breakpoint,
+) -> Result<Node, String> {
     let (tree, data) = match state {
         State::Fixture(name) => {
-            let fixtures = fixture::read(screen, &schema, &mut ignored);
             let mut found = None;
             for (fixture, data) in fixtures {
                 if fixture == name {
-                    found = Some(data);
+                    found = Some(data.clone());
                 }
             }
             let data = found.ok_or_else(|| format!("there is no fixture {name}"))?;
@@ -109,7 +89,7 @@ pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Resu
         }
     };
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
-    let fill = Fill { conditions: &conditions, components: &components, breakpoint };
+    let fill = Fill { conditions, components: &components, breakpoint };
     let mut built = fill.node(tree, &data, "root")?;
     built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
 }
@@ -132,7 +112,7 @@ impl Fill<'_> {
             return self.node(component, scope, slot);
         }
         if let Some(Value::String(only)) = object.get("only")
-            && only != self.breakpoint.key()
+            && Breakpoint::parse(only) != Some(self.breakpoint)
         {
             return Ok(Vec::new());
         }
@@ -212,10 +192,7 @@ impl Fill<'_> {
         let Some(Value::Array(all)) = lookup(scope, path) else {
             return Err(format!("each: {path} is not an array here"));
         };
-        let limit = match limit {
-            Some(Value::Object(object)) if is_responsive(object) => object.get(self.breakpoint.key()),
-            other => other,
-        };
+        let limit = limit.map(|limit| breakpoint::at(limit, self.breakpoint));
         let limit = limit.and_then(Value::as_u64).map_or(all.len(), |n| n as usize);
         let mut items = Vec::new();
         for item in all {
@@ -242,9 +219,8 @@ impl Fill<'_> {
                 if let Some(Value::Array(branches)) = object.get("cases") {
                     return self.value(&self.choose(branches, scope)?, scope);
                 }
-                if is_responsive(object) {
-                    let chosen = object.get(self.breakpoint.key()).cloned().unwrap_or(Value::Null);
-                    return self.value(&chosen, scope);
+                if breakpoint::is_responsive(object) {
+                    return self.value(breakpoint::at(written, self.breakpoint), scope);
                 }
                 let mut filled = Map::new();
                 for (key, value) in object {
@@ -271,10 +247,7 @@ impl Fill<'_> {
 
     /// Whether the use site `used` (`!`, then a condition or a Bool path) holds.
     fn holds(&self, used: &str, scope: &Value) -> bool {
-        let (negated, name) = match used.strip_prefix('!') {
-            Some(name) => (true, name),
-            None => (false, used),
-        };
+        let UseSite { negated, name } = UseSite::parse(used);
         let holds = if self.conditions.contains(name) {
             self.conditions.holds(name, scope)
         } else {
@@ -330,12 +303,6 @@ impl Fill<'_> {
         }
         Ok(out)
     }
-}
-
-/// An object such as `{"compact": 1, "regular": 2}`: one value per breakpoint.
-/// Whether `object` is a responsive value: keyed by breakpoints only.
-pub(crate) fn is_responsive(object: &Map<String, Value>) -> bool {
-    !object.is_empty() && object.keys().all(|k| k == "compact" || k == "regular")
 }
 
 /// `scope` with `item` and `index` added for one element of an `each`.

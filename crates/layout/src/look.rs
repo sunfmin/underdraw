@@ -9,14 +9,17 @@
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{ANCHORS, Kinds, Node, Track};
+use underdraw_format::{Anchor, Edge, Kinds, Node, Track};
 
-use crate::place::{Edge, Elem, Look, Pin, Words};
+use crate::place::{Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
 use crate::{Align, Ink};
 
 /// The most a `repeat` makes, so a wrong count cannot run away.
 const MOST_REPEATED: u64 = 1000;
+
+/// How far in from its node's edges an overlay that is not flush stands.
+const OVERLAY_INSET: f32 = 16.0;
 
 /// What a look reads: the props of the kind it draws, the names a `repeat`
 /// binds (`n` from 1, `index` from 0, `item`), and the node whose children
@@ -173,16 +176,7 @@ impl Catalog<'_> {
     /// the node: `padding`, `gap`, `radius`, `border`, `elevation`.
     fn boxed<'a>(&self, object: &Map<String, Value>, scope: &Scope<'_, 'a>) -> Elem<'a> {
         let get = |key: &str| self.get(object, key, scope);
-        let mut style = match get("box").as_str() {
-            Some("row") => Style {
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::CENTER,
-                ..Style::default()
-            },
-            Some("column") => Style { flex_direction: FlexDirection::Column, ..Style::default() },
-            Some("grid") => Style { display: Display::Grid, ..Style::default() },
-            _ => Style::default(),
-        };
+        let mut style = get("box").as_str().and_then(box_style).unwrap_or_default();
         self.style(object, scope, &mut style);
         let mut gap = self.tokens.find_length(&get("gap"));
         let mut radius = self.tokens.find_length(&get("radius")).unwrap_or(0.0);
@@ -255,11 +249,7 @@ impl Catalog<'_> {
         }
         let mut words = Words::new(said(&get("text")), font, ink(&get("ink")).unwrap_or(Ink::Text));
         words.max_lines = get("maxLines").as_u64().map(|n| n.min(100) as u32);
-        words.align = match get("align").as_str() {
-            Some("center") => Align::Center,
-            Some("end") => Align::End,
-            _ => Align::Start,
-        };
+        words.align = get("align").as_str().and_then(text_align).unwrap_or(Align::Start);
         words.underline = get("underline") == Value::Bool(true);
         words.strike = get("strike") == Value::Bool(true);
         self.pin(Elem::text(style, words), &get("pin"))
@@ -289,18 +279,14 @@ impl Catalog<'_> {
         if let Some(basis) = self.tokens.find_length(&get("basis")) {
             style.flex_basis = length(basis);
         }
-        if get("self").as_str() == Some("start") {
-            style.align_self = Some(AlignSelf::FLEX_START);
+        if let Some(align) = get("self").as_str().and_then(align_self) {
+            style.align_self = Some(align);
         }
-        match get("items").as_str() {
-            Some("start") => style.align_items = AlignItems::START,
-            Some("center") => style.align_items = AlignItems::CENTER,
-            _ => {}
+        if let Some(items) = get("items").as_str().and_then(align_items) {
+            style.align_items = items;
         }
-        match get("justify").as_str() {
-            Some("center") => style.justify_content = JustifyContent::CENTER,
-            Some("between") => style.justify_content = JustifyContent::SPACE_BETWEEN,
-            _ => {}
+        if let Some(justify) = get("justify").as_str().and_then(justify_content) {
+            style.justify_content = justify;
         }
         if let Some([top, right, bottom, left]) = self.four(&get("padding")) {
             style.padding = sides(top, right, bottom, left);
@@ -328,8 +314,8 @@ impl Catalog<'_> {
             style.grid_column = span(cells);
             style.grid_row = span(cells);
         }
-        if get("overflowX").as_str() == Some("clip") {
-            style.overflow = taffy::Point { x: taffy::Overflow::Clip, y: taffy::Overflow::Visible };
+        if let Some(x) = get("overflowX").as_str().and_then(overflow) {
+            style.overflow = taffy::Point { x, y: taffy::Overflow::Visible };
         }
     }
 
@@ -339,11 +325,8 @@ impl Catalog<'_> {
         let Value::Object(pin) = pin else {
             return elem;
         };
-        let edge = |key: &str| match pin.get(key).and_then(Value::as_str) {
-            Some("center") => Edge::Center,
-            Some("end") => Edge::End,
-            _ => Edge::Start,
-        };
+        let edge =
+            |key: &str| pin.get(key).and_then(Value::as_str).and_then(Edge::parse).unwrap_or(Edge::Start);
         let inset = self.tokens.length(pin.get("inset"), 0.0);
         elem.pinned(Pin { x: edge("x"), y: edge("y"), inset })
     }
@@ -399,22 +382,16 @@ impl Catalog<'_> {
         }
         for child in &node.children {
             if child.slot == "overlay" {
-                let anchor = child.props.get("anchor").and_then(Value::as_str).unwrap_or(ANCHORS[0]);
-                let (x, y, inset) = match anchor {
-                    "center" => (Edge::Center, Edge::Center, 16.0),
-                    "bottom" => (Edge::Start, Edge::End, 0.0),
-                    corner => (
-                        if corner.contains("trailing") { Edge::End } else { Edge::Start },
-                        if corner.contains("bottom") { Edge::End } else { Edge::Start },
-                        16.0,
-                    ),
-                };
+                let placement = Anchor::of(&child.props).placement();
                 let mut elem = self.node(child);
-                if anchor == "bottom" {
+                let inset = if placement.flush {
                     elem.style.size.width = percent(1.0);
-                }
+                    0.0
+                } else {
+                    OVERLAY_INSET
+                };
                 elem.on_top = true;
-                built.push(elem.pinned(Pin { x, y, inset }));
+                built.push(elem.pinned(Pin { x: placement.x, y: placement.y, inset }));
             }
         }
         built
@@ -804,5 +781,99 @@ fn said(value: &Value) -> String {
             parts.join(", ")
         }
         _ => String::new(),
+    }
+}
+
+// What each word a look key takes draws as: one function per key of
+// underdraw_format::LOOK that takes words, and a test that they agree.
+
+/// A box's `box`.
+fn box_style(word: &str) -> Option<Style> {
+    match word {
+        "row" => Some(Style {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::CENTER,
+            ..Style::default()
+        }),
+        "column" => Some(Style { flex_direction: FlexDirection::Column, ..Style::default() }),
+        "grid" => Some(Style { display: Display::Grid, ..Style::default() }),
+        _ => None,
+    }
+}
+
+/// Text's `align`.
+fn text_align(word: &str) -> Option<Align> {
+    match word {
+        "start" => Some(Align::Start),
+        "center" => Some(Align::Center),
+        "end" => Some(Align::End),
+        _ => None,
+    }
+}
+
+/// A box's `self`.
+fn align_self(word: &str) -> Option<AlignSelf> {
+    match word {
+        "start" => Some(AlignSelf::FLEX_START),
+        _ => None,
+    }
+}
+
+/// A box's `items`.
+fn align_items(word: &str) -> Option<AlignItems> {
+    match word {
+        "start" => Some(AlignItems::START),
+        "center" => Some(AlignItems::CENTER),
+        _ => None,
+    }
+}
+
+/// A box's `justify`.
+fn justify_content(word: &str) -> Option<JustifyContent> {
+    match word {
+        "center" => Some(JustifyContent::CENTER),
+        "between" => Some(JustifyContent::SPACE_BETWEEN),
+        "end" => Some(JustifyContent::END),
+        _ => None,
+    }
+}
+
+/// A box's `overflowX`.
+fn overflow(word: &str) -> Option<taffy::Overflow> {
+    match word {
+        "clip" => Some(taffy::Overflow::Clip),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use underdraw_format::{LOOK, Takes};
+
+    use super::*;
+
+    /// Whether layout draws `word` for look key `key`.
+    fn drawn(key: &str, word: &str) -> bool {
+        match key {
+            "box" => box_style(word).is_some(),
+            "align" => text_align(word).is_some(),
+            "self" => align_self(word).is_some(),
+            "items" => align_items(word).is_some(),
+            "justify" => justify_content(word).is_some(),
+            "overflowX" => overflow(word).is_some(),
+            _ => panic!("{key} takes words, and layout has no reader for it"),
+        }
+    }
+
+    #[test]
+    fn every_word_check_lets_through_is_drawn() {
+        for (key, takes) in LOOK {
+            if let Takes::Word(words) = takes {
+                for word in words {
+                    assert!(drawn(key, word), "{key}: {word} passes check but is not drawn");
+                }
+                assert!(!drawn(key, "nonsense"), "{key}: a word check refuses is drawn");
+            }
+        }
     }
 }

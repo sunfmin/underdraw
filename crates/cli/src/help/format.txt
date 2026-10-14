@@ -297,6 +297,12 @@ KINDS.JSON
                   "children": [ { "text": "{text}", "font": "font.caption",
                                   "ink": { "cases": [ { "if": "selected", "then": "paper" },
                                                       { "else": "text" } ] } } ] } } } }
+  Beside "look" and "doc", a kind may say how a platform treats it, which
+  `compare` reads (each true or false):
+    "scrolls": true    its content scrolls or pages, so what is in it may
+                       lie outside its frame (Screen, Scroll, Carousel)
+    "pinned":  true    pinned to the screen, out of its siblings' order
+                       (StickyBar)
   A node then writes { "id": "chip-direct", "kind": "Chip", "text": "Direct",
   "selected": "{filters.direct}" }. A look's templates read the node's props
   (after the node's own templates are filled), not data.
@@ -317,7 +323,8 @@ KINDS.JSON
     aspect               "4:3" or a number
     grow shrink basis    flex sharing in the parent row or column
     self                 "start": as wide as its content
-    items                "start" | "center";  justify "center" | "between"
+    items                "start" | "center";  justify "center" | "between" | "end"
+                         check refuses a word a key does not take
     columns rows span    grid tracks: a count or ["1fr", "1fr"]; span covers cells
                          a track is "2fr", "40%" or a number of points:
                          ["3fr", "1fr", 48]; check refuses anything else

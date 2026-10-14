@@ -7,6 +7,7 @@
 extern crate flux_alloc;
 extern crate flux_core;
 
+mod breakpoint;
 mod check;
 mod conditions;
 mod expr;
@@ -16,6 +17,7 @@ pub mod icons;
 mod instance;
 mod kinds;
 mod model;
+mod overlay;
 mod schema;
 mod template;
 
@@ -24,11 +26,13 @@ mod template;
 #[allow(dead_code)]
 mod rejected;
 
+pub use breakpoint::Breakpoint;
 pub use check::{Checked, Condition, Finding, check};
 pub use conditions::{Condition as Definition, Conditions};
 pub use expr::{Atom, Expr, Op};
 pub use field::{Base, Field};
-pub use instance::{ANCHORS, Breakpoint, Node, State, instantiate};
-pub use kinds::{FILTERS, Kinds, LOOK_KEYS, Track};
+pub use instance::{Node, State, instantiate};
+pub use kinds::{FILTERS, Kinds, LOOK, Takes, Track, takes};
 pub use model::{Model, model};
+pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};

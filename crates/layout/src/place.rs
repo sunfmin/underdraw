@@ -2,7 +2,7 @@
 //! in page coordinates, with the tags a person refers to them by.
 
 use taffy::{AvailableSpace, LayoutOutput, NodeId, Style, TaffyError, TaffyTree};
-use underdraw_format::Node;
+use underdraw_format::{Edge, Node};
 
 use crate::{Align, Draw, Font, Ink, Measure, Page, Placed, Rect};
 
@@ -45,13 +45,6 @@ pub(crate) struct Pin {
     pub(crate) x: Edge,
     pub(crate) y: Edge,
     pub(crate) inset: f32,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum Edge {
-    Start,
-    Center,
-    End,
 }
 
 pub(crate) struct Words {

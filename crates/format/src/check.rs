@@ -5,10 +5,12 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::conditions::Conditions;
+use crate::breakpoint::{self, Breakpoint};
+use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::kinds::{Kinds, track_faults};
+use crate::overlay::Anchor;
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
 
@@ -30,7 +32,8 @@ pub struct Checked {
     pub findings: Vec<Finding>,
 }
 
-#[derive(Debug, Serialize)]
+/// A condition: what it means, and the fixtures it holds in.
+#[derive(Clone, Debug, Serialize)]
 pub struct Condition {
     pub name: String,
     pub label: String,
@@ -142,15 +145,6 @@ struct Walk<'a> {
     findings: &'a mut Findings,
 }
 
-/// A fault at `at` when `anchor` is not one of the places an overlay floats.
-fn anchor_fault(anchor: &Value, at: &str, findings: &mut Findings) {
-    if !anchor.as_str().is_some_and(|anchor| crate::instance::ANCHORS.contains(&anchor)) {
-        let anchor = anchor.as_str().map_or_else(|| anchor.to_string(), str::to_string);
-        findings
-            .add(at, &format!("{anchor} is not an anchor: write {}", crate::instance::ANCHORS.join(", ")));
-    }
-}
-
 impl Walk<'_> {
     /// `value`, found under `key`, where `scope` names what paths may start
     /// from and `guarded` the paths known not to be null.
@@ -166,9 +160,9 @@ impl Walk<'_> {
             Value::Object(object) => object,
             _ => return,
         };
-        if crate::instance::is_responsive(object) && object.len() < 2 {
+        if breakpoint::is_responsive(object) && object.len() < Breakpoint::ALL.len() {
             self.findings
-                .add(at, "a responsive value names both breakpoints: {\"compact\": …, \"regular\": …}");
+                .add(at, &format!("a responsive value names every breakpoint: {}", Breakpoint::names()));
         }
         if crate::instance::SLOTS.contains(&key) && object.contains_key("cases") {
             self.findings
@@ -204,37 +198,30 @@ impl Walk<'_> {
         if let Some(Value::String(used)) = object.get("if") {
             guarded.extend(self.use_site(used, scope, &format!("{at}.if")));
         }
-        if let Some(limit) = object.get("limit") {
-            let count = |value: &Value| value.as_u64().is_some();
-            let fits = match limit {
-                Value::Object(object) if crate::instance::is_responsive(object) => object.values().all(count),
-                value => count(value),
-            };
-            if !fits {
-                self.findings.add(
-                    at,
-                    "limit is a whole number, or one per breakpoint: {\"compact\": 10, \"regular\": 9}",
-                );
-            }
+        if let Some(only) = object.get("only")
+            && only.as_str().and_then(Breakpoint::parse).is_none()
+        {
+            self.findings.add(
+                &format!("{at}.only"),
+                &format!("{only} is not a breakpoint: write one of {}", Breakpoint::names()),
+            );
         }
-        match object.get("anchor") {
-            Some(Value::Object(per)) if crate::instance::is_responsive(per) => {
-                for (breakpoint, anchor) in per {
-                    anchor_fault(anchor, &format!("{at}.anchor.{breakpoint}"), self.findings);
-                }
+        if let Some(limit) = object.get("limit")
+            && !breakpoint::each(limit, at).iter().all(|(_, limit)| limit.as_u64().is_some())
+        {
+            self.findings
+                .add(at, "limit is a whole number, or one per breakpoint: {\"compact\": 10, \"regular\": 9}");
+        }
+        if let Some(anchor) = object.get("anchor") {
+            for (at, anchor) in breakpoint::each(anchor, &format!("{at}.anchor")) {
+                Anchor::fault(anchor, &at, self.findings);
             }
-            Some(anchor) => anchor_fault(anchor, &format!("{at}.anchor"), self.findings),
-            None => {}
         }
         for key in ["columns", "rows"] {
-            match object.get(key) {
-                Some(Value::Object(per)) if crate::instance::is_responsive(per) => {
-                    for (breakpoint, tracks) in per {
-                        track_faults(tracks, &format!("{at}.{key}.{breakpoint}"), self.findings);
-                    }
+            if let Some(tracks) = object.get(key) {
+                for (at, tracks) in breakpoint::each(tracks, &format!("{at}.{key}")) {
+                    track_faults(tracks, &at, self.findings);
                 }
-                Some(tracks) => track_faults(tracks, &format!("{at}.{key}"), self.findings),
-                None => {}
             }
         }
         // `item` and `index` exist only in the template `each` repeats.
@@ -300,10 +287,7 @@ impl Walk<'_> {
     /// A yes/no at `at`: `!`, then a condition's name or a Bool path. What it
     /// guarantees is not null when it holds.
     fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> BTreeSet<String> {
-        let (negated, name) = match used.strip_prefix('!') {
-            Some(name) => (true, name),
-            None => (false, used),
-        };
+        let UseSite { negated, name } = UseSite::parse(used);
         if !name.split('.').all(crate::field::is_identifier) {
             self.findings.add(at, &format!("{used:?}: here goes !? and a condition's name or a Bool path; name anything more in conditions"));
             return BTreeSet::new();

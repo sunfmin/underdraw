@@ -6,6 +6,7 @@
 extern crate flux_alloc;
 extern crate flux_core;
 
+mod check;
 mod look;
 mod place;
 mod tokens;
@@ -13,6 +14,8 @@ mod tokens;
 use serde::Serialize;
 use serde_json::Value;
 use underdraw_format::Node;
+
+pub use check::{CHECKED_WIDTHS, check};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct Font {

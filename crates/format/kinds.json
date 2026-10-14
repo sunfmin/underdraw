@@ -1,19 +1,20 @@
 {
   "$comment": "What each kind looks like in a wireframe: underdraw's defaults. A project's kinds.json adds kinds and replaces these by name. The look vocabulary is docs/format/kinds.md.",
   "kinds": {
-    "Screen":     { "look": { "box": "column", "frame": true, "fill": "paper", "children": ["$children"] } },
-    "Scroll":     { "look": { "box": "column", "frame": true, "children": ["$children"] } },
+    "Screen":     { "scrolls": true, "look": { "box": "column", "frame": true, "fill": "paper", "children": ["$children"] } },
+    "Scroll":     { "scrolls": true, "look": { "box": "column", "frame": true, "children": ["$children"] } },
     "Stack":      { "look": { "box": "column", "frame": true, "children": ["$children"] } },
     "List":       { "look": { "box": "column", "frame": true, "children": ["$children"] } },
     "FieldGroup": { "look": { "box": "column", "frame": true, "children": ["$children"] } },
     "Card":       { "look": { "box": "column", "gap": 16, "frame": true, "clip": false, "children": ["$children"] } },
     "Row":        { "look": { "box": "row", "frame": true, "children": ["$children"] } },
     "NavBar":     { "look": { "box": "row", "gap": 8, "height": 56, "padding": [0, 16], "frame": true, "children": ["$children"] } },
-    "StickyBar":  { "look": { "box": "row", "gap": 16, "justify": "between", "frame": true, "topLine": "line", "children": ["$children"] } },
+    "StickyBar":  { "pinned": true, "look": { "box": "row", "gap": 16, "justify": "between", "frame": true, "topLine": "line", "children": ["$children"] } },
     "Grid":       { "look": { "box": "grid", "columns": "{columns|or:2}", "gap": 16, "frame": true, "children": ["$children"] } },
     "Columns":    { "look": { "box": "grid", "columns": "{columns|or:1}", "items": "start", "gap": 24, "frame": true, "children": ["$children"] } },
     "Carousel": {
       "doc": "Cards side by side, cut at the edge: the rest scrolls into view.",
+      "scrolls": true,
       "look": { "box": "row", "gap": 16, "items": "start", "overflowX": "clip", "frame": true, "itemWidth": 280, "clip": 0,
                 "children": ["$children"] }
     },
@@ -84,6 +85,7 @@
     },
     "ImageCarousel": {
       "doc": "One photo at a time, with \"1 / N\" over its corner.",
+      "scrolls": true,
       "look": { "aspect": "{aspectRatio|or:4:3}", "fill": "fill", "cross": "line", "children": [
         { "padding": [4, 10], "fill": "strong", "radius": 999, "pin": { "x": "end", "y": "end", "inset": 12 },
           "children": [ { "text": "1 / {items|count}", "font": "font.caption", "ink": "paper" } ] } ] }

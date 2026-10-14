@@ -13,7 +13,7 @@ mod capture;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Node, State, instantiate};
+use underdraw_format::{Breakpoint, Kinds, Node, State, instantiate};
 use underdraw_handoff::{Expected, handoff};
 use underdraw_layout::{Measure, Page, Rect, layout};
 
@@ -57,12 +57,6 @@ pub struct Finding {
     pub problem: String,
 }
 
-/// Kinds whose content scrolls or pages, so what is in them may lie outside
-/// their frame.
-const SCROLLS: [&str; 4] = ["Screen", "Scroll", "Carousel", "ImageCarousel"];
-/// Kinds pinned to the screen rather than placed in the flow of their
-/// siblings.
-const PINNED: [&str; 1] = ["StickyBar"];
 /// How far a real frame may stray, in points, before it counts: frames are
 /// rounded differently on every platform.
 const SLACK: f32 = 1.0;
@@ -119,6 +113,7 @@ pub fn compare(
         capture: &capture,
         expected,
         page: &page,
+        kinds: &Kinds::read(kinds),
         platform: &handed.platform,
         checked: Checked::default(),
         findings: Vec::new(),
@@ -149,6 +144,8 @@ struct Differ<'a> {
     capture: &'a Capture,
     expected: &'a Expected,
     page: &'a Page,
+    /// Which kinds scroll, and which are pinned out of the flow.
+    kinds: &'a Kinds,
     platform: &'a str,
     checked: Checked,
     findings: Vec<Finding>,
@@ -277,14 +274,14 @@ impl Differ<'_> {
                 self.find(&node.id, "inside", problem);
             }
         }
-        let scrolls = SCROLLS.contains(&node.kind.as_str());
+        let scrolls = self.kinds.scrolls(&node.kind);
         let (holder, scrolled) = match frame {
             Some(frame) => (Some((node.id.as_str(), frame)), scrolls),
             None => (holder, scrolled || scrolls),
         };
         let mut before: Option<&Node> = None;
         for child in &node.children {
-            let flows = child.slot != "overlay" && !PINNED.contains(&child.kind.as_str());
+            let flows = child.slot != "overlay" && !self.kinds.pinned(&child.kind);
             if flows && self.capture.get(&child.id).is_some() {
                 if let Some(previous) = before {
                     self.order(previous, child);
