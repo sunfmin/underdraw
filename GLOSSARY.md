@@ -44,3 +44,9 @@ so the discussion is about structure, not styling.
 **Label** — the number tagged in a wireframe on each node a person can act on,
 in document order. The same number names the node in the picture and in what
 `render` answers.
+
+**Handoff** — what one platform is given to build a screen: the generated view
+model, how each node is built there, and the expected states.
+
+**Expected state** — for one fixture or phase at one breakpoint, which nodes
+are present and what each shows. What a platform's tests assert.
