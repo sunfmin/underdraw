@@ -19,8 +19,8 @@ Rendering runs on the GPU (vello on wgpu; Metal on macOS).
 The description format is drafted; `underdraw check` reads it and names every
 fault, and `underdraw render` draws any fixture or phase as a wireframe PNG at
 any width. `underdraw handoff` gives one platform its generated view model,
-how each node is built there and what every state must show. `compare` is not
-built yet.
+how each node is built there and what every state must show. `underdraw
+compare` checks a capture of the running UI against one state.
 
 ## Build
 
@@ -30,7 +30,7 @@ cargo build --release          # target/release/underdraw
 ```
 
 `gate.sh` runs fmt, clippy, the tests and Flux. The pure crates
-(`crates/format`, `crates/layout`, `crates/handoff`) must pass Flux with nothing trusted or
+(`crates/format`, `crates/layout`, `crates/handoff`, `crates/compare`) must pass Flux with nothing trusted or
 ignored; `verify.sh` refuses any checker other than the pinned one. The render
 tests need a GPU.
 
@@ -48,6 +48,8 @@ the reasons are in [docs/adr](docs/adr/).
 `underdraw check drafts/airbnb-listing` checks a draft against it.
 `underdraw render drafts/airbnb-listing --width 1120` draws it.
 `underdraw handoff drafts/airbnb-listing --platform ios` hands it to iOS.
+`underdraw compare drafts/airbnb-listing --platform ios --capture c.json` checks
+what was built; `underdraw compare --help` says how to write the capture.
 
 ## Open questions
 

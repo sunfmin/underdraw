@@ -86,3 +86,6 @@ each node is built there, and the expected states.
 For one fixture or phase at one breakpoint, which nodes are present and what
 each shows; what a platform's tests assert.
 _Avoid_: snapshot
+
+**Capture** — the elements of a running UI in one state, read by test id:
+where each is, what it says, whether it can be used.
