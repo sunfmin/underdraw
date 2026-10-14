@@ -15,7 +15,9 @@ mod fixture;
 mod schema;
 mod template;
 
+// Never called: each is there for Flux to refuse.
 #[cfg(flux)]
+#[allow(dead_code)]
 mod rejected;
 
 pub use check::{Checked, Condition, Finding, check};

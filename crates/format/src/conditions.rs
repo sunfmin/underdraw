@@ -77,7 +77,12 @@ impl Conditions {
         stack.push(name.to_string());
         let mut names = Vec::new();
         uses(&condition.when, &mut names);
-        let found = names.iter().filter(|n| self.contains(n)).find_map(|n| self.cycle(n, stack));
+        let mut found = None;
+        for used in &names {
+            if found.is_none() && self.contains(used) {
+                found = self.cycle(used, stack);
+            }
+        }
         stack.pop();
         found
     }
@@ -105,19 +110,25 @@ impl Conditions {
                     self.collect_guards(item, stack, found);
                 }
             }
-            Expr::Atom(Atom::Name(name)) if !stack.contains(name) => {
-                if let Some(condition) = self.get(name) {
+            Expr::Atom(Atom::Name(name)) => {
+                if let Some(condition) = self.get(name)
+                    && !stack.contains(name)
+                {
                     stack.push(name.clone());
                     self.collect_guards(&condition.when, stack, found);
                     stack.pop();
                 }
             }
             Expr::Atom(Atom::Group(inner)) => self.collect_guards(inner, stack, found),
-            Expr::Compare(Op::Ne, Atom::Name(path), Atom::Null)
-            | Expr::Compare(Op::Ne, Atom::Null, Atom::Name(path))
-                if !self.contains(path) =>
-            {
-                found.insert(path.clone());
+            Expr::Compare(Op::Ne, left, right) => {
+                let path = match (left, right) {
+                    (Atom::Name(path), Atom::Null) => path,
+                    (Atom::Null, Atom::Name(path)) => path,
+                    _ => return,
+                };
+                if !self.contains(path) {
+                    found.insert(path.clone());
+                }
             }
             _ => {}
         }
@@ -268,7 +279,13 @@ impl Conditions {
                     stack.pop();
                     Value::Bool(holds)
                 }
-                None => name.split('.').try_fold(data, |v, seg| v.get(seg)).cloned().unwrap_or(Value::Null),
+                None => {
+                    let mut at = Some(data);
+                    for segment in name.split('.') {
+                        at = at.and_then(|v| v.get(segment));
+                    }
+                    at.cloned().unwrap_or(Value::Null)
+                }
             },
         }
     }
@@ -282,7 +299,11 @@ fn uses(expr: &Expr, names: &mut Vec<String>) {
         _ => {}
     };
     match expr {
-        Expr::Or(items) | Expr::And(items) => items.iter().for_each(|e| uses(e, names)),
+        Expr::Or(items) | Expr::And(items) => {
+            for item in items {
+                uses(item, names);
+            }
+        }
         Expr::Not(inner) => uses(inner, names),
         Expr::Atom(a) => atom(a, names),
         Expr::Compare(_, l, r) => {

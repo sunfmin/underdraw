@@ -67,11 +67,13 @@ impl Schema {
 
     /// Every named type a field uses is declared.
     fn check_names(&self, findings: &mut Findings) {
-        let declared = self.shapes.iter().filter_map(|(name, shape)| match shape {
-            Shape::Object(fields) => Some((format!("types.{name}"), fields)),
-            Shape::Enum(_) => None,
-        });
-        for (at, fields) in declared.chain(std::iter::once(("data".to_string(), &self.roots))) {
+        let mut declared = vec![("data".to_string(), &self.roots)];
+        for (name, shape) in &self.shapes {
+            if let Shape::Object(fields) = shape {
+                declared.push((format!("types.{name}"), fields));
+            }
+        }
+        for (at, fields) in declared {
             for (name, field) in fields {
                 if let Base::Named(type_name) = &field.base
                     && !self.shapes.contains_key(type_name)
@@ -147,7 +149,14 @@ fn enum_members(text: &str) -> Option<Vec<String>> {
     members.iter().all(|m| field::is_identifier(m)).then_some(members)
 }
 
-/// The object under `key`, or nothing.
-pub fn object<'a>(screen: &'a Value, key: &str) -> impl Iterator<Item = (&'a String, &'a Value)> {
-    screen.get(key).and_then(Value::as_object).into_iter().flatten()
+/// The entries of the object under `key`, in the order written; none when
+/// there is no such object.
+pub fn object<'a>(screen: &'a Value, key: &str) -> Vec<(&'a String, &'a Value)> {
+    let mut entries = Vec::new();
+    if let Some(Value::Object(map)) = screen.get(key) {
+        for entry in map {
+            entries.push(entry);
+        }
+    }
+    entries
 }

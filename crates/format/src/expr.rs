@@ -108,7 +108,6 @@ pub(crate) struct Cursor {
 }
 
 impl Cursor {
-    #[spec(fn(tokens: Vec<Token>[@n]) -> Cursor[0, n])]
     fn new(tokens: Vec<Token>) -> Cursor {
         Cursor { tokens, pos: 0 }
     }

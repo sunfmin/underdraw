@@ -80,7 +80,10 @@ pub fn check(screen: &Value) -> Checked {
         None => walk.findings.add("root", "the screen needs a root node"),
     }
     let mut phases = Vec::new();
-    for (name, tree) in object(screen, "phases").filter(|(name, _)| !name.starts_with('$')) {
+    for (name, tree) in object(screen, "phases") {
+        if name.starts_with('$') {
+            continue;
+        }
         // A phase renders before data arrives: nothing in it may read data.
         walk.node(tree, &Vec::new(), &BTreeSet::new(), &format!("phases.{name}"), "");
         phases.push(name.clone());
@@ -89,11 +92,12 @@ pub fn check(screen: &Value) -> Checked {
     let mut table = Vec::new();
     if findings.0.is_empty() {
         for condition in conditions.all() {
-            let holds_in: Vec<String> = fixtures
-                .iter()
-                .filter(|(_, data)| conditions.holds(&condition.name, data))
-                .map(|(name, _)| name.clone())
-                .collect();
+            let mut holds_in = Vec::new();
+            for (name, data) in &fixtures {
+                if conditions.holds(&condition.name, data) {
+                    holds_in.push(name.clone());
+                }
+            }
             if holds_in.is_empty() || holds_in.len() == fixtures.len() {
                 let always = if holds_in.is_empty() { "false" } else { "true" };
                 findings.add(
@@ -242,7 +246,12 @@ impl Walk<'_> {
                 self.findings.add(at, &format!("{path} is not a path here"));
                 continue;
             };
-            let open: Vec<&String> = resolved.nullable.iter().filter(|p| !guarded.contains(*p)).collect();
+            let mut open = Vec::new();
+            for prefix in &resolved.nullable {
+                if !guarded.contains(prefix) {
+                    open.push(prefix);
+                }
+            }
             if !open.is_empty() {
                 self.findings.add(
                     at,
