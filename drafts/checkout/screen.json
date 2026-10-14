@@ -6,17 +6,18 @@
   "$comment": "The last step before paying: where it goes, how fast, how it is paid, what it costs. Phone: one column with a sticky total. Desktop: the order on the left, the summary card on the right.",
 
   "data": {
-    "cart": "Cart",
-    "address": "Address?",
-    "delivery": "Delivery",
-    "promo": "Promo",
+    "cart": { "type": "Cart", "from": "getCart" },
+    "address": { "type": "Address?", "from": "getAddress" },
+    "delivery": { "type": "DeliveryRow[] 1..4", "from": "listDeliveryOptions" },
+    "promo": { "type": "Promo", "from": "getPromo" },
+    "promoCode": { "type": "string ..20 = \"\"", "view": true, "doc": "The code being typed, before it is applied" },
     "payment": "Payment",
-    "summary": { "type": "Summary", "from": "getCheckout" }
+    "summary": { "type": "Summary", "from": "getSummary" }
   },
   "types": {
     "Cart": {
       "items": "CartItem[] 1..50",
-      "itemCount": { "type": "int 1..", "derived": { "app": "sum of the items' quantities" } },
+      "itemCount": { "type": "int 1..", "derived": { "server": "sum of the items' quantities" } },
       "unavailableCount": { "type": "int 0..", "derived": { "server": "items that are out of stock" } }
     },
     "CartItem": {
@@ -26,7 +27,7 @@
       "image": "image",
       "price": "money",
       "quantity": "int 1..10",
-      "lineTotal": { "type": "money", "derived": { "app": "price × quantity" } },
+      "lineTotal": { "type": "money", "derived": { "server": "price × quantity" } },
       "inStock": "bool = true"
     },
     "Address": {
@@ -34,16 +35,16 @@
       "phone": "string",
       "line": { "type": "string 1..120", "doc": "Province, city, district and street, as one line" }
     },
-    "Delivery": {
-      "options": "DeliveryOption[] 1..4"
+    "DeliveryRow": {
+      "option": "DeliveryOption",
+      "free": { "type": "bool = false", "derived": { "app": "the option's price is zero" } }
     },
     "DeliveryOption": {
       "id": "string",
       "label": "string",
       "eta": { "type": "string", "doc": "When it arrives, in words: 预计 10月16日 送达" },
       "price": "money",
-      "free": { "type": "bool = false", "derived": { "app": "price is zero" } },
-      "selected": "bool = false"
+      "selected": { "type": "bool = false", "doc": "The option the order will ship with; chooseDelivery changes it" }
     },
     "Promo": {
       "code": "string ..20 = \"\"",
@@ -53,7 +54,7 @@
     },
     "PromoStatus": "enum(none, applied, invalid)",
     "Payment": {
-      "method": "PayMethod",
+      "method": { "type": "PayMethod", "view": true, "doc": "The method chosen on this screen, passed to placeOrder" },
       "options": "PaymentOption[] 1..",
       "cardLast4": { "type": "string?", "doc": "The saved card; null when none is saved" }
     },
@@ -68,6 +69,10 @@
       "subtotal": "money",
       "shipping": "money",
       "total": { "type": "money", "derived": { "server": "subtotal + shipping − discount" } }
+    },
+    "PlacedOrder": {
+      "id": "string",
+      "total": "money"
     }
   },
 
@@ -83,16 +88,37 @@
   },
 
   "operations": {
-    "getCheckout": { "query": "What the order being checked out costs; loading it again loads the whole screen", "result": "Summary",
-                     "fails": { "offline": "the server cannot be reached" } },
-    "removeItem": { "command": "Takes an item out of the cart", "params": { "id": "string" } },
-    "chooseDelivery": { "command": "Delivers the order by this option", "params": { "id": "string" } },
-    "applyPromo": { "command": "Applies a promo code to the order", "params": { "code": "string 1..20" }, "result": "Promo",
-                    "fails": { "invalid": "the code does not exist, has expired, or does not cover these items" } },
-    "removePromo": { "command": "Takes the promo code off the order", "result": "Promo" },
-    "choosePayment": { "command": "Pays for the order by this method", "params": { "method": { "type": "string", "doc": "a PaymentOption id: card, alipay or wechat" } } },
-    "placeOrder": { "command": "Places the order and starts payment", "requires": "canPlace",
-                    "fails": { "outOfStock": "an item sold out meanwhile", "paymentRefused": "the payment did not go through" } }
+    "getCart":    { "query": "The items in the person's cart, with what each costs and how many are out of stock; the screen loads with it, so loading it again loads the whole screen",
+                    "result": "Cart",
+                    "fails": { "offline": "the server cannot be reached" } },
+    "getAddress": { "query": "The address the order ships to; null when the person has none yet",
+                    "result": "Address?" },
+    "listDeliveryOptions": { "query": "The ways the cart can ship, the one the order ships with selected",
+                    "result": "DeliveryOption[] 1..4" },
+    "getPromo":   { "query": "The promo code on the order: none, applied, or the last one refused and why",
+                    "result": "Promo" },
+    "getSummary": { "query": "What the order costs: subtotal, shipping, and the total after any discount",
+                    "result": "Summary" },
+    "chooseDelivery": { "command": "Ships the order with this delivery option, which changes its shipping cost",
+                    "params": { "id": "string" },
+                    "fails": { "unavailable": "the option no longer ships to the address" } },
+    "setQuantity": { "command": "Sets how many of an item the order holds",
+                    "params": { "id": "string", "quantity": "int 1..10" },
+                    "fails": { "notFound": "the item is no longer in the cart",
+                               "outOfStock": "not that many are in stock" } },
+    "removeItem": { "command": "Takes an item out of the cart",
+                    "params": { "id": "string" },
+                    "fails": { "notFound": "the item is no longer in the cart" } },
+    "applyPromo": { "command": "Applies the promo code the person typed to the order",
+                    "params": { "code": "string 1..20" },
+                    "fails": { "invalid": "no promo code is called that, or it has expired; getPromo says why" } },
+    "removePromo": { "command": "Takes the applied promo code off the order" },
+    "placeOrder": { "command": "Places the order and charges it to the chosen payment method",
+                    "params": { "method": "PayMethod" },
+                    "result": "PlacedOrder",
+                    "requires": "canPlace",
+                    "fails": { "declined": "the payment was declined",
+                               "priceChanged": "a price changed since the summary was read; read it again" } }
   },
 
   "fixtures": {
@@ -113,14 +139,13 @@
         ]
       },
       "address": { "name": "孙小明", "phone": "138 **** 5678", "line": "上海市 徐汇区 漕溪北路 88 号 2 栋 1203 室" },
-      "delivery": {
-        "options": [
-          { "id": "standard", "label": "标准配送", "eta": "预计 10月18日 送达",
-            "price": { "amount": 0, "currency": "CNY" }, "free": true, "selected": true },
-          { "id": "express", "label": "次日达", "eta": "预计 10月15日 送达",
-            "price": { "amount": 18, "currency": "CNY" } }
-        ]
-      },
+      "delivery": [
+        { "free": true,
+          "option": { "id": "standard", "label": "标准配送", "eta": "预计 10月18日 送达",
+                      "price": { "amount": 0, "currency": "CNY" }, "selected": true } },
+        { "option": { "id": "express", "label": "次日达", "eta": "预计 10月15日 送达",
+                      "price": { "amount": 18, "currency": "CNY" } } }
+      ],
       "promo": { "code": "", "status": "none" },
       "payment": {
         "method": "card",
@@ -139,14 +164,13 @@
     },
     "express-alipay": {
       "$patch": "default",
-      "delivery": {
-        "options": [
-          { "id": "standard", "label": "标准配送", "eta": "预计 10月18日 送达",
-            "price": { "amount": 0, "currency": "CNY" }, "free": true },
-          { "id": "express", "label": "次日达", "eta": "预计 10月15日 送达",
-            "price": { "amount": 18, "currency": "CNY" }, "selected": true }
-        ]
-      },
+      "delivery": [
+        { "free": true,
+          "option": { "id": "standard", "label": "标准配送", "eta": "预计 10月18日 送达",
+                      "price": { "amount": 0, "currency": "CNY" } } },
+        { "option": { "id": "express", "label": "次日达", "eta": "预计 10月15日 送达",
+                      "price": { "amount": 18, "currency": "CNY" }, "selected": true } }
+      ],
       "payment": {
         "method": "alipay",
         "options": [
@@ -167,7 +191,8 @@
     },
     "promo-invalid": {
       "$patch": "default",
-      "promo": { "code": "FALL2025", "status": "invalid", "message": "优惠码已过期" }
+      "promo": { "code": "FALL2025", "status": "invalid", "message": "优惠码已过期" },
+      "promoCode": "FALL2025"
     },
     "no-address-new-card": {
       "$patch": "default",
@@ -204,7 +229,7 @@
       "id": "place-order", "kind": "Button", "variant": "primary",
       "text": "提交订单 · {summary.total|money}",
       "disabled": "!canPlace",
-      "on": { "tap": { "call": "placeOrder" } }
+      "on": { "tap": { "call": "placeOrder", "with": { "method": "{payment.method}" } } }
     },
     "place-hint": {
       "id": "place-hint", "kind": "Text", "if": "!canPlace", "font": "font.caption", "color": "color.danger",
@@ -275,7 +300,8 @@
                           ] }
                       ],
                       "trailing": [
-                        { "id": "item-{index}-qty", "kind": "Stepper", "if": "item.inStock", "bind": "item.quantity" },
+                        { "id": "item-{index}-qty", "kind": "Stepper", "if": "item.inStock", "bind": "item.quantity",
+                          "on": { "change": { "call": "setQuantity", "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } },
                         { "id": "item-{index}-remove", "kind": "Button", "if": "!item.inStock", "variant": "secondary", "size": "small", "text": "移除",
                           "on": { "tap": { "call": "removeItem", "with": { "id": "{item.id}" } } } }
                       ]
@@ -287,17 +313,17 @@
                 "id": "sec-delivery", "kind": "Section", "title": "配送方式", "gap": "space.2",
                 "children": [
                   {
-                    "id": "delivery", "kind": "List", "gap": "space.2", "each": "delivery.options",
+                    "id": "delivery", "kind": "List", "gap": "space.2", "each": "delivery",
                     "item": {
                       "id": "delivery-{index}", "kind": "OptionRow",
-                      "selected": "{item.selected}",
-                      "title": "{item.label}",
-                      "detail": "{item.eta}",
+                      "selected": "{item.option.selected}",
+                      "title": "{item.option.label}",
+                      "detail": "{item.option.eta}",
                       "price": { "cases": [
                         { "if": "item.free", "then": "免运费" },
-                        { "else": "{item.price|money}" }
+                        { "else": "{item.option.price|money}" }
                       ] },
-                      "on": { "tap": { "call": "chooseDelivery", "with": { "id": "{item.id}" } } }
+                      "on": { "tap": { "call": "chooseDelivery", "with": { "id": "{item.option.id}" } } }
                     }
                   }
                 ]
@@ -307,13 +333,13 @@
                 "children": [
                   { "id": "promo-entry", "kind": "Row", "if": "!promoApplied", "gap": "space.2",
                     "children": [
-                      { "id": "promo-code", "kind": "TextField", "bind": "promo.code", "placeholder": "输入优惠码",
+                      { "id": "promo-code", "kind": "TextField", "bind": "promoCode", "placeholder": "输入优惠码",
                         "error": { "cases": [
                           { "if": "promoInvalid", "then": "{promo.message}" },
                           { "else": null }
                         ] } },
                       { "id": "promo-apply", "kind": "Button", "variant": "secondary", "text": "使用",
-                        "on": { "tap": { "call": "applyPromo", "with": { "code": "{promo.code}" } } } }
+                        "on": { "tap": { "call": "applyPromo", "with": { "code": "{promoCode}" } } } }
                     ] },
                   { "id": "promo-applied", "kind": "ListItem", "if": "promoApplied",
                     "leadingIcon": "sell",
@@ -333,7 +359,7 @@
                       "selected": "{item.selected}",
                       "icon": "{item.icon}",
                       "title": "{item.label}",
-                      "on": { "tap": { "call": "choosePayment", "with": { "method": "{item.id}" } } }
+                      "on": { "tap": { "set": "payment.method", "to": "{item.id}" } }
                     }
                   },
                   { "id": "card-saved", "kind": "ListItem", "if": "cardSaved",
@@ -385,7 +411,7 @@
             ] },
           { "id": "bar-submit", "kind": "Button", "variant": "primary", "text": "提交订单",
             "disabled": "!canPlace",
-            "on": { "tap": { "call": "placeOrder" } } }
+            "on": { "tap": { "call": "placeOrder", "with": { "method": "{payment.method}" } } } }
         ]
       }
     ]
@@ -408,7 +434,7 @@
         { "id": "error-state", "kind": "EmptyState", "icon": "cloud_off",
           "title": "订单信息加载失败", "detail": "请检查网络后重试",
           "action": { "id": "error-retry", "kind": "Button", "variant": "primary", "text": "重试",
-                      "on": { "tap": { "call": "getCheckout" } } } }
+                      "on": { "tap": { "call": "getCart" } } } }
       ]
     }
   }
