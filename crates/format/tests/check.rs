@@ -225,7 +225,9 @@ fn each_fault_in_a_projects_kinds_is_found() {
             { "kind": "Glyph", "icon": "chevron.right" },
             { "box": "grid", "columns": ["2fr", "{width}", 48, "48"], "rows": ["1.5fr", "wide"] },
             { "box": "column", "backdrop": true },
-            { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } }
+            { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } },
+            { "box": "stack", "justify": { "cases": [ { "if": "title", "then": "end" }, { "else": "left" } ] } },
+            { "text": "{title}", "underline": "yes", "pin": { "x": "right", "y": "{edge}", "z": 1 } }
         ] }, "pinned": "yes" }
     }, "icons": { "checklist": "☑" } });
     let checked = check(&draft(), Some(&kinds));
@@ -242,6 +244,11 @@ fn each_fault_in_a_projects_kinds_is_found() {
         ("kinds.Wrong.look.children[5]", "backdrop is drawn only by a box that floats"),
         ("kinds.Wrong.assumed", "underdraw draws no guesses"),
         ("kinds.Wrong.pinned", "pinned is true or false"),
+        ("kinds.Wrong.look.children[7].box", "\"stack\" is not a box: write row, column, grid"),
+        ("kinds.Wrong.look.children[7].justify.cases[1].else", "\"left\" is not a justify"),
+        ("kinds.Wrong.look.children[8].underline", "underline is true or false"),
+        ("kinds.Wrong.look.children[8].pin.x", "\"right\" is not an edge: write start, center, end"),
+        ("kinds.Wrong.look.children[8].pin.z", "a pin holds x, y and inset"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
@@ -253,6 +260,11 @@ fn each_fault_in_a_projects_kinds_is_found() {
     }
     let pinned = checked.findings.iter().any(|f| f.at == "kinds.Wrong.look.children[6]");
     assert!(!pinned, "a pinned box may have a backdrop: {:#?}", checked.findings);
+    let decided_later =
+        ["kinds.Wrong.look.children[7].justify.cases[0].then", "kinds.Wrong.look.children[8].pin.y"];
+    for at in decided_later {
+        assert!(!checked.findings.iter().any(|f| f.at == at), "{at} passes: {:#?}", checked.findings);
+    }
 }
 
 #[test]

@@ -32,7 +32,7 @@ pub use conditions::{Condition as Definition, Conditions};
 pub use expr::{Atom, Expr, Op};
 pub use field::{Base, Field};
 pub use instance::{Node, State, instantiate};
-pub use kinds::{FILTERS, Kinds, LOOK_KEYS, Track};
+pub use kinds::{FILTERS, Kinds, LOOK, Takes, Track, takes};
 pub use model::{Model, model};
 pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};

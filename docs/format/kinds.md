@@ -60,7 +60,7 @@ Any look may carry `"if"`, and it is left out when the condition fails.
 | `aspect` | `"4:3"`, or a number. |
 | `grow`, `shrink`, `basis` | How the box takes up spare room in its row or column, or gives it back. |
 | `self` | `"start"`: as wide as its content, not its column. |
-| `items`, `justify` | Alignment of its children: `items` `"start"` or `"center"`; `justify` `"center"` or `"between"`. |
+| `items`, `justify` | Alignment of its children: `items` `"start"` or `"center"`; `justify` `"center"`, `"between"` or `"end"`. `check` refuses any other word, here and for `box`, `align`, `self`, `overflowX` and a `pin`'s edges. |
 | `columns`, `rows`, `span` | Grid tracks: a count, or a list such as `["58%", "1fr"]`. `span` makes a cell cover that many columns and rows. |
 | `fill`, `stroke`, `radius`, `dashed` | Its outline and fill, in an ink (below). |
 | `cross`, `topLine` | A crossed placeholder, or a line along its top, in an ink. |

@@ -7,57 +7,79 @@ use serde_json::{Map, Value};
 
 use crate::check::Findings;
 use crate::icons;
+use crate::overlay::Edge;
 
 /// The kinds underdraw ships, in the form a project's kinds.json takes.
 const DEFAULTS: &str = include_str!("../kinds.json");
 
-/// Every key a look may hold: what underdraw-layout reads. A look with
-/// `kind` holds that kind's props instead.
-pub const LOOK_KEYS: [&str; 43] = [
-    "if",
-    "cases",
-    "repeat",
-    "each",
-    "kind",
-    "children",
-    "text",
-    "font",
-    "ink",
-    "weight",
-    "maxLines",
-    "align",
-    "underline",
-    "strike",
-    "box",
-    "frame",
-    "fill",
-    "stroke",
-    "radius",
-    "dashed",
-    "cross",
-    "topLine",
-    "clip",
-    "gap",
-    "padding",
-    "margin",
-    "size",
-    "width",
-    "height",
-    "aspect",
-    "grow",
-    "shrink",
-    "basis",
-    "self",
-    "items",
-    "justify",
-    "columns",
-    "rows",
-    "span",
-    "overflowX",
-    "pin",
-    "backdrop",
-    "itemWidth",
+/// What a look key takes, as far as `check` can tell before the look is
+/// drawn. A placeholder, `cases` or null is filled in later and passes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Takes {
+    /// Anything: a length, an ink, a template, a look.
+    Any,
+    /// true or false.
+    Bool,
+    /// One of these words, each of which underdraw-layout draws.
+    Word(&'static [&'static str]),
+    /// Grid tracks: a count, or a list of [`Track`]s.
+    Tracks,
+    /// `{"x": edge, "y": edge, "inset": length}`, each edge an [`Edge`].
+    Pin,
+}
+
+/// Every key a look may hold, and what it takes: what underdraw-layout
+/// reads. A look with `kind` holds that kind's props instead.
+pub const LOOK: [(&str, Takes); 43] = [
+    ("if", Takes::Any),
+    ("cases", Takes::Any),
+    ("repeat", Takes::Any),
+    ("each", Takes::Any),
+    ("kind", Takes::Any),
+    ("children", Takes::Any),
+    ("text", Takes::Any),
+    ("font", Takes::Any),
+    ("ink", Takes::Any),
+    ("weight", Takes::Any),
+    ("maxLines", Takes::Any),
+    ("align", Takes::Word(&["start", "center", "end"])),
+    ("underline", Takes::Bool),
+    ("strike", Takes::Bool),
+    ("box", Takes::Word(&["row", "column", "grid"])),
+    ("frame", Takes::Bool),
+    ("fill", Takes::Any),
+    ("stroke", Takes::Any),
+    ("radius", Takes::Any),
+    ("dashed", Takes::Bool),
+    ("cross", Takes::Any),
+    ("topLine", Takes::Any),
+    ("clip", Takes::Any),
+    ("gap", Takes::Any),
+    ("padding", Takes::Any),
+    ("margin", Takes::Any),
+    ("size", Takes::Any),
+    ("width", Takes::Any),
+    ("height", Takes::Any),
+    ("aspect", Takes::Any),
+    ("grow", Takes::Any),
+    ("shrink", Takes::Any),
+    ("basis", Takes::Any),
+    ("self", Takes::Word(&["start"])),
+    ("items", Takes::Word(&["start", "center"])),
+    ("justify", Takes::Word(&["center", "between", "end"])),
+    ("columns", Takes::Tracks),
+    ("rows", Takes::Tracks),
+    ("span", Takes::Any),
+    ("overflowX", Takes::Word(&["clip"])),
+    ("pin", Takes::Pin),
+    ("backdrop", Takes::Bool),
+    ("itemWidth", Takes::Any),
 ];
+
+/// What `key` takes in a look, when a look reads it.
+pub fn takes(key: &str) -> Option<Takes> {
+    LOOK.into_iter().find(|(name, _)| *name == key).map(|(_, takes)| takes)
+}
 
 /// Keys a look may also hold, read by people and not drawn.
 const NOTES: [&str; 2] = ["$comment", "doc"];
@@ -120,6 +142,57 @@ pub(crate) fn track_faults(tracks: &Value, at: &str, findings: &mut Findings) {
 /// own `pin`: only a kind's whole look, put in an `overlay`, may.
 fn backdrop_without_pin(look: &Map<String, Value>) -> bool {
     look.get("backdrop") == Some(&Value::Bool(true)) && !look.contains_key("pin")
+}
+
+/// Every fault in `value`, at `at`, as what look key `key` takes. A
+/// placeholder, `cases` (each branch in turn) or null is decided later and
+/// passes.
+fn value_faults(takes: Takes, key: &str, value: &Value, at: &str, findings: &mut Findings) {
+    if let Value::Object(object) = value
+        && let Some(Value::Array(branches)) = object.get("cases")
+    {
+        for (index, branch) in branches.iter().enumerate() {
+            for side in ["then", "else"] {
+                if let Some(value) = branch.get(side) {
+                    value_faults(takes, key, value, &format!("{at}.cases[{index}].{side}"), findings);
+                }
+            }
+        }
+        return;
+    }
+    if value.is_null() || value.as_str().is_some_and(|text| text.contains('{')) {
+        return;
+    }
+    match takes {
+        Takes::Any => {}
+        Takes::Bool if value.is_boolean() => {}
+        Takes::Bool => findings.add(at, &format!("{key} is true or false")),
+        Takes::Word(words) if value.as_str().is_some_and(|word| words.contains(&word)) => {}
+        Takes::Word(words) => {
+            findings.add(at, &format!("{value} is not a {key}: write {}", words.join(", ")))
+        }
+        Takes::Tracks => track_faults(value, at, findings),
+        Takes::Pin => pin_faults(value, at, findings),
+    }
+}
+
+/// Every fault in a box's `pin`, at `at`.
+fn pin_faults(pin: &Value, at: &str, findings: &mut Findings) {
+    let Value::Object(pin) = pin else {
+        return findings.add(at, "pin is {\"x\": …, \"y\": …, \"inset\": …}");
+    };
+    let edges = Edge::ALL.map(Edge::key).join(", ");
+    for (key, value) in pin {
+        match key.as_str() {
+            "x" | "y" => {
+                if !value.as_str().is_some_and(|edge| edge.contains('{') || Edge::parse(edge).is_some()) {
+                    findings.add(&format!("{at}.{key}"), &format!("{value} is not an edge: write {edges}"));
+                }
+            }
+            "inset" => {}
+            _ => findings.add(&format!("{at}.{key}"), "a pin holds x, y and inset"),
+        }
+    }
 }
 
 /// Every kind there is.
@@ -252,16 +325,16 @@ impl Kinds {
                         self.branch_faults(value, &format!("{at}.cases"), top, findings);
                         continue;
                     }
-                    if nested.is_none()
-                        && !LOOK_KEYS.contains(&key.as_str())
-                        && !NOTES.contains(&key.as_str())
-                    {
-                        findings.add(
-                            at,
-                            &format!(
-                                "{key} is not a key a look reads; see `underdraw check --help`, KINDS.JSON"
+                    if nested.is_none() && !NOTES.contains(&key.as_str()) {
+                        match takes(key) {
+                            Some(takes) => value_faults(takes, key, value, &format!("{at}.{key}"), findings),
+                            None => findings.add(
+                                at,
+                                &format!(
+                                    "{key} is not a key a look reads; see `underdraw check --help`, KINDS.JSON"
+                                ),
                             ),
-                        );
+                        }
                     }
                     if nested.is_some()
                         && icons::is_icon_key(key)
@@ -270,9 +343,6 @@ impl Kinds {
                         && !icons::known(icon)
                     {
                         findings.add(&format!("{at}.{key}"), &icons::unknown(icon));
-                    }
-                    if nested.is_none() && (key == "columns" || key == "rows") {
-                        track_faults(value, &format!("{at}.{key}"), findings);
                     }
                     if key != "pin" && !NOTES.contains(&key.as_str()) {
                         self.look_faults(value, &format!("{at}.{key}"), false, findings);
