@@ -230,7 +230,7 @@ fn states(screen: &Value, model: &Model, phases: &[String], hidden: &[String]) -
     }
     let mut expected = Vec::new();
     for (state, named) in wanted {
-        for breakpoint in [Breakpoint::Compact, Breakpoint::Regular] {
+        for breakpoint in Breakpoint::ALL {
             let Ok(root) = instantiate(screen, state, breakpoint) else {
                 continue;
             };

@@ -358,3 +358,19 @@ fn order(l: &Value, r: &Value) -> Option<std::cmp::Ordering> {
         _ => None,
     }
 }
+
+/// Where a node or a branch asks a yes/no (`if`, `disabled`): `!` to turn
+/// it round, then a condition's name or a Bool path.
+pub(crate) struct UseSite<'a> {
+    pub(crate) negated: bool,
+    pub(crate) name: &'a str,
+}
+
+impl<'a> UseSite<'a> {
+    pub(crate) fn parse(used: &'a str) -> UseSite<'a> {
+        match used.strip_prefix('!') {
+            Some(name) => UseSite { negated: true, name },
+            None => UseSite { negated: false, name: used },
+        }
+    }
+}
