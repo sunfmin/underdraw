@@ -269,3 +269,37 @@ fn an_overlay_anchored_at_the_center_sits_in_the_middle() {
         "as far from top and bottom"
     );
 }
+
+#[test]
+fn a_dialog_hides_the_tags_of_what_it_covers() {
+    let kinds = serde_json::json!({ "kinds": { "Dialog": { "look": {
+        "box": "column", "width": "80%", "padding": 16, "fill": "paper", "stroke": "line",
+        "children": ["$children"] } } } });
+    let button = |id: &str| serde_json::json!({ "id": id, "kind": "Button", "text": id, "on": { "tap": { "go": id } } });
+    let buttons: Vec<Value> = ["a", "b", "c", "d", "e"].map(button).into();
+    let page = tiny_with(
+        serde_json::json!([{ "id": "body", "kind": "Stack", "gap": 8,
+            "children": buttons,
+            "overlay": { "id": "dialog", "kind": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
+        Some(&kinds),
+    );
+    let dialog = placed(&page, "dialog").rect;
+    let under = |id| {
+        let rect = placed(&page, id).rect;
+        let (x, y) = (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+        x >= dialog.x && x <= dialog.x + dialog.width && y >= dialog.y && y <= dialog.y + dialog.height
+    };
+    let labels: Vec<_> = ["a", "b", "c", "d", "e", "ok"].map(|id| (id, placed(&page, id).label)).into();
+    assert!(under("c") && !under("a") && !under("e"), "the dialog covers the middle: {labels:?}");
+    let mut next = 1;
+    for (id, label) in &labels {
+        if *id != "ok" && under(id) {
+            assert_eq!(*label, None, "{id} is under the dialog: {labels:?}");
+        } else {
+            assert_eq!(*label, Some(next), "{id} is numbered in order, skipping what is covered: {labels:?}");
+            next += 1;
+        }
+    }
+    let tags = page.draws.iter().filter(|d| matches!(d, Draw::Tag { .. })).count();
+    assert_eq!(tags, next as usize - 1, "a tag for each number, none for what is covered");
+}

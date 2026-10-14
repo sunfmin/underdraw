@@ -114,7 +114,18 @@ struct Out {
     /// Tags go over everything else, and are never cut by a clip.
     tags: Vec<Draw>,
     nodes: Vec<Placed>,
-    next_label: u32,
+    /// Nodes a person can act on, in order, waiting for their numbers: an
+    /// opaque box pinned over one later hides its tag.
+    numbered: Vec<Numbered>,
+}
+
+/// A node to number, unless something drawn later covers it.
+struct Numbered {
+    /// Its place in `Out::nodes`, when it is listed there.
+    node: Option<usize>,
+    rect: Rect,
+    tag: Rect,
+    covered: bool,
 }
 
 pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Result<Page, TaffyError> {
@@ -152,8 +163,9 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             height: known.height.unwrap_or(height),
         })
     })?;
-    let mut out = Out { draws: Vec::new(), tags: Vec::new(), nodes: Vec::new(), next_label: 1 };
+    let mut out = Out { draws: Vec::new(), tags: Vec::new(), nodes: Vec::new(), numbered: Vec::new() };
     emit(&tree, root, &laid, Rect::default(), None, &mut out)?;
+    number(&mut out);
     let size = tree.layout(laid.id)?.size;
     let mut draws = out.draws;
     draws.append(&mut out.tags);
@@ -201,6 +213,10 @@ fn emit(
         None => (parent.x + layout.location.x, parent.y + layout.location.y),
     };
     let rect = Rect { x, y, width, height };
+    let opaque = elem.looks.iter().any(|look| matches!(look, Look::Box { fill: Some(_), .. }));
+    if elem.pin.is_some() && opaque {
+        cover(rect, out);
+    }
     for look in &elem.looks {
         out.draws.push(match look {
             Look::Box { radius, fill, stroke, dashed } => Draw::Box {
@@ -248,8 +264,9 @@ fn emit(
     Ok(())
 }
 
-/// Notes where `node` went, and tags it: a number when a person can act on
-/// it, a dashed outline and "?" when `assumed` says why it was guessed. A
+/// Notes where `node` went, and tags it: a number, given once all is drawn,
+/// when a person can act on it, a dashed outline and "?" when `assumed`
+/// says why it was guessed. A
 /// node cut away entirely
 /// gets no tag.
 fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, out: &mut Out) {
@@ -257,12 +274,10 @@ fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, 
         Some(area) => overlaps(rect, area),
         None => true,
     };
-    let mut label = None;
     if seen && node.interactive {
-        label = Some(out.next_label);
-        let text = out.next_label.to_string();
-        out.next_label = out.next_label.saturating_add(1);
-        out.tags.push(Draw::Tag { rect: tag(rect.x - 6.0, rect.y - 6.0), text, ink: Ink::Strong });
+        let listed = (!node.id.is_empty()).then_some(out.nodes.len());
+        let tag = tag(rect.x - 6.0, rect.y - 6.0);
+        out.numbered.push(Numbered { node: listed, rect, tag, covered: false });
     }
     if seen && assumed.is_some() {
         let around =
@@ -278,8 +293,45 @@ fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, 
         out.tags.push(Draw::Tag { rect: corner, text: "?".to_string(), ink: Ink::Assumed });
     }
     if !node.id.is_empty() {
-        out.nodes.push(Placed { id: node.id.clone(), kind: node.kind.clone(), rect, label, assumed });
+        out.nodes.push(Placed { id: node.id.clone(), kind: node.kind.clone(), rect, label: None, assumed });
     }
+}
+
+/// Marks what an opaque box at `over`, drawn on top, covers: a node whose
+/// middle is under it, or whose tag would sit on it.
+fn cover(over: Rect, out: &mut Out) {
+    for numbered in &mut out.numbered {
+        let rect = numbered.rect;
+        let middle =
+            Rect { x: rect.x + rect.width / 2.0, y: rect.y + rect.height / 2.0, width: 0.0, height: 0.0 };
+        if inside(middle, over) || overlaps(numbered.tag, over) {
+            numbered.covered = true;
+        }
+    }
+}
+
+/// Numbers, in order, every node a person can act on and still see, and
+/// tags it.
+fn number(out: &mut Out) {
+    let mut next: u32 = 1;
+    for numbered in &out.numbered {
+        if numbered.covered {
+            continue;
+        }
+        if let Some(placed) = numbered.node.and_then(|index| out.nodes.get_mut(index)) {
+            placed.label = Some(next);
+        }
+        out.tags.push(Draw::Tag { rect: numbered.tag, text: next.to_string(), ink: Ink::Strong });
+        next = next.saturating_add(1);
+    }
+}
+
+/// Whether `point`, a rect with no size, lies within `area`.
+fn inside(point: Rect, area: Rect) -> bool {
+    point.x >= area.x
+        && point.x <= area.x + area.width
+        && point.y >= area.y
+        && point.y <= area.y + area.height
 }
 
 /// Where a box `size` long starts on a side from `start`, `length` long,
