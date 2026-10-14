@@ -141,7 +141,8 @@ NODES
     leading    before the body;  trailing  pushed to the far end
     action     in the body after children (EmptyState's button)
     overlay    floats over the node; its "anchor" is "bottom-trailing"
-               (default), "top-leading", "top-trailing" or "bottom-leading"
+               (default), "top-leading", "top-trailing", "bottom-leading"
+               or "center" (the middle of the node: a dialog)
   A kind draws its slots only if its look places "$children".
   "each" with no "item" passes the elements to the kind as "items" (photos):
     { "id": "photos", "kind": "ImageCarousel", "each": "listing.photos" }
@@ -190,7 +191,7 @@ POPUPS
     "fixtures":   { …, "cancel-dialog": { "$patch": "default", "cancelling": {…} } },
     "root": { "id": "screen", "kind": "Screen", "children": [ … ],
               "overlay": { "id": "cancel-dialog", "kind": "Dialog", "if": "dialogOpen",
-                           "children": [ … ] } }
+                           "anchor": "center", "children": [ … ] } }
   Inside it, paths through the nullable field are safe: "if" tests it.
   The button that opens it says so with a free action, { "open": "cancel-dialog" };
   a list of choices inside it is "each" like anywhere else.
@@ -199,8 +200,9 @@ POPUPS
     "fill": "paper", "stroke": "line", "children": ["$children"] }, with
   "width": {"compact": "88%", "regular": 480} on the node.
   What the wireframe does not show, so write it in the kind's "doc":
-  - The popup is drawn at the overlay's anchor corner, over the content
-    there; a look's "pin" does not centre it.
+  - "anchor" places it: "center" for a dialog, "bottom-leading" for a
+    sheet. On a Screen, the middle is the middle of the whole page, which
+    is as tall as its content.
   - No backdrop: an ink is opaque, so a full-size fill hides the screen.
 
 PHASES

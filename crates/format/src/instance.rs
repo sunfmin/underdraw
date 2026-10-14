@@ -71,6 +71,10 @@ pub struct Node {
 
 /// Keys that hold child nodes.
 pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
+
+/// Where an overlay floats over its node: a corner, or the middle. The
+/// first is the default.
+pub const ANCHORS: [&str; 5] = ["bottom-trailing", "top-leading", "top-trailing", "bottom-leading", "center"];
 /// Keys that only steer how the tree is built.
 const STRUCTURE: [&str; 11] =
     ["id", "kind", "ref", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];

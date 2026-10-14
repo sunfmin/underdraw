@@ -199,6 +199,15 @@ impl Walk<'_> {
                 );
             }
         }
+        if let Some(anchor) = object.get("anchor")
+            && !anchor.as_str().is_some_and(|anchor| crate::instance::ANCHORS.contains(&anchor))
+        {
+            let anchor = anchor.as_str().map_or_else(|| anchor.to_string(), str::to_string);
+            self.findings.add(
+                &format!("{at}.anchor"),
+                &format!("{anchor} is not an anchor: write {}", crate::instance::ANCHORS.join(", ")),
+            );
+        }
         for key in ["columns", "rows"] {
             match object.get(key) {
                 Some(Value::Object(per)) if crate::instance::is_responsive(per) => {

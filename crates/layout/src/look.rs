@@ -9,7 +9,7 @@
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{Kinds, Node, Track};
+use underdraw_format::{ANCHORS, Kinds, Node, Track};
 
 use crate::place::{Edge, Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
@@ -380,7 +380,7 @@ impl Catalog<'_> {
 
     /// `node`'s children in order: `leading`, the body (`children`, `item`,
     /// `action`), then `trailing` pushed to the far end; `overlay` floats
-    /// over the box at its `anchor`.
+    /// over the box at its `anchor`: a corner, or the center.
     fn children<'a>(&self, node: &'a Node) -> Vec<Elem<'a>> {
         let mut built = Vec::new();
         let mut trailing = Vec::new();
@@ -399,9 +399,14 @@ impl Catalog<'_> {
         }
         for child in &node.children {
             if child.slot == "overlay" {
-                let anchor = child.props.get("anchor").and_then(Value::as_str).unwrap_or("bottom-trailing");
-                let x = if anchor.contains("trailing") { Edge::End } else { Edge::Start };
-                let y = if anchor.contains("bottom") { Edge::End } else { Edge::Start };
+                let anchor = child.props.get("anchor").and_then(Value::as_str).unwrap_or(ANCHORS[0]);
+                let (x, y) = match anchor {
+                    "center" => (Edge::Center, Edge::Center),
+                    corner => (
+                        if corner.contains("trailing") { Edge::End } else { Edge::Start },
+                        if corner.contains("bottom") { Edge::End } else { Edge::Start },
+                    ),
+                };
                 built.push(self.node(child).pinned(Pin { x, y, inset: 16.0 }));
             }
         }

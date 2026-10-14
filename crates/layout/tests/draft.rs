@@ -251,3 +251,21 @@ fn a_grid_track_is_a_share_a_part_or_points() {
     let width = |id| placed(&page, id).rect.width;
     assert_eq!((width("share"), width("points"), width("part")), (390.0 - 48.0 - 195.0, 48.0, 195.0));
 }
+
+#[test]
+fn an_overlay_anchored_at_the_center_sits_in_the_middle() {
+    let page = tiny(serde_json::json!([
+        { "id": "body", "kind": "Stack", "children": [
+            { "id": "a", "kind": "Text", "text": "a" }, { "id": "b", "kind": "Text", "text": "b" },
+            { "id": "c", "kind": "Text", "text": "c" }, { "id": "d", "kind": "Text", "text": "d" } ],
+          "overlay": { "id": "dialog", "kind": "Card", "anchor": "center", "children": [
+            { "id": "dialog-text", "kind": "Text", "text": "?" } ] } }
+    ]));
+    let (body, dialog) = (placed(&page, "body").rect, placed(&page, "dialog").rect);
+    assert_eq!(dialog.x - body.x, body.x + body.width - (dialog.x + dialog.width), "as far from either side");
+    assert_eq!(
+        dialog.y - body.y,
+        body.y + body.height - (dialog.y + dialog.height),
+        "as far from top and bottom"
+    );
+}

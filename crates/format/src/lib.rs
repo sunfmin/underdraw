@@ -28,7 +28,7 @@ pub use check::{Checked, Condition, Finding, check};
 pub use conditions::{Condition as Definition, Conditions};
 pub use expr::{Atom, Expr, Op};
 pub use field::{Base, Field};
-pub use instance::{Breakpoint, Node, State, instantiate};
+pub use instance::{ANCHORS, Breakpoint, Node, State, instantiate};
 pub use kinds::{FILTERS, Kinds, LOOK_KEYS, Track};
 pub use model::{Model, model};
 pub use schema::{Schema, Shape};
