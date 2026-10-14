@@ -69,7 +69,14 @@ impl Catalog<'_> {
             "Stepper" => self.stepper(node),
             "PriceBreakdown" => price_breakdown(),
             "Skeleton" => skeleton(node),
-            _ => self.unknown(node),
+            _ => {
+                let mut elem = self.unknown(node);
+                elem.assumed = Some(format!(
+                    "{} is not a kind underdraw knows; drawn as a box with its name",
+                    node.kind
+                ));
+                elem
+            }
         };
         elem.source = Some(node);
         elem
@@ -562,6 +569,9 @@ fn glyph(icon: &str) -> &'static str {
         "plus" => "+",
         "star" => "★",
         "" => "",
+        // SF Symbols' convention: `x.fill` is the solid form of `x`, so a
+        // toggled state (done, saved) reads apart from its outline.
+        _ if icon.ends_with(".fill") => "◆",
         _ => "◇",
     }
 }

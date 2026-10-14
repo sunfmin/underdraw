@@ -17,7 +17,9 @@ A path names a value: dot-separated identifiers.
 
 - Roots are the keys of `data` (`listing`, `booking`); their types are in
   [data.md](data.md). A phase tree (`loading`, `error`) has no roots.
-- Inside `each`, two more roots exist: `item` (the element) and `index` (from 0).
+- A node with `each` repeats its `item` template once per element; inside
+  `item`, two more roots exist: `item` (the element) and `index` (from 0).
+  `children` of that node are drawn once, not per element, and see neither.
 - `each` iterates arrays only. Data that should be iterated is an array.
 
 ## Templates

@@ -13,6 +13,9 @@ pub(crate) struct Elem<'a> {
     pub(crate) looks: Vec<Look>,
     pub(crate) words: Option<Words>,
     pub(crate) source: Option<&'a Node>,
+    /// Why it is drawn from a guess, when the catalog guessed it; the
+    /// node's own `assumed` says why when the description did.
+    pub(crate) assumed: Option<String>,
     /// Its children are cut to it, with corners of this radius.
     pub(crate) clip: Option<f32>,
     /// Where it floats over its parent, out of the flow. Taffy only sizes
@@ -62,6 +65,7 @@ impl<'a> Elem<'a> {
             looks: Vec::new(),
             words: None,
             source: None,
+            assumed: None,
             clip: None,
             pin: None,
             children: Vec::new(),
@@ -225,7 +229,8 @@ fn emit(
         });
     }
     if let Some(node) = elem.source {
-        record(node, rect, clip, out);
+        let assumed = node.assumed.clone().or_else(|| elem.assumed.clone());
+        record(node, assumed, rect, clip, out);
     }
     let (inner, saved) = match elem.clip {
         Some(_) => (Some(cut(rect, clip)), Some(std::mem::take(&mut out.draws))),
@@ -244,9 +249,10 @@ fn emit(
 }
 
 /// Notes where `node` went, and tags it: a number when a person can act on
-/// it, a dashed outline and "?" when it is assumed. A node cut away entirely
+/// it, a dashed outline and "?" when `assumed` says why it was guessed. A
+/// node cut away entirely
 /// gets no tag.
-fn record(node: &Node, rect: Rect, clip: Option<Rect>, out: &mut Out) {
+fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, out: &mut Out) {
     let seen = match clip {
         Some(area) => overlaps(rect, area),
         None => true,
@@ -258,7 +264,7 @@ fn record(node: &Node, rect: Rect, clip: Option<Rect>, out: &mut Out) {
         out.next_label = out.next_label.saturating_add(1);
         out.tags.push(Draw::Tag { rect: tag(rect.x - 6.0, rect.y - 6.0), text, ink: Ink::Strong });
     }
-    if seen && node.assumed.is_some() {
+    if seen && assumed.is_some() {
         let around =
             Rect { x: rect.x - 2.0, y: rect.y - 2.0, width: rect.width + 4.0, height: rect.height + 4.0 };
         out.tags.push(Draw::Box {
@@ -272,13 +278,7 @@ fn record(node: &Node, rect: Rect, clip: Option<Rect>, out: &mut Out) {
         out.tags.push(Draw::Tag { rect: corner, text: "?".to_string(), ink: Ink::Assumed });
     }
     if !node.id.is_empty() {
-        out.nodes.push(Placed {
-            id: node.id.clone(),
-            kind: node.kind.clone(),
-            rect,
-            label,
-            assumed: node.assumed.clone(),
-        });
+        out.nodes.push(Placed { id: node.id.clone(), kind: node.kind.clone(), rect, label, assumed });
     }
 }
 
