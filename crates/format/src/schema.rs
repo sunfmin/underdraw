@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use crate::check::Findings;
-use crate::field::{self, Base, Field};
+use crate::field::{self, Base, By, Field};
 
 pub enum Shape {
     Object(Vec<(String, Field)>),
@@ -61,12 +61,13 @@ impl Schema {
             }
         };
         let schema = Schema { shapes, roots };
-        schema.check_names(findings);
+        schema.check_fields(findings);
         schema
     }
 
-    /// Every named type a field uses is declared.
-    fn check_names(&self, findings: &mut Findings) {
+    /// Every named type a field uses is declared, only a root of data is
+    /// filled by a query, and no server derives view state.
+    fn check_fields(&self, findings: &mut Findings) {
         let mut declared = vec![("data".to_string(), &self.roots)];
         for (name, shape) in &self.shapes {
             if let Shape::Object(fields) = shape {
@@ -75,10 +76,17 @@ impl Schema {
         }
         for (at, fields) in declared {
             for (name, field) in fields {
+                let at = format!("{at}.{name}");
                 if let Base::Named(type_name) = &field.base
                     && !self.shapes.contains_key(type_name)
                 {
-                    findings.add(&format!("{at}.{name}"), &format!("unknown type {type_name}"));
+                    findings.add(&at, &format!("unknown type {type_name}"));
+                }
+                if field.from.is_some() && !at.starts_with("data.") {
+                    findings.add(&at, "only a field of data is filled by a query: write from there");
+                }
+                if field.view && field.derived.as_ref().is_some_and(|derived| derived.by == By::Server) {
+                    findings.add(&at, "view state is the screen's alone: the app derives it, not the server");
                 }
             }
         }
@@ -121,10 +129,19 @@ impl Schema {
     /// as a dotted path from that type (`Doc.menuOpen`); none when every
     /// field it can reach is domain data.
     pub fn view_state(&self, field: &Field) -> Option<String> {
-        self.view_state_in(field.base.name(), &mut Vec::new())
+        self.reaches_in(field.base.name(), Mark::View, &mut Vec::new())
     }
 
-    fn view_state_in(&self, type_name: &str, seen: &mut Vec<String>) -> Option<String> {
+    /// The first field the app derives inside a value of `field`'s type, as
+    /// a dotted path from that type (`Summary.count`): what the app works
+    /// out for the screen, which no server answers with.
+    pub fn app_derived(&self, field: &Field) -> Option<String> {
+        self.reaches_in(field.base.name(), Mark::AppDerived, &mut Vec::new())
+    }
+
+    /// The first field with `mark` inside a value of the type `type_name`,
+    /// through every type it reaches.
+    fn reaches_in(&self, type_name: &str, mark: Mark, seen: &mut Vec<String>) -> Option<String> {
         if seen.iter().any(|name| name == type_name) {
             return None;
         }
@@ -133,11 +150,11 @@ impl Schema {
             return None;
         };
         for (name, field) in fields {
-            if field.view {
+            if mark.on(field) {
                 return Some(format!("{type_name}.{name}"));
             }
             if let Base::Named(inner) = &field.base
-                && let Some(found) = self.view_state_in(inner, seen)
+                && let Some(found) = self.reaches_in(inner, mark, seen)
             {
                 return Some(found);
             }
@@ -167,6 +184,22 @@ impl Schema {
             nullable.push(walked);
         }
         Some(Resolved { field, nullable })
+    }
+}
+
+/// What no operation's result may reach.
+#[derive(Clone, Copy)]
+enum Mark {
+    View,
+    AppDerived,
+}
+
+impl Mark {
+    fn on(self, field: &Field) -> bool {
+        match self {
+            Mark::View => field.view,
+            Mark::AppDerived => field.derived.as_ref().is_some_and(|derived| derived.by == By::App),
+        }
     }
 }
 

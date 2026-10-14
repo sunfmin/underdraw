@@ -425,7 +425,17 @@ impl Walk<'_> {
                             self.schema.resolve(scope, &placeholder.path).map(|resolved| resolved.field)
                         }
                     }
-                    None if self.schema.members(param).is_some_and(|m| m.iter().any(|m| m == text)) => {
+                    None if let Some(members) = self.schema.members(param) => {
+                        if !members.iter().any(|member| member == text) {
+                            self.findings.add(
+                                at,
+                                &format!(
+                                    "{text:?} is not one of {}'s choices: {}",
+                                    param.base.name(),
+                                    members.join(", ")
+                                ),
+                            );
+                        }
                         return;
                     }
                     _ => {

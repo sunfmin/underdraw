@@ -31,8 +31,8 @@ HOW EACH TYPE BECOMES SCHEMA
   T[]                   an array of T; a range bounds the count
   T?                    T or null
   A field without a default is required; no object takes a field it does
-  not declare. "doc" and "derived" become "description"; a default becomes
-  "default".
+  not declare. "doc" and "derived" (and who derives it) become
+  "description"; a default becomes "default".
 
 WHAT TRIPS YOU UP
   - The schema checks what `check` checks of a fixture's data, except that

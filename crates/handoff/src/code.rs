@@ -182,7 +182,7 @@ fn describe(field: &Field) -> Option<String> {
         parts.push(format!("default {default}"));
     }
     if let Some(derived) = &field.derived {
-        parts.push(format!("derived: {derived}"));
+        parts.push(format!("derived by the {}: {}", derived.by.name(), derived.how));
     }
     if field.base == Base::Int && !field.array {
         parts.push("an integer".to_string());

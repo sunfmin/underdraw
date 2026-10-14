@@ -43,6 +43,17 @@ fn each_event_names_the_operation_it_calls() {
         })
     );
     assert_eq!(operations[0]["result"], "Doc[]");
+    assert_eq!(
+        operations[0]["params"],
+        json!({ "sort": "SortKey = \"updated\"" }),
+        "a choice's default is shown"
+    );
+    assert_eq!(
+        operations[0]["fills"],
+        json!(["docs[].doc"]),
+        "the field the query fills, through the wrapper"
+    );
+    assert_eq!(operations[2].get("fills"), None, "a command fills no field");
 }
 
 #[test]

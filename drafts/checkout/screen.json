@@ -16,8 +16,8 @@
   "types": {
     "Cart": {
       "items": "CartItem[] 1..50",
-      "itemCount": { "type": "int 1..", "derived": "sum of the items' quantities" },
-      "unavailableCount": { "type": "int 0..", "derived": "items that are out of stock" }
+      "itemCount": { "type": "int 1..", "derived": { "app": "sum of the items' quantities" } },
+      "unavailableCount": { "type": "int 0..", "derived": { "server": "items that are out of stock" } }
     },
     "CartItem": {
       "id": "string",
@@ -26,7 +26,7 @@
       "image": "image",
       "price": "money",
       "quantity": "int 1..10",
-      "lineTotal": { "type": "money", "derived": "price × quantity" },
+      "lineTotal": { "type": "money", "derived": { "app": "price × quantity" } },
       "inStock": "bool = true"
     },
     "Address": {
@@ -42,7 +42,7 @@
       "label": "string",
       "eta": { "type": "string", "doc": "When it arrives, in words: 预计 10月16日 送达" },
       "price": "money",
-      "free": { "type": "bool = false", "derived": "price is zero" },
+      "free": { "type": "bool = false", "derived": { "app": "price is zero" } },
       "selected": "bool = false"
     },
     "Promo": {
@@ -62,12 +62,12 @@
       "id": "string",
       "label": "string",
       "icon": "icon",
-      "selected": { "type": "bool = false", "derived": "method is this option" }
+      "selected": { "type": "bool = false", "derived": { "app": "method is this option" } }
     },
     "Summary": {
       "subtotal": "money",
       "shipping": "money",
-      "total": { "type": "money", "derived": "subtotal + shipping − discount" }
+      "total": { "type": "money", "derived": { "server": "subtotal + shipping − discount" } }
     }
   },
 

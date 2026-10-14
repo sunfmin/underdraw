@@ -7,7 +7,10 @@
   "data": {
     "summary": "Summary",
     "sort": "Sort",
-    "docs": "DocRow[] ..50",
+    "docs": {
+      "type": "DocRow[] ..50",
+      "from": "listDocs"
+    },
     "rowMenu": {
       "type": "RowMenu?",
       "view": true,
@@ -18,13 +21,13 @@
     "Summary": {
       "count": {
         "type": "int 0..",
-        "derived": "docs' length"
+        "derived": { "app": "docs' length" }
       }
     },
     "Sort": {
       "label": {
         "type": "string 1..8",
-        "derived": "the selected option's label"
+        "derived": { "app": "the selected option's label" }
       },
       "menuOpen": {
         "type": "bool = false",
@@ -34,16 +37,17 @@
       "options": "SortOption[] 2..6"
     },
     "SortOption": {
-      "id": "string",
+      "id": "SortKey",
       "label": "string 1..8",
       "selected": "bool = false"
     },
+    "SortKey": "enum(updated, created, title, owner)",
     "DocRow": {
       "doc": "Doc",
       "menuOpen": {
         "type": "bool = false",
         "view": true,
-        "derived": "rowMenu is open on this document"
+        "derived": { "app": "rowMenu is open on this document" }
       }
     },
     "Doc": {
@@ -61,7 +65,7 @@
       "docId": "string",
       "canDelete": {
         "type": "bool = false",
-        "derived": "the person owns the document"
+        "derived": { "server": "the person owns the document" }
       }
     }
   },
@@ -87,7 +91,7 @@
     "listDocs": {
       "query": "The team's documents, in the order sort names",
       "params": {
-        "sort": "string"
+        "sort": "SortKey = \"updated\""
       },
       "result": "Doc[] ..50",
       "fails": {

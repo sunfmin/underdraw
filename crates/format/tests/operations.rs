@@ -2,7 +2,7 @@
 //! time: each is found where it was planted, and says what is wrong.
 
 use serde_json::Value;
-use underdraw_format::{Checked, Does, check, model};
+use underdraw_format::{Checked, Does, Fill, check, model};
 
 const DRAFT: &str = include_str!("../../../drafts/docs/screen.json");
 const KINDS: &str = include_str!("../../../drafts/docs/kinds.json");
@@ -39,6 +39,14 @@ fn the_draft_declares_its_operations_and_passes() {
             ("newDocument", Does::Command, None, Some("Doc".to_string())),
         ]
     );
+    let list = model.operations.get("listDocs").unwrap();
+    assert_eq!(list.fills, [Fill { field: "docs".to_string(), path: "docs[].doc".to_string() }]);
+    let sort = &list.params[0].1;
+    assert_eq!(
+        (sort.describe(), sort.default.clone()),
+        ("SortKey".to_string(), Some(Value::from("updated")))
+    );
+    assert!(model.operations.all().iter().filter(|o| o.name != "listDocs").all(|o| o.fills.is_empty()));
 }
 
 #[test]
@@ -51,12 +59,95 @@ fn each_planted_fault_is_found_where_it_was_planted() {
     let cases = [
         (
             "unknown-param-type",
-            r#""sort": "string"
-      },"#,
-            r#""sort": "SortKey"
-      },"#,
+            r#""sort": "SortKey = \"updated\"""#,
+            r#""sort": "SortKeys""#,
             "operations.listDocs.params.sort",
-            "unknown type SortKey",
+            "unknown type SortKeys",
+        ),
+        (
+            "param-default-not-a-choice",
+            r#""sort": "SortKey = \"updated\"""#,
+            r#""sort": "SortKey = \"modified\"""#,
+            "operations.listDocs.params.sort",
+            "its default \"modified\" is not one of SortKey's choices: updated, created, title, owner",
+        ),
+        (
+            "with-a-literal-not-a-choice",
+            r#""sort": "{item.id}""#,
+            r#""sort": "modified""#,
+            "sort-{item.id}.on.tap.with.sort",
+            "\"modified\" is not one of SortKey's choices",
+        ),
+        (
+            "with-a-path-not-of-the-choices",
+            r#""sort": "{item.id}""#,
+            r#""sort": "{item.label}""#,
+            "sort-{item.id}.on.tap.with.sort",
+            "is string, and the parameter is SortKey",
+        ),
+        (
+            "from-an-unknown-operation",
+            r#""from": "listDocs""#,
+            r#""from": "fetchDocs""#,
+            "data.docs.from",
+            "fetchDocs is not an operation",
+        ),
+        (
+            "from-a-command",
+            r#""from": "listDocs""#,
+            r#""from": "newDocument""#,
+            "data.docs.from",
+            "newDocument is a command",
+        ),
+        (
+            "filled-field-not-the-result",
+            r#""type": "DocRow[] ..50",
+      "from""#,
+            r#""type": "DocRow",
+      "from""#,
+            "data.docs",
+            "is DocRow, and listDocs answers with Doc[]",
+        ),
+        (
+            "filled-field-of-another-type",
+            r#""type": "DocRow[] ..50",
+      "from""#,
+            r#""type": "SortOption[] ..50",
+      "from""#,
+            "data.docs",
+            "is SortOption[], and listDocs answers with Doc[]",
+        ),
+        (
+            "from-on-a-type's-field",
+            r#""doc": "Doc",
+      "menuOpen""#,
+            r#""doc": { "type": "Doc", "from": "listDocs" },
+      "menuOpen""#,
+            "types.DocRow.doc",
+            "only a field of data is filled by a query",
+        ),
+        (
+            "result-reaches-app-derived",
+            r#""result": "Doc",
+      "fails""#,
+            r#""result": "Summary",
+      "fails""#,
+            "operations.newDocument.result",
+            "Summary holds Summary.count, which the app derives",
+        ),
+        (
+            "derived-without-who",
+            r#""derived": { "app": "docs' length" }"#,
+            r#""derived": "docs' length""#,
+            "types.Summary.count",
+            "derived says who computes it",
+        ),
+        (
+            "view-state-derived-by-the-server",
+            r#""derived": { "app": "rowMenu is open on this document" }"#,
+            r#""derived": { "server": "rowMenu is open on this document" }"#,
+            "types.DocRow.menuOpen",
+            "the app derives it, not the server",
         ),
         (
             "unknown-result-type",

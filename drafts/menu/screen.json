@@ -45,17 +45,17 @@
       "soldOut": "bool = false",
       "inCart": {
         "type": "int 0.. = 0",
-        "derived": "how many of this dish are in the cart"
+        "derived": { "app": "how many of this dish are in the cart" }
       },
       "inCartLabel": {
         "type": "string = \"\"",
-        "derived": "\"×2\" when inCart > 0, else empty"
+        "derived": { "app": "\"×2\" when inCart > 0, else empty" }
       }
     },
     "Cart": {
       "count": {
         "type": "int 0..",
-        "derived": "items in the cart"
+        "derived": { "app": "items in the cart" }
       },
       "total": "money",
       "minimum": {
@@ -64,11 +64,11 @@
       },
       "belowMinimum": {
         "type": "bool = false",
-        "derived": "total < minimum"
+        "derived": { "app": "total < minimum" }
       },
       "shortBy": {
         "type": "money",
-        "derived": "minimum − total, when below it"
+        "derived": { "app": "minimum − total, when below it" }
       }
     },
     "Customizing": {
@@ -79,17 +79,17 @@
       "addOns": "Choice[] ..8",
       "addOnCount": {
         "type": "int 0..",
-        "derived": "addOns' length"
+        "derived": { "app": "addOns' length" }
       },
       "note": "string ..40",
       "quantity": "int 1..20",
       "sizeChosen": {
         "type": "bool = false",
-        "derived": "one size is selected"
+        "derived": { "app": "one size is selected" }
       },
       "total": {
         "type": "money",
-        "derived": "(size + add-ons) × quantity"
+        "derived": { "app": "(size + add-ons) × quantity" }
       },
       "adding": "bool = false"
     },
@@ -99,7 +99,7 @@
       "extra": "money",
       "free": {
         "type": "bool = false",
-        "derived": "extra is zero"
+        "derived": { "app": "extra is zero" }
       },
       "selected": "bool = false"
     }
