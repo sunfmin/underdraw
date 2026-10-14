@@ -44,7 +44,11 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
                 .iter()
                 .map(|row| {
                     // Leaks what the app derives for the row.
-                    if wrong { with_extra(&row["option"], "free", json!(false)) } else { row["option"].clone() }
+                    if wrong {
+                        with_extra(&row["option"], "free", json!(false))
+                    } else {
+                        row["option"].clone()
+                    }
                 })
                 .collect();
             result(Value::Array(options))
