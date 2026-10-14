@@ -370,8 +370,10 @@ impl Walk<'_> {
                 ("set", Value::Object(paths)) => paths.keys().map(String::as_str).collect(),
                 ("set" | "toggle", Value::String(path)) => vec![path.as_str()],
                 ("set", _) => {
-                    self.findings
-                        .add(&at, "set names a path, with \"to\" for its value, or is an object of path: value");
+                    self.findings.add(
+                        &at,
+                        "set names a path, with \"to\" for its value, or is an object of path: value",
+                    );
                     continue;
                 }
                 ("toggle", _) => {
@@ -391,7 +393,8 @@ impl Walk<'_> {
             };
             for path in written {
                 if self.schema.resolve(scope, path).is_none() {
-                    self.findings.add(&at, &format!("{name} writes a field of the view model, and {path} is not one"));
+                    self.findings
+                        .add(&at, &format!("{name} writes a field of the view model, and {path} is not one"));
                 } else if !self.schema.in_view_state(scope, path) {
                     self.findings.add(
                         &at,
