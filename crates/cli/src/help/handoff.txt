@@ -22,8 +22,12 @@ ANSWERS
                   generated in the platform's language. Save it as is.
     "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
     "operations": [{"name", "does": "query" or "command", "doc", "params":
-                    {name: type}, "result", "requires", "fails": {name: when}}, …]
-                  the queries and commands the screen calls
+                    {name: type, with " = default" when it has one}, "result",
+                    "requires", "fails": {name: when}, "fills": [path, …]}, …]
+                  the queries and commands the screen calls. "fills": the
+                  fields of "data" a query's result lands in, "docs" or,
+                  through a wrapper type, "docs[].doc": map the answer there,
+                  and derive the rest of the view model in the app.
     "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
     "nodes":      [{"id", "kind", "parent", "slot",
                     "implement": how the platform builds this kind,
@@ -36,9 +40,12 @@ ANSWERS
     "hidden":     [{"id", "why"}, …]: nodes this platform does not build
     "states":     [{"state": {"fixture"} or {"phase"}, "breakpoint",
                     "present": [id, …],
-                    "shows": {id: {"text", "label", "value", "disabled", …}}}, …]
+                    "shows": {id: {"text", "label", "value", "disabled", …}},
+                    "calls": {id: [{"on", "operation", "with"}, …]}}, …]
                   every fixture and phase at both breakpoints: what the real
-                  UI must show, to assert in its tests by test id
+                  UI must show, to assert in its tests by test id; "calls" is
+                  the operation each node calls when acted on, with its
+                  arguments filled for that state (left out when none does)
     "fixtures":   {name: data}: each fixture merged and defaulted, ready to
                   decode into the generated model for previews and tests
     "unconfirmed": [{"id", "assumed"}, …]: guesses the person has not confirmed
@@ -51,7 +58,9 @@ HOW TO USE IT
     with its "implement"; an event with "operation" calls that operation,
     given "with", through the app's data layer.
   - Write one preview or test per state: load its fixture from "fixtures",
-    and assert every "present" id and every value in "shows".
+    and assert every "present" id and every value in "shows". Act on each
+    node in "calls" and assert the app calls that operation with "with"
+    (`underdraw compare` checks both, from a capture).
   - Ask the person about each "unconfirmed" item before building it.
 
 WHAT TRIPS YOU UP

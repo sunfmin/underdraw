@@ -33,10 +33,10 @@ DATA AND TYPES
     "types": {
       "Todo":    { "id": "string", "title": "string 1..80", "done": "bool = false",
                    "due": { "type": "date?", "doc": "No due date when null" } },
-      "Summary": { "remaining": { "type": "int 0..", "derived": "undone todos" } },
+      "Summary": { "remaining": { "type": "int 0..", "derived": { "app": "undone todos" } } },
       "Plan":    "enum(monthly, yearly)"
     }
-  A field is   type range? default?   or {"type", "doc", "derived", "view"}:
+  A field is   type range? default?   or {"type", "doc", "derived", "from", "view"}:
     type     a built-in, or a named type; "[]" after it: a list; "?": nullable
              ("date?", "Photo[]", "Photo[]?")
     range    lo..hi, either side open: a number's value, a string's length,
@@ -45,8 +45,14 @@ DATA AND TYPES
              ("bool = false", "string = \"\""). T? defaults to null. A list
              has no default: write [].
     doc      one line for the person and the implementing agent
-    derived  how the app or server computes it; fixtures supply the value.
-             The screen never computes: no arithmetic anywhere.
+    derived  who computes it, and how: {"app": "undone todos"} for what the
+             app works out for the screen, {"server": "the person owns it"}
+             for what the server answers with. Fixtures supply the value;
+             the screen never computes: no arithmetic anywhere. No
+             operation's result reaches an app-derived field, and view
+             state is never derived by the server.
+    from     on a field of "data" only: the query whose result fills it
+             (OPERATIONS). A field without it is the app's or the screen's.
     view     true: view state, held by the screen alone (an open menu, the
              row a popup is about), not domain data. No operation answers
              with it, so keep it out of the types operations return: wrap
@@ -207,7 +213,8 @@ OPERATIONS
   name. Each is a query (it only reads) or a command (it changes something):
     "operations": {
       "listDocs":  { "query": "The team's documents, in the order sort names",
-                     "params": { "sort": "string" }, "result": "Doc[] ..50" },
+                     "params": { "sort": "SortKey = \"updated\"" },
+                     "result": "Doc[] ..50" },
       "deleteDoc": { "command": "Deletes a document for everyone",
                      "params": { "id": "string" }, "requires": "canDelete",
                      "fails": { "notFound": "the document is already gone" } }
@@ -219,6 +226,21 @@ OPERATIONS
                view state. A query needs one; a command may have none.
     "requires" a condition (CONDITIONS) that must hold before it is called
     "fails"    each way it can fail: a name and when, {"offline": "…"}
+  A query fills the fields of "data" that name it with "from":
+    "data":  { "docs": { "type": "DocRow[] ..50", "from": "listDocs" } },
+    "types": { "DocRow": { "doc": "Doc",
+                           "menuOpen": { "type": "bool = false", "view": true } } }
+  The field is of the query's result type, or of a type that wraps it: one
+  field of the result's type (here doc), beside only view state and fields
+  the app derives. "[]" and "?" match the result's. A command fills no field.
+  A parameter with a fixed set of choices is an enum in "types", and the
+  view model offers the same enum, so a call passes one of them on:
+    "types": { "SortKey": "enum(updated, created, title, owner)",
+               "SortOption": { "id": "SortKey", "label": "string 1..8" } }
+    "params": { "sort": "SortKey = \"updated\"" }   default: the one the screen selects
+  The default is one of the choices; "with" gives a SortKey path
+  ("{item.id}") or a member as a literal ("title"), and check refuses
+  anything else.
   A node calls one as an action:
     "on": { "tap": { "call": "deleteDoc", "with": { "id": "{item.doc.id}" } } }
   "with" gives every parameter but those with a default, and no other. Each
@@ -413,7 +435,7 @@ A WHOLE SCREEN
   {
     "screen": "Inbox", "title": "Inbox", "tokens": "tokens.json",
     "data":  { "inbox": "Inbox" },
-    "types": { "Inbox": { "count": { "type": "int 0..", "derived": "messages' length" },
+    "types": { "Inbox": { "count": { "type": "int 0..", "derived": { "app": "messages' length" } },
                           "messages": "Message[]" },
                "Message": { "from": "string 1..", "unread": "bool = false" } },
     "conditions": { "hasMessages": { "when": "inbox.count > 0", "label": "Has mail" } },

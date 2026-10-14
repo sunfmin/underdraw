@@ -32,31 +32,31 @@
       "customer": "string 1..40",
       "itemsSummary": {
         "type": "string 1..60",
-        "derived": "first item's name and how many more"
+        "derived": { "app": "first item's name and how many more" }
       },
       "total": "money",
       "placedAt": "date",
       "statusLabel": {
         "type": "string 1..6",
-        "derived": "待付款 / 待发货 / 已发货 / 已取消, from the order's status"
+        "derived": { "app": "待付款 / 待发货 / 已发货 / 已取消, from the order's status" }
       },
       "cancellable": {
         "type": "bool = false",
-        "derived": "not shipped and not already cancelled"
+        "derived": { "server": "not shipped and not already cancelled" }
       }
     },
     "Summary": {
       "shown": {
         "type": "int 0..",
-        "derived": "orders' length"
+        "derived": { "app": "orders' length" }
       },
       "matching": {
         "type": "int 0..",
-        "derived": "orders matching query and filter, across all pages"
+        "derived": { "server": "orders matching query and filter, across all pages" }
       },
       "hasMore": {
         "type": "bool = false",
-        "derived": "matching > shown"
+        "derived": { "app": "matching > shown" }
       }
     },
     "CancelRequest": {
@@ -71,7 +71,7 @@
       "reasons": "Reason[] 2..6",
       "reasonChosen": {
         "type": "bool = false",
-        "derived": "one reason is selected"
+        "derived": { "app": "one reason is selected" }
       },
       "submitting": "bool = false"
     },

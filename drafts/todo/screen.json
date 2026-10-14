@@ -21,22 +21,22 @@
     "Summary": {
       "total": {
         "type": "int 0..",
-        "derived": "todos 的条数"
+        "derived": { "app": "todos 的条数" }
       },
       "remaining": {
         "type": "int 0..",
-        "derived": "未完成的条数"
+        "derived": { "app": "未完成的条数" }
       },
       "completed": {
         "type": "int 0..",
-        "derived": "已完成的条数"
+        "derived": { "app": "已完成的条数" }
       }
     },
     "Composer": {
       "text": "string ..80 = \"\"",
       "canSubmit": {
         "type": "bool",
-        "derived": "去掉首尾空白后非空"
+        "derived": { "app": "去掉首尾空白后非空" }
       }
     }
   },

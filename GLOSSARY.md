@@ -64,8 +64,9 @@ The data a screen shows, shaped as the screen needs it: its `data` and the named
 _Avoid_: API response, payload
 
 **Derived field**:
-A view-model field computed from other values by the app or server, never by
-the screen.
+A view-model field computed from other values, never by the screen, and
+saying by whom: the app (for the screen alone, so never in an operation's
+result) or the server (which answers with it).
 
 **Fixture**:
 One sample value of the view model; each fixture puts the screen in one state.
@@ -89,7 +90,9 @@ _Avoid_: flag, predicate
 **Operation**:
 A query (it only reads) or a command (it changes something) behind a screen:
 named, with parameters, a result type, an optional precondition (a
-condition) and named failures; a node calls it with `call`.
+condition) and named failures; a node calls it with `call`. A query names
+the `data` fields its result fills (`"from"`); a parameter with a fixed set
+of choices is an enum the view model offers too.
 _Avoid_: endpoint, API call, action
 
 **UI-only action**:
@@ -123,9 +126,11 @@ What one platform is given to build a screen: the generated view model, how
 each node is built there, and the expected states.
 
 **Expected state**:
-For one fixture or phase at one breakpoint, which nodes are present and what
-each shows; what a platform's tests assert.
+For one fixture or phase at one breakpoint, which nodes are present, what
+each shows, and which operation each calls when acted on; what a platform's
+tests assert.
 _Avoid_: snapshot
 
 **Capture** — the elements of a running UI in one state, read by test id:
-where each is, what it says, whether it can be used.
+where each is, what it says, whether it can be used; and, for each node the
+test acted on, the operations the app called.

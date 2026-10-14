@@ -59,3 +59,6 @@ The decisions:
   server's refusal is one of `fails`.
 - Gating accepts the same condition, or one whose top-level `&&` chain
   names it, as conditions guard nulls already.
+- [ADR 0010](0010-the-view-model-says-what-each-query-fills.md) extends
+  this: which `data` field a query fills, who derives a derived field, and
+  a parameter's choices as an enum.
