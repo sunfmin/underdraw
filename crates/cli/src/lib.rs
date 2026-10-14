@@ -41,6 +41,12 @@ enum Command {
     Doctor,
 }
 
+/// Exit 1: the answer names faults (`check` with findings). A gate or script
+/// can stop on the exit code alone; the full answer is still printed.
+const FAULTS: u8 = 1;
+/// Exit 2: the command could not do its work, and answered `{"error"}`.
+const FAILED: u8 = 2;
+
 /// Runs the command `args` names and prints its answer: one JSON object on
 /// stdout, except for `--help` and `--version`, which print text.
 pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
@@ -53,7 +59,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         Err(e) => {
             let usage = e.render().to_string();
             println!("{}", json!({ "error": usage.trim_end(), "fix": "underdraw --help" }));
-            return ExitCode::from(2);
+            return ExitCode::from(FAILED);
         }
     };
     let answer = match cli.command {
@@ -63,11 +69,14 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
     match answer {
         Ok(answer) => {
             println!("{answer}");
-            ExitCode::SUCCESS
+            match answer.get("ok") {
+                Some(Value::Bool(false)) => ExitCode::from(FAULTS),
+                _ => ExitCode::SUCCESS,
+            }
         }
         Err(e) => {
             println!("{}", json!({ "error": format!("{e:#}") }));
-            ExitCode::FAILURE
+            ExitCode::from(FAILED)
         }
     }
 }
