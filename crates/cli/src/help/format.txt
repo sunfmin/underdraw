@@ -181,6 +181,28 @@ COMPONENTS
                                 "icon": "arrow_back", "on": {"tap": {"back": true}} } }
   used as { "ref": "nav-back" } anywhere a node goes, phases included.
 
+POPUPS
+  underdraw has no dialog, sheet or menu kind. A popup is a state like any
+  other: a nullable field holds what it shows, a condition says it is open,
+  a fixture opens it, and its node floats in the screen's "overlay":
+    "data":       { …, "cancelling": "CancelRequest?" },
+    "conditions": { "dialogOpen": { "when": "cancelling != null", "label": "Dialog open" } },
+    "fixtures":   { …, "cancel-dialog": { "$patch": "default", "cancelling": {…} } },
+    "root": { "id": "screen", "kind": "Screen", "children": [ … ],
+              "overlay": { "id": "cancel-dialog", "kind": "Dialog", "if": "dialogOpen",
+                           "children": [ … ] } }
+  Inside it, paths through the nullable field are safe: "if" tests it.
+  The button that opens it says so with a free action, { "open": "cancel-dialog" };
+  a list of choices inside it is "each" like anywhere else.
+  "Dialog" is the project's own kind (kinds.json): a look such as
+  { "box": "column", "width": "{width|or:88%}", "padding": 24, "radius": 16,
+    "fill": "paper", "stroke": "line", "children": ["$children"] }, with
+  "width": {"compact": "88%", "regular": 480} on the node.
+  What the wireframe does not show, so write it in the kind's "doc":
+  - The popup is drawn at the overlay's anchor corner, over the content
+    there; a look's "pin" does not centre it.
+  - No backdrop: an ink is opaque, so a full-size fill hides the screen.
+
 PHASES
   "phases": { "loading": { "id": "loading", "kind": "Screen", "children": [
                 { "id": "sk", "kind": "Skeleton", "shape": ["image 4:3", "line 60%"] } ] } }
@@ -288,6 +310,9 @@ KINDS.JSON
     self                 "start": as wide as its content
     items                "start" | "center";  justify "center" | "between"
     columns rows span    grid tracks: a count or ["1fr", "1fr"]; span covers cells
+                         a track is "2fr", "40%" or a number of points:
+                         ["3fr", "1fr", 48]. Not "48": a quoted number
+                         passes check but collapses every track to its content
     fill stroke radius dashed   outline and fill in an ink
     cross topLine        a crossed placeholder, a line on top, in an ink
     clip                 cut children at this radius (false: never)
