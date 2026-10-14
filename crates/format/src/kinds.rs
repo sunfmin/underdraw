@@ -62,6 +62,10 @@ pub const LOOK_KEYS: [&str; 43] = [
 /// Keys a look may also hold, read by people and not drawn.
 const NOTES: [&str; 2] = ["$comment", "doc"];
 
+/// What a kind may say of itself beside its look, each true or false: how a
+/// platform treats it, which `compare` reads.
+const FLAGS: [&str; 2] = ["scrolls", "pinned"];
+
 /// The filters a placeholder in a look may apply.
 pub const FILTERS: [&str; 10] =
     ["or", "count", "first", "last", "head", "tail", "slashes", "glyph", "atLeast", "atMost"];
@@ -154,6 +158,22 @@ impl Kinds {
         self.kinds.get(kind).and_then(|entry| entry.get("look"))
     }
 
+    /// Whether `kind` says `"scrolls": true`: its content scrolls or pages
+    /// on a platform, so what is in it may lie outside its frame.
+    pub fn scrolls(&self, kind: &str) -> bool {
+        self.flag(kind, "scrolls")
+    }
+
+    /// Whether `kind` says `"pinned": true`: a platform pins it to the
+    /// screen, out of the flow of its siblings.
+    pub fn pinned(&self, kind: &str) -> bool {
+        self.flag(kind, "pinned")
+    }
+
+    fn flag(&self, kind: &str, key: &str) -> bool {
+        self.kinds.get(kind).and_then(|entry| entry.get(key)) == Some(&Value::Bool(true))
+    }
+
     /// Whether `kind`'s whole look has a backdrop, which draws only when its
     /// node is in an `overlay`.
     pub fn backdrop(&self, kind: &str) -> bool {
@@ -183,6 +203,13 @@ impl Kinds {
             let at = format!("kinds.{name}");
             if kind.get("assumed").is_some() {
                 findings.add(&format!("{at}.assumed"), "underdraw draws no guesses: finish this kind's look and take assumed out; a note for people goes in \"doc\"");
+            }
+            for flag in FLAGS {
+                if let Some(value) = kind.get(flag)
+                    && !value.is_boolean()
+                {
+                    findings.add(&format!("{at}.{flag}"), &format!("{flag} is true or false"));
+                }
             }
             match kind.get("look") {
                 Some(look) => self.look_faults(look, &format!("{at}.look"), true, findings),

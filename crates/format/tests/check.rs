@@ -2,7 +2,7 @@
 //! found where it was planted, and says what is wrong.
 
 use serde_json::{Value, json};
-use underdraw_format::{Checked, check};
+use underdraw_format::{Checked, Kinds, check};
 
 const DRAFT: &str = include_str!("../../../drafts/airbnb-listing/screen.json");
 
@@ -226,7 +226,7 @@ fn each_fault_in_a_projects_kinds_is_found() {
             { "box": "grid", "columns": ["2fr", "{width}", 48, "48"], "rows": ["1.5fr", "wide"] },
             { "box": "column", "backdrop": true },
             { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } }
-        ] } }
+        ] }, "pinned": "yes" }
     }, "icons": { "checklist": "☑" } });
     let checked = check(&draft(), Some(&kinds));
     let expected = [
@@ -241,6 +241,7 @@ fn each_fault_in_a_projects_kinds_is_found() {
         ("kinds.Wrong.look.children[4].rows[1]", "\"wide\" is not a grid track"),
         ("kinds.Wrong.look.children[5]", "backdrop is drawn only by a box that floats"),
         ("kinds.Wrong.assumed", "underdraw draws no guesses"),
+        ("kinds.Wrong.pinned", "pinned is true or false"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
@@ -260,4 +261,17 @@ fn a_kind_with_a_backdrop_must_be_an_overlay() {
         "box": "row", "backdrop": true, "children": [ { "text": "{text}" } ] } } } });
     let checked = check(&draft(), Some(&kinds));
     assert!(found(&checked, "guest-favorite", "put it in \"overlay\""), "{:#?}", checked.findings);
+}
+
+#[test]
+fn a_kind_says_whether_it_scrolls_or_is_pinned() {
+    let defaults = Kinds::read(None);
+    assert!(defaults.scrolls("Carousel") && defaults.pinned("StickyBar"));
+    assert!(!defaults.scrolls("Row") && !defaults.pinned("Row"));
+    let project = json!({ "kinds": {
+        "Feed": { "scrolls": true, "look": "$children" },
+        "StickyBar": { "look": "$children" } } });
+    let kinds = Kinds::read(Some(&project));
+    assert!(kinds.scrolls("Feed"), "a project's own kind scrolls when it says so");
+    assert!(!kinds.pinned("StickyBar"), "a project's kind replaces the default whole");
 }

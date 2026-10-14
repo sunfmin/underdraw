@@ -23,9 +23,14 @@ name. Why: [ADR 0007](../adr/0007-kinds-are-data.md).
 ```
 
 `check` refuses a node whose kind no file defines, and every fault in a
-project's looks. A kind still waiting for the person's approval carries
-`"assumed": "why it is a guess"`. `render` draws it in orange until the line
-is removed.
+project's looks. A kind is never a guess: `check` refuses `"assumed"` on a
+kind (a node may still carry one).
+
+Beside `look` and `doc`, a kind may say how a platform treats it, which
+`compare` reads: `"scrolls": true` when its content scrolls or pages, so what
+is in it may lie outside its frame (`Screen`, `Carousel`), and
+`"pinned": true` when it is pinned to the screen, out of its siblings' order
+(`StickyBar`).
 
 A layout rule (grow, alignment, sizes) belongs in the kind's look, written
 once, and never on a node in `screen.json`. A screen describes structure.

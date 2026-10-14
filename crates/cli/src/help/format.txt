@@ -297,6 +297,12 @@ KINDS.JSON
                   "children": [ { "text": "{text}", "font": "font.caption",
                                   "ink": { "cases": [ { "if": "selected", "then": "paper" },
                                                       { "else": "text" } ] } } ] } } } }
+  Beside "look" and "doc", a kind may say how a platform treats it, which
+  `compare` reads (each true or false):
+    "scrolls": true    its content scrolls or pages, so what is in it may
+                       lie outside its frame (Screen, Scroll, Carousel)
+    "pinned":  true    pinned to the screen, out of its siblings' order
+                       (StickyBar)
   A node then writes { "id": "chip-direct", "kind": "Chip", "text": "Direct",
   "selected": "{filters.direct}" }. A look's templates read the node's props
   (after the node's own templates are filled), not data.
