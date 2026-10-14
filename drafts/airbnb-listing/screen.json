@@ -39,7 +39,8 @@
     },
     "Host": { "name": "string 1..30", "avatar": "image", "isSuperhost": "bool", "yearsHosting": "int 0.." },
     "Highlight": { "icon": "icon", "title": "string 1..40", "detail": "string ..80 = \"\"" },
-    "Amenity": { "icon": "icon", "label": "string 1..30", "unavailable": "bool = false" },
+    "Amenity": { "icon": "icon", "label": "string 1..30", "unavailable": "bool = false",
+                 "category": { "type": "string 1..20", "doc": "卫浴、卧室、厨房……：全部设施按它分组，由后端提供" } },
     "RatingItem": { "label": "string 1..10", "value": "number 0..5" },
     "Review": { "author": "string 1..30", "avatar": "image", "date": "date", "text": "string 1..2000" },
     "Location": { "lat": "number -90..90", "lng": "number -180..180",
@@ -78,12 +79,12 @@
         ],
         "description": "公寓位于安静的住宅街，步行 6 分钟到涩谷站……（约 800 字）",
         "amenities": [
-          { "icon": "wifi", "label": "Wi‑Fi" }, { "icon": "kitchen", "label": "厨房" },
-          { "icon": "washer", "label": "洗衣机" }, { "icon": "ac", "label": "空调" },
-          { "icon": "tv", "label": "电视" }, { "icon": "desk", "label": "专用工作区" },
-          { "icon": "hairdryer", "label": "吹风机" }, { "icon": "elevator", "label": "电梯" },
-          { "icon": "smoke", "label": "烟雾报警器" }, { "icon": "first-aid", "label": "急救包" },
-          { "icon": "iron", "label": "熨斗" }, { "icon": "parking", "label": "免费停车", "unavailable": true }
+          { "icon": "wifi", "label": "Wi‑Fi", "category": "网络" }, { "icon": "kitchen", "label": "厨房", "category": "厨房" },
+          { "icon": "washer", "label": "洗衣机", "category": "洗衣" }, { "icon": "ac", "label": "空调", "category": "供暖与空调" },
+          { "icon": "tv", "label": "电视", "category": "娱乐" }, { "icon": "desk", "label": "专用工作区", "category": "工作" },
+          { "icon": "hairdryer", "label": "吹风机", "category": "卫浴" }, { "icon": "elevator", "label": "电梯", "category": "建筑设施" },
+          { "icon": "smoke", "label": "烟雾报警器", "category": "安全" }, { "icon": "first-aid", "label": "急救包", "category": "安全" },
+          { "icon": "iron", "label": "熨斗", "category": "洗衣" }, { "icon": "parking", "label": "免费停车", "unavailable": true, "category": "停车" }
         ],
         "ratingBreakdown": [ { "label": "干净卫生", "value": 4.9 }, { "label": "如实描述", "value": 4.9 }, { "label": "入住顺利", "value": 5.0 },
                              { "label": "沟通顺畅", "value": 5.0 }, { "label": "交通便利", "value": 4.9 }, { "label": "性价比", "value": 4.8 } ],
@@ -160,7 +161,7 @@
                     "on": { "tap": { "open": "sheet-reviews" } },
                     "children": [
                       { "id": "guest-favorite", "kind": "Badge", "if": "listing.isGuestFavorite", "text": "房客推荐",
-                        "assumed": "徽章的显示条件我猜是 isGuestFavorite，由后端决定；还是前端按 rating ≥ 4.9 自己算？" },
+                        "$note": "是否显示由后端决定（isGuestFavorite），前端不按评分自己算。" },
                       { "id": "rating-value", "kind": "Rating", "value": "{listing.rating}", "showStars": true, "$note": "整个字符串只有一个占位符，传的是数值本身" },
                       { "id": "rating-count", "kind": "Text", "text": "{listing.reviewCount} 条评价", "font": "font.subhead", "underline": true } ] },
 
@@ -211,7 +212,7 @@
                     "children": [
                       { "id": "calendar-picker", "kind": "DateRangePicker", "bind": ["booking.checkIn", "booking.checkOut"],
                         "months": { "compact": 1, "regular": 2 }, "disablePast": true,
-                        "assumed": "已被订走的日期是否画删除线？我按“画删除线且不可点”处理。" },
+                        "bookedDates": "灰色且不可点，不画删除线" },
                       { "id": "calendar-clear", "kind": "Link", "text": "清除日期", "if": "hasDates",
                         "on": { "tap": { "set": { "booking.checkIn": null, "booking.checkOut": null } } } } ] }
                 ] },
@@ -232,7 +233,7 @@
                   { "id": "card-no-charge", "kind": "Text", "text": "你暂时不会被扣款", "if": "canReserve",
                     "font": "font.caption", "align": "center" },
                   { "id": "card-breakdown", "kind": "PriceBreakdown", "if": "canReserve",
-                    "assumed": "明细行我按“房费 × 晚数、清洁费、服务费、合计”四行处理，税是否单列待确认。" } ] }
+                    "lines": ["房费 × {booking.nights} 晚", "清洁费", "服务费", "税费"], "total": "合计" } ] }
             ] },
 
           { "id": "divider-6", "kind": "Divider" },
@@ -305,8 +306,7 @@
 
   "sheets": {
     "sheet-description":  { "title": "关于此房源", "content": "listing.description 全文" },
-    "sheet-amenities":    { "title": "提供的设施", "content": "listing.amenities 全部，按类别分组",
-                            "assumed": "类别（卫浴、卧室、厨房……）字段数据里还没有，需要后端提供？" },
+    "sheet-amenities":    { "title": "提供的设施", "content": "listing.amenities 全部，按 category 分组" },
     "sheet-reviews":      { "title": "{listing.reviewCount} 条评价", "content": "评分明细 + 全部评价 + 搜索框" },
     "sheet-rules":        { "title": "房屋守则", "content": "入住/退房时间、禁烟、宠物等" },
     "sheet-safety":       { "title": "安全与房源", "content": "烟雾报警器、监控设备说明等" },

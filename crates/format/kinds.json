@@ -133,15 +133,24 @@
           { "kind": "Glyph", "icon": "plus", "size": 32, "font": "font.body" } ] } ] }
     },
     "PriceBreakdown": {
-      "doc": "Lines of a price, not yet designed: gray bars for each label and amount.",
-      "look": { "box": "column", "gap": 12, "children": [
+      "doc": "Lines of a price: each of lines and then total, named, beside a gray amount; gray bars for the names too when lines are not given.",
+      "look": { "cases": [
+        { "if": "lines", "then": { "box": "column", "gap": 12, "children": [
+          { "repeat": "{lines}", "each": { "box": "row", "gap": 16, "justify": "between", "children": [
+            { "text": "{item}", "font": "font.body" },
+            { "width": "20%", "height": 14, "fill": "fill", "radius": 4 } ] } },
+          { "height": 1, "fill": "line" },
+          { "box": "row", "gap": 16, "justify": "between", "children": [
+            { "text": "{total|or:合计}", "font": "font.subhead" },
+            { "width": "25%", "height": 14, "fill": "fill", "radius": 4 } ] } ] } },
+        { "else": { "box": "column", "gap": 12, "children": [
         { "repeat": ["50%", "35%", "40%"], "each": { "box": "row", "gap": 16, "justify": "between", "children": [
           { "width": "{item}", "height": 14, "fill": "fill", "radius": 4 },
           { "width": "20%", "height": 14, "fill": "fill", "radius": 4 } ] } },
         { "height": 1, "fill": "line" },
         { "box": "row", "gap": 16, "justify": "between", "children": [
           { "width": "30%", "height": 14, "fill": "fill", "radius": 4 },
-          { "width": "25%", "height": 14, "fill": "fill", "radius": 4 } ] } ] }
+          { "width": "25%", "height": 14, "fill": "fill", "radius": 4 } ] } ] } } ] }
     },
     "Skeleton": {
       "doc": "What a phase shows while data is on its way: shape lists \"image 4:3\" and \"line 70%\".",

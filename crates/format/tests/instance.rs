@@ -61,8 +61,12 @@ fn conditions_breakpoints_and_each_shape_the_tree() {
     let new = instantiate(&screen, State::Fixture("new-listing"), Breakpoint::Compact).unwrap();
     assert!(find(&new, "rating-bar").is_none() && find(&new, "reviews").is_none());
     assert!(find(&new, "rating-new").is_some());
-    // what the agent guessed travels with the node
-    assert!(find(&compact, "calendar-picker").unwrap().assumed.is_some());
+    // what the person decided travels with the node, for the platforms to build
+    let calendar = find(&compact, "calendar-picker").unwrap();
+    assert_eq!(
+        (calendar.props["bookedDates"].as_str(), &calendar.assumed),
+        (Some("灰色且不可点，不画删除线"), &None)
+    );
     assert!(find(&compact, "nav-save").unwrap().interactive);
     // a use site is decided, a binding shows its value
     let unavailable = instantiate(&screen, State::Fixture("unavailable"), Breakpoint::Regular).unwrap();

@@ -40,7 +40,7 @@ fn every_platform_is_covered() {
         );
         // 4 fixtures and 2 phases, each at both breakpoints
         assert_eq!(answer["states"].as_array().unwrap().len(), 12, "{platform}");
-        assert_eq!(answer["unconfirmed"].as_array().unwrap().len(), 3, "{platform}");
+        assert_eq!(answer["unconfirmed"], json!([]), "{platform}: the person has confirmed every guess");
     }
 }
 
@@ -110,5 +110,23 @@ fn a_gap_in_the_mapping_is_a_finding() {
         "{}",
         answer["findings"]
     );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_guess_is_handed_off_as_unconfirmed() {
+    let dir = std::env::temp_dir().join(format!("underdraw-{}-guess", std::process::id()));
+    std::fs::create_dir_all(dir.join("platforms")).unwrap();
+    for file in ["tokens.json", "platforms/ios.json"] {
+        std::fs::copy(format!("{DRAFT}/{file}"), dir.join(file)).unwrap();
+    }
+    let screen = std::fs::read_to_string(format!("{DRAFT}/screen.json")).unwrap();
+    let from = r#""text": "房客推荐","#;
+    assert_eq!(screen.matches(from).count(), 1);
+    let guessed = screen.replace(from, &format!(r#"{from} "assumed": "后端还是前端决定？","#));
+    std::fs::write(dir.join("screen.json"), guessed).unwrap();
+    let (answer, code) = underdraw(&["handoff", dir.to_str().unwrap(), "--platform", "ios"]);
+    assert_eq!(code, 0, "{answer:#}");
+    assert_eq!(answer["unconfirmed"], json!([{ "id": "guest-favorite", "assumed": "后端还是前端决定？" }]));
     std::fs::remove_dir_all(dir).unwrap();
 }
