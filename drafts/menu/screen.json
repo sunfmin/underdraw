@@ -5,7 +5,7 @@
   "tokens": "tokens.json",
   "$comment": "A delivery app's restaurant menu: dishes grouped by category, a cart bar, and a bottom sheet to choose a dish's size, add-ons and quantity before adding it.",
   "data": {
-    "restaurant": "Restaurant",
+    "restaurant": { "type": "Restaurant", "from": "getMenu" },
     "categories": "Category[] 1..12",
     "sections": "MenuSection[] 1..12",
     "cart": "Cart",
@@ -144,13 +144,12 @@
       }
     },
     "addToCart": {
-      "command": "Puts the dish in the cart, in the size and with the add-ons chosen, and answers with the cart",
+      "command": "Puts the dish in the cart, in the size and with the add-ons chosen",
       "params": {
         "dishId": "string",
         "quantity": "int 1..20",
         "note": "string ..40"
       },
-      "result": "Cart",
       "requires": "canAdd",
       "fails": {
         "soldOut": "the dish sold out meanwhile"

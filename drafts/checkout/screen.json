@@ -11,7 +11,7 @@
     "delivery": "Delivery",
     "promo": "Promo",
     "payment": "Payment",
-    "summary": "Summary"
+    "summary": { "type": "Summary", "from": "getCheckout" }
   },
   "types": {
     "Cart": {
@@ -83,15 +83,14 @@
   },
 
   "operations": {
-    "getCheckout": { "query": "The cart being checked out, with its delivery, promo and payment", "result": "Cart",
+    "getCheckout": { "query": "What the order being checked out costs; loading it again loads the whole screen", "result": "Summary",
                      "fails": { "offline": "the server cannot be reached" } },
-    "removeItem": { "command": "Takes an item out of the cart", "params": { "id": "string" }, "result": "Cart" },
-    "chooseDelivery": { "command": "Delivers the order by this option", "params": { "id": "string" }, "result": "Delivery" },
+    "removeItem": { "command": "Takes an item out of the cart", "params": { "id": "string" } },
+    "chooseDelivery": { "command": "Delivers the order by this option", "params": { "id": "string" } },
     "applyPromo": { "command": "Applies a promo code to the order", "params": { "code": "string 1..20" }, "result": "Promo",
                     "fails": { "invalid": "the code does not exist, has expired, or does not cover these items" } },
     "removePromo": { "command": "Takes the promo code off the order", "result": "Promo" },
-    "choosePayment": { "command": "Pays for the order by this method", "params": { "method": { "type": "string", "doc": "a PaymentOption id: card, alipay or wechat" } },
-                       "result": "Payment" },
+    "choosePayment": { "command": "Pays for the order by this method", "params": { "method": { "type": "string", "doc": "a PaymentOption id: card, alipay or wechat" } } },
     "placeOrder": { "command": "Places the order and starts payment", "requires": "canPlace",
                     "fails": { "outOfStock": "an item sold out meanwhile", "paymentRefused": "the payment did not go through" } }
   },

@@ -10,7 +10,7 @@
     "days": "DayFare[]",
     "sortOptions": "SortOption[]",
     "filters": "Filters",
-    "results": "Results"
+    "results": { "type": "Results", "from": "searchFlights" }
   },
 
   "types": {
@@ -62,10 +62,10 @@
       "nextDay": { "type": "bool", "doc": "到达是出发的第二天（当地时间）" },
       "duration": { "type": "string 1..12", "derived": { "server": "全程时长，例：2小时55分" } },
       "nonstop": "bool",
-      "stopsText": { "type": "string 1..20", "derived": { "app": "直飞；或 经停 1 次 · 上海" } },
+      "stopsText": { "type": "string 1..20", "derived": { "server": "直飞；或 经停 1 次 · 上海；经停的城市不在视图模型里" } },
       "price": { "type": "money", "doc": "每位成人，含税" },
       "seatsLeft": "int 0..9",
-      "fewSeats": { "type": "bool", "derived": { "app": "seatsLeft ≤ 5 时为 true" } },
+      "fewSeats": { "type": "bool", "derived": { "server": "seatsLeft ≤ 5 时为 true；门槛由后端定，同 isCheapest" } },
       "includesBag": "bool",
       "isCheapest": { "type": "bool", "doc": "由后端在全部结果里标出，前端不自己比" },
       "isFastest": { "type": "bool", "doc": "同上" }
@@ -85,10 +85,9 @@
                        "result": "Results", "fails": { "offline": "连不上服务器" } },
     "toggleFilter":  { "command": "勾上或取消一项筛选，回答筛选后的结果",
                        "params": { "group": { "type": "string", "doc": "stops、airlines 或 departWindows" },
-                                   "option": { "type": "string", "doc": "这一项的 label" } },
-                       "result": "Results" },
-    "toggleNonstop": { "command": "只看直飞，或者取消", "result": "Results" },
-    "clearFilters":  { "command": "取消全部筛选", "result": "Results" }
+                                   "option": { "type": "string", "doc": "这一项的 label" } } },
+    "toggleNonstop": { "command": "只看直飞，或者取消" },
+    "clearFilters":  { "command": "取消全部筛选" }
   },
 
   "fixtures": {

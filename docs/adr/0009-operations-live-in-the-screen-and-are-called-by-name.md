@@ -30,7 +30,7 @@ The decisions:
   condition (`disabled` / `if`). What the screen does by itself — navigate,
   toggle, open, set view state — stays a free action that each platform
   file maps, as before. A platform maps `call` once, not each operation.
-  ([ADR 0010](0010-what-changes-domain-data-is-a-call.md) closes that
+  ([ADR 0011](0011-what-changes-domain-data-is-a-call.md) closes that
   list: only UI-only actions, with `set` and `toggle` on view state.)
 - **View state is marked on the field (`"view": true`)**, and no
   operation's result may reach it. An open menu or a popup's subject is

@@ -11,7 +11,7 @@
       "doc": "What the person has typed in the search box"
     },
     "filters": "FilterChip[] 1..6",
-    "orders": "Order[] ..20",
+    "orders": { "type": "Order[] ..20", "from": "listOrders" },
     "summary": "Summary",
     "cancelling": {
       "type": "CancelRequest?",
@@ -32,13 +32,13 @@
       "customer": "string 1..40",
       "itemsSummary": {
         "type": "string 1..60",
-        "derived": { "app": "first item's name and how many more" }
+        "derived": { "server": "first item's name and how many more; the items are not in the view model" }
       },
       "total": "money",
       "placedAt": "date",
       "statusLabel": {
         "type": "string 1..6",
-        "derived": { "app": "待付款 / 待发货 / 已发货 / 已取消, from the order's status" }
+        "derived": { "server": "待付款 / 待发货 / 已发货 / 已取消, from the order's status, which is not in the view model" }
       },
       "cancellable": {
         "type": "bool = false",

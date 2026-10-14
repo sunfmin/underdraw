@@ -6,7 +6,7 @@
   "tokens": "tokens.json",
 
   "data": {
-    "listing": "Listing",
+    "listing": { "type": "Listing", "from": "getListing" },
     "booking": "Booking"
   },
 
