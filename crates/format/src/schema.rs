@@ -129,28 +129,19 @@ impl Schema {
     /// as a dotted path from that type (`Doc.menuOpen`); none when every
     /// field it can reach is domain data.
     pub fn view_state(&self, field: &Field) -> Option<String> {
-        self.reaches(field, |field| field.view)
+        self.reaches_in(field.base.name(), Mark::View, &mut Vec::new())
     }
 
     /// The first field the app derives inside a value of `field`'s type, as
     /// a dotted path from that type (`Summary.count`): what the app works
     /// out for the screen, which no server answers with.
     pub fn app_derived(&self, field: &Field) -> Option<String> {
-        self.reaches(field, |field| field.derived.as_ref().is_some_and(|derived| derived.by == By::App))
+        self.reaches_in(field.base.name(), Mark::AppDerived, &mut Vec::new())
     }
 
-    /// The first field that is `wanted` inside a value of `field`'s type,
+    /// The first field with `mark` inside a value of the type `type_name`,
     /// through every type it reaches.
-    fn reaches(&self, field: &Field, wanted: impl Fn(&Field) -> bool) -> Option<String> {
-        self.reaches_in(field.base.name(), &wanted, &mut Vec::new())
-    }
-
-    fn reaches_in(
-        &self,
-        type_name: &str,
-        wanted: &dyn Fn(&Field) -> bool,
-        seen: &mut Vec<String>,
-    ) -> Option<String> {
+    fn reaches_in(&self, type_name: &str, mark: Mark, seen: &mut Vec<String>) -> Option<String> {
         if seen.iter().any(|name| name == type_name) {
             return None;
         }
@@ -159,11 +150,11 @@ impl Schema {
             return None;
         };
         for (name, field) in fields {
-            if wanted(field) {
+            if mark.on(field) {
                 return Some(format!("{type_name}.{name}"));
             }
             if let Base::Named(inner) = &field.base
-                && let Some(found) = self.reaches_in(inner, wanted, seen)
+                && let Some(found) = self.reaches_in(inner, mark, seen)
             {
                 return Some(found);
             }
@@ -193,6 +184,22 @@ impl Schema {
             nullable.push(walked);
         }
         Some(Resolved { field, nullable })
+    }
+}
+
+/// What no operation's result may reach.
+#[derive(Clone, Copy)]
+enum Mark {
+    View,
+    AppDerived,
+}
+
+impl Mark {
+    fn on(self, field: &Field) -> bool {
+        match self {
+            Mark::View => field.view,
+            Mark::AppDerived => field.derived.as_ref().is_some_and(|derived| derived.by == By::App),
+        }
     }
 }
 
