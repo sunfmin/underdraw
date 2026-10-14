@@ -1,0 +1,13 @@
+{
+  "kinds": {
+    "TextField": {
+      "doc": "A one-line input: fills what its row leaves, its placeholder in gray until something is typed.",
+      "look": {
+        "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line", "radius": "radius.sm",
+        "children": [ { "cases": [
+          { "if": "value && value != \"\"", "then": { "text": "{value}", "font": "font.body" } },
+          { "else": { "text": "{placeholder}", "font": "font.body", "ink": "muted" } } ] } ]
+      }
+    }
+  }
+}
