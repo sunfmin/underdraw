@@ -141,6 +141,20 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "conditions.datesUnavailable",
             "true in every fixture",
         ),
+        (
+            "each-with-children",
+            r#""item": { "id": "highlight-{index}""#,
+            r#""children": { "id": "highlight-{index}""#,
+            "highlights",
+            "put the template for one element in \"item\"",
+        ),
+        (
+            "item-without-each",
+            r#""each": "listing.ratingBreakdown", "item""#,
+            r#""item""#,
+            "reviews-breakdown",
+            "has no \"each\"",
+        ),
     ];
     for (name, from, to, at, said) in cases {
         let dir = planted(name, from, to);

@@ -25,7 +25,8 @@ ANSWERS
     "pixels":     [width, height] of the PNG
     "nodes":      [{"id", "kind", "box": {"x", "y", "width", "height"} in points,
                     "label": the number tagged on it in the picture, or null,
-                    "assumed": what the agent guessed there, or null}, …]
+                    "assumed": what the agent guessed there, or that its kind is
+                      not one underdraw knows, or null}, …]
   }
 
 WHAT YOU SEE
@@ -33,7 +34,9 @@ WHAT YOU SEE
   images. A dark numbered circle tags everything a person can act on, in
   document order; the same number is "label" in nodes, so "3" in a
   conversation means one node. An orange dashed outline and "?" mark what
-  was assumed, for the person to confirm.
+  was assumed, for the person to confirm, and a kind underdraw does not
+  know, drawn as a box with its name. An icon is a stand-in glyph: ◆ for a
+  solid one (name ending in .fill), ◇ for any other it does not know.
 
 WHAT TRIPS YOU UP
   - Needs a GPU (Metal on macOS); `underdraw doctor` says whether there is one.

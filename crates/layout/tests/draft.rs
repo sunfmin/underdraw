@@ -136,3 +136,46 @@ fn overlays_sit_in_their_corner() {
     );
     assert!(counter.x > photos.x + photos.width / 2.0);
 }
+
+/// A screen of `children` with no data, laid out at a phone's width.
+fn tiny(children: Value) -> Page {
+    let screen = serde_json::json!({
+        "screen": "Tiny", "data": {}, "types": {}, "fixtures": { "default": {} }, "conditions": {},
+        "root": { "id": "tiny", "kind": "Screen", "children": children }
+    });
+    let tokens = read("tokens.json");
+    let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
+    layout(&root, &tokens, 390.0, &mut Fixed).unwrap()
+}
+
+fn texts(page: &Page) -> Vec<&str> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_filled_icon_reads_apart_from_its_outline() {
+    let page = tiny(serde_json::json!([
+        { "id": "open", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
+        { "id": "done", "kind": "ListItem", "leadingIcon": "checkmark.circle.fill", "title": "b" }
+    ]));
+    let texts = texts(&page);
+    assert!(texts.contains(&"◇") && texts.contains(&"◆"), "{texts:?}");
+}
+
+#[test]
+fn a_kind_not_in_the_catalog_is_drawn_as_a_guess() {
+    let page = tiny(serde_json::json!([{ "id": "input", "kind": "TextField" }]));
+    let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();
+    assert!(assumed.contains("TextField"), "{assumed:?}");
+    let marked = page
+        .draws
+        .iter()
+        .any(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(underdraw_layout::Ink::Assumed), .. }));
+    assert!(marked, "drawn in the colour of a guess");
+}

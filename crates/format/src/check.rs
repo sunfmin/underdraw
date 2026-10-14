@@ -162,9 +162,16 @@ impl Walk<'_> {
         if let Some(Value::String(used)) = object.get("if") {
             guarded.extend(self.use_site(used, scope, &format!("{at}.if")));
         }
-        let mut scope = scope.clone();
+        // `item` and `index` exist only in the template `each` repeats.
+        let mut item_scope = scope.clone();
         if let Some(Value::String(path)) = object.get("each") {
-            match self.schema.resolve(&scope, path) {
+            if object.contains_key("children") && !object.contains_key("item") {
+                self.findings.add(
+                    at,
+                    "each repeats \"item\" for every element and draws \"children\" once: put the template for one element in \"item\"",
+                );
+            }
+            match self.schema.resolve(scope, path) {
                 Some(resolved) if resolved.field.array => {
                     if resolved.nullable.iter().any(|p| !guarded.contains(p)) {
                         self.findings.add(
@@ -172,11 +179,16 @@ impl Walk<'_> {
                             &format!("{path} may be null; guard it with a condition testing != null"),
                         );
                     }
-                    scope.push(("item".to_string(), resolved.field.element()));
-                    scope.push(("index".to_string(), Field::of(Base::Int)));
+                    item_scope.push(("item".to_string(), resolved.field.element()));
+                    item_scope.push(("index".to_string(), Field::of(Base::Int)));
                 }
                 _ => self.findings.add(at, &format!("each iterates an array, and {path} is not one")),
             }
+        } else if object.contains_key("item") {
+            self.findings.add(
+                at,
+                "\"item\" is the template each repeats, and this node has no \"each\": name the array with \"each\"",
+            );
         }
         for (k, v) in object {
             if INERT.contains(&k.as_str()) {
@@ -184,11 +196,12 @@ impl Walk<'_> {
             }
             match (k.as_str(), v) {
                 ("disabled", Value::String(used)) => {
-                    self.use_site(used, &scope, &format!("{at}.disabled"));
+                    self.use_site(used, scope, &format!("{at}.disabled"));
                 }
-                ("cases", Value::Array(branches)) => self.cases(branches, &scope, &guarded, at, key),
+                ("cases", Value::Array(branches)) => self.cases(branches, scope, &guarded, at, key),
                 ("cases", _) => self.findings.add(at, "cases is a list of branches"),
-                _ => self.node(v, &scope, &guarded, &format!("{at}.{k}"), k),
+                ("item", _) => self.node(v, &item_scope, &guarded, &format!("{at}.{k}"), k),
+                _ => self.node(v, scope, &guarded, &format!("{at}.{k}"), k),
             }
         }
     }
