@@ -447,7 +447,11 @@ fn bulk_form(single: &Operation, name: &str, at: &str, findings: &mut Findings) 
         keys.clone(),
         Field { array: true, lo: Some(1.0), hi: None, default: None, doc: None, ..field.clone() },
     )];
-    params.extend(single.params.iter().skip(1).cloned());
+    for (index, (param, field)) in single.params.iter().enumerate() {
+        if index > 0 {
+            params.push((param.clone(), field.clone()));
+        }
+    }
     Some(Operation {
         name: name.to_string(),
         does: single.does,
