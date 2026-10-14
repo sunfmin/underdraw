@@ -22,6 +22,20 @@ What a node is (`Button`, `TextField`, `List`), named without any platform's
 vocabulary.
 _Avoid_: widget, component type
 
+**Look**:
+What a kind is drawn as in a wireframe, written as data in `kinds.json`:
+boxes, text, `repeat` and `cases`, each key taking only what layout draws.
+_Avoid_: template, style
+
+**Overlay**:
+A node that floats over its parent node rather than sitting in its flow:
+a badge, a dialog, a sheet.
+_Avoid_: popup layer, modal
+
+**Anchor**:
+Where an overlay floats over its node: a corner, the center, or flush
+along the bottom (a sheet).
+
 **Token**:
 A named design value (`color.primary`, `space.4`) that nodes use instead of raw
 values.
@@ -33,6 +47,10 @@ _Avoid_: glyph, symbol
 
 **Breakpoint**:
 The width class a screen is laid out in (`compact`, `regular`).
+
+**Responsive value**:
+A value written once per breakpoint (`{"compact": 1, "regular": 2}`), in
+place of one value for every width.
 
 **Assumption**:
 Something the agent guessed and the person has not confirmed.
