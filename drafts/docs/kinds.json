@@ -30,6 +30,10 @@
     "doc": "A modal dialog centred over a dimmed backdrop; it blocks the screen until dismissed.",
     "look": { "box": "column", "backdrop": true, "width": "{width|or:88%}", "gap": 16, "padding": 24,
               "radius": 16, "fill": "paper", "stroke": "line", "children": ["$children"] } },
+  "Checkbox": {
+    "doc": "A box that picks its row, to act on several at once: ticked while checked.",
+    "look": { "box": "row", "padding": 4, "items": "center", "children": [
+      { "kind": "Glyph", "icon": { "cases": [ { "if": "checked", "then": "check_box" }, { "else": "check_box_outline_blank" } ] }, "size": 22 } ] } },
   "MenuDivider": {
     "doc": "A line between groups of menu items.",
     "look": { "box": "row", "height": 1, "margin": [4, 0], "fill": "line" } }

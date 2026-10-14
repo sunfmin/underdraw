@@ -35,6 +35,6 @@ pub use field::{Base, By, Derived, Field};
 pub use instance::{Node, State, instantiate};
 pub use kinds::{FILTERS, Kinds, LOOK, Takes, Track, takes};
 pub use model::{Model, model};
-pub use operations::{Does, Fill, Operation, Operations};
+pub use operations::{BulkOf, Does, Fill, Operation, Operations};
 pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};

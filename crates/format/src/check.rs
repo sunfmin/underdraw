@@ -10,7 +10,7 @@ use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::kinds::{Kinds, track_faults};
-use crate::operations::Operations;
+use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
@@ -330,12 +330,14 @@ impl Walk<'_> {
                 ("item", _) => self.node(v, &item_scope, &known, &format!("{at}.{k}"), k),
                 ("on", Value::Object(events)) => {
                     // A node disabled unless a condition holds is enabled
-                    // only while it does: what it calls may require it.
+                    // only while it does: what it calls may require it, and
+                    // may read what it guards.
                     let mut enabled = known.clone();
                     if let Some(Value::String(used)) = object.get("disabled") {
                         let UseSite { negated, name } = UseSite::parse(used);
                         if negated {
                             enabled.holds.extend(self.conditions.implied(name));
+                            enabled.not_null.extend(self.conditions.guards(name));
                         }
                     }
                     for (event, handler) in events {
@@ -463,7 +465,12 @@ impl Walk<'_> {
                 &format!("{called} is not an operation: call names one in operations"),
             );
         };
-        if let Some(required) = &operation.requires
+        if let Some(of) = &operation.bulk_of {
+            // A bulk form's precondition holds item by item, which no
+            // condition of the screen can say: the screen's own gate is a
+            // selection that is there.
+            self.selection(operation, of, with, scope, known, node);
+        } else if let Some(required) = &operation.requires
             && !known.holds.contains(required)
         {
             self.findings.add(
@@ -512,6 +519,59 @@ impl Walk<'_> {
                 continue;
             };
             self.argument(value, param, scope, known, &at);
+        }
+    }
+
+    /// The call, on `node`, to the bulk form `operation`: it is given the
+    /// selection, a list in view state that holds at least one item, and is
+    /// made only where that list is there.
+    fn selection(
+        &mut self,
+        operation: &Operation,
+        of: &BulkOf,
+        with: Option<&Value>,
+        scope: &Scope,
+        known: &Known,
+        node: &str,
+    ) {
+        let name = &operation.name;
+        let keys = &of.keys;
+        let given = with.and_then(|with| with.get(keys)).and_then(Value::as_str);
+        let path = given.and_then(|text| {
+            let placeholders = template::placeholders(text).ok()?;
+            match placeholders.as_slice() {
+                [only] if only.format.is_none() && text == format!("{{{}}}", only.path) => {
+                    Some(only.path.clone())
+                }
+                _ => None,
+            }
+        });
+        let Some(path) = path else {
+            return self.findings.add(
+                node,
+                &format!("calls {name}, the bulk form of {}: give {keys} the selection, as one path: \"{keys}\": \"{{selection.{keys}}}\"", of.operation),
+            );
+        };
+        let Some(resolved) = self.schema.resolve(scope, &path) else {
+            // The argument's own finding says the path is not one.
+            return;
+        };
+        if !self.schema.in_view_state(scope, &path) {
+            self.findings.add(
+                node,
+                &format!("calls {name} with {path}, which is domain data: the selection is view state, what the person has picked on the screen, marked \"view\": true"),
+            );
+        }
+        let empty = !resolved.field.lo.is_some_and(|lo| lo >= 1.0);
+        let open = resolved.nullable.iter().any(|prefix| !known.not_null.contains(prefix));
+        if empty || open || resolved.nullable.is_empty() {
+            self.findings.add(
+                node,
+                &format!(
+                    "calls {name} with {path}, and is not gated on a non-empty selection: hold the selection in a nullable field (\"Selection?\", null while nothing is picked) whose list holds at least one (\"{}[] 1..\"), and gate this node by a condition testing it != null",
+                    resolved.field.base.name()
+                ),
+            );
         }
     }
 
