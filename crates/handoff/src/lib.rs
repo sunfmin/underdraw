@@ -6,6 +6,7 @@
 extern crate flux_alloc;
 extern crate flux_core;
 
+mod cli;
 mod code;
 mod json_schema;
 mod nodes;
@@ -14,6 +15,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use underdraw_format::{Breakpoint, Checked, Condition, Finding, Model, Node, State};
 
+pub use cli::{Arg, CommandSpec, Failure, Golden, Interface, cli};
 pub use code::Language;
 pub use json_schema::json_schema;
 pub use nodes::{Event, Hidden, Spec};
@@ -244,7 +246,7 @@ fn ids(hidden: &[Hidden]) -> Vec<String> {
 }
 
 /// Each fixture, then each phase, at each breakpoint.
-fn states(model: &Model, hidden: &[String]) -> Vec<Expected> {
+pub(crate) fn states(model: &Model, hidden: &[String]) -> Vec<Expected> {
     let mut expected = Vec::new();
     for state in model.states() {
         let named = match state {
@@ -352,7 +354,7 @@ fn token_names(tokens: &Value, pattern: &str, language: Language) -> Vec<TokenNa
 }
 
 /// `textSecondary` as `text-secondary`.
-fn kebab(name: &str) -> String {
+pub(crate) fn kebab(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
         if c.is_ascii_uppercase() {

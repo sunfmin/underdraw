@@ -86,18 +86,24 @@ enum Command {
         #[arg(long)]
         platform: String,
     },
-    /// How a running UI differs from the description in one state: a capture of its elements against what that state shows
+    /// The command-line interface the screen's operations derive: commands, stdout schemas, failures, help drafts, golden outputs
+    #[command(after_long_help = include_str!("help/cli.txt"))]
+    Cli {
+        /// The screen's directory, which holds screen.json, or the screen.json itself
+        path: PathBuf,
+    },
+    /// How a running UI or CLI differs from the description in one state: a capture of it against what that state shows or prints
     #[command(after_long_help = include_str!("help/compare.txt"))]
     Compare {
         /// The screen's directory, which holds screen.json, tokens.json and platforms/<platform>.json
         path: PathBuf,
-        /// The platform the UI runs on: the name of a file in <dir>/platforms
+        /// The platform the UI runs on: the name of a file in <dir>/platforms; not given for a CLI's capture
         #[arg(long)]
-        platform: String,
-        /// The capture: a JSON file of the UI's elements, written as `underdraw compare --help` says
+        platform: Option<String>,
+        /// The capture: a JSON file of the UI's elements, or of a CLI's run, written as `underdraw compare --help` says
         #[arg(long)]
         capture: PathBuf,
-        /// The fixture whose data the UI showed; the first fixture when neither this nor --phase is given
+        /// The fixture whose data the UI showed, or the CLI answered from; the first fixture when neither this nor --phase is given
         #[arg(long, conflicts_with = "phase")]
         fixture: Option<String>,
         /// The phase the UI was in instead, such as loading
@@ -136,9 +142,10 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             render(&path, Wanted { fixture, phase, width, scale, out })
         }
         Command::Schema { path } => schema(&path),
+        Command::Cli { path } => derive_cli(&path),
         Command::Handoff { path, platform } => handoff(&path, &platform),
         Command::Compare { path, platform, capture, fixture, phase } => {
-            compare(&path, &platform, &capture, fixture, phase)
+            compare(&path, platform.as_deref(), &capture, fixture, phase)
         }
         Command::Doctor => Ok(doctor()),
     };
@@ -203,6 +210,19 @@ fn schema(path: &Path) -> anyhow::Result<Value> {
     }
 }
 
+fn derive_cli(path: &Path) -> anyhow::Result<Value> {
+    let (screen, dir) = read(path)?;
+    let kinds = read_kinds(&dir)?;
+    match underdraw_format::model(&screen, kinds.as_ref()) {
+        Ok(model) => Ok(serde_json::to_value(underdraw_handoff::cli(&model))?),
+        Err(checked) => bail!(
+            "the description has {} finding(s), so a CLI derived from it would be wrong: run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        ),
+    }
+}
+
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
@@ -220,24 +240,22 @@ fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
 
 fn compare(
     path: &Path,
-    platform: &str,
+    platform: Option<&str>,
     capture: &Path,
     fixture: Option<String>,
     phase: Option<String>,
 ) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
-    let tokens = read_tokens(&dir)?;
     let kinds = read_kinds(&dir)?;
-    let mapping = read_platform(&dir, platform)?;
     let checked = underdraw_format::check(&screen, kinds.as_ref());
     if !checked.ok {
         bail!(
-            "the description has {} finding(s), so it cannot say what the UI should show: run `underdraw check {}` and fix them first",
+            "the description has {} finding(s), so it cannot say what the UI or CLI should show: run `underdraw check {}` and fix them first",
             checked.findings.len(),
             path.display()
         );
     }
-    let (state, _) = pick(&checked, &fixture, &phase)?;
+    let (state, name) = pick(&checked, &fixture, &phase)?;
     let text = std::fs::read_to_string(capture).with_context(|| {
         format!(
             "cannot read {}: pass the capture file `underdraw compare --help` describes",
@@ -246,6 +264,23 @@ fn compare(
     })?;
     let capture_value: Value = serde_json::from_str(&text)
         .with_context(|| format!("{} is not JSON: fix the line and column named here", capture.display()))?;
+    // A CLI's run says how it exited; a UI's capture never does.
+    if capture_value.get("exit").is_some() {
+        if let State::Phase(_) = state {
+            bail!("a CLI answers from data, not in a phase: pass --fixture, or no --phase");
+        }
+        let comparison = underdraw_compare::compare_cli(&screen, kinds.as_ref(), &name, &capture_value)
+            .map_err(anyhow::Error::msg)?;
+        return Ok(serde_json::to_value(comparison)?);
+    }
+    let Some(platform) = platform else {
+        bail!(
+            "a UI's capture is compared on a platform: pass --platform, one of the files in {}",
+            dir.join("platforms").display()
+        );
+    };
+    let tokens = read_tokens(&dir)?;
+    let mapping = read_platform(&dir, platform)?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     let comparison = underdraw_compare::compare(

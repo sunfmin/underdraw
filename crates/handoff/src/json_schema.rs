@@ -12,26 +12,16 @@ use crate::object;
 
 /// Where money's shape is defined. Lower case, so no declared type, which
 /// starts with a capital letter, can take its name.
-const MONEY: &str = "money";
+pub(crate) const MONEY: &str = "money";
 
 /// The schema of the root model: one object of the `data` fields, with every
 /// named type, and money, under `$defs`.
 pub fn json_schema(model: &Model) -> Value {
     let mut defs = Map::new();
     for (name, shape) in model.schema.types() {
-        let def = match shape {
-            Shape::Object(fields) => object_of(fields),
-            Shape::Enum(members) => {
-                object([("type", Value::from("string")), ("enum", Value::from(members.clone()))])
-            }
-        };
-        defs.insert(name.clone(), def);
+        defs.insert(name.clone(), def(shape));
     }
-    let money = [
-        ("amount".to_string(), Field::of(Base::Number)),
-        ("currency".to_string(), Field { lo: Some(3.0), hi: Some(3.0), ..Field::of(Base::String) }),
-    ];
-    defs.insert(MONEY.to_string(), object_of(&money));
+    defs.insert(MONEY.to_string(), money());
     let mut root = Map::new();
     root.insert("$schema".to_string(), Value::from("https://json-schema.org/draft/2020-12/schema"));
     root.insert("title".to_string(), Value::from(root_name(model)));
@@ -42,9 +32,28 @@ pub fn json_schema(model: &Model) -> Value {
     Value::Object(root)
 }
 
+/// The schema of one named type.
+pub(crate) fn def(shape: &Shape) -> Value {
+    match shape {
+        Shape::Object(fields) => object_of(fields),
+        Shape::Enum(members) => {
+            object([("type", Value::from("string")), ("enum", Value::from(members.clone()))])
+        }
+    }
+}
+
+/// Money's shape, defined under `$defs` as [`MONEY`].
+pub(crate) fn money() -> Value {
+    let money = [
+        ("amount".to_string(), Field::of(Base::Number)),
+        ("currency".to_string(), Field { lo: Some(3.0), hi: Some(3.0), ..Field::of(Base::String) }),
+    ];
+    object_of(&money)
+}
+
 /// An object of `fields`: none other allowed, and each without a default
 /// required, as a fixture must write it.
-fn object_of(fields: &[(String, Field)]) -> Value {
+pub(crate) fn object_of(fields: &[(String, Field)]) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
     for (name, field) in fields {
