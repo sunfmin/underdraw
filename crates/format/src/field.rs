@@ -62,11 +62,24 @@ pub struct Field {
     /// What a fixture that leaves the field out holds. A nullable field's is
     /// null; a field without one must be written.
     pub default: Option<Value>,
+    /// What it means, when the description says.
+    pub doc: Option<String>,
+    /// How the app or server computes it, for a derived field.
+    pub derived: Option<String>,
 }
 
 impl Field {
     pub fn of(base: Base) -> Field {
-        Field { base, array: false, nullable: false, lo: None, hi: None, default: None }
+        Field {
+            base,
+            array: false,
+            nullable: false,
+            lo: None,
+            hi: None,
+            default: None,
+            doc: None,
+            derived: None,
+        }
     }
 
     /// The type of one element of this field, when it is an array.
@@ -96,10 +109,13 @@ pub fn read(spec: &Value) -> Result<Field, String> {
             if let Some(key) = object.keys().find(|key| !matches!(key.as_str(), "type" | "doc" | "derived")) {
                 return Err(format!("a field object holds only type, doc and derived, not {key}"));
             }
-            match object.get("type") {
-                Some(Value::String(text)) => parse(text),
-                _ => Err("a field object needs a `type` string".to_string()),
-            }
+            let mut field = match object.get("type") {
+                Some(Value::String(text)) => parse(text)?,
+                _ => return Err("a field object needs a `type` string".to_string()),
+            };
+            field.doc = object.get("doc").and_then(Value::as_str).map(str::to_string);
+            field.derived = object.get("derived").and_then(Value::as_str).map(str::to_string);
+            Ok(field)
         }
         _ => Err("a field is a type string, or an object with a `type`".to_string()),
     }
@@ -147,7 +163,7 @@ pub fn parse(text: &str) -> Result<Field, String> {
     if array && default.as_ref().is_some_and(|value| !value.is_null()) {
         return Err(format!("{text:?}: an array has no default; write [] in the fixture"));
     }
-    Ok(Field { base: Base::from_name(name), array, nullable, lo, hi, default })
+    Ok(Field { base: Base::from_name(name), array, nullable, lo, hi, default, doc: None, derived: None })
 }
 
 fn strip<'a>(name: &'a str, suffix: &str) -> (&'a str, bool) {

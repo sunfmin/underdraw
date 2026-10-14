@@ -84,6 +84,15 @@ impl Schema {
         }
     }
 
+    /// The named types, by name.
+    pub fn types(&self) -> Vec<(&String, &Shape)> {
+        let mut types = Vec::new();
+        for entry in &self.shapes {
+            types.push(entry);
+        }
+        types
+    }
+
     pub fn roots(&self) -> Scope {
         self.roots.clone()
     }

@@ -1603,6 +1603,7 @@ dependencies = [
  "pollster",
  "serde_json",
  "underdraw-format",
+ "underdraw-handoff",
  "underdraw-layout",
  "vello",
 ]
@@ -1617,6 +1618,18 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "underdraw-handoff"
+version = "0.1.0"
+dependencies = [
+ "flux-alloc",
+ "flux-core",
+ "flux-rs",
+ "serde",
+ "serde_json",
+ "underdraw-format",
 ]
 
 [[package]]

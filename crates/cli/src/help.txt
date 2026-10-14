@@ -12,6 +12,8 @@ NEEDS
 START HERE
   underdraw check <dir>      read the description and name every fault
   underdraw render <dir>     then draw it, and show the PNG to the person
+  underdraw handoff <dir> --platform ios
+                             once agreed: what to build, and what to test it against
 
 WHAT A COMMAND ANSWERS
   One JSON object on stdout. The exit code says which kind:
@@ -25,6 +27,10 @@ COMMANDS
   For the agent writing a description:
     underdraw check <dir>    every fault, and which fixtures each condition holds in
     underdraw render <dir>   a wireframe PNG of one state, and where each node went
+  For the agent building the screen on a platform:
+    underdraw handoff <dir> --platform <name>
+                             model code, tokens, every node as the platform builds it,
+                             and what each state must show
   For whoever installs underdraw:
     underdraw doctor         what underdraw depends on, and the fix of each finding
 

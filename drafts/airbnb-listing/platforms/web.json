@@ -1,9 +1,10 @@
 {
   "platform": "web",
+  "language": "typescript",
   "stack": "React + CSS（Tailwind 亦可）",
   "testId": "data-testid=\"{id}\"",
   "elementTree": "Playwright：遍历带 data-testid 的元素，读 getBoundingClientRect",
-  "tokenNaming": { "rule": "CSS 变量 --{group}-{name}", "example": "color.primary → var(--color-primary)" },
+  "tokenNaming": { "pattern": "var(--{group}-{kebab-name})", "example": "color.textSecondary → var(--color-text-secondary)" },
   "breakpoints": "CSS media query：compact = max-width 743px",
   "kinds": {
     "Screen": "<main>",

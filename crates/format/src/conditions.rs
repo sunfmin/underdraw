@@ -13,7 +13,7 @@ use crate::schema::{Schema, Scope, object};
 pub struct Condition {
     pub name: String,
     pub label: String,
-    when: Expr,
+    pub when: Expr,
 }
 
 pub struct Conditions(Vec<Condition>);
