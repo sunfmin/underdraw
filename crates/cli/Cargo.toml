@@ -1,0 +1,12 @@
+[package]
+name = "underdraw"
+description = "Describe a screen once; check it, render it, hand it off to web, iOS and Android — a CLI for AI agents"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+underdraw-format = { path = "../format" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde_json.workspace = true

@@ -1,0 +1,204 @@
+//! One field of the view model, in the notation of docs/format/data.md:
+//! `type range? default?`, such as `string 1..50`, `number? 0..5`,
+//! `bool = false`.
+
+use serde_json::Value;
+
+/// A built-in type, or the name of one declared in `types`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Base {
+    String,
+    Int,
+    Number,
+    Bool,
+    Date,
+    Url,
+    Image,
+    Icon,
+    Money,
+    Named(String),
+}
+
+impl Base {
+    fn from_name(name: &str) -> Base {
+        match name {
+            "string" => Base::String,
+            "int" => Base::Int,
+            "number" => Base::Number,
+            "bool" => Base::Bool,
+            "date" => Base::Date,
+            "url" => Base::Url,
+            "image" => Base::Image,
+            "icon" => Base::Icon,
+            "money" => Base::Money,
+            other => Base::Named(other.to_string()),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Base::String => "string",
+            Base::Int => "int",
+            Base::Number => "number",
+            Base::Bool => "bool",
+            Base::Date => "date",
+            Base::Url => "url",
+            Base::Image => "image",
+            Base::Icon => "icon",
+            Base::Money => "money",
+            Base::Named(name) => name,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Field {
+    pub base: Base,
+    pub array: bool,
+    pub nullable: bool,
+    /// The range: a number's value, a string's length, an array's count.
+    pub lo: Option<f64>,
+    pub hi: Option<f64>,
+    /// What a fixture that leaves the field out holds. A nullable field's is
+    /// null; a field without one must be written.
+    pub default: Option<Value>,
+}
+
+impl Field {
+    pub fn of(base: Base) -> Field {
+        Field { base, array: false, nullable: false, lo: None, hi: None, default: None }
+    }
+
+    /// The type of one element of this field, when it is an array.
+    pub fn element(&self) -> Field {
+        Field::of(self.base.clone())
+    }
+
+    /// True of a non-null, non-array Bool: what a condition may test as is.
+    pub fn is_plain_bool(&self) -> bool {
+        self.base == Base::Bool && !self.array && !self.nullable
+    }
+
+    /// The type as written, without range or default: `Highlight[]`, `date?`.
+    pub fn describe(&self) -> String {
+        let array = if self.array { "[]" } else { "" };
+        let null = if self.nullable { "?" } else { "" };
+        format!("{}{array}{null}", self.base.name())
+    }
+}
+
+/// Reads a field written either as a type string or as an object with `type`,
+/// and optionally `doc` and `derived`.
+pub fn read(spec: &Value) -> Result<Field, String> {
+    match spec {
+        Value::String(text) => parse(text),
+        Value::Object(object) => {
+            if let Some(key) = object.keys().find(|key| !matches!(key.as_str(), "type" | "doc" | "derived")) {
+                return Err(format!("a field object holds only type, doc and derived, not {key}"));
+            }
+            match object.get("type") {
+                Some(Value::String(text)) => parse(text),
+                _ => Err("a field object needs a `type` string".to_string()),
+            }
+        }
+        _ => Err("a field is a type string, or an object with a `type`".to_string()),
+    }
+}
+
+pub fn parse(text: &str) -> Result<Field, String> {
+    let (written, default) = match text.split_once('=') {
+        Some((written, default)) => (written.trim(), Some(default.trim())),
+        None => (text.trim(), None),
+    };
+    let mut words = written.split_whitespace();
+    let Some(name) = words.next() else {
+        return Err("the type is empty".to_string());
+    };
+    let range = words.next();
+    if let Some(extra) = words.next() {
+        return Err(format!("{text:?}: unexpected {extra:?} after the range"));
+    }
+    let (name, nullable) = strip(name, "?");
+    let (name, array) = strip(name, "[]");
+    if !is_identifier(name) {
+        return Err(format!("{text:?}: {name:?} is not a type name"));
+    }
+    let (lo, hi) = match range {
+        None => (None, None),
+        Some(range) => {
+            let Some((lo, hi)) = range.split_once("..") else {
+                return Err(format!("{text:?}: a range is written lo..hi, either side open"));
+            };
+            (bound(lo, text)?, bound(hi, text)?)
+        }
+    };
+    if let (Some(lo), Some(hi)) = (lo, hi)
+        && lo > hi
+    {
+        return Err(format!("{text:?}: the range runs backwards"));
+    }
+    let default = match default {
+        None => nullable.then_some(Value::Null),
+        Some(literal) => Some(
+            serde_json::from_str(literal)
+                .map_err(|_| format!("{text:?}: default {literal} is not a JSON literal"))?,
+        ),
+    };
+    if array && default.as_ref().is_some_and(|value| !value.is_null()) {
+        return Err(format!("{text:?}: an array has no default; write [] in the fixture"));
+    }
+    Ok(Field { base: Base::from_name(name), array, nullable, lo, hi, default })
+}
+
+fn strip<'a>(name: &'a str, suffix: &str) -> (&'a str, bool) {
+    match name.strip_suffix(suffix) {
+        Some(stripped) => (stripped, true),
+        None => (name, false),
+    }
+}
+
+fn bound(side: &str, text: &str) -> Result<Option<f64>, String> {
+    if side.is_empty() {
+        return Ok(None);
+    }
+    side.parse().map(Some).map_err(|_| format!("{text:?}: {side:?} is not a number"))
+}
+
+/// A name: a letter or `_`, then letters, digits and `_`.
+pub fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_every_part() {
+        let cases = [
+            ("string 1..50", "string", false, false, Some(1.0), Some(50.0), None),
+            ("number? 0..5", "number", false, true, Some(0.0), Some(5.0), Some(Value::Null)),
+            ("image[] 5..", "image", true, false, Some(5.0), None, None),
+            ("bool = false", "bool", false, false, None, None, Some(Value::Bool(false))),
+            ("Highlight[] ..3", "Highlight", true, false, None, Some(3.0), None),
+            ("string ..80 = \"\"", "string", false, false, None, Some(80.0), Some(Value::from(""))),
+        ];
+        for (text, base, array, nullable, lo, hi, default) in cases {
+            let field = parse(text).unwrap();
+            assert_eq!(
+                (field.base.name(), field.array, field.nullable, field.lo, field.hi, field.default),
+                (base, array, nullable, lo, hi, default),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_what_it_cannot_mean() {
+        for text in ["", "string 5..1", "image[] = [\"a\"]", "int 1..x", "two words here", "bad-name"] {
+            assert!(parse(text).is_err(), "{text:?} should be refused");
+        }
+    }
+}

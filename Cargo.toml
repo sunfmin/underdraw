@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/format", "crates/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/sunfmin/underdraw"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+# preserve_order: fixtures and conditions are reported in the order they are written.
+serde_json = { version = "1", features = ["preserve_order"] }
