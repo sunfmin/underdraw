@@ -71,8 +71,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "cases-without-else",
-            r#"{ "else": "heart" }"#,
-            r#"{ "if": "listing.isSaved", "then": "heart" }"#,
+            r#"{ "else": "favorite" }"#,
+            r#"{ "if": "listing.isSaved", "then": "favorite" }"#,
             "nav-save.icon",
             "must be {\"else\"",
         ),
@@ -163,6 +163,20 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "limit is a whole number",
         ),
         (
+            "icon-not-material",
+            r#""icon": "ios_share""#,
+            r#""icon": "share-arrow""#,
+            "nav-share.icon",
+            "share-arrow is not a Material Symbols icon",
+        ),
+        (
+            "fixture-icon-not-material",
+            r#"{ "icon": "wifi", "label""#,
+            r#"{ "icon": "wi-fi", "label""#,
+            "fixtures.default.listing.amenities[0].icon",
+            "wi-fi is not a Material Symbols icon",
+        ),
+        (
             "item-without-each",
             r#""each": "listing.ratingBreakdown", "item""#,
             r#""item""#,
@@ -209,9 +223,10 @@ fn each_fault_in_a_projects_kinds_is_found() {
         "Wrong": { "look": { "box": "row", "colour": "line", "children": [
             { "text": "{title|upper}" },
             { "kind": "Nowhere" },
-            { "cases": [ { "if": "title", "then": "$kids" } ] }
+            { "cases": [ { "if": "title", "then": "$kids" } ] },
+            { "kind": "Glyph", "icon": "chevron.right" }
         ] } }
-    } });
+    }, "icons": { "checklist": "☑" } });
     let dir = with_kinds("bad-kinds", &kinds);
     let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
     assert_eq!(code, 1, "{answer:#}");
@@ -222,6 +237,8 @@ fn each_fault_in_a_projects_kinds_is_found() {
         ("kinds.Wrong.look.children[1]", "kind Nowhere is not defined"),
         ("kinds.Wrong.look.children[2].cases", "must be {\"else\""),
         ("kinds.Wrong.look.children[2].cases[0].then", "$kids is not a look"),
+        ("kinds.Wrong.look.children[3].icon", "chevron.right is not a Material Symbols icon"),
+        ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
         let found = answer["findings"]

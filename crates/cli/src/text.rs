@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 
+use parley::fontique::Blob;
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontFamily, FontWeight, Language, Layout, LayoutContext,
     LineHeight, StyleProperty,
@@ -14,16 +15,22 @@ use underdraw_layout::{Align, Font, Measure, Size};
 /// Han characters, the fonts of the locale's writing on macOS, Windows and
 /// Linux in turn. The system's own fallback is not enough: parley cannot
 /// draw PingFang, and what it falls back to lacks Simplified forms such as 涩.
+/// Last come the icon fonts, the only ones holding the characters icons are
+/// drawn as (underdraw_format::icons).
 fn families(locale: Option<&str>) -> &'static str {
     let tag = locale.unwrap_or("").to_ascii_lowercase();
     if tag.starts_with("ja") {
-        "system-ui, Hiragino Sans, Yu Gothic, Noto Sans CJK JP, sans-serif"
+        "system-ui, Hiragino Sans, Yu Gothic, Noto Sans CJK JP, sans-serif, Material Symbols, Material Symbols Fill"
     } else if tag.starts_with("zh-hant") || tag.starts_with("zh-tw") || tag.starts_with("zh-hk") {
-        "system-ui, Heiti TC, Microsoft JhengHei, Noto Sans CJK TC, sans-serif"
+        "system-ui, Heiti TC, Microsoft JhengHei, Noto Sans CJK TC, sans-serif, Material Symbols, Material Symbols Fill"
     } else {
-        "system-ui, Hiragino Sans GB, Heiti SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif"
+        "system-ui, Hiragino Sans GB, Heiti SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif, Material Symbols, Material Symbols Fill"
     }
 }
+
+/// Material Symbols, outlined and solid, made by scripts/material-symbols.py.
+const ICON_FONTS: [&[u8]; 2] =
+    [include_bytes!("../fonts/material-symbols.ttf"), include_bytes!("../fonts/material-symbols-fill.ttf")];
 
 pub struct Typesetter {
     fonts: FontContext,
@@ -47,7 +54,11 @@ impl Typesetter {
             })?),
             None => None,
         };
-        Ok(Typesetter { fonts: FontContext::new(), layouts: LayoutContext::new(), locale, families })
+        let mut fonts = FontContext::new();
+        for font in ICON_FONTS {
+            fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(font)), None);
+        }
+        Ok(Typesetter { fonts, layouts: LayoutContext::new(), locale, families })
     }
 
     /// `text` in `font`, broken into lines no wider than `max_width`.

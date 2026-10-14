@@ -250,14 +250,14 @@
               { "id": "flight-list", "kind": "List", "if": "!noResults", "gap": "space.3", "each": "results.flights",
                 "item": { "ref": "flight-card" } },
 
-              { "id": "no-results", "kind": "EmptyState", "if": "noResults", "icon": "plane",
+              { "id": "no-results", "kind": "EmptyState", "if": "noResults", "icon": "flight",
                 "title": "没有符合筛选条件的航班", "detail": "试试放宽经停、航空公司或起飞时间。",
                 "children": [ { "id": "no-results-clear", "kind": "Button", "variant": "secondary", "text": "清除全部筛选",
                                 "on": { "tap": { "clearFilters": true } } } ] } ] } ] } ] } ]
   },
 
   "components": {
-    "nav-back": { "id": "nav-back", "kind": "IconButton", "icon": "back", "label": "返回", "on": { "tap": { "back": true } } },
+    "nav-back": { "id": "nav-back", "kind": "IconButton", "icon": "arrow_back", "label": "返回", "on": { "tap": { "back": true } } },
     "flight-card": {
       "id": "flight-{index}", "kind": "Card", "padding": "space.4", "gap": "space.3", "border": "color.border", "radius": "radius.md",
       "on": { "tap": { "navigate": "FlightDetail", "with": { "flight": "{item.id}" } } },

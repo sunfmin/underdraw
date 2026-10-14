@@ -6,6 +6,7 @@
 use serde_json::{Map, Value};
 
 use crate::check::Findings;
+use crate::icons;
 
 /// The kinds underdraw ships, in the form a project's kinds.json takes.
 const DEFAULTS: &str = include_str!("../kinds.json");
@@ -64,17 +65,16 @@ const NOTES: [&str; 2] = ["$comment", "doc"];
 pub const FILTERS: [&str; 10] =
     ["or", "count", "first", "last", "head", "tail", "slashes", "glyph", "atLeast", "atMost"];
 
-/// Every kind there is, and the glyphs icons stand in as.
+/// Every kind there is.
 pub struct Kinds {
     kinds: Map<String, Value>,
-    icons: Map<String, Value>,
 }
 
 impl Kinds {
     /// underdraw's kinds, with `project`'s (its kinds.json) over them by
     /// name.
     pub fn read(project: Option<&Value>) -> Kinds {
-        let mut kinds = Kinds { kinds: Map::new(), icons: Map::new() };
+        let mut kinds = Kinds { kinds: Map::new() };
         if let Ok(defaults) = serde_json::from_str::<Value>(DEFAULTS) {
             kinds.add(&defaults);
         }
@@ -88,11 +88,6 @@ impl Kinds {
         if let Some(Value::Object(kinds)) = file.get("kinds") {
             for (name, kind) in kinds {
                 self.kinds.insert(name.clone(), kind.clone());
-            }
-        }
-        if let Some(Value::Object(icons)) = file.get("icons") {
-            for (name, glyph) in icons {
-                self.icons.insert(name.clone(), glyph.clone());
             }
         }
     }
@@ -111,28 +106,6 @@ impl Kinds {
         self.kinds.get(kind).and_then(|entry| entry.get("assumed")).and_then(Value::as_str)
     }
 
-    /// The character standing in for `icon`: its own, else the one for the
-    /// longest suffix it ends with (`*.fill`), else the one for any (`*`).
-    pub fn glyph(&self, icon: &str) -> String {
-        if let Some(glyph) = self.icons.get(icon).and_then(Value::as_str) {
-            return glyph.to_string();
-        }
-        let mut found = None;
-        let mut longest = 0;
-        for (pattern, glyph) in &self.icons {
-            if let Some(suffix) = pattern.strip_prefix('*')
-                && !suffix.is_empty()
-                && icon.ends_with(suffix)
-                && suffix.len() > longest
-            {
-                longest = suffix.len();
-                found = glyph.as_str();
-            }
-        }
-        let any = self.icons.get("*").and_then(Value::as_str);
-        found.or(any).unwrap_or("").to_string()
-    }
-
     /// Every fault in the looks of `project`'s kinds, at `kinds.<Name>…`:
     /// a kind with no look, a key no look reads, a filter or kind that does
     /// not exist.
@@ -140,6 +113,12 @@ impl Kinds {
         let Some(project) = project else {
             return;
         };
+        if project.get("icons").is_some() {
+            findings.add(
+                "icons",
+                "icons are Material Symbols names (fonts.google.com/icons) and need no entry; take this out",
+            );
+        }
         let Some(Value::Object(kinds)) = project.get("kinds") else {
             if project.get("kinds").is_some() {
                 findings.add("kinds", "kinds.json's \"kinds\" maps each kind's name to {\"look\": …}");
@@ -187,6 +166,14 @@ impl Kinds {
                     {
                         findings
                             .add(at, &format!("{key} is not a key a look reads; see docs/format/kinds.md"));
+                    }
+                    if nested.is_some()
+                        && icons::is_icon_key(key)
+                        && let Value::String(icon) = value
+                        && !icon.contains('{')
+                        && !icons::known(icon)
+                    {
+                        findings.add(&format!("{at}.{key}"), &icons::unknown(icon));
                     }
                     if key != "pin" && !NOTES.contains(&key.as_str()) {
                         self.look_faults(value, &format!("{at}.{key}"), findings);

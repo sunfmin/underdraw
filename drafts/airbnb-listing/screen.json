@@ -73,18 +73,18 @@
         "rating": 4.92, "reviewCount": 128, "isGuestFavorite": true, "isSaved": false,
         "host": { "name": "Yuki", "avatar": "host.jpg", "isSuperhost": true, "yearsHosting": 6 },
         "highlights": [
-          { "icon": "door", "title": "自助入住", "detail": "使用智能门锁自行入住。" },
-          { "icon": "medal", "title": "Yuki 是超赞房东", "detail": "经验丰富、评价很高的房东。" },
-          { "icon": "calendar", "title": "11 月 2 日前可免费取消", "detail": "" }
+          { "icon": "door_front", "title": "自助入住", "detail": "使用智能门锁自行入住。" },
+          { "icon": "military_tech", "title": "Yuki 是超赞房东", "detail": "经验丰富、评价很高的房东。" },
+          { "icon": "calendar_month", "title": "11 月 2 日前可免费取消", "detail": "" }
         ],
         "description": "公寓位于安静的住宅街，步行 6 分钟到涩谷站……（约 800 字）",
         "amenities": [
           { "icon": "wifi", "label": "Wi‑Fi", "category": "网络" }, { "icon": "kitchen", "label": "厨房", "category": "厨房" },
-          { "icon": "washer", "label": "洗衣机", "category": "洗衣" }, { "icon": "ac", "label": "空调", "category": "供暖与空调" },
+          { "icon": "local_laundry_service", "label": "洗衣机", "category": "洗衣" }, { "icon": "ac_unit", "label": "空调", "category": "供暖与空调" },
           { "icon": "tv", "label": "电视", "category": "娱乐" }, { "icon": "desk", "label": "专用工作区", "category": "工作" },
-          { "icon": "hairdryer", "label": "吹风机", "category": "卫浴" }, { "icon": "elevator", "label": "电梯", "category": "建筑设施" },
-          { "icon": "smoke", "label": "烟雾报警器", "category": "安全" }, { "icon": "first-aid", "label": "急救包", "category": "安全" },
-          { "icon": "iron", "label": "熨斗", "category": "洗衣" }, { "icon": "parking", "label": "免费停车", "unavailable": true, "category": "停车" }
+          { "icon": "dry", "label": "吹风机", "category": "卫浴" }, { "icon": "elevator", "label": "电梯", "category": "建筑设施" },
+          { "icon": "detector_smoke", "label": "烟雾报警器", "category": "安全" }, { "icon": "medical_services", "label": "急救包", "category": "安全" },
+          { "icon": "iron", "label": "熨斗", "category": "洗衣" }, { "icon": "local_parking", "label": "免费停车", "unavailable": true, "category": "停车" }
         ],
         "ratingBreakdown": [ { "label": "干净卫生", "value": 4.9 }, { "label": "如实描述", "value": 4.9 }, { "label": "入住顺利", "value": 5.0 },
                              { "label": "沟通顺畅", "value": 5.0 }, { "label": "交通便利", "value": 4.9 }, { "label": "性价比", "value": 4.8 } ],
@@ -124,9 +124,9 @@
       { "id": "nav", "kind": "NavBar", "transparentOverContent": true,
         "platform": { "web": { "hidden": true, "$why": "网页用站点顶栏和浏览器后退" } },
         "leading":  [ { "ref": "nav-back" } ],
-        "trailing": [ { "id": "nav-share", "kind": "IconButton", "icon": "share", "label": "分享",
+        "trailing": [ { "id": "nav-share", "kind": "IconButton", "icon": "ios_share", "label": "分享",
                         "on": { "tap": { "share": "{listing.url}" } } },
-                      { "id": "nav-save", "kind": "IconButton", "icon": { "cases": [ { "if": "listing.isSaved", "then": "heart.fill" }, { "else": "heart" } ] }, "label": "收藏",
+                      { "id": "nav-save", "kind": "IconButton", "icon": { "cases": [ { "if": "listing.isSaved", "then": "favorite.fill" }, { "else": "favorite" } ] }, "label": "收藏",
                         "on": { "tap": { "toggle": "listing.isSaved" } } } ] },
 
       { "id": "content", "kind": "Scroll",
@@ -172,7 +172,7 @@
 
                   { "id": "host-row", "kind": "Row", "gap": "space.4", "children": [
                     { "id": "host-avatar", "kind": "Avatar", "image": "{listing.host.avatar}", "size": 40,
-                      "badge": { "if": "listing.host.isSuperhost", "icon": "medal" } },
+                      "badge": { "if": "listing.host.isSuperhost", "icon": "military_tech" } },
                     { "id": "host-text", "kind": "Stack", "children": [
                       { "id": "host-name", "kind": "Text", "text": "房东：{listing.host.name}", "font": "font.subhead" },
                       { "id": "host-meta", "kind": "Text", "font": "font.caption", "color": "color.textSecondary",
@@ -189,7 +189,7 @@
 
                   { "id": "description", "kind": "Stack", "gap": "space.4", "children": [
                     { "id": "description-text", "kind": "Text", "text": "{listing.description}", "font": "font.body", "maxLines": 6 },
-                    { "id": "description-more", "kind": "Link", "text": "显示更多", "trailingIcon": "chevron.right",
+                    { "id": "description-more", "kind": "Link", "text": "显示更多", "trailingIcon": "chevron_right",
                       "on": { "tap": { "open": "sheet-description" } } } ] },
 
                   { "id": "divider-4", "kind": "Divider" },
@@ -258,12 +258,12 @@
 
           { "id": "things-to-know", "kind": "Section", "title": "须知", "padding": "space.6", "children": [
             { "id": "know-list", "kind": "List", "children": [
-              { "id": "know-rules", "kind": "ListItem", "title": "房屋守则", "trailingIcon": "chevron.right",
+              { "id": "know-rules", "kind": "ListItem", "title": "房屋守则", "trailingIcon": "chevron_right",
                 "on": { "tap": { "open": "sheet-rules" } } },
-              { "id": "know-safety", "kind": "ListItem", "title": "安全与房源", "trailingIcon": "chevron.right",
+              { "id": "know-safety", "kind": "ListItem", "title": "安全与房源", "trailingIcon": "chevron_right",
                 "on": { "tap": { "open": "sheet-safety" } } },
               { "id": "know-cancel", "kind": "ListItem", "title": "退订政策", "detail": "{listing.cancellationPolicy}",
-                "trailingIcon": "chevron.right", "on": { "tap": { "open": "sheet-cancellation" } } } ] } ] }
+                "trailingIcon": "chevron_right", "on": { "tap": { "open": "sheet-cancellation" } } } ] } ] }
         ] },
 
       { "id": "booking-bar", "kind": "StickyBar", "edge": "bottom", "only": "compact",
@@ -282,7 +282,7 @@
   },
 
   "components": {
-    "nav-back": { "id": "nav-back", "kind": "IconButton", "icon": "back", "label": "返回", "on": { "tap": { "back": true } },
+    "nav-back": { "id": "nav-back", "kind": "IconButton", "icon": "arrow_back", "label": "返回", "on": { "tap": { "back": true } },
                   "platform": { "android": { "$why": "安卓同时响应系统返回手势" } },
                   "$note": "三个阶段的导航栏都引用它，但同一时刻只显示一个阶段，所以 id 不冲突。" },
     "reserve-button": {

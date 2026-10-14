@@ -209,7 +209,7 @@
             "cases": [
               {
                 "if": "item.done",
-                "then": "checkmark.circle.fill"
+                "then": "check_circle.fill"
               },
               {
                 "else": "circle"

@@ -1,10 +1,5 @@
 {
   "$comment": "What each kind looks like in a wireframe: underdraw's defaults. A project's kinds.json adds kinds and replaces these by name. The look vocabulary is docs/format/kinds.md.",
-  "icons": {
-    "back": "‹", "close": "×", "share": "↑", "heart": "♡", "heart.fill": "♥",
-    "chevron.right": "›", "warning": "!", "minus": "−", "plus": "+", "star": "★", "": "",
-    "*.fill": "◆", "*": "◇"
-  },
   "kinds": {
     "Screen":     { "look": { "box": "column", "frame": true, "fill": "paper", "children": ["$children"] } },
     "Scroll":     { "look": { "box": "column", "frame": true, "children": ["$children"] } },
@@ -128,9 +123,9 @@
       "look": { "box": "row", "justify": "between", "padding": [8, 12], "children": [
         { "text": "{label}", "font": "font.body" },
         { "box": "row", "gap": 12, "children": [
-          { "kind": "Glyph", "icon": "minus", "size": 32, "font": "font.body" },
+          { "kind": "Glyph", "icon": "remove", "size": 32, "font": "font.body" },
           { "text": "{value}", "font": "font.body" },
-          { "kind": "Glyph", "icon": "plus", "size": 32, "font": "font.body" } ] } ] }
+          { "kind": "Glyph", "icon": "add", "size": 32, "font": "font.body" } ] } ] }
     },
     "PriceBreakdown": {
       "doc": "Lines of a price: each of lines and then total, named, beside a gray amount; gray bars for the names too when lines are not given.",

@@ -167,10 +167,12 @@ fn texts(page: &Page) -> Vec<&str> {
 fn a_filled_icon_reads_apart_from_its_outline() {
     let page = tiny(serde_json::json!([
         { "id": "open", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
-        { "id": "done", "kind": "ListItem", "leadingIcon": "checkmark.circle.fill", "title": "b" }
+        { "id": "done", "kind": "ListItem", "leadingIcon": "check_circle.fill", "title": "b" }
     ]));
     let texts = texts(&page);
-    assert!(texts.contains(&"◇") && texts.contains(&"◆"), "{texts:?}");
+    // Material Symbols' circle (U+EF4A) outlined, and its check_circle
+    // (U+F0BE) solid, moved to U+F0000 + it where the solid font has it.
+    assert!(texts.contains(&"\u{ef4a}") && texts.contains(&"\u{ff0be}"), "{texts:?}");
 }
 
 #[test]

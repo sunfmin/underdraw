@@ -534,7 +534,15 @@ impl Catalog<'_> {
                     None => Value::Null,
                 },
                 ("slashes", value) => Value::String(said(&value).replace('-', "/")),
-                ("glyph", value) => Value::String(self.kinds.glyph(&said(&value))),
+                ("glyph", value) => {
+                    // A name that is no icon is drawn as a "?"; no name, as nothing.
+                    let name = said(&value);
+                    let glyph = underdraw_format::icons::glyph(&name).map(String::from);
+                    Value::String(
+                        glyph
+                            .unwrap_or_else(|| if name.is_empty() { String::new() } else { "?".to_string() }),
+                    )
+                }
                 ("atLeast", Value::Number(n)) => bound(&n, argument, f64::max),
                 ("atMost", Value::Number(n)) => bound(&n, argument, f64::min),
                 (_, value) => value,

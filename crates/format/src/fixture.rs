@@ -113,6 +113,13 @@ fn validate(schema: &Schema, value: &Value, field: &Field, at: &str, findings: &
         Base::Int | Base::Number => {
             in_range(field, value.as_f64().unwrap_or(0.0), at, "value", findings);
         }
+        Base::Icon => {
+            if let Some(icon) = value.as_str()
+                && !crate::icons::known(icon)
+            {
+                findings.add(at, &crate::icons::unknown(icon));
+            }
+        }
         _ => {}
     }
     match schema.shape(field) {
