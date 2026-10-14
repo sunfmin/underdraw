@@ -142,7 +142,9 @@ NODES
     action     in the body after children (EmptyState's button)
     overlay    floats over the node; its "anchor" is "bottom-trailing"
                (default), "top-leading", "top-trailing", "bottom-leading"
-               or "center" (the middle of the node: a dialog)
+               (16 in from the corner), "center" (the middle of the node:
+               a dialog) or "bottom" (flush along the bottom edge, as wide
+               as the node: a sheet)
   A kind draws its slots only if its look places "$children".
   "each" with no "item" passes the elements to the kind as "items" (photos):
     { "id": "photos", "kind": "ImageCarousel", "each": "listing.photos" }
@@ -200,9 +202,9 @@ POPUPS
     "padding": 24, "radius": 16, "fill": "paper", "stroke": "line",
     "children": ["$children"] }, with
   "width": {"compact": "88%", "regular": 480} on the node.
-  - "anchor" places it: "center" for a dialog, "bottom-leading" for a
-    sheet. On a Screen, the middle is the middle of the whole page, which
-    is as tall as its content.
+  - "anchor" places it: "center" for a dialog, "bottom" for a sheet. On a
+    Screen, the middle and the bottom are those of the whole page, which
+    is as tall as its content. A sheet's look leaves out "width".
   - "backdrop": true dims the screen behind it; what is behind gets no
     number, since nothing there can be acted on while it is open.
 

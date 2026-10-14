@@ -379,7 +379,8 @@ impl Catalog<'_> {
 
     /// `node`'s children in order: `leading`, the body (`children`, `item`,
     /// `action`), then `trailing` pushed to the far end; `overlay` floats
-    /// over the box at its `anchor`: a corner, or the center.
+    /// over the box at its `anchor`: a corner, the center, or the bottom edge
+    /// from side to side, flush.
     fn children<'a>(&self, node: &'a Node) -> Vec<Elem<'a>> {
         let mut built = Vec::new();
         let mut trailing = Vec::new();
@@ -399,14 +400,20 @@ impl Catalog<'_> {
         for child in &node.children {
             if child.slot == "overlay" {
                 let anchor = child.props.get("anchor").and_then(Value::as_str).unwrap_or(ANCHORS[0]);
-                let (x, y) = match anchor {
-                    "center" => (Edge::Center, Edge::Center),
+                let (x, y, inset) = match anchor {
+                    "center" => (Edge::Center, Edge::Center, 16.0),
+                    "bottom" => (Edge::Start, Edge::End, 0.0),
                     corner => (
                         if corner.contains("trailing") { Edge::End } else { Edge::Start },
                         if corner.contains("bottom") { Edge::End } else { Edge::Start },
+                        16.0,
                     ),
                 };
-                built.push(self.node(child).pinned(Pin { x, y, inset: 16.0 }));
+                let mut elem = self.node(child);
+                if anchor == "bottom" {
+                    elem.style.size.width = percent(1.0);
+                }
+                built.push(elem.pinned(Pin { x, y, inset }));
             }
         }
         built
