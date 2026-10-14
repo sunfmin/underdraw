@@ -5,12 +5,17 @@
   "tokens": "tokens.json",
   "$comment": "A shop owner's order list: search, status filters, a paged list of orders, and a confirm dialog that pops up over the list to cancel one.",
   "data": {
-    "query": "string ..40",
+    "query": {
+      "type": "string ..40",
+      "view": true,
+      "doc": "What the person has typed in the search box"
+    },
     "filters": "FilterChip[] 1..6",
-    "orders": "Order[] ..20",
+    "orders": { "type": "Order[] ..20", "from": "listOrders" },
     "summary": "Summary",
     "cancelling": {
       "type": "CancelRequest?",
+      "view": true,
       "doc": "The order whose cancel dialog is open; null while no dialog shows"
     }
   },
@@ -27,13 +32,13 @@
       "customer": "string 1..40",
       "itemsSummary": {
         "type": "string 1..60",
-        "derived": { "app": "first item's name and how many more" }
+        "derived": { "server": "first item's name and how many more; the items are not in the view model" }
       },
       "total": "money",
       "placedAt": "date",
       "statusLabel": {
         "type": "string 1..6",
-        "derived": { "app": "待付款 / 待发货 / 已发货 / 已取消, from the order's status" }
+        "derived": { "server": "待付款 / 待发货 / 已发货 / 已取消, from the order's status, which is not in the view model" }
       },
       "cancellable": {
         "type": "bool = false",
@@ -112,6 +117,39 @@
     "submitting": {
       "when": "dialogOpen && cancelling.submitting",
       "label": "Cancelling"
+    }
+  },
+  "operations": {
+    "listOrders": {
+      "query": "The first page of orders with the status filter names, matching the search",
+      "params": {
+        "filter": "string",
+        "query": "string ..40"
+      },
+      "result": "Order[] ..20",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "moreOrders": {
+      "query": "The next page of the same orders, after the first ones shown",
+      "params": {
+        "after": "int 0.."
+      },
+      "result": "Order[] ..20",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "cancelOrder": {
+      "command": "Cancels the order for the reason chosen, refunding it when it was paid",
+      "params": {
+        "id": "string"
+      },
+      "requires": "canConfirm",
+      "fails": {
+        "shipped": "the order shipped meanwhile and can no longer be cancelled"
+      }
     }
   },
   "fixtures": {
@@ -420,8 +458,11 @@
               "selected": "{item.selected}",
               "on": {
                 "tap": {
-                  "set": "filter",
-                  "to": "{item.id}"
+                  "call": "listOrders",
+                  "with": {
+                    "filter": "{item.id}",
+                    "query": "{query}"
+                  }
                 }
               }
             }
@@ -556,7 +597,10 @@
           "text": "加载更多",
           "on": {
             "tap": {
-              "loadMore": true
+              "call": "moreOrders",
+              "with": {
+                "after": "{summary.shown}"
+              }
             }
           }
         }
@@ -625,8 +669,8 @@
             "selected": "{item.selected}",
             "on": {
               "tap": {
-                "set": "cancelReason",
-                "to": "{item.id}"
+                "set": "item.selected",
+                "to": true
               }
             }
           }
@@ -665,7 +709,7 @@
               },
               "on": {
                 "tap": {
-                  "submit": "cancelOrder",
+                  "call": "cancelOrder",
                   "with": {
                     "id": "{cancelling.orderId}"
                   }
@@ -732,7 +776,11 @@
             "text": "重试",
             "on": {
               "tap": {
-                "reload": true
+                "call": "listOrders",
+                "with": {
+                  "filter": "all",
+                  "query": ""
+                }
               }
             }
           }
