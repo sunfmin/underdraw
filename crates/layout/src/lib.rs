@@ -6,7 +6,7 @@
 extern crate flux_alloc;
 extern crate flux_core;
 
-mod catalog;
+mod look;
 mod place;
 mod tokens;
 
@@ -119,9 +119,18 @@ pub trait Measure {
 }
 
 /// `root` laid out `width` points wide, its height whatever its content
-/// takes, with `tokens` (tokens.json) for spaces, radii and fonts.
-pub fn layout(root: &Node, tokens: &Value, width: f32, measure: &mut dyn Measure) -> Result<Page, String> {
+/// takes, with `tokens` (tokens.json) for spaces, radii and fonts, and each
+/// kind drawn as `kinds` (the project's kinds.json, over underdraw's own)
+/// says.
+pub fn layout(
+    root: &Node,
+    tokens: &Value,
+    kinds: Option<&Value>,
+    width: f32,
+    measure: &mut dyn Measure,
+) -> Result<Page, String> {
     let tokens = tokens::Tokens(tokens);
-    let elem = catalog::Catalog { tokens: &tokens }.node(root);
+    let kinds = look::Kinds::new(kinds)?;
+    let elem = look::Catalog { tokens: &tokens, kinds: &kinds }.node(root);
     place::place(&elem, width, measure).map_err(|e| format!("layout failed: {e}"))
 }

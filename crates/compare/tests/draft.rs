@@ -40,7 +40,8 @@ fn faithful(state: State, width: f32) -> Value {
     };
     let handed = handoff(&screen, &mapping, &tokens).unwrap();
     let expected = handed.states.iter().find(|s| s.state == named && s.breakpoint == breakpoint).unwrap();
-    let page = layout(&instantiate(&screen, state, breakpoint).unwrap(), &tokens, width, &mut Fixed).unwrap();
+    let page =
+        layout(&instantiate(&screen, state, breakpoint).unwrap(), &tokens, None, width, &mut Fixed).unwrap();
     let mut elements = Vec::new();
     for id in &expected.present {
         let rect = page.nodes.iter().find(|n| &n.id == id).unwrap().rect;
@@ -72,7 +73,7 @@ fn faithful(state: State, width: f32) -> Value {
 
 fn run(state: State, capture: &Value) -> Comparison {
     let (screen, tokens, mapping) = (read("screen.json"), read("tokens.json"), read("platforms/ios.json"));
-    compare(&screen, &mapping, &tokens, state, capture, &mut Fixed).unwrap()
+    compare(&screen, &mapping, &tokens, None, state, capture, &mut Fixed).unwrap()
 }
 
 fn element<'a>(capture: &'a mut Value, id: &str) -> &'a mut Map<String, Value> {
@@ -156,8 +157,8 @@ fn siblings_out_of_order_and_a_child_outside() {
 fn a_capture_that_is_not_one_is_refused() {
     let (screen, tokens, mapping) = (read("screen.json"), read("tokens.json"), read("platforms/ios.json"));
     let capture = json!({ "elements": [ { "x": 1 }, { "id": "a", "x": 1, "y": 2 } ] });
-    let refused =
-        compare(&screen, &mapping, &tokens, State::Fixture("default"), &capture, &mut Fixed).unwrap_err();
+    let refused = compare(&screen, &mapping, &tokens, None, State::Fixture("default"), &capture, &mut Fixed)
+        .unwrap_err();
     assert!(refused.contains("\"width\""), "{refused}");
     assert!(refused.contains("elements[0]: needs \"id\""), "{refused}");
     assert!(refused.contains("elements[1]: a: a frame is"), "{refused}");

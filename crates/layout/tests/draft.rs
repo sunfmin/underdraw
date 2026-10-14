@@ -30,7 +30,7 @@ fn page(state: State, width: f32) -> Page {
     let (screen, tokens) = (read("screen.json"), read("tokens.json"));
     let breakpoint = Breakpoint::for_width(&tokens, width as u32);
     let root = instantiate(&screen, state, breakpoint).unwrap();
-    layout(&root, &tokens, width, &mut Fixed).unwrap()
+    layout(&root, &tokens, None, width, &mut Fixed).unwrap()
 }
 
 fn placed<'a>(page: &'a Page, id: &str) -> &'a Placed {
@@ -145,7 +145,7 @@ fn tiny(children: Value) -> Page {
     });
     let tokens = read("tokens.json");
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
-    layout(&root, &tokens, 390.0, &mut Fixed).unwrap()
+    layout(&root, &tokens, None, 390.0, &mut Fixed).unwrap()
 }
 
 fn texts(page: &Page) -> Vec<&str> {
