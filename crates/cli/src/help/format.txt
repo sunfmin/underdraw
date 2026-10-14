@@ -195,6 +195,13 @@ ACTIONS
   "with" is passed along with the action. A handler may be cases:
     "on": { "tap": { "cases": [ { "if": "!hasDates", "then": {"scrollTo": "calendar"} },
                                 { "else": {"navigate": "Checkout"} } ] } }
+  Event names are free too: "tap", or "change" on a node with "bind", raised
+  once the person has edited the bound value. Its handler reads the new
+  value through the bound path, so an edit that changes domain data calls
+  the operation that saves it:
+    { "id": "qty-{index}", "kind": "Stepper", "bind": "item.quantity",
+      "on": { "change": { "call": "setQuantity",
+                          "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } }
   A node with "on" or "bind" is one a person can act on.
 
 OPERATIONS
