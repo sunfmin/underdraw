@@ -83,9 +83,10 @@
       }
     },
     "Dialog": {
-      "doc": "A modal dialog centred over the screen. Platforms draw a dimmed backdrop behind it (the wireframe leaves it out so the table stays readable); it blocks the screen until dismissed.",
+      "doc": "A modal dialog centred over a dimmed backdrop; it blocks the screen until dismissed.",
       "look": {
         "box": "column",
+        "backdrop": true,
         "width": "{width|or:88%}",
         "gap": 16,
         "padding": 24,
