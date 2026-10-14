@@ -246,7 +246,9 @@ fn each_fault_in_a_projects_kinds_is_found() {
             { "kind": "Nowhere" },
             { "cases": [ { "if": "title", "then": "$kids" } ] },
             { "kind": "Glyph", "icon": "chevron.right" },
-            { "box": "grid", "columns": ["2fr", "{width}", 48, "48"], "rows": ["1.5fr", "wide"] }
+            { "box": "grid", "columns": ["2fr", "{width}", 48, "48"], "rows": ["1.5fr", "wide"] },
+            { "box": "column", "backdrop": true },
+            { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } }
         ] } }
     }, "icons": { "checklist": "☑" } });
     let dir = with_kinds("bad-kinds", &kinds);
@@ -262,6 +264,7 @@ fn each_fault_in_a_projects_kinds_is_found() {
         ("kinds.Wrong.look.children[3].icon", "chevron.right is not a Material Symbols icon"),
         ("kinds.Wrong.look.children[4].columns[3]", "\"48\" is not a grid track"),
         ("kinds.Wrong.look.children[4].rows[1]", "\"wide\" is not a grid track"),
+        ("kinds.Wrong.look.children[5]", "backdrop is drawn only by a box that floats"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
@@ -272,6 +275,23 @@ fn each_fault_in_a_projects_kinds_is_found() {
             .any(|f| f["at"] == at && f["problem"].as_str().unwrap().contains(said));
         assert!(found, "expected a finding at {at} saying {said:?}, got {:#}", answer["findings"]);
     }
+    let pinned =
+        answer["findings"].as_array().unwrap().iter().any(|f| f["at"] == "kinds.Wrong.look.children[6]");
+    assert!(!pinned, "a pinned box may have a backdrop: {:#}", answer["findings"]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_kind_with_a_backdrop_must_be_an_overlay() {
+    let kinds = json!({ "kinds": { "Badge": { "look": {
+        "box": "row", "backdrop": true, "children": [ { "text": "{text}" } ] } } } });
+    let dir = with_kinds("backdrop-not-overlay", &kinds);
+    let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(code, 1, "{answer:#}");
+    let found = answer["findings"].as_array().unwrap().iter().any(|f| {
+        f["at"] == "guest-favorite" && f["problem"].as_str().unwrap().contains("put it in \"overlay\"")
+    });
+    assert!(found, "{:#}", answer["findings"]);
     std::fs::remove_dir_all(dir).unwrap();
 }
 

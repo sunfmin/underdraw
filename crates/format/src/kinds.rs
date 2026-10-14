@@ -148,6 +148,13 @@ impl Kinds {
         self.kinds.get(kind).and_then(|entry| entry.get("look"))
     }
 
+    /// Whether `kind`'s whole look has a backdrop, which draws only when its
+    /// node is in an `overlay`.
+    pub fn backdrop(&self, kind: &str) -> bool {
+        self.look(kind)
+            .is_some_and(|look| look.get("backdrop") == Some(&Value::Bool(true)) && look.get("pin").is_none())
+    }
+
     /// Why `kind`'s look is a guess the person has not confirmed, when it is.
     pub fn assumed(&self, kind: &str) -> Option<&str> {
         self.kinds.get(kind).and_then(|entry| entry.get("assumed")).and_then(Value::as_str)
@@ -175,13 +182,15 @@ impl Kinds {
         for (name, kind) in kinds {
             let at = format!("kinds.{name}");
             match kind.get("look") {
-                Some(look) => self.look_faults(look, &format!("{at}.look"), findings),
+                Some(look) => self.look_faults(look, &format!("{at}.look"), true, findings),
                 None => findings.add(&at, "a kind needs \"look\": what it is drawn as"),
             }
         }
     }
 
-    fn look_faults(&self, look: &Value, at: &str, findings: &mut Findings) {
+    /// `top`: `look` is what the kind's node is drawn as, which an overlay
+    /// pins; anything inside it floats only by its own `pin`.
+    fn look_faults(&self, look: &Value, at: &str, top: bool, findings: &mut Findings) {
         match look {
             Value::String(text) if text.starts_with('$') => {
                 if text != "$children" {
@@ -192,11 +201,17 @@ impl Kinds {
             Value::String(text) => self.template_faults(text, at, findings),
             Value::Array(looks) => {
                 for (index, look) in looks.iter().enumerate() {
-                    self.look_faults(look, &format!("{at}[{index}]"), findings);
+                    self.look_faults(look, &format!("{at}[{index}]"), false, findings);
                 }
             }
             Value::Object(object) => {
                 let nested = object.get("kind").and_then(Value::as_str);
+                if !top && object.get("backdrop") == Some(&Value::Bool(true)) && !object.contains_key("pin") {
+                    findings.add(
+                        at,
+                        "backdrop is drawn only by a box that floats: the whole look of a kind put in \"overlay\", or a box with \"pin\"",
+                    );
+                }
                 if let Some(kind) = nested
                     && !self.has(kind)
                 {
@@ -204,7 +219,7 @@ impl Kinds {
                 }
                 for (key, value) in object {
                     if key == "cases" {
-                        self.branch_faults(value, &format!("{at}.cases"), findings);
+                        self.branch_faults(value, &format!("{at}.cases"), top, findings);
                         continue;
                     }
                     if nested.is_none()
@@ -230,7 +245,7 @@ impl Kinds {
                         track_faults(value, &format!("{at}.{key}"), findings);
                     }
                     if key != "pin" && !NOTES.contains(&key.as_str()) {
-                        self.look_faults(value, &format!("{at}.{key}"), findings);
+                        self.look_faults(value, &format!("{at}.{key}"), false, findings);
                     }
                 }
             }
@@ -239,7 +254,7 @@ impl Kinds {
     }
 
     /// `cases`: a list of `{"if", "then"}`, ending in `{"else"}`.
-    fn branch_faults(&self, branches: &Value, at: &str, findings: &mut Findings) {
+    fn branch_faults(&self, branches: &Value, at: &str, top: bool, findings: &mut Findings) {
         let Value::Array(branches) = branches else {
             return findings.add(at, "cases is a list of {\"if\", \"then\"} ending in {\"else\"}");
         };
@@ -250,7 +265,7 @@ impl Kinds {
             let at = format!("{at}[{index}]");
             for key in ["then", "else"] {
                 if let Some(value) = branch.get(key) {
-                    self.look_faults(value, &format!("{at}.{key}"), findings);
+                    self.look_faults(value, &format!("{at}.{key}"), top, findings);
                 }
             }
         }
