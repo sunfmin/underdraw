@@ -17,9 +17,9 @@ The decisions:
   `JobStatus = enum(running, done, failed)` for every job. `result` is
   there only when the command answers with something.
 - **So is the query that reads it**: `exportDocsJob(id) → ExportDocsJob`,
-  failing `notFound`. Its CLI command is the long command's name and
-  `-job` (`export-job <id>`), rather than kebab-casing every operation
-  that starts with `export`.
+  failing `notFound`. Its CLI command, its whole name in kebab case as
+  every command's, is the long command's name and `-job`
+  (`export-docs-job <id>`).
 - **Derived means not written.** The description is expanded with both
   before anything reads it, so check, the fixtures, handoff and the CLI
   see one description; a type or an operation of a derived name written

@@ -33,8 +33,8 @@ The decisions:
   of any path that may be null. So "gated on a non-empty selection" is
   said with what the format had, not with a new count operator.
 - **In the CLI, its own command and exit codes.** The bulk form is
-  `delete-docs <ids>…`, its whole name in kebab case, leaving `delete` as
-  it was. It exits 0 when every item was done and 2 when any was not;
+  `delete-docs <ids>…`, its whole name in kebab case as every command's,
+  beside the single one's `delete-doc`. It exits 0 when every item was done and 2 when any was not;
   1 still means nothing was tried (no `--yes`). Its golden outputs are
   full success in each fixture whose node calls it, and, once for each
   way an item can fail, a partial failure: the first item failing, the
@@ -44,7 +44,7 @@ The decisions:
 
 - **`"bulk": true`, with the name derived** (`deleteDoc` → `deleteDocs`).
   Plurals are English and irregular; a name written once is no burden.
-- **One command for both** (`delete <id>…`). The single and the bulk
+- **One command for both** (`delete-doc <id>…`). The single and the bulk
   forms answer differently (`{}` against `{"results": …}`), and a script
   would have to guess which it gets.
 - **A selection gated by its count** (`selection.count > 0`). Conditions
