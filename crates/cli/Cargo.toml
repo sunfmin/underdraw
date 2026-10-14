@@ -16,3 +16,4 @@ png = "0.18.1"
 pollster = "1.0.1"
 underdraw-layout = { version = "0.1.0", path = "../layout" }
 underdraw-handoff = { path = "../handoff" }
+underdraw-compare = { path = "../compare" }

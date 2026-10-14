@@ -5,7 +5,7 @@
 # Needs `cargo-flux`, `fixpoint` and `z3` installed, each the one the
 # workspace Cargo.toml pins: it refuses to check with any other.
 #
-#   ./verify.sh                 check both pure crates
+#   ./verify.sh                 check every pure crate
 #   ./verify.sh placeholders    check the functions whose path contains a name
 set -e
 cd "$(dirname "$0")"
@@ -65,7 +65,9 @@ case "${1:-}" in
 "" | -* | check) ;;
 *) set -- check --only-check="def:$1" ;;
 esac
-for crate in format layout handoff; do
+# The pure crates are the ones whose Cargo.toml turns Flux on.
+pure=$(awk 'FNR == 1 { split(FILENAME, path, "/") } /^\[package\.metadata\.flux\]/ { print path[2] }' crates/*/Cargo.toml)
+for crate in $pure; do
     echo "verify: crate underdraw-$crate"
     (cd "crates/$crate" && cargo flux "$@")
 done

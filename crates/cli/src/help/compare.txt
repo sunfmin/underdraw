@@ -1,0 +1,68 @@
+WHEN
+  After building a state of the screen on a platform, and after every change
+  to it: is the real UI what the person agreed to? Once per state you can put
+  the UI in (each fixture, each phase), at the width you ran it at.
+
+WHO
+  The agent that builds the real UI, from its UI tests.
+
+READS
+  <path>/screen.json, tokens.json, platforms/<platform>.json, and the capture
+  file. Writes nothing. Refuses a description `check` finds faults in.
+
+THE CAPTURE
+  The UI's elements that have a test id, read by the platform's UI test tool
+  ("elementTree" in the platform file says which) and written as:
+    {
+      "width": 390,                     the width the UI ran at, in points
+                                        (CSS pixels on the web)
+      "elements": [
+        { "id": "reserve-button",       the test id, which is the node's id
+          "x": 16, "y": 780, "width": 358, "height": 48,
+                                        the frame, all four or none
+          "text": "预订",               the words it shows, if the tool reads them
+          "enabled": true },            whether it can be used, if the tool reads it
+        …
+      ]
+    }
+  Every frame in one coordinate space: the page's, with its top-left at 0,0.
+  A check that needs something the capture leaves out is skipped, not failed.
+
+ANSWERS
+  {
+    "screen", "platform"
+    "ok":         true when nothing differs
+    "state":      {"fixture"} or {"phase"}
+    "breakpoint": the breakpoint "width" falls in; "width"
+    "checked":    {"present", "absent", "text", "enabled", "order", "inside"}:
+                  how many of each check were made
+    "findings":   [{"at": id, "check", "problem"}, …], where check is
+      present     a node the state shows has no element
+      duplicate   two elements have one node's id
+      absent      an element the state does not show, or the platform hides
+      text        the words differ (one value: exactly; several: each is in it)
+      enabled     enabled where the description says disabled, or the reverse
+      order       a node is not below, or right of, the sibling before it,
+                  where the wireframe puts it
+      inside      a node's frame is outside the nearest element holding it
+    "unknown":    [id, …]: ids no node of the description has
+  }
+  Exit 1 when there is a finding.
+
+HOW TO USE IT
+  - In a UI test: load a fixture from `underdraw handoff`'s "fixtures", show
+    the screen, dump its elements into a capture, run compare with that
+    --fixture, and fail the test on exit 1, printing "findings".
+  - Fix the UI, not the capture. When the UI is right and the description is
+    not, change the description, `render` it, and show the person.
+
+WHAT TRIPS YOU UP
+  - Lazy containers (LazyVStack, LazyColumn, virtualised lists) build only
+    what is on screen: what is not built is "present" as missing. Capture with
+    the content built, or scroll and capture the parts into one page.
+  - On the web, getBoundingClientRect is relative to the viewport: add
+    scrollX and scrollY so the frames are the page's.
+  - Order and nesting are checked; sizes and spacing are not: the wireframe's
+    are not the real UI's.
+  - Pinned bars (StickyBar) and overlays are not checked for order, and
+    nothing is checked for nesting inside a node that scrolls.

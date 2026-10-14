@@ -1602,10 +1602,25 @@ dependencies = [
  "png",
  "pollster",
  "serde_json",
+ "underdraw-compare",
  "underdraw-format",
  "underdraw-handoff",
  "underdraw-layout",
  "vello",
+]
+
+[[package]]
+name = "underdraw-compare"
+version = "0.1.0"
+dependencies = [
+ "flux-alloc",
+ "flux-core",
+ "flux-rs",
+ "serde",
+ "serde_json",
+ "underdraw-format",
+ "underdraw-handoff",
+ "underdraw-layout",
 ]
 
 [[package]]

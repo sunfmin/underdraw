@@ -14,6 +14,8 @@ START HERE
   underdraw render <dir>     then draw it, and show the PNG to the person
   underdraw handoff <dir> --platform ios
                              once agreed: what to build, and what to test it against
+  underdraw compare <dir> --platform ios --capture c.json
+                             once built: how the running UI differs from it
 
 WHAT A COMMAND ANSWERS
   One JSON object on stdout. The exit code says which kind:
@@ -31,6 +33,8 @@ COMMANDS
     underdraw handoff <dir> --platform <name>
                              model code, tokens, every node as the platform builds it,
                              and what each state must show
+    underdraw compare <dir> --platform <name> --capture <file>
+                             how the running UI, captured in one state, differs
   For whoever installs underdraw:
     underdraw doctor         what underdraw depends on, and the fix of each finding
 
