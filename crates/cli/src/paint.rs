@@ -83,6 +83,9 @@ fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter
     }
 }
 
+/// How much wider than measured a line is set when it is drawn.
+const HAIR: f32 = 1.0;
+
 struct Words {
     font: Font,
     ink: Ink,
@@ -101,10 +104,16 @@ fn set(
     typesetter: &mut Typesetter,
 ) {
     // A hair wider than measured, so rounding never breaks a line the
-    // measurement kept whole.
-    let layout = typesetter.set(text, words.font, Some(rect.width + 1.0), words.align);
+    // measurement kept whole; a centred or end-aligned line is moved back by
+    // its share of the hair, so it sits in `rect` and not in the wider line.
+    let layout = typesetter.set(text, words.font, Some(rect.width + HAIR), words.align);
+    let back = match words.align {
+        Align::Start => 0.0,
+        Align::Center => HAIR / 2.0,
+        Align::End => HAIR,
+    };
     let brush = colour(words.ink);
-    let origin = at * Affine::translate((f64::from(rect.x), f64::from(rect.y)));
+    let origin = at * Affine::translate((f64::from(rect.x - back), f64::from(rect.y)));
     for (index, line) in layout.lines().enumerate() {
         if words.max_lines.is_some_and(|max| index >= max as usize) {
             break;

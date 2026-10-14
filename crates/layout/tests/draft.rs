@@ -193,6 +193,16 @@ fn an_icon_is_as_big_as_its_square() {
 }
 
 #[test]
+fn a_nodes_padding_takes_sides_as_a_looks_does() {
+    let page = tiny(serde_json::json!([
+        { "id": "body", "kind": "Stack", "padding": [0, "space.4"], "children": [
+            { "id": "line", "kind": "Text", "text": "a" } ] }
+    ]));
+    let (body, line) = (placed(&page, "body").rect, placed(&page, "line").rect);
+    assert_eq!((line.x, line.width, line.y), (16.0, 390.0 - 32.0, body.y), "16 either side, none above");
+}
+
+#[test]
 fn a_kind_not_in_the_catalog_is_drawn_as_a_guess() {
     let page = tiny(serde_json::json!([{ "id": "input", "kind": "TextField" }]));
     let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();

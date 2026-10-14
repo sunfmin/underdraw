@@ -192,9 +192,10 @@ impl Catalog<'_> {
         let mut clip = None;
         if get("frame") == Value::Bool(true) {
             let props = scope.props;
-            if let Some(padding) = props.get("padding") {
-                let padding = self.tokens.length(Some(padding), 0.0);
-                style.padding = sides(padding, padding, padding, padding);
+            if let Some([top, right, bottom, left]) =
+                props.get("padding").and_then(|padding| self.four(padding))
+            {
+                style.padding = sides(top, right, bottom, left);
             }
             gap = Some(self.tokens.length(props.get("gap"), gap.unwrap_or(0.0)));
             let framed = self.tokens.length(props.get("radius"), 0.0);

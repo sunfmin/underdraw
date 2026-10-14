@@ -15,17 +15,25 @@ use underdraw_layout::{Align, Font, Measure, Size};
 /// Han characters, the fonts of the locale's writing on macOS, Windows and
 /// Linux in turn. The system's own fallback is not enough: parley cannot
 /// draw PingFang, and what it falls back to lacks Simplified forms such as 涩.
-/// Last come the icon fonts, the only ones holding the characters icons are
-/// drawn as (underdraw_format::icons).
 fn families(locale: Option<&str>) -> &'static str {
     let tag = locale.unwrap_or("").to_ascii_lowercase();
     if tag.starts_with("ja") {
-        "system-ui, Hiragino Sans, Yu Gothic, Noto Sans CJK JP, sans-serif, Material Symbols, Material Symbols Fill"
+        "system-ui, Hiragino Sans, Yu Gothic, Noto Sans CJK JP, sans-serif"
     } else if tag.starts_with("zh-hant") || tag.starts_with("zh-tw") || tag.starts_with("zh-hk") {
-        "system-ui, Heiti TC, Microsoft JhengHei, Noto Sans CJK TC, sans-serif, Material Symbols, Material Symbols Fill"
+        "system-ui, Heiti TC, Microsoft JhengHei, Noto Sans CJK TC, sans-serif"
     } else {
-        "system-ui, Hiragino Sans GB, Heiti SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif, Material Symbols, Material Symbols Fill"
+        "system-ui, Hiragino Sans GB, Heiti SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif"
     }
+}
+
+/// The fonts an icon is set in (underdraw_format::icons): on their own, so
+/// that its line takes their heights and the icon sits in the middle of it.
+const ICON_FAMILIES: &str = "Material Symbols, Material Symbols Fill";
+
+/// Whether `text` is icons only: every character one the icon fonts hold,
+/// in the Private Use Areas, where no other font puts anything.
+fn is_icons(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| matches!(c, '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}'))
 }
 
 /// Material Symbols, outlined and solid, made by scripts/material-symbols.py.
@@ -64,7 +72,8 @@ impl Typesetter {
     /// `text` in `font`, broken into lines no wider than `max_width`.
     pub fn set(&mut self, text: &str, font: Font, max_width: Option<f32>, align: Align) -> Layout<()> {
         let mut builder = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Borrowed(self.families))));
+        let families = if is_icons(text) { ICON_FAMILIES } else { self.families };
+        builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Borrowed(families))));
         builder.push_default(StyleProperty::FontSize(font.size));
         builder.push_default(StyleProperty::Locale(self.locale));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(f32::from(font.weight))));
