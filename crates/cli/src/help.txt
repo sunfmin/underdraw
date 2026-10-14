@@ -3,8 +3,8 @@ person, and hand it off to web, iOS and Android.
 
 A screen description is a directory holding screen.json (the screen: its
 view model, fixtures, conditions and node tree), usually beside tokens.json,
-platforms/*.json and, for kinds of the project's own, kinds.json. The format
-is docs/format/ in the underdraw repo.
+platforms/*.json and, for kinds of the project's own, kinds.json. How to
+write each file, every kind and every rule: `underdraw check --help`, FORMAT.
 
 NEEDS
   Nothing to check a description. To render one, a GPU (Metal on macOS,
