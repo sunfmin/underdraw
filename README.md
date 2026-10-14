@@ -5,7 +5,8 @@ A command-line tool for AI agents: describe a screen once, then
 - **render** it as a wireframe so a person can look at it and discuss it,
 - **mark** what the AI only guessed, so the person can confirm it,
 - **hand off** exact guidance for building it on web, iOS and Android,
-- **compare** the real UI's element tree against the description.
+- **compare** the real UI's element tree against the description,
+- **derive a CLI** from the same operations, with golden outputs to test it against.
 
 One platform-neutral description (`screen.json`) is the single source of truth.
 Design tokens live in `tokens.json`; per-platform mappings live in `platforms/`;
@@ -24,6 +25,8 @@ any width. `underdraw handoff` gives one platform its generated view model,
 how each node is built there and what every state must show. `underdraw
 compare` checks a capture of the running UI against one state. `underdraw
 schema` derives the view model's JSON Schema, to validate API data against.
+`underdraw cli` derives a command-line interface from the screen's operations,
+and `compare` holds a run of it to the golden output of one fixture.
 
 ## Build
 
