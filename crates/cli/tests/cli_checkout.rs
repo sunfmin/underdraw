@@ -1,0 +1,225 @@
+//! Derives the checkout draft's CLI with the real binary — a form's commands
+//! beside its queries — then runs a hand-written stub CLI through every
+//! golden output and holds each run to it with `compare`; a wrong stub is
+//! found out.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+use serde_json::{Map, Value, json};
+
+const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/checkout");
+
+fn underdraw(args: &[&str]) -> (Value, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let answer =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("not one JSON object ({e}): {stdout}"));
+    (answer, out.status.code().unwrap())
+}
+
+/// Objects merge key by key; lists and scalars replace.
+fn merge(base: &mut Value, over: &Value) {
+    match (base, over) {
+        (Value::Object(base), Value::Object(over)) => {
+            for (key, value) in over {
+                match base.get_mut(key) {
+                    Some(slot) => merge(slot, value),
+                    None => {
+                        base.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        (base, over) => *base = over.clone(),
+    }
+}
+
+/// The fixture's data, as the server a stub CLI talks to would hold it: the
+/// screen's fixture with its "$patch" applied. The checkout draft has no
+/// platform file, so `handoff` cannot give it.
+fn server(fixture: &str) -> Value {
+    let screen: Value =
+        serde_json::from_str(&std::fs::read_to_string(format!("{DRAFT}/screen.json")).unwrap()).unwrap();
+    let fixtures = &screen["fixtures"];
+    let written = &fixtures[fixture];
+    let mut data = match written.get("$patch") {
+        Some(Value::String(from)) => server(from),
+        _ => json!({}),
+    };
+    merge(&mut data, written);
+    data.as_object_mut().unwrap().remove("$patch");
+    data
+}
+
+/// `value` with each of `defaults` it leaves out filled in, as the stub's
+/// own model reads its server's answer.
+fn with_defaults(value: &Value, defaults: &[(&str, Value)]) -> Value {
+    let mut filled: Map<String, Value> = value.as_object().unwrap().clone();
+    for (key, default) in defaults {
+        filled.entry(key.to_string()).or_insert_with(|| default.clone());
+    }
+    Value::Object(filled)
+}
+
+/// A CLI written by hand for the checkout draft: what it prints and its exit
+/// code, run as `<cli> <argv>` against `data`. `wrong` plants the mistakes a
+/// careless one makes.
+fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String, i32) {
+    if let Some(failure) = fail {
+        return (json!({ "error": failure }).to_string(), if wrong { 1 } else { 2 });
+    }
+    let result = |value: Value| (json!({ "result": value }).to_string(), 0);
+    match argv {
+        ["get-cart"] => {
+            let mut cart = data["cart"].clone();
+            for item in cart["items"].as_array_mut().unwrap() {
+                *item = with_defaults(item, &[("inStock", json!(true))]);
+            }
+            result(cart)
+        }
+        ["get-address"] => result(data["address"].clone()),
+        ["list-delivery-options"] => {
+            let rows = data["delivery"].as_array().unwrap();
+            let options = rows
+                .iter()
+                .map(|row| {
+                    let option = with_defaults(&row["option"], &[("selected", json!(false))]);
+                    // Leaks what the app derives for the row.
+                    if wrong { with_defaults(&option, &[("free", json!(false))]) } else { option }
+                })
+                .collect();
+            result(Value::Array(options))
+        }
+        ["get-promo"] => result(with_defaults(
+            &data["promo"],
+            &[("code", json!("")), ("discount", Value::Null), ("message", Value::Null)],
+        )),
+        ["get-summary"] => result(data["summary"].clone()),
+        ["choose-delivery", _]
+        | ["set-quantity", _, _]
+        | ["remove-item", _]
+        | ["apply-promo", _]
+        | ["remove-promo"] => ("{}".to_string(), 0),
+        ["place-order", _] => {
+            let can_place = !data["address"].is_null() && data["cart"]["unavailableCount"] == 0;
+            if can_place || wrong {
+                result(json!({ "id": "o1", "total": data["summary"]["total"] }))
+            } else {
+                (json!({ "error": "requires canPlace" }).to_string(), 1)
+            }
+        }
+        _ => (json!({ "error": "usage" }).to_string(), 2),
+    }
+}
+
+fn capture(name: &str, argv: &[&str], fail: Option<&str>, run: (String, i32)) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("underdraw-cli-checkout-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("{name}.json"));
+    let mut written = json!({ "command": argv, "exit": run.1, "stdout": run.0 });
+    if let Some(failure) = fail {
+        written["failure"] = json!(failure);
+    }
+    std::fs::write(&path, written.to_string()).unwrap();
+    path
+}
+
+/// Every golden output the CLI derives, as (fixture, command line, named
+/// failure); a named failure runs in the first fixture.
+fn runs() -> Vec<(String, Vec<String>, Option<String>)> {
+    let (answer, code) = underdraw(&["cli", DRAFT]);
+    assert_eq!(code, 0, "{answer}");
+    answer["golden"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|golden| {
+            let mut argv = vec![golden["command"].as_str().unwrap().to_string()];
+            if let Some(args) = golden["args"].as_array() {
+                argv.extend(args.iter().map(|a| a.as_str().unwrap().to_string()));
+            }
+            let fixture = golden["fixture"].as_str().unwrap_or("default").to_string();
+            (fixture, argv, golden["failure"].as_str().map(str::to_string))
+        })
+        .collect()
+}
+
+/// Runs the stub on one golden output and answers what `compare` said.
+fn compare(index: usize, run: &(String, Vec<String>, Option<String>), wrong: bool) -> (Value, i32) {
+    let (fixture, argv, fail) = run;
+    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let printed = stub(&server(fixture), &argv, fail.as_deref(), wrong);
+    let name = format!("{}-{index}", if wrong { "wrong" } else { "right" });
+    let path = capture(&name, &argv, fail.as_deref(), printed);
+    underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap(), "--fixture", fixture])
+}
+
+#[test]
+fn the_checkout_draft_derives_queries_and_the_forms_commands() {
+    let (answer, code) = underdraw(&["cli", DRAFT]);
+    assert_eq!(code, 0, "{answer}");
+    let usages: Vec<&str> =
+        answer["commands"].as_array().unwrap().iter().map(|c| c["usage"].as_str().unwrap()).collect();
+    assert_eq!(
+        usages,
+        [
+            "get-cart",
+            "get-address",
+            "list-delivery-options",
+            "get-promo",
+            "get-summary",
+            "choose-delivery <id>",
+            "set-quantity <id> <quantity>",
+            "remove-item <id>",
+            "apply-promo <code>",
+            "remove-promo",
+            "place-order <card|alipay|wechat>",
+        ]
+    );
+    // The promo code the person typed is what apply-promo is given.
+    assert!(
+        answer["golden"].as_array().unwrap().iter().any(|g| g["command"] == "apply-promo"
+            && g["fixture"] == "promo-invalid"
+            && g["args"] == json!(["FALL2025"])),
+        "{answer}"
+    );
+}
+
+#[test]
+fn a_faithful_stub_passes_compare_on_every_golden_output() {
+    let runs = runs();
+    assert!(runs.len() > 50, "{runs:?}");
+    for (index, run) in runs.iter().enumerate() {
+        let (answer, code) = compare(index, run, false);
+        assert_eq!((code, &answer["ok"]), (0, &json!(true)), "{run:?}: {answer}");
+    }
+}
+
+#[test]
+fn a_wrong_stub_is_found_out() {
+    let mut found = Vec::new();
+    for (index, run) in runs().iter().enumerate() {
+        let (answer, _) = compare(index, run, true);
+        for finding in answer["findings"].as_array().into_iter().flatten() {
+            found.push((
+                run.1[0].clone(),
+                finding["check"].as_str().unwrap().to_string(),
+                finding["at"].as_str().unwrap().to_string(),
+            ));
+        }
+    }
+    for wanted in [
+        ("list-delivery-options", "stdout", "stdout.result[0].free"),
+        ("place-order", "exit", "exit"),
+        ("place-order", "stdout", "stdout.error"),
+        ("apply-promo", "exit", "exit"),
+    ] {
+        assert!(
+            found
+                .iter()
+                .any(|(command, check, at)| (command.as_str(), check.as_str(), at.as_str()) == wanted),
+            "{wanted:?} not in {found:?}"
+        );
+    }
+}
