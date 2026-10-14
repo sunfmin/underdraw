@@ -201,10 +201,15 @@ impl Fill<'_> {
         Ok(vec![node])
     }
 
-    /// The elements `path` holds, at most `limit` of them.
+    /// The elements `path` holds, at most `limit` of them: a count, or one
+    /// per breakpoint.
     fn items(&self, path: &str, limit: Option<&Value>, scope: &Value) -> Result<Vec<Value>, String> {
         let Some(Value::Array(all)) = lookup(scope, path) else {
             return Err(format!("each: {path} is not an array here"));
+        };
+        let limit = match limit {
+            Some(Value::Object(object)) if is_responsive(object) => object.get(self.breakpoint.key()),
+            other => other,
         };
         let limit = limit.and_then(Value::as_u64).map_or(all.len(), |n| n as usize);
         let mut items = Vec::new();

@@ -55,6 +55,9 @@ fn conditions_breakpoints_and_each_shape_the_tree() {
     let amenities = find(&compact, "amenities-list").unwrap();
     assert_eq!(amenities.children.len(), 10);
     assert_eq!(amenities.children[9].id, "amenity-9");
+    // a limit may differ per breakpoint: three full rows of three on a desktop
+    let regular = instantiate(&screen, State::Fixture("default"), Breakpoint::Regular).unwrap();
+    assert_eq!(find(&regular, "amenities-list").unwrap().children.len(), 9);
     // the photo carousel holds its photos as items
     assert_eq!(find(&compact, "photos-carousel").unwrap().props["items"].as_array().unwrap().len(), 7);
     // no reviews: the rating bar and the review section are gone, the new-listing line is there

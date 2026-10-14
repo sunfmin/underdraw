@@ -156,6 +156,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "kind Bagde is not defined",
         ),
         (
+            "limit-not-a-count",
+            r#""limit": { "compact": 10, "regular": 9 }"#,
+            r#""limit": "ten""#,
+            "amenities-list",
+            "limit is a whole number",
+        ),
+        (
             "item-without-each",
             r#""each": "listing.ratingBreakdown", "item""#,
             r#""item""#,

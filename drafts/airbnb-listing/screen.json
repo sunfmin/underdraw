@@ -195,8 +195,8 @@
                   { "id": "divider-4", "kind": "Divider" },
 
                   { "id": "amenities", "kind": "Section", "title": "提供的设施", "children": [
-                    { "id": "amenities-list", "kind": "Grid", "columns": { "compact": 1, "regular": 2 }, "gap": "space.4",
-                      "each": "listing.amenities", "limit": 10,
+                    { "id": "amenities-list", "kind": "Grid", "columns": { "compact": 2, "regular": 3 }, "gap": "space.2",
+                      "each": "listing.amenities", "limit": { "compact": 10, "regular": 9 },
                       "item": { "id": "amenity-{index}", "kind": "ListItem", "leadingIcon": "{item.icon}", "title": "{item.label}",
                                 "strikethrough": "{item.unavailable}" } },
                     { "id": "amenities-all", "kind": "Button", "variant": "secondary",

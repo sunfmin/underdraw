@@ -181,6 +181,19 @@ impl Walk<'_> {
         if let Some(Value::String(used)) = object.get("if") {
             guarded.extend(self.use_site(used, scope, &format!("{at}.if")));
         }
+        if let Some(limit) = object.get("limit") {
+            let count = |value: &Value| value.as_u64().is_some();
+            let fits = match limit {
+                Value::Object(object) if crate::instance::is_responsive(object) => object.values().all(count),
+                value => count(value),
+            };
+            if !fits {
+                self.findings.add(
+                    at,
+                    "limit is a whole number, or one per breakpoint: {\"compact\": 10, \"regular\": 9}",
+                );
+            }
+        }
         // `item` and `index` exist only in the template `each` repeats.
         let mut item_scope = scope.clone();
         if let Some(Value::String(path)) = object.get("each") {
