@@ -58,5 +58,10 @@ WHAT TRIPS YOU UP
     confirmation: an overlay whose kind has a backdrop and that a node
     opens with {"open": "<its id>"}. The menu item or button a person first
     acts on opens it instead (OPERATIONS below).
+  - A "call" to a bulk form (an operation's "bulk": its name) gives its
+    list, "ids", the selection: one path to a list in view state at least
+    one long ("string[] 1..") inside a nullable field, and the node is
+    gated by a condition testing that field != null ("disabled":
+    "!hasSelection"; or an "if" around it). Not its operation's "requires".
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.

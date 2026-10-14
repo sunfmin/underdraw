@@ -97,6 +97,19 @@ cannot be undone: the screen calls it only from its confirmation, and its
 CLI command only given `--yes`.
 _Avoid_: endpoint, API call, action
 
+**Bulk form**:
+The operation a command marked `"bulk"` derives, to act on many items at
+once: its key parameter (the first) made a list of ids, its precondition
+and failures held item by item, and its result one success or named
+failure per item. The screen calls it with the selection; its CLI command
+takes several ids.
+_Avoid_: batch operation, multi-action
+
+**Selection**:
+The items a person has picked to act on together: view state, null while
+none is picked, so a node that acts on it is gated on it being there.
+_Avoid_: checked items, multi-select state
+
 **Confirmation**:
 The popup that asks before a destructive operation: an overlay with a
 backdrop, opened by its id from the node a person first acts on, whose
@@ -144,8 +157,9 @@ _Avoid_: snapshot
 What a CLI derived from the operations must print for one command, and the
 code it exits with: in one fixture, a query's result projected from that
 fixture's data, or a command's refusal where its precondition does not
-hold, or a destructive command's dry run without `--yes`; or, for a named
-failure, its error.
+hold, or a destructive command's dry run without `--yes`, or a bulk
+form's result for each item; or, for a named failure, its error (a bulk
+form's: one item failing, the others done).
 _Avoid_: expected output, snapshot
 
 **Capture** — the elements of a running UI in one state, read by test id:

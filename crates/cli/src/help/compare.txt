@@ -80,12 +80,15 @@ A CLI'S CAPTURE
                                         JSON value it parsed to)
       "failure": "notFound"             optional: the named failure the test
                                         made the fake server fail with; then
-                                        the fixture and arguments do not matter
+                                        the fixture and arguments do not matter,
+                                        but for a bulk form's (below)
     }
   The command line is read as `underdraw cli` says the command takes it,
   defaults filled in, and matched to the golden output of that command, in
   that fixture, given the same parameters (and, for a destructive command,
-  with --yes or without it, as the run was). Exit 2 when it is not one the
+  with --yes or without it, as the run was). A capture with "failure" is
+  of that named failure; a bulk form's, of its partial failure: the fixture
+  and the ids must be the golden output's too. Exit 2 when it is not one the
   derived CLI takes, or has no golden output (the error lists the ones
   there are).
   ANSWERS

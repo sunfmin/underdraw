@@ -235,6 +235,8 @@ OPERATIONS
     "destructive"  true: a command that cannot be undone (deleting, sending,
                paying). Only its confirmation may call it (below), and its
                CLI command does nothing without --yes (`underdraw cli --help`)
+    "bulk"     the name of its bulk form, which does it to many items at
+               once: "bulk": "deleteDocs" (below). Only a command has one.
     "fails"    each way it can fail: a name and when, {"offline": "…"}
   A query fills the fields of "data" that name it with "from":
     "data":  { "docs": { "type": "DocRow[] ..50", "from": "listDocs" } },
@@ -278,6 +280,49 @@ OPERATIONS
   so the popup's "if" gates the call too, and a fixture that opens it.
   check refuses a call to a destructive operation anywhere else, a menu
   without a backdrop included.
+  A command marked "bulk" derives a second operation, its bulk form, to
+  act on many items the person has picked (a multi-selection):
+    "deleteDoc": { "command": "Deletes a document for everyone",
+                   "params": { "id": "string" }, "requires": "canDelete",
+                   "destructive": true, "bulk": "deleteDocs",
+                   "fails": { "notFound": "the document is already gone" } }
+  derives deleteDocs, written nowhere and called by that name:
+    params     the first parameter (the key: each item is one value of
+               it) made a list of at least one, named with an s: "ids",
+               string[] 1..; every other parameter as it is, the same for
+               every item. The key has no default and is no list.
+    result     one entry per item, in the order given: the item's key, and
+               "error" for one not done (`underdraw cli --help`)
+    requires   held item by item: an item it does not hold for is refused,
+               and the others are still tried
+    fails      each item's: one failing leaves the others to be done
+    destructive  as the operation's: a bulk delete is confirmed too
+  The screen holds the selection as view state, null while nothing is
+  picked, its list at least one long:
+    "data":  { "selection": { "type": "Selection?", "view": true } },
+    "types": { "Selection": { "ids": "string[] 1..50",
+                              "count": { "type": "int 1..",
+                                         "derived": { "app": "ids' length" } },
+                              "confirming": "bool = false" } },
+    "conditions": { "hasSelection": { "when": "selection != null", … },
+                    "confirmingDeleteSelected":
+                      { "when": "hasSelection && selection.confirming", … } }
+  A row's checkbox toggles a view-state field of its row ("toggle":
+  "item.selected"), and the app keeps selection in step. The node that
+  acts on the selection is gated on it, here opening the confirmation:
+    { "id": "delete-selected", "kind": "Button", "text": "删除所选",
+      "disabled": "!hasSelection",
+      "on": { "tap": { "open": "confirm-delete-selected" } } }
+  and the confirmation's button, under "if": "confirmingDeleteSelected",
+  calls the bulk form with the selection:
+      "on": { "tap": { "call": "deleteDocs",
+                       "with": { "ids": "{selection.ids}" } } }
+  check refuses a call to a bulk form that is not given the selection (one
+  path to a list in view state), or that is not gated on a non-empty one:
+  its list may be empty, or the selection may be null where the node is
+  (no "if" or "disabled" whose condition tests it != null). The bulk form's
+  "requires" does not gate the node: no condition can say it of each item.
+  Give the screen fixtures with none, some and all of the items picked.
   Operations live in screen.json, one screen's own, and are not shared
   with other screens.
 

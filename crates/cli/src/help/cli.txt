@@ -29,6 +29,17 @@ HOW EACH OPERATION BECOMES A COMMAND
                 {"error": "needs --yes",
                  "dryRun": {"operation": "deleteDoc", "does": "Deletes a document…",
                             "with": {"id": "c"}}}
+  bulk        a bulk form ("bulk": "deleteDocs" on deleteDoc, `underdraw check
+              --help`, OPERATIONS) is a command of its own, its whole name in
+              kebab case, `delete-docs`; deleteDoc stays `delete`. It takes
+              its ids as positional arguments, one or more, then any flag:
+                delete-docs c e --yes
+              and does each, one by one, answering for every item in the
+              order given, the error on each one not done:
+                {"results": [{"id": "c", "error": "notFound"}, {"id": "e"}]}
+              It exits 0 when every item was done, 2 when any was not
+              (refused by the precondition, which it asks of each item, or
+              failed); 1 only when it tried none: without --yes.
   stdout      one JSON object: {"result": <the operation's result>}, or {}
               for an operation that answers with nothing. Its JSON Schema
               holds the result's type and every type it reaches, so no view
@@ -46,13 +57,16 @@ ANSWERS
     "screen"
     "commands": [{"name", "operation", "does": "query" or "command", "doc",
                   "destructive": true (only when it is),
+                  "bulkOf": "deleteDoc" (for a bulk form: what it does to each),
                   "usage": "delete <id> --yes",
                   "args": [{"param", "flag" (none when positional), "type",
                             "choices", "default", "repeated"}, …],
                   "stdout": the JSON Schema of what it prints on exit 0,
                   "fails": [{"error", "when", "exit", "stdout"}, …]:
                            its precondition first, then its dry run when it
-                           is destructive, then each named failure,
+                           is destructive, then each named failure; a
+                           bulk form's precondition and failures are an
+                           item's, exit 2, "stdout" one item's result,
                   "help": a draft of the command's --help}, …]
     "golden":   [{"command", "fixture" or "failure", "args", "with", "yes",
                   "exit", "stdout"}, …]: what a faithful CLI prints:
@@ -66,8 +80,15 @@ ANSWERS
                 something has no golden output: the fixture does not hold it).
                 A destructive command has two: without --yes, its dry run
                 where the precondition holds; with --yes ("yes": true), as
-                above. Where it does not hold, both are refused;
-      for each named failure, whatever the command is given: exit 2.
+                above. Where it does not hold, both are refused.
+                A bulk form called with ids, exit 0: each item done,
+                {"results": [{"id": "c"}, {"id": "e"}]} (its precondition is
+                asked of each item: the fixture's selection holds for it);
+      for each named failure, whatever the command is given: exit 2. A
+                bulk form's are partial failures, each in the first fixture
+                whose call gives two ids or more, given those: the first
+                item fails that way ("failure": "notFound", or "requires
+                canDelete" for one refused), the others are done, exit 2.
       "args" are the arguments after the command's name, defaults left
       out; "with" the parameters they give, defaults filled in.
   }
@@ -90,3 +111,5 @@ WHAT TRIPS YOU UP
     before it calls the command.
   - A destructive command checks its precondition first, then --yes: a
     dry run says only what would be done, never what would be refused.
+  - A bulk form never stops at the first item that is not done: it tries
+    each, and says of each. A failed item is in "results", not left out.
