@@ -24,7 +24,7 @@ enum Side {
     Num,
     Bool,
     Null,
-    Field(Field),
+    Field(Box<Field>),
 }
 
 impl Conditions {
@@ -256,7 +256,7 @@ impl Conditions {
             }
             Atom::Name(name) if self.contains(name) => Some(Side::Bool),
             Atom::Name(path) => match schema.resolve(roots, path) {
-                Some(resolved) => Some(Side::Field(resolved.field)),
+                Some(resolved) => Some(Side::Field(Box::new(resolved.field))),
                 None => {
                     findings.add(at, &format!("{path} is neither a condition nor a path in data"));
                     None
