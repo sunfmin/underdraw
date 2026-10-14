@@ -23,11 +23,15 @@ ANSWERS
     "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
     "operations": [{"name", "does": "query" or "command", "doc", "params":
                     {name: type, with " = default" when it has one}, "result",
-                    "requires", "fails": {name: when}, "fills": [path, …]}, …]
+                    "requires", "fails": {name: when}, "fills": [path, …],
+                    "pages": "cursor" for a query that pages}, …]
                   the queries and commands the screen calls. "fills": the
                   fields of "data" a query's result lands in, "docs" or,
-                  through a wrapper type, "docs[].doc": map the answer there,
-                  and derive the rest of the view model in the app.
+                  through a wrapper type, "docs[].doc"; one field of the
+                  result lands as "result.next → next": map the answer there,
+                  and derive the rest of the view model in the app. A paged
+                  query's params include cursor and limit; a call with a
+                  cursor appends the page's rows, one with null replaces them.
     "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
     "nodes":      [{"id", "kind", "parent", "slot",
                     "implement": how the platform builds this kind,
