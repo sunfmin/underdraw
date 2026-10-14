@@ -70,7 +70,7 @@ pub struct Node {
 }
 
 /// Keys that hold child nodes.
-const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
+pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
 /// Keys that only steer how the tree is built.
 const STRUCTURE: [&str; 11] =
     ["id", "kind", "ref", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];

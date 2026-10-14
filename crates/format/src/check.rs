@@ -161,6 +161,11 @@ impl Walk<'_> {
             self.findings
                 .add(at, "a responsive value names both breakpoints: {\"compact\": …, \"regular\": …}");
         }
+        if crate::instance::SLOTS.contains(&key) && object.contains_key("cases") {
+            self.findings
+                .add(at, "a slot holds nodes, not cases: write each node in the slot and give it an \"if\"");
+            return;
+        }
         let at = object.get("id").and_then(Value::as_str).unwrap_or(at);
         if let Some(name) = object.get("ref") {
             match name.as_str().and_then(|name| self.components.get(name)) {
