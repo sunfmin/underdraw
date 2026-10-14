@@ -23,9 +23,9 @@ When asked to design a mockup (a screen, a draft) with the built underdraw tool,
 
 ## Merging pull requests
 
-In this repo, merge your own PR without waiting to be asked once you judge it OK and its tests pass. This overrides the global rule to only open PRs. All of these must hold:
+In this repo, merge your own PR without waiting to be asked once you judge it OK and `./gate.sh` passes. This overrides the global rule to only open PRs. All of these must hold:
 
-- `cargo test` (and `./gate.sh` when the change touches what it checks) passes locally.
+- `./gate.sh` passes locally. Nothing less counts: not `cargo test` alone, not a gate run before the last commit.
 - CI, when there is any, is green: wait on `gh pr checks` with a time limit.
 - The PR has no merge conflicts and no unresolved review comments.
 - Nothing the PR body lists as unverified could make the change wrong.
