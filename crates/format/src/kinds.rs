@@ -155,11 +155,6 @@ impl Kinds {
             .is_some_and(|look| look.get("backdrop") == Some(&Value::Bool(true)) && look.get("pin").is_none())
     }
 
-    /// Why `kind`'s look is a guess the person has not confirmed, when it is.
-    pub fn assumed(&self, kind: &str) -> Option<&str> {
-        self.kinds.get(kind).and_then(|entry| entry.get("assumed")).and_then(Value::as_str)
-    }
-
     /// Every fault in the looks of `project`'s kinds, at `kinds.<Name>…`:
     /// a kind with no look, a key no look reads, a filter or kind that does
     /// not exist.
@@ -181,6 +176,9 @@ impl Kinds {
         };
         for (name, kind) in kinds {
             let at = format!("kinds.{name}");
+            if kind.get("assumed").is_some() {
+                findings.add(&format!("{at}.assumed"), "underdraw draws no guesses: finish this kind's look and take assumed out; a note for people goes in \"doc\"");
+            }
             match kind.get("look") {
                 Some(look) => self.look_faults(look, &format!("{at}.look"), true, findings),
                 None => findings.add(&at, "a kind needs \"look\": what it is drawn as"),

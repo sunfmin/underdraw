@@ -56,9 +56,7 @@ impl Catalog<'_> {
         let mut elem = match self.kinds.look(&node.kind) {
             Some(look) => {
                 let scope = Scope { props: &node.props, vars: Map::new(), node: Some(node) };
-                let mut elem = self.one(look, &scope);
-                elem.assumed = self.kinds.assumed(&node.kind).map(str::to_string);
-                elem
+                self.one(look, &scope)
             }
             None => {
                 let mut elem = self.unknown(&node.kind, Some(node));

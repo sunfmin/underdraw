@@ -31,8 +31,11 @@ kind's facts were split between data (`platforms/*.json`) and Rust code
 - Layout options (`grow`, `justify`, `pin`, grid tracks) can be written in a
   look and nowhere else. A screen still describes structure only.
 - `check` knows every kind: a name in `screen.json` that no kind defines is a
-  fault, caught before `render`. A kind an agent has defined but the person
-  has not yet seen carries `assumed` and is drawn orange until they confirm it.
+  fault, caught before `render`. A kind is never a guess: `check` refuses
+  `assumed` on a kind, so the agent writes the kind's whole look instead.
+  (This replaces an earlier rule that let a kind carry `assumed` and be
+  drawn orange. A node may still carry `assumed`: an open product decision,
+  not a missing kind.)
 - The defaults must render the drafts exactly as the code catalog did. The
   layout tests and a pixel comparison of every state are the proof.
 - A box with a kind's name still covers a kind with no look, so layout stays

@@ -241,7 +241,7 @@ fn underdraws_own_kinds_pass_as_a_projects() {
 fn each_fault_in_a_projects_kinds_is_found() {
     let kinds = json!({ "kinds": {
         "NoLook": { "doc": "forgot its look" },
-        "Wrong": { "look": { "box": "row", "colour": "line", "children": [
+        "Wrong": { "assumed": "looks like a Badge for now", "look": { "box": "row", "colour": "line", "children": [
             { "text": "{title|upper}" },
             { "kind": "Nowhere" },
             { "cases": [ { "if": "title", "then": "$kids" } ] },
@@ -265,6 +265,7 @@ fn each_fault_in_a_projects_kinds_is_found() {
         ("kinds.Wrong.look.children[4].columns[3]", "\"48\" is not a grid track"),
         ("kinds.Wrong.look.children[4].rows[1]", "\"wide\" is not a grid track"),
         ("kinds.Wrong.look.children[5]", "backdrop is drawn only by a box that floats"),
+        ("kinds.Wrong.assumed", "underdraw draws no guesses"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
