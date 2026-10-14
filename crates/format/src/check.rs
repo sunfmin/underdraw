@@ -83,7 +83,10 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     let conditions = Conditions::read(screen, &schema, &mut findings);
     let operations = Operations::read(screen, &schema, &conditions, &mut findings);
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut opened = BTreeSet::new();
+    collect_opened(screen, &mut opened);
     let mut walk = Walk {
+        opened: &opened,
         schema: &schema,
         conditions: &conditions,
         operations: &operations,
@@ -141,11 +144,16 @@ const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 const INERT: [&str; 10] = ["$comment", "$note", "$why", "assumed", "id", "kind", "ref", "only", "each", "if"];
 
 /// What is known where a node is reached: the paths tested `!= null`, and
-/// the conditions that hold, by the `if`s around it.
+/// the conditions that hold, by the `if`s around it; and whether it is
+/// inside a confirmation.
 #[derive(Clone, Default)]
 struct Known {
     not_null: BTreeSet<String>,
     holds: BTreeSet<String>,
+    /// Inside a confirmation: an overlay that dims the screen behind it
+    /// (its kind's look has a backdrop) and that a node opens by its id,
+    /// `{"open": "<id>"}`. Only here may a destructive operation be called.
+    confirming: bool,
 }
 
 impl Known {
@@ -155,7 +163,31 @@ impl Known {
     }
 }
 
+/// Every name an `{"open": …}` action anywhere in `value` opens.
+fn collect_opened(value: &Value, opened: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            for (key, inner) in object {
+                match (key.as_str(), inner) {
+                    ("open", Value::String(name)) => {
+                        opened.insert(name.clone());
+                    }
+                    _ => collect_opened(inner, opened),
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_opened(item, opened);
+            }
+        }
+        _ => {}
+    }
+}
+
 struct Walk<'a> {
+    /// What the screen's `open` actions open, by name.
+    opened: &'a BTreeSet<String>,
     schema: &'a Schema,
     conditions: &'a Conditions,
     operations: &'a Operations,
@@ -214,6 +246,13 @@ impl Walk<'_> {
             );
         }
         let mut known = known.clone();
+        if key == "overlay"
+            && let Some(Value::String(kind)) = object.get("kind")
+            && self.kinds.backdrop(kind)
+            && object.get("id").and_then(Value::as_str).is_some_and(|id| self.opened.contains(id))
+        {
+            known.confirming = true;
+        }
         if let Some(Value::String(used)) = object.get("if") {
             known.extend(self.use_site(used, scope, &format!("{at}.if")));
         }
@@ -376,6 +415,15 @@ impl Walk<'_> {
                 ),
             );
         }
+        if operation.destructive && !known.confirming {
+            self.findings.add(
+                node,
+                &format!(
+                    "calls {}, which is destructive: call it only from inside its confirmation, an overlay whose kind has a backdrop and that a node opens with {{\"open\": \"<the overlay's id>\"}}; here, open that instead",
+                    operation.name
+                ),
+            );
+        }
         let empty = Map::new();
         let given = match with {
             None => &empty,
@@ -480,7 +528,11 @@ impl Walk<'_> {
             return if negated {
                 Known::default()
             } else {
-                Known { not_null: self.conditions.guards(name), holds: self.conditions.implied(name) }
+                Known {
+                    not_null: self.conditions.guards(name),
+                    holds: self.conditions.implied(name),
+                    confirming: false,
+                }
             };
         }
         match self.schema.resolve(scope, name) {

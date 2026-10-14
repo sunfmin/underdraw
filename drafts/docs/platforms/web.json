@@ -18,6 +18,7 @@
     "Menu": "popover anchored to its node",
     "MenuItem": "<button role=\"menuitem\">; destructive → red text",
     "MenuDivider": "<hr>",
+    "Dialog": "<dialog> shown with showModal(), over a dimmed backdrop",
     "EmptyState": "centered icon, title, detail and button",
     "Skeleton": "gray block with a shimmer"
   },
@@ -25,7 +26,8 @@
     "call": "await operations[operation](with), through the app's data layer",
     "navigate": "router.push",
     "toggle": "flip the view-state field",
-    "open": "open the popover, holding which row it is about",
+    "open": "open the popover or dialog, holding which row it is about",
+    "close": "close the dialog",
     "rename": "edit the title in place",
     "copyLink": "navigator.clipboard.writeText of the document's link",
     "reload": "fetch the data again"
