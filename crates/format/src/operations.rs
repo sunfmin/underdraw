@@ -7,6 +7,7 @@ use serde_json::Value;
 use crate::check::Findings;
 use crate::conditions::Conditions;
 use crate::field::{self, Base, By, Field};
+use crate::jobs;
 use crate::schema::{Schema, Shape, object};
 
 /// Whether an operation only reads, or changes something.
@@ -39,6 +40,11 @@ pub struct Operation {
     /// A command that cannot be undone: the screen calls it only from a
     /// confirmation, and the CLI only given `--yes`.
     pub destructive: bool,
+    /// A command that takes long (docs/adr/0014): it answers with a job,
+    /// whose type and the query reading it are derived from it.
+    pub long: bool,
+    /// For the query derived from a long command, that command's name.
+    pub job_of: Option<String>,
     /// Each way it can fail, by name, with when.
     pub fails: Vec<(String, String)>,
     /// The fields of `data` its result fills, for a query: each written
@@ -58,11 +64,23 @@ pub struct Fill {
     pub path: String,
 }
 
+impl Operation {
+    /// The type of the job a long command answers with: `ExportDocsJob`.
+    pub fn job_type(&self) -> Option<String> {
+        self.long.then(|| jobs::job_type(&self.name))
+    }
+
+    /// The query that reads the job a long command started: `exportDocsJob`.
+    pub fn job_query(&self) -> Option<String> {
+        self.long.then(|| jobs::job_query(&self.name))
+    }
+}
+
 pub struct Operations(Vec<Operation>);
 
 /// The keys an operation is written with.
-const KEYS: [&str; 8] =
-    ["query", "command", "params", "result", "requires", "destructive", "fails", "$comment"];
+const KEYS: [&str; 9] =
+    ["query", "command", "params", "result", "requires", "destructive", "long", "fails", "$comment"];
 
 impl Operations {
     pub fn read(
@@ -86,7 +104,7 @@ impl Operations {
             };
             for key in body.keys() {
                 if !KEYS.contains(&key.as_str()) && !key.starts_with('$') {
-                    findings.add(&at, &format!("an operation has no {key}: it holds query or command, params, result, requires, destructive, fails"));
+                    findings.add(&at, &format!("an operation has no {key}: it holds query or command, params, result, requires, destructive, long, fails"));
                 }
             }
             let (does, doc) = match (body.get("query"), body.get("command")) {
@@ -131,6 +149,20 @@ impl Operations {
                     "a query only reads, so nothing it does needs confirming: destructive marks a command",
                 );
             }
+            let long = match body.get("long") {
+                None => false,
+                Some(Value::Bool(long)) => *long,
+                Some(other) => {
+                    findings.add(&format!("{at}.long"), &format!("{other}: long is true or false"));
+                    false
+                }
+            };
+            if long && does == Does::Query {
+                findings.add(
+                    &format!("{at}.long"),
+                    "a query only reads, and answers at once: long marks a command that answers with a job",
+                );
+            }
             let mut fails = Vec::new();
             match body.get("fails") {
                 None => {}
@@ -160,9 +192,24 @@ impl Operations {
                 result,
                 requires,
                 destructive,
+                long: long && does == Does::Command,
+                job_of: None,
                 fails,
                 fills,
             });
+        }
+        let mut long = Vec::new();
+        for operation in &read {
+            if operation.long {
+                long.push(operation.name.clone());
+            }
+        }
+        for operation in &mut read {
+            for command in &long {
+                if operation.name == jobs::job_query(command) {
+                    operation.job_of = Some(command.clone());
+                }
+            }
         }
         let mut operations = Operations(read);
         operations.fill(schema, findings);
