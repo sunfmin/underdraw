@@ -25,10 +25,13 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
     assert_eq!(
         usages,
         [
-            ("list", "list [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]"),
-            ("delete", "delete <id> --yes"),
+            (
+                "list-docs",
+                "list-docs [--sort <updated|created|title|owner>] [--cursor <cursor>] [--limit <limit>]"
+            ),
+            ("delete-doc", "delete-doc <id> --yes"),
             ("delete-docs", "delete-docs <ids>… --yes"),
-            ("new", "new")
+            ("new-document", "new-document")
         ]
     );
     assert_eq!(
@@ -58,7 +61,7 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
     );
     assert_eq!(commands[1]["fails"][2]["exit"], 2);
     let help = commands[1]["help"].as_str().unwrap();
-    assert!(help.contains("<cli> delete <id> --yes"), "{help}");
+    assert!(help.contains("<cli> delete-doc <id> --yes"), "{help}");
     assert!(help.contains("  --yes  do it"), "{help}");
     assert_eq!(commands[0].get("destructive"), None, "only a destructive command says so");
 }
@@ -87,11 +90,11 @@ fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
         ["default", "more-to-come", "sort-open", "row-menu", "row-menu-own", "confirm-delete", "empty"]
     {
         assert!(
-            golden.iter().any(|g| g["command"] == "list" && g["fixture"] == fixture),
+            golden.iter().any(|g| g["command"] == "list-docs" && g["fixture"] == fixture),
             "no golden list in {fixture}"
         );
     }
-    let list = golden.iter().find(|g| g["command"] == "list" && g["fixture"] == "default").unwrap();
+    let list = golden.iter().find(|g| g["command"] == "list-docs" && g["fixture"] == "default").unwrap();
     assert_eq!(list["exit"], 0);
     assert_eq!(
         list["stdout"]["result"]["docs"][1],
@@ -100,16 +103,16 @@ fn each_fixture_yields_a_golden_output_and_the_precondition_its_refusal() {
             "updated": "2026-10-13", "shared": true
         })
     );
-    let empty = golden.iter().find(|g| g["command"] == "list" && g["fixture"] == "empty").unwrap();
+    let empty = golden.iter().find(|g| g["command"] == "list-docs" && g["fixture"] == "empty").unwrap();
     assert_eq!(empty["stdout"], json!({ "result": { "docs": [], "next": null } }));
     // The last page says so with a null next; a page with more to come, where.
     assert_eq!(list["stdout"]["result"]["next"], Value::Null);
-    let more = golden.iter().find(|g| g["command"] == "list" && g["fixture"] == "more-to-come").unwrap();
+    let more = golden.iter().find(|g| g["command"] == "list-docs" && g["fixture"] == "more-to-come").unwrap();
     assert_eq!(more["stdout"]["result"]["next"], "p2");
     assert_eq!(more["with"], json!({ "sort": "updated", "limit": 50 }));
     let deletes: Vec<(&Value, &Value, &Value, &Value)> = golden
         .iter()
-        .filter(|g| g["command"] == "delete" && g.get("fixture").is_some())
+        .filter(|g| g["command"] == "delete-doc" && g.get("fixture").is_some())
         .map(|g| (&g["fixture"], &g["args"], &g["exit"], &g["stdout"]))
         .collect();
     assert_eq!(
@@ -265,7 +268,7 @@ fn a_command_whose_precondition_does_not_hold_is_refused() {
     let golden: Vec<Value> = interface.golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
     let deletes: Vec<(&Value, &Value, &Value, &Value)> = golden
         .iter()
-        .filter(|g| g["command"] == "delete" && g.get("fixture").is_some())
+        .filter(|g| g["command"] == "delete-doc" && g.get("fixture").is_some())
         .map(|g| (&g["fixture"], &g["args"], &g["exit"], &g["stdout"]))
         .collect();
     assert_eq!(
@@ -319,7 +322,7 @@ fn a_destructive_command_refused_by_its_precondition_is_refused_with_yes_too() {
     let golden: Vec<Value> = cli(&model).golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
     let deletes: Vec<(&Value, &Value, &Value)> = golden
         .iter()
-        .filter(|g| g["command"] == "delete" && g.get("fixture").is_some())
+        .filter(|g| g["command"] == "delete-doc" && g.get("fixture").is_some())
         .map(|g| (&g["args"], &g["exit"], &g["stdout"]))
         .collect();
     let refused = json!({ "error": "requires canDelete" });

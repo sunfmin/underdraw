@@ -38,9 +38,8 @@ pub struct Interface {
 
 #[derive(Debug, Serialize)]
 pub struct CommandSpec {
-    /// The command's name: the operation's first word (`list` for
-    /// `listDocs`), or the whole name in kebab case when two operations
-    /// start with the same word.
+    /// The command's name: the operation's whole name in kebab case
+    /// (`list-docs` for `listDocs`), so it says what it acts on.
     pub name: String,
     pub operation: String,
     /// `query` or `command`.
@@ -158,7 +157,7 @@ pub fn cli(model: &Model) -> Interface {
     let operations = model.operations.all();
     let mut commands = Vec::new();
     for operation in operations {
-        commands.push(command(model, operation, &name(operation, operations)));
+        commands.push(command(model, operation, &kebab(&operation.name)));
     }
     let mut golden = Vec::new();
     for spec in &commands {
@@ -186,43 +185,6 @@ pub fn cli(model: &Model) -> Interface {
         }
     }
     Interface { screen: model.screen().to_string(), commands, golden, fixtures: crate::fixtures(model) }
-}
-
-/// The first word of `operation`'s name, unless another operation starts
-/// with it too; then the whole name, in kebab case. A bulk form's is always
-/// its whole name (`delete-docs`), and leaves the name of the operation it
-/// is derived from as it was (`delete`). The query that reads a long
-/// command's job is that command's name and `-job`.
-fn name(operation: &Operation, all: &[Operation]) -> String {
-    if operation.bulk_of.is_some() {
-        return kebab(&operation.name);
-    }
-    if let Some(command) = &operation.job_of {
-        for other in all {
-            if &other.name == command {
-                return format!("{}-job", name(other, all));
-            }
-        }
-    }
-    let word = first_word(&operation.name);
-    let mut sharing: u32 = 0;
-    for other in all {
-        if other.bulk_of.is_none() && other.job_of.is_none() && first_word(&other.name) == word {
-            sharing = sharing.saturating_add(1);
-        }
-    }
-    if sharing > 1 { kebab(&operation.name) } else { word }
-}
-
-fn first_word(name: &str) -> String {
-    let mut word = String::new();
-    for c in name.chars() {
-        if c.is_ascii_uppercase() {
-            break;
-        }
-        word.push(c);
-    }
-    word
 }
 
 fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
@@ -300,12 +262,7 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
     let long = match (operation.job_type(), operation.job_query()) {
         (Some(job), Some(query)) => {
             usage.push_str(&format!(" [{NO_WAIT}]"));
-            let mut poll = format!("{}-job <id>", name);
-            for other in model.operations.all() {
-                if other.name == query {
-                    poll = format!("{} <id>", self::name(other, model.operations.all()));
-                }
-            }
+            let poll = format!("{} <id>", kebab(&query));
             let job_field = Field::of(Base::Named(job.clone()));
             Some(Long { no_wait: stdout(model, Some(&job_field)), progress: PROGRESS.to_string(), job, poll })
         }
@@ -324,15 +281,7 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
         destructive: operation.destructive,
         bulk_of: bulk.map(|of| of.operation.clone()),
         long,
-        job_of: operation.job_of.as_ref().map(|command| {
-            let mut named = command.clone();
-            for other in model.operations.all() {
-                if &other.name == command {
-                    named = self::name(other, model.operations.all());
-                }
-            }
-            named
-        }),
+        job_of: operation.job_of.as_ref().map(|command| kebab(command)),
         usage,
         args,
         stdout,

@@ -44,17 +44,17 @@ fn stub(fixture: &str, argv: &[&str], fail: Option<&str>, wrong: bool) -> (Strin
     }
     let job = job(fixture);
     match argv {
-        ["get"] => {
+        ["get-team"] => {
             (json!({ "result": { "id": "t1", "name": "产品设计组", "docCount": 128 } }).to_string(), 0)
         }
         // Prints the job, not the result, as if --no-wait were given.
-        ["export"] if wrong => (json!({ "result": job }).to_string(), 0),
-        ["export"] => match job["status"].as_str() {
+        ["export-docs"] if wrong => (json!({ "result": job }).to_string(), 0),
+        ["export-docs"] => match job["status"].as_str() {
             Some("done") => (json!({ "result": job["result"] }).to_string(), 0),
             Some("failed") => (json!({ "error": job["error"] }).to_string(), 2),
             _ => panic!("still waiting in {fixture}"),
         },
-        ["export", "--no-wait"] | ["export-job", _] => {
+        ["export-docs", "--no-wait"] | ["export-docs-job", _] => {
             let mut printed = job.clone();
             if wrong {
                 // Leaves out what has no value yet.
@@ -114,13 +114,13 @@ fn a_long_command_waits_or_hands_back_its_job_and_a_command_reads_the_job() {
     assert_eq!(code, 0, "{answer}");
     let commands = answer["commands"].as_array().unwrap();
     let usages: Vec<&str> = commands.iter().map(|c| c["usage"].as_str().unwrap()).collect();
-    assert_eq!(usages, ["get", "export [--no-wait]", "export-job <id>"]);
+    assert_eq!(usages, ["get-team", "export-docs [--no-wait]", "export-docs-job <id>"]);
     let export = &commands[1];
     assert_eq!(export["long"]["job"], "ExportDocsJob");
-    assert_eq!(export["long"]["poll"], "export-job <id>");
+    assert_eq!(export["long"]["poll"], "export-docs-job <id>");
     assert_eq!(export["long"]["noWait"]["properties"]["result"]["$ref"], "#/$defs/ExportDocsJob");
     assert!(export["help"].as_str().unwrap().contains("--no-wait"), "{export}");
-    assert_eq!(commands[2]["jobOf"], "export");
+    assert_eq!(commands[2]["jobOf"], "export-docs");
 
     // (command line, fixture) → (exit, stdout) for every job state.
     let golden = |argv: Value, fixture: &str| {
@@ -137,25 +137,25 @@ fn a_long_command_waits_or_hands_back_its_job_and_a_command_reads_the_job() {
         found.map(|g| (g["exit"].clone(), g["stdout"].clone()))
     };
     let running = json!({ "id": "j42", "status": "running", "progress": 40, "result": null, "error": null });
-    assert_eq!(golden(json!(["export"]), "running"), None, "a running job has not ended");
+    assert_eq!(golden(json!(["export-docs"]), "running"), None, "a running job has not ended");
     assert_eq!(
-        golden(json!(["export", "--no-wait"]), "running"),
+        golden(json!(["export-docs", "--no-wait"]), "running"),
         Some((json!(0), json!({ "result": running })))
     );
     assert_eq!(
-        golden(json!(["export-job", "j42"]), "running"),
+        golden(json!(["export-docs-job", "j42"]), "running"),
         Some((json!(0), json!({ "result": running })))
     );
     assert_eq!(
-        golden(json!(["export"]), "done"),
+        golden(json!(["export-docs"]), "done"),
         Some((
             json!(0),
             json!({ "result": { "url": "https://example.com/exports/j42.zip", "files": 128, "size": "18.4 MB" } })
         ))
     );
-    assert_eq!(golden(json!(["export"]), "failed"), Some((json!(2), json!({ "error": "tooLarge" }))));
-    assert_eq!(golden(json!(["export-job", "j42"]), "failed").unwrap().1["result"]["error"], "tooLarge");
-    assert_eq!(golden(json!(["export"]), "default"), None, "no job is held before one is started");
+    assert_eq!(golden(json!(["export-docs"]), "failed"), Some((json!(2), json!({ "error": "tooLarge" }))));
+    assert_eq!(golden(json!(["export-docs-job", "j42"]), "failed").unwrap().1["result"]["error"], "tooLarge");
+    assert_eq!(golden(json!(["export-docs"]), "default"), None, "no job is held before one is started");
 }
 
 #[test]
@@ -178,10 +178,10 @@ fn a_wrong_stub_is_found_out() {
         }
     }
     for (line, fixture, at) in [
-        ("export", "done", "stdout.result.id"),
-        ("export", "failed", "exit"),
-        ("export --no-wait", "running", "stdout.result.result"),
-        ("export-job j42", "done", "stdout.result.error"),
+        ("export-docs", "done", "stdout.result.id"),
+        ("export-docs", "failed", "exit"),
+        ("export-docs --no-wait", "running", "stdout.result.result"),
+        ("export-docs-job j42", "done", "stdout.result.error"),
     ] {
         assert!(
             found.iter().any(|f| (f.0.as_str(), f.1.as_str(), f.2.as_str()) == (line, fixture, at)),

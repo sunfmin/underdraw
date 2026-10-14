@@ -38,7 +38,7 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
     match argv {
         ["get-cart"] => result(data["cart"].clone()),
         ["get-address"] => result(data["address"].clone()),
-        ["list"] => {
+        ["list-delivery-options"] => {
             let rows = data["delivery"].as_array().unwrap();
             let options = rows
                 .iter()
@@ -55,10 +55,12 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
         }
         ["get-promo"] => result(data["promo"].clone()),
         ["get-summary"] => result(data["summary"].clone()),
-        ["choose", _] | ["set", _, _] | ["remove-item", _] | ["apply", _] | ["remove-promo"] => {
-            ("{}".to_string(), 0)
-        }
-        ["place", _] => {
+        ["choose-delivery", _]
+        | ["set-quantity", _, _]
+        | ["remove-item", _]
+        | ["apply-promo", _]
+        | ["remove-promo"] => ("{}".to_string(), 0),
+        ["place-order", _] => {
             let can_place = !data["address"].is_null() && data["cart"]["unavailableCount"] == 0;
             if can_place || wrong {
                 result(json!({ "id": "o1", "total": data["summary"]["total"] }))
@@ -128,20 +130,20 @@ fn the_checkout_draft_derives_queries_and_the_forms_commands() {
         [
             "get-cart",
             "get-address",
-            "list",
+            "list-delivery-options",
             "get-promo",
             "get-summary",
-            "choose <id>",
-            "set <id> <quantity>",
+            "choose-delivery <id>",
+            "set-quantity <id> <quantity>",
             "remove-item <id>",
-            "apply <code>",
+            "apply-promo <code>",
             "remove-promo",
-            "place <card|alipay|wechat>",
+            "place-order <card|alipay|wechat>",
         ]
     );
-    // The promo code the person typed is what apply is given.
+    // The promo code the person typed is what apply-promo is given.
     assert!(
-        answer["golden"].as_array().unwrap().iter().any(|g| g["command"] == "apply"
+        answer["golden"].as_array().unwrap().iter().any(|g| g["command"] == "apply-promo"
             && g["fixture"] == "promo-invalid"
             && g["args"] == json!(["FALL2025"])),
         "{answer}"
@@ -173,10 +175,10 @@ fn a_wrong_stub_is_found_out() {
         }
     }
     for wanted in [
-        ("list", "stdout", "stdout.result[0].free"),
-        ("place", "exit", "exit"),
-        ("place", "stdout", "stdout.error"),
-        ("apply", "exit", "exit"),
+        ("list-delivery-options", "stdout", "stdout.result[0].free"),
+        ("place-order", "exit", "exit"),
+        ("place-order", "stdout", "stdout.error"),
+        ("apply-promo", "exit", "exit"),
     ] {
         assert!(
             found
