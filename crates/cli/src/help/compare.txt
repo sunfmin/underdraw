@@ -23,10 +23,22 @@ THE CAPTURE
           "text": "预订",               the words it shows, if the tool reads them
           "enabled": true },            whether it can be used, if the tool reads it
         …
+      ],
+      "acted": [                        optional: each node the test acted on
+        { "id": "doc-c-delete",         its test id
+          "on": "tap",                  the event, as in handoff's "events";
+                                        "tap" when left out
+          "calls": [                    every operation call the app made in
+                                        answer, [] for none
+            { "operation": "deleteDoc", the operation's name
+              "with": {"id": "c"} } ] } its arguments by parameter name; {} for none
+        …
       ]
     }
   Every frame in one coordinate space: the page's, with its top-left at 0,0.
   A check that needs something the capture leaves out is skipped, not failed.
+  Record the calls at the app's data layer (a fake of the operations that
+  logs each call), act on one node at a time, and reset the state between.
 
 ANSWERS
   {
@@ -34,7 +46,8 @@ ANSWERS
     "ok":         true when nothing differs
     "state":      {"fixture"} or {"phase"}
     "breakpoint": the breakpoint "width" falls in; "width"
-    "checked":    {"present", "absent", "text", "enabled", "order", "inside"}:
+    "checked":    {"present", "absent", "text", "enabled", "order", "inside",
+                   "calls"}:
                   how many of each check were made
     "findings":   [{"at": id, "check", "problem"}, …], where check is
       present     a node the state shows has no element
@@ -45,6 +58,11 @@ ANSWERS
       order       a node is not below, or right of, the sibling before it,
                   where the wireframe puts it
       inside      a node's frame is outside the nearest element holding it
+      call-missing  acting on the node did not call an operation the
+                  description says that event calls (handoff's "calls")
+      call-extra  acting on the node called an operation the description
+                  does not say it calls
+      call-with   it called the right operation with other arguments
     "unknown":    [id, …]: ids no node of the description has
   }
   Exit 1 when there is a finding.
@@ -53,6 +71,10 @@ HOW TO USE IT
   - In a UI test: load a fixture from `underdraw handoff`'s "fixtures", show
     the screen, dump its elements into a capture, run compare with that
     --fixture, and fail the test on exit 1, printing "findings".
+  - To check what the UI calls: in the same state, act on each node that
+    handoff's state lists under "calls" (and any other you wire to the data
+    layer), record what the app called, and put it in "acted". A node acted
+    on that is not in "acted" is not checked.
   - Fix the UI, not the capture. When the UI is right and the description is
     not, change the description, `render` it, and show the person.
 

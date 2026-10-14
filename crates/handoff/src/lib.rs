@@ -81,13 +81,17 @@ pub struct TokenName {
 }
 
 /// What one state of the screen shows at one breakpoint: the nodes present,
-/// and the words and values they show.
+/// the words and values they show, and the operation each calls when acted on.
 #[derive(Debug, Serialize)]
 pub struct Expected {
     pub state: Value,
     pub breakpoint: Breakpoint,
     pub present: Vec<String>,
     pub shows: Map<String, Value>,
+    /// For each present node that calls an operation: `[{"on", "operation",
+    /// "with"}, …]`, its arguments filled for this state.
+    #[serde(skip_serializing_if = "Map::is_empty")]
+    pub calls: Map<String, Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -251,21 +255,26 @@ fn states(model: &Model, hidden: &[String]) -> Vec<Expected> {
             let Ok(root) = model.instantiate(state, breakpoint) else {
                 continue;
             };
-            let mut present = Vec::new();
-            let mut shows = Map::new();
-            collect(&root, hidden, &mut present, &mut shows);
-            expected.push(Expected { state: named.clone(), breakpoint, present, shows });
+            let mut found = Expected {
+                state: named.clone(),
+                breakpoint,
+                present: Vec::new(),
+                shows: Map::new(),
+                calls: Map::new(),
+            };
+            collect(&root, hidden, &mut found);
+            expected.push(found);
         }
     }
     expected
 }
 
-fn collect(node: &Node, hidden: &[String], present: &mut Vec<String>, shows: &mut Map<String, Value>) {
+fn collect(node: &Node, hidden: &[String], into: &mut Expected) {
     if hidden.contains(&node.id) {
         return;
     }
     if !node.id.is_empty() {
-        present.push(node.id.clone());
+        into.present.push(node.id.clone());
         let mut shown = Map::new();
         for key in SHOWN {
             if let Some(value) = node.props.get(key)
@@ -275,12 +284,35 @@ fn collect(node: &Node, hidden: &[String], present: &mut Vec<String>, shows: &mu
             }
         }
         if !shown.is_empty() {
-            shows.insert(node.id.clone(), Value::Object(shown));
+            into.shows.insert(node.id.clone(), Value::Object(shown));
+        }
+        let calls = calls(node);
+        if !calls.is_empty() {
+            into.calls.insert(node.id.clone(), Value::Array(calls));
         }
     }
     for child in &node.children {
-        collect(child, hidden, present, shows);
+        collect(child, hidden, into);
     }
+}
+
+/// Each operation `node` calls, by the event that calls it, given what.
+fn calls(node: &Node) -> Vec<Value> {
+    let mut calls = Vec::new();
+    let Some(Value::Object(events)) = node.props.get("on") else {
+        return calls;
+    };
+    for (on, action) in events {
+        if let Some(Value::String(operation)) = action.get("call") {
+            let with = action.get("with").cloned().unwrap_or_else(|| Value::Object(Map::new()));
+            calls.push(object([
+                ("on", Value::from(on.as_str())),
+                ("operation", Value::from(operation.as_str())),
+                ("with", with),
+            ]));
+        }
+    }
+    calls
 }
 
 /// Every design token by its platform name, `pattern` filled with its

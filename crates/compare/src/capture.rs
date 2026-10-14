@@ -4,10 +4,12 @@
 //! ```json
 //! { "width": 390,
 //!   "elements": [ { "id": "reserve-button", "x": 16, "y": 780, "width": 358, "height": 48,
-//!                   "text": "预订", "enabled": true } ] }
+//!                   "text": "预订", "enabled": true } ],
+//!   "acted": [ { "id": "doc-c-delete", "on": "tap",
+//!                "calls": [ { "operation": "deleteDoc", "with": { "id": "c" } } ] } ] }
 //! ```
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use underdraw_layout::Rect;
 
 /// One element: its test id, where it is when the UI tool reads frames,
@@ -19,10 +21,28 @@ pub struct Element {
     pub enabled: Option<bool>,
 }
 
+/// One interaction the UI test made: the node it acted on, the event, and
+/// every operation call the app made in answer.
+pub struct Acted {
+    pub id: String,
+    /// `tap`, `change`, …
+    pub on: String,
+    pub calls: Vec<Call>,
+}
+
+pub struct Call {
+    pub operation: String,
+    /// The arguments, by parameter name.
+    pub with: Value,
+}
+
 pub struct Capture {
     /// The width the UI was captured at, in points (CSS pixels on the web).
     pub width: f32,
     pub elements: Vec<Element>,
+    /// The nodes the test acted on, each with the calls it made; none when
+    /// the test acted on nothing.
+    pub acted: Vec<Acted>,
 }
 
 /// The keys of a frame, all or none of which an element has.
@@ -58,7 +78,23 @@ impl Capture {
                     .to_string(),
             ),
         }
-        if faults.is_empty() { Ok(Capture { width, elements }) } else { Err(faults) }
+        let mut acted = Vec::new();
+        match value.get("acted") {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(written)) => {
+                for (index, one) in written.iter().enumerate() {
+                    match read_acted(one) {
+                        Ok(one) => acted.push(one),
+                        Err(fault) => faults.push(format!("acted[{index}]: {fault}")),
+                    }
+                }
+            }
+            Some(_) => faults.push(
+                "\"acted\" is [{\"id\", \"on\", \"calls\": [{\"operation\", \"with\"}, …]}, …]: each node the test acted on, and the calls it made"
+                    .to_string(),
+            ),
+        }
+        if faults.is_empty() { Ok(Capture { width, elements, acted }) } else { Err(faults) }
     }
 
     /// The first element with `id`.
@@ -102,4 +138,39 @@ fn read_element(value: &Value) -> Result<Element, String> {
         Some(_) => return Err(format!("{id}: \"enabled\" is true or false")),
     };
     Ok(Element { id: id.to_string(), frame, text, enabled })
+}
+
+fn read_acted(value: &Value) -> Result<Acted, String> {
+    let Some(id) = value.get("id").and_then(Value::as_str) else {
+        return Err("needs \"id\": the test id of the node acted on".to_string());
+    };
+    let on = match value.get("on") {
+        None | Some(Value::Null) => "tap".to_string(),
+        Some(Value::String(on)) => on.clone(),
+        Some(_) => return Err(format!("{id}: \"on\" is the event, such as \"tap\"")),
+    };
+    let Some(Value::Array(written)) = value.get("calls") else {
+        return Err(format!(
+            "{id}: needs \"calls\": [{{\"operation\", \"with\"}}, …], every call acting on it made, [] for none"
+        ));
+    };
+    let mut calls = Vec::new();
+    for call in written {
+        calls.push(read_call(id, call)?);
+    }
+    Ok(Acted { id: id.to_string(), on, calls })
+}
+
+fn read_call(id: &str, value: &Value) -> Result<Call, String> {
+    let Some(operation) = value.get("operation").and_then(Value::as_str) else {
+        return Err(format!("{id}: each call needs \"operation\": the name of the operation called"));
+    };
+    let with = match value.get("with") {
+        None | Some(Value::Null) => Value::Object(Map::new()),
+        Some(with) if with.is_object() => with.clone(),
+        Some(_) => {
+            return Err(format!("{id}: a call's \"with\" is its arguments by parameter name, an object"));
+        }
+    };
+    Ok(Call { operation: operation.to_string(), with })
 }
