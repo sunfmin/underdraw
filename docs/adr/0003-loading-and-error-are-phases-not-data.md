@@ -1,14 +1,10 @@
 # Loading and error are phases, not data
 
-The first draft had `status: enum(loading, loaded, error)` beside `listing`. In
-the loading fixture there was no listing, so `listing` had to be nullable, and
-every `listing.…` on the screen would have needed a `listing != null` guard —
-or the description could say "loaded, but no listing", a state that cannot
-happen.
-
-We moved loading and error out of `data`. A screen lists `phases`, each with
-its own node tree that reads no data; `root` is rendered only once data is
-present.
+A screen lists `phases` (loading, error), each with its own node tree that
+reads no data, and `root` is rendered only once data is present. The first
+draft had `status: enum(loading, loaded, error)` beside a nullable `listing`,
+which forced a `listing != null` guard on nearly every path and could describe
+"loaded, but no listing", a state that cannot happen.
 
 ## Considered options
 
@@ -21,8 +17,6 @@ present.
 
 ## Consequences
 
-- Nearly every data-driven screen has these phases, so this special case covers
-  the common shape without union types.
 - Shared elements (the back button) are reused across phase trees with `ref`.
 - A section that loads separately is still modelled as a nullable field plus a
   condition. If that becomes common, revisit union types.

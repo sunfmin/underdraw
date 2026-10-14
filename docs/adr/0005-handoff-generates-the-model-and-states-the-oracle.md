@@ -1,11 +1,14 @@
 # Handoff generates the model and states the oracle
 
-`underdraw handoff` gives the agent that builds a screen on one platform what
-it needs to build it the same way every time:
+`underdraw handoff` generates the view model and conditions as code and
+states every state's expected result, but leaves the views to the agent, so
+that every platform reads the description the same way while the views stay
+idiomatic code the app keeps.
+
+For each platform it gives:
 
 - **The view model and conditions as code** in the platform's language
-  (TypeScript, Swift, Kotlin), generated from the description: the types,
-  and one function per condition.
+  (TypeScript, Swift, Kotlin): the types, and one function per condition.
 - **Every node as the platform builds it**: the kind's mapping, the test id
   as written there, and each event with the action's mapping.
 - **Every state's expected result**: per fixture and phase, at each
