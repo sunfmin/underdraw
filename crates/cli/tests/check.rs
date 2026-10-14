@@ -183,6 +183,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "reviews-breakdown",
             "has no \"each\"",
         ),
+        (
+            "cases-in-a-slot",
+            r#""leading":  [ { "ref": "nav-back" } ]"#,
+            r#""leading": { "cases": [ { "if": "hasDates", "then": { "ref": "nav-back" } }, { "else": { "ref": "nav-back" } } ] }"#,
+            "nav.leading",
+            "a slot holds nodes, not cases",
+        ),
     ];
     for (name, from, to, at, said) in cases {
         let dir = planted(name, from, to);

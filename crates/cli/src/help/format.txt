@@ -114,6 +114,8 @@ CASES
   and the last branch must be "else":
     "leadingIcon": { "cases": [ { "if": "item.done", "then": "check_circle.fill" },
                                 { "else": "circle" } ] }
+  A slot (children, leading, …) is not a property: it holds nodes, never
+  cases. To show one node or another, write both, each with its own "if".
 
 NODES
   A node is an object:
@@ -134,7 +136,7 @@ NODES
     "platform"  {"web": {"hidden": true, "$why": "…"}} or {"ios": {"<prop>": v}}:
                 one platform leaves it out, or builds a prop differently
     any other key   a prop of the kind, such as "text", "variant", "icon"
-  Slots hold child nodes (one node or a list):
+  Slots hold child nodes (one node or a list; never cases: use "if"):
     children   the body, in order
     leading    before the body;  trailing  pushed to the far end
     action     in the body after children (EmptyState's button)
