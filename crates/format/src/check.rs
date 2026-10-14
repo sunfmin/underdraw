@@ -182,6 +182,15 @@ impl Walk<'_> {
                 &format!("kind {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, KINDS.JSON)"),
             );
         }
+        if let Some(Value::String(kind)) = object.get("kind")
+            && key != "overlay"
+            && self.kinds.backdrop(kind)
+        {
+            self.findings.add(
+                at,
+                &format!("kind {kind} has a backdrop, which only an overlay draws: put it in \"overlay\", or take backdrop out of its look"),
+            );
+        }
         let mut guarded = guarded.clone();
         if let Some(Value::String(used)) = object.get("if") {
             guarded.extend(self.use_site(used, scope, &format!("{at}.if")));

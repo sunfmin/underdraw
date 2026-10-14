@@ -322,7 +322,9 @@ KINDS.JSON
     pin                  {"x": "end", "y": "end", "inset": 12}: floats over the
                          parent; each axis start | center | end
     backdrop             true, on an overlay: a see-through dark over the node
-                         it floats over, and nothing there can be acted on
+                         it floats over, and nothing there can be acted on.
+                         Only the whole look of a kind put in "overlay", or a
+                         box with "pin", floats: check refuses it elsewhere
     itemWidth            every child this wide, not shrinking
     frame                true: the node's padding, gap, radius, border and
                          elevation override the look's (containers)
