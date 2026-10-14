@@ -196,10 +196,6 @@ pub fn handoff(
     }
     let hidden_ids = ids(&walk.hidden);
     let states = states(&model, &hidden_ids);
-    let mut fixtures = Map::new();
-    for (name, data) in &model.fixtures {
-        fixtures.insert(name.clone(), data.clone());
-    }
     let mut rules = Map::new();
     for key in ["stack", "testId", "breakpoints", "elementTree"] {
         if let Some(value) = mapping.get(key) {
@@ -221,9 +217,15 @@ pub fn handoff(
         nodes: walk.specs,
         hidden: walk.hidden,
         states,
-        fixtures,
+        fixtures: fixtures(&model),
         unconfirmed,
     })
+}
+
+/// Each fixture's data by name, `$patch` applied and every default filled:
+/// what `handoff` and `cli` both answer under "fixtures".
+fn fixtures(model: &Model) -> Map<String, Value> {
+    model.fixtures.iter().map(|(name, data)| (name.clone(), data.clone())).collect()
 }
 
 fn operations(model: &Model) -> Vec<OperationSpec> {

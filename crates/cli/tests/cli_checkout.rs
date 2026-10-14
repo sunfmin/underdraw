@@ -18,52 +18,17 @@ fn underdraw(args: &[&str]) -> (Value, i32) {
     (answer, out.status.code().unwrap())
 }
 
-/// Objects merge key by key; lists and scalars replace.
-fn merge(base: &mut Value, over: &Value) {
-    match (base, over) {
-        (Value::Object(base), Value::Object(over)) => {
-            for (key, value) in over {
-                match base.get_mut(key) {
-                    Some(slot) => merge(slot, value),
-                    None => {
-                        base.insert(key.clone(), value.clone());
-                    }
-                }
-            }
-        }
-        (base, over) => *base = over.clone(),
-    }
-}
-
-/// The fixture's data, as the server a stub CLI talks to would hold it: the
-/// screen's fixture with its "$patch" applied. The checkout draft has no
-/// platform file, so `handoff` cannot give it.
-fn server(fixture: &str) -> Value {
-    let screen: Value =
-        serde_json::from_str(&std::fs::read_to_string(format!("{DRAFT}/screen.json")).unwrap()).unwrap();
-    let fixtures = &screen["fixtures"];
-    let written = &fixtures[fixture];
-    let mut data = match written.get("$patch") {
-        Some(Value::String(from)) => server(from),
-        _ => json!({}),
-    };
-    merge(&mut data, written);
-    data.as_object_mut().unwrap().remove("$patch");
-    data
-}
-
-/// `value` with each of `defaults` it leaves out filled in, as the stub's
-/// own model reads its server's answer.
-fn with_defaults(value: &Value, defaults: &[(&str, Value)]) -> Value {
+/// `value` with `key` set to `extra` when it leaves it out: what a careless
+/// stub adds to a row.
+fn with_extra(value: &Value, key: &str, extra: Value) -> Value {
     let mut filled: Map<String, Value> = value.as_object().unwrap().clone();
-    for (key, default) in defaults {
-        filled.entry(key.to_string()).or_insert_with(|| default.clone());
-    }
+    filled.entry(key.to_string()).or_insert(extra);
     Value::Object(filled)
 }
 
 /// A CLI written by hand for the checkout draft: what it prints and its exit
-/// code, run as `<cli> <argv>` against `data`. `wrong` plants the mistakes a
+/// code, run as `<cli> <argv>` against `data`, a fixture's data as
+/// `underdraw cli` resolves it. `wrong` plants the mistakes a
 /// careless one makes.
 fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String, i32) {
     if let Some(failure) = fail {
@@ -71,30 +36,24 @@ fn stub(data: &Value, argv: &[&str], fail: Option<&str>, wrong: bool) -> (String
     }
     let result = |value: Value| (json!({ "result": value }).to_string(), 0);
     match argv {
-        ["get-cart"] => {
-            let mut cart = data["cart"].clone();
-            for item in cart["items"].as_array_mut().unwrap() {
-                *item = with_defaults(item, &[("inStock", json!(true))]);
-            }
-            result(cart)
-        }
+        ["get-cart"] => result(data["cart"].clone()),
         ["get-address"] => result(data["address"].clone()),
         ["list"] => {
             let rows = data["delivery"].as_array().unwrap();
             let options = rows
                 .iter()
                 .map(|row| {
-                    let option = with_defaults(&row["option"], &[("selected", json!(false))]);
                     // Leaks what the app derives for the row.
-                    if wrong { with_defaults(&option, &[("free", json!(false))]) } else { option }
+                    if wrong {
+                        with_extra(&row["option"], "free", json!(false))
+                    } else {
+                        row["option"].clone()
+                    }
                 })
                 .collect();
             result(Value::Array(options))
         }
-        ["get-promo"] => result(with_defaults(
-            &data["promo"],
-            &[("code", json!("")), ("discount", Value::Null), ("message", Value::Null)],
-        )),
+        ["get-promo"] => result(data["promo"].clone()),
         ["get-summary"] => result(data["summary"].clone()),
         ["choose", _] | ["set", _, _] | ["remove-item", _] | ["apply", _] | ["remove-promo"] => {
             ("{}".to_string(), 0)
@@ -123,12 +82,16 @@ fn capture(name: &str, argv: &[&str], fail: Option<&str>, run: (String, i32)) ->
     path
 }
 
+/// One golden output: its fixture, command line and named failure.
+type Run = (String, Vec<String>, Option<String>);
+
 /// Every golden output the CLI derives, as (fixture, command line, named
-/// failure); a named failure runs in the first fixture.
-fn runs() -> Vec<(String, Vec<String>, Option<String>)> {
+/// failure), a named failure running in the first fixture; and each
+/// fixture's data, as the server a stub CLI talks to holds it.
+fn runs() -> (Vec<Run>, Value) {
     let (answer, code) = underdraw(&["cli", DRAFT]);
     assert_eq!(code, 0, "{answer}");
-    answer["golden"]
+    let runs = answer["golden"]
         .as_array()
         .unwrap()
         .iter()
@@ -140,14 +103,15 @@ fn runs() -> Vec<(String, Vec<String>, Option<String>)> {
             let fixture = golden["fixture"].as_str().unwrap_or("default").to_string();
             (fixture, argv, golden["failure"].as_str().map(str::to_string))
         })
-        .collect()
+        .collect();
+    (runs, answer["fixtures"].clone())
 }
 
 /// Runs the stub on one golden output and answers what `compare` said.
-fn compare(index: usize, run: &(String, Vec<String>, Option<String>), wrong: bool) -> (Value, i32) {
+fn compare(index: usize, run: &Run, fixtures: &Value, wrong: bool) -> (Value, i32) {
     let (fixture, argv, fail) = run;
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let printed = stub(&server(fixture), &argv, fail.as_deref(), wrong);
+    let printed = stub(&fixtures[fixture.as_str()], &argv, fail.as_deref(), wrong);
     let name = format!("{}-{index}", if wrong { "wrong" } else { "right" });
     let path = capture(&name, &argv, fail.as_deref(), printed);
     underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap(), "--fixture", fixture])
@@ -186,10 +150,10 @@ fn the_checkout_draft_derives_queries_and_the_forms_commands() {
 
 #[test]
 fn a_faithful_stub_passes_compare_on_every_golden_output() {
-    let runs = runs();
+    let (runs, fixtures) = runs();
     assert!(runs.len() > 50, "{runs:?}");
     for (index, run) in runs.iter().enumerate() {
-        let (answer, code) = compare(index, run, false);
+        let (answer, code) = compare(index, run, &fixtures, false);
         assert_eq!((code, &answer["ok"]), (0, &json!(true)), "{run:?}: {answer}");
     }
 }
@@ -197,8 +161,9 @@ fn a_faithful_stub_passes_compare_on_every_golden_output() {
 #[test]
 fn a_wrong_stub_is_found_out() {
     let mut found = Vec::new();
-    for (index, run) in runs().iter().enumerate() {
-        let (answer, _) = compare(index, run, true);
+    let (runs, fixtures) = runs();
+    for (index, run) in runs.iter().enumerate() {
+        let (answer, _) = compare(index, run, &fixtures, true);
         for finding in answer["findings"].as_array().into_iter().flatten() {
             found.push((
                 run.1[0].clone(),

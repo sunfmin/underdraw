@@ -328,3 +328,15 @@ fn a_destructive_command_refused_by_its_precondition_is_refused_with_yes_too() {
         [(&json!(["c"]), &json!(1), &refused), (&json!(["c", "--yes"]), &json!(1), &refused)]
     );
 }
+
+#[test]
+fn it_answers_each_fixture_resolved_as_handoff_does() {
+    let model = model(&draft("screen.json"), Some(&draft("kinds.json"))).unwrap();
+    let fixtures = cli(&model).fixtures;
+    let names: Vec<&String> = fixtures.keys().collect();
+    let written: Vec<&String> = model.fixtures.iter().map(|(name, _)| name).collect();
+    assert_eq!(names, written);
+    for (name, data) in &model.fixtures {
+        assert_eq!(&fixtures[name], data, "{name}");
+    }
+}
