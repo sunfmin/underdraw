@@ -26,6 +26,11 @@ _Avoid_: widget, component type
 A named design value (`color.primary`, `space.4`) that nodes use instead of raw
 values.
 
+**Icon**:
+A small picture a node shows, named as Material Symbols names it
+(`arrow_back`), or with `.fill` for its solid form.
+_Avoid_: glyph, symbol
+
 **Breakpoint**:
 The width class a screen is laid out in (`compact`, `regular`).
 

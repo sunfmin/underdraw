@@ -18,8 +18,7 @@ name. Why: [ADR 0007](../adr/0007-kinds-are-data.md).
           { "else": { "text": "{placeholder}", "ink": "muted" } } ] } ]
       }
     }
-  },
-  "icons": { "checklist": "☑" }
+  }
 }
 ```
 
@@ -92,7 +91,7 @@ placeholder may pass the value through filters, applied left to right:
 | `first`, `last` | the first or last element of a list |
 | `head`, `tail` | the first word, and the rest (`"image 4:3"` → `image`, `4:3`) |
 | `slashes` | `2026-11-12` → `2026/11/12` |
-| `glyph` | the character an icon stands in as (below) |
+| `glyph` | the character an icon is drawn as (below) |
 | `atLeast:n`, `atMost:n` | the number held to a bound |
 
 An `if` uses a screen condition's grammar (`&&`, `||`, `!`, `==`, `!=`,
@@ -103,6 +102,11 @@ given, so write `value != ""` to test for it.
 
 ## Icons
 
-`icons` maps an icon's name to the character drawn for it. `*.fill` covers
-every name ending in `.fill` (the solid form, ◆), and `*` covers every other
-name (◇). A project's `icons` adds names, or replaces them one at a time.
+An icon is named as [Material Symbols](https://fonts.google.com/icons) names
+it (`arrow_back`, `favorite`), with `.fill` after the name for the solid form
+(`favorite.fill`). `render` draws the icon itself, from Material Symbols' own
+font: `{icon|glyph}` gives the character it is drawn as, and a name that is
+no icon is drawn as `?`. `check` refuses such a name: in a node, in a fixture,
+and in a look. Why: [ADR 0008](../adr/0008-icons-are-material-symbols.md).
+Any key named `icon` or ending in `Icon` (`leadingIcon`) holds an icon's
+name.

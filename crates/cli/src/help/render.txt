@@ -36,11 +36,10 @@ WHAT YOU SEE
   document order; the same number is "label" in nodes, so "3" in a
   conversation means one node. An orange dashed outline and "?" mark what
   was assumed, for the person to confirm, and a kind underdraw does not
-  know, drawn as a box with its name. An icon is a stand-in glyph: ◆ for a
-  solid one (name ending in .fill), ◇ for any other it does not know.
+  know, drawn as a box with its name. Icons are Material Symbols, drawn
+  outlined, or solid for a name ending in .fill.
 
 WHAT TRIPS YOU UP
   - Needs a GPU (Metal on macOS); `underdraw doctor` says whether there is one.
-  - Icons are stand-in characters until the icon vocabulary is settled.
   - The page shows everything at once: a sticky bar is drawn at the end of
     the page, not over the content.

@@ -54,7 +54,7 @@ A field may also be an object, to say more about it:
 | `date` | `"2026-11-12"` | ISO date; shown with `date` / `date:short` |
 | `url` | `"https://…"` | |
 | `image` | `"photo-1.jpg"` | a reference, not text |
-| `icon` | `"wifi"` | a name from the icon vocabulary (to be defined) |
+| `icon` | `"wifi"` | a [Material Symbols](https://fonts.google.com/icons) name; `.fill` after it for the solid form (`favorite.fill`). Why: [ADR 0008](../adr/0008-icons-are-material-symbols.md) |
 | `money` | `{"amount": 18500, "currency": "JPY"}` | shown with `money` |
 
 ## Named types

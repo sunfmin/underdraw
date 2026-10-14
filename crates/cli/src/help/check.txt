@@ -36,3 +36,5 @@ WHAT TRIPS YOU UP
     != null in its top-level && chain. A negated condition guarantees nothing.
   - A fixture may leave out only fields with a default; T? defaults to null.
   - "$patch" starts a fixture from one written above it.
+  - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
+    solid form), in a node, a fixture or a look: fonts.google.com/icons.

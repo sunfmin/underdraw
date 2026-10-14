@@ -57,6 +57,5 @@ what was built; `underdraw compare --help` says how to write the capture.
 
 - Worst-case fixtures generated from ranges (longest title, most items) to
   catch overflow.
-- A shared icon vocabulary mapped to SF Symbols / Material Symbols / web icons.
 - Localised copy. (`locale` says which language the text is in; there is one.)
 - Sheets are still stubs.
