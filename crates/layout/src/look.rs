@@ -413,6 +413,7 @@ impl Catalog<'_> {
                 if anchor == "bottom" {
                     elem.style.size.width = percent(1.0);
                 }
+                elem.on_top = true;
                 built.push(elem.pinned(Pin { x, y, inset }));
             }
         }
