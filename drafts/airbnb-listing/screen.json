@@ -287,25 +287,119 @@
   },
 
   "components": {
-    "nav-back": { "id": "nav-back", "component": "IconButton", "icon": "arrow_back", "label": "返回", "on": { "tap": { "back": true } },
-                  "platform": { "android": { "$why": "安卓同时响应系统返回手势" } },
-                  "$note": "三个阶段的导航栏都引用它，但同一时刻只显示一个阶段，所以 id 不冲突。" },
+    "nav-back": {
+      "nodes": {
+        "id": "nav-back",
+        "component": "IconButton",
+        "icon": "arrow_back",
+        "label": "返回",
+        "on": {
+          "tap": {
+            "back": true
+          }
+        },
+        "platform": {
+          "android": {
+            "$why": "安卓同时响应系统返回手势"
+          }
+        },
+        "$note": "三个阶段的导航栏都引用它，但同一时刻只显示一个阶段，所以 id 不冲突。"
+      }
+    },
     "reserve-button": {
-      "id": "reserve-button", "component": "Button", "variant": "primary",
-      "text": { "cases": [ { "if": "!hasDates", "then": "查看可订日期" }, { "if": "canReserve", "then": "预订" }, { "else": "日期不可订" } ] },
-      "disabled": "datesUnavailable",
-      "on": { "tap": { "cases": [ { "if": "!hasDates", "then": { "scrollTo": "calendar" } },
-                                  { "else": { "navigate": "Checkout", "with": { "listing": "{listing.id}", "booking": "{booking}" } } } ] } },
-      "$note": "同一个按钮在 booking-bar（手机）和 booking-card（大屏）各出现一次，但同一时刻只显示一个，所以 id 不冲突。"
+      "nodes": {
+        "id": "reserve-button",
+        "component": "Button",
+        "variant": "primary",
+        "text": {
+          "cases": [
+            {
+              "if": "!hasDates",
+              "then": "查看可订日期"
+            },
+            {
+              "if": "canReserve",
+              "then": "预订"
+            },
+            {
+              "else": "日期不可订"
+            }
+          ]
+        },
+        "disabled": "datesUnavailable",
+        "on": {
+          "tap": {
+            "cases": [
+              {
+                "if": "!hasDates",
+                "then": {
+                  "scrollTo": "calendar"
+                }
+              },
+              {
+                "else": {
+                  "navigate": "Checkout",
+                  "with": {
+                    "listing": "{listing.id}",
+                    "booking": "{booking}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "$note": "同一个按钮在 booking-bar（手机）和 booking-card（大屏）各出现一次，但同一时刻只显示一个，所以 id 不冲突。"
+      }
     },
     "review-card": {
-      "id": "review-{index}", "component": "Card", "padding": "space.4", "border": "color.border", "radius": "radius.md", "children": [
-        { "id": "review-{index}-author", "component": "Row", "gap": "space.3", "children": [
-          { "id": "review-{index}-avatar", "component": "Avatar", "image": "{item.avatar}", "size": 40 },
-          { "id": "review-{index}-meta", "component": "Stack", "children": [
-            { "id": "review-{index}-name", "component": "Text", "text": "{item.author}", "font": "font.subhead" },
-            { "id": "review-{index}-date", "component": "Text", "text": "{item.date|date}", "font": "font.caption", "color": "color.textSecondary" } ] } ] },
-        { "id": "review-{index}-text", "component": "Text", "text": "{item.text}", "font": "font.body", "maxLines": 4 } ]
+      "nodes": {
+        "id": "review-{index}",
+        "component": "Card",
+        "padding": "space.4",
+        "border": "color.border",
+        "radius": "radius.md",
+        "children": [
+          {
+            "id": "review-{index}-author",
+            "component": "Row",
+            "gap": "space.3",
+            "children": [
+              {
+                "id": "review-{index}-avatar",
+                "component": "Avatar",
+                "image": "{item.avatar}",
+                "size": 40
+              },
+              {
+                "id": "review-{index}-meta",
+                "component": "Stack",
+                "children": [
+                  {
+                    "id": "review-{index}-name",
+                    "component": "Text",
+                    "text": "{item.author}",
+                    "font": "font.subhead"
+                  },
+                  {
+                    "id": "review-{index}-date",
+                    "component": "Text",
+                    "text": "{item.date|date}",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "review-{index}-text",
+            "component": "Text",
+            "text": "{item.text}",
+            "font": "font.body",
+            "maxLines": 4
+          }
+        ]
+      }
     }
   },
 

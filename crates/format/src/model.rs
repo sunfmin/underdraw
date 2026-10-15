@@ -78,7 +78,7 @@ impl Model {
 }
 
 /// `screen` checked, then read into its parts; what `check` says of it when
-/// it has faults. `kinds` is the project's kinds.json, when it has one.
-pub fn model(screen: &Value, kinds: Option<&Value>) -> Result<Model, Box<Checked>> {
-    Model::read(screen, check(screen, kinds))
+/// it has faults.
+pub fn model(screen: &Value) -> Result<Model, Box<Checked>> {
+    Model::read(screen, check(screen))
 }

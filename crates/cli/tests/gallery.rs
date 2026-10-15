@@ -60,7 +60,7 @@ fn names_the_descriptions_with_faults() {
     for dir in ["fine", "broken"] {
         std::fs::create_dir_all(root.join(dir)).unwrap();
     }
-    for file in ["screen.json", "tokens.json", "kinds.json"] {
+    for file in ["screen.json", "tokens.json"] {
         std::fs::copy(format!("{DRAFTS}/todo/{file}"), root.join("fine").join(file)).unwrap();
     }
     std::fs::write(root.join("broken").join("screen.json"), "{}").unwrap();

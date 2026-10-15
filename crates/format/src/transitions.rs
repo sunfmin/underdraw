@@ -225,8 +225,11 @@ fn written(screen: &Value) -> BTreeMap<&str, &Map<String, Value>> {
     if let Some(root) = screen.get("root") {
         collect(root, &mut nodes);
     }
-    for key in ["phases", "components"] {
-        for (_, tree) in object(screen, key) {
+    for (_, tree) in object(screen, "phases") {
+        collect(tree, &mut nodes);
+    }
+    for (_, component) in object(screen, "components") {
+        if let Some(tree) = component.get("nodes") {
             collect(tree, &mut nodes);
         }
     }

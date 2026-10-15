@@ -18,7 +18,7 @@ fn page(state: State, width: f32) -> Page {
     let (screen, tokens) = (read("screen.json"), read("tokens.json"));
     let breakpoint = Breakpoint::for_width(&tokens, width as u32);
     let root = instantiate(&screen, state, breakpoint).unwrap();
-    layout(&root, &tokens, None, width, Lang::default(), &mut Fixed).unwrap()
+    layout(&root, &tokens, &screen, width, Lang::default(), &mut Fixed).unwrap()
 }
 
 fn placed<'a>(page: &'a Page, id: &str) -> &'a Placed {
@@ -130,15 +130,18 @@ fn tiny(children: Value) -> Page {
     tiny_with(children, None)
 }
 
-/// The same, with `kinds` as the project's kinds.json.
-fn tiny_with(children: Value, kinds: Option<&Value>) -> Page {
-    let screen = serde_json::json!({
+/// The same, with the screen's own `"components"` those `own` holds.
+fn tiny_with(children: Value, own: Option<&Value>) -> Page {
+    let mut screen = serde_json::json!({
         "screen": "Tiny", "data": {}, "types": {}, "fixtures": { "default": {} }, "conditions": {},
         "root": { "id": "tiny", "component": "Screen", "children": children }
     });
+    if let Some(own) = own {
+        screen["components"] = own["components"].clone();
+    }
     let tokens = read("tokens.json");
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
-    layout(&root, &tokens, kinds, 390.0, Lang::default(), &mut Fixed).unwrap()
+    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed).unwrap()
 }
 
 fn texts(page: &Page) -> Vec<&str> {
@@ -204,13 +207,13 @@ fn a_component_not_in_the_catalog_is_drawn_as_a_guess() {
 
 #[test]
 fn a_projects_component_is_drawn_from_its_look() {
-    let kinds = serde_json::json!({ "components": { "TextField": { "look": {
+    let own = serde_json::json!({ "components": { "TextField": { "look": {
         "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line",
         "children": [ { "text": "{placeholder}", "ink": "muted" } ] } } } });
     let row = serde_json::json!([{ "id": "composer", "component": "Row", "gap": 12, "children": [
         { "id": "input", "component": "TextField", "placeholder": "添加一项待办" },
         { "id": "add", "component": "Button", "text": "添加" } ] }]);
-    let page = tiny_with(row, Some(&kinds));
+    let page = tiny_with(row, Some(&own));
     let (input, add) = (placed(&page, "input"), placed(&page, "add"));
     assert_eq!(input.assumed, None, "a defined component is no guess");
     assert_eq!(input.rect.x + input.rect.width + 12.0, add.rect.x, "the field fills up to the button");
@@ -250,7 +253,7 @@ fn an_overlay_anchored_at_the_center_sits_in_the_middle() {
 
 #[test]
 fn a_dialog_hides_the_tags_of_what_it_covers() {
-    let kinds = serde_json::json!({ "components": { "Dialog": { "look": {
+    let own = serde_json::json!({ "components": { "Dialog": { "look": {
         "box": "column", "width": "80%", "padding": 16, "fill": "paper", "stroke": "line",
         "children": ["$children"] } } } });
     let button = |id: &str| serde_json::json!({ "id": id, "component": "Button", "text": id, "on": { "tap": { "go": id } } });
@@ -259,7 +262,7 @@ fn a_dialog_hides_the_tags_of_what_it_covers() {
         serde_json::json!([{ "id": "body", "component": "Stack", "gap": 8,
             "children": buttons,
             "overlay": { "id": "dialog", "component": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
-        Some(&kinds),
+        Some(&own),
     );
     let dialog = placed(&page, "dialog").rect;
     let under = |id| {
@@ -284,7 +287,7 @@ fn a_dialog_hides_the_tags_of_what_it_covers() {
 
 #[test]
 fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
-    let kinds = serde_json::json!({ "components": { "Dialog": { "look": {
+    let own = serde_json::json!({ "components": { "Dialog": { "look": {
         "box": "column", "backdrop": true, "width": "80%", "padding": 16, "fill": "paper",
         "children": ["$children"] } } } });
     let button = |id: &str| serde_json::json!({ "id": id, "component": "Button", "text": id, "on": { "tap": { "go": id } } });
@@ -292,7 +295,7 @@ fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
     let page = tiny_with(
         serde_json::json!([{ "id": "body", "component": "Stack", "gap": 8, "children": buttons,
             "overlay": { "id": "dialog", "component": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
-        Some(&kinds),
+        Some(&own),
     );
     let body = placed(&page, "body").rect;
     let scrim = page.draws.iter().position(
@@ -311,7 +314,7 @@ fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
 
 #[test]
 fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
-    let kinds = serde_json::json!({ "components": { "Dialog": { "look": {
+    let own = serde_json::json!({ "components": { "Dialog": { "look": {
         "box": "column", "backdrop": true, "width": "80%", "padding": 16, "fill": "paper",
         "children": ["$children"] } } } });
     let page = tiny_with(
@@ -320,7 +323,7 @@ fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
             { "id": "filler", "component": "Text", "text": "filler" } ],
           "overlay": { "id": "dialog", "component": "Dialog", "anchor": "center", "children": [
             { "id": "inside", "component": "Text", "text": "inside", "assumed": "a guess on the dialog" } ] } }]),
-        Some(&kinds),
+        Some(&own),
     );
     let marks: Vec<_> = page
         .draws
@@ -377,7 +380,7 @@ fn an_overlay_taller_than_its_node_is_named_as_cut() {
 
 #[test]
 fn an_overlay_is_drawn_over_what_comes_after_its_node() {
-    let kinds = serde_json::json!({ "components": { "Menu": { "look": {
+    let own = serde_json::json!({ "components": { "Menu": { "look": {
         "box": "column", "width": 200, "padding": 8, "fill": "paper", "stroke": "line",
         "children": ["$children"] } } } });
     let row = |id: &str, menu: bool| {
@@ -392,7 +395,7 @@ fn an_overlay_is_drawn_over_what_comes_after_its_node() {
     };
     let page = tiny_with(
         serde_json::json!([{ "id": "list", "component": "Stack", "children": [row("a", true), row("b", false), row("c", false)] }]),
-        Some(&kinds),
+        Some(&own),
     );
     let menu = placed(&page, "menu").rect;
     let at = |wanted: &dyn Fn(&Draw) -> bool| page.draws.iter().position(wanted).unwrap();

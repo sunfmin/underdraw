@@ -6,7 +6,6 @@ use serde_json::Value;
 use underdraw_format::{Checked, check};
 
 const DRAFT: &str = include_str!("../../../drafts/checkout/screen.json");
-const KINDS: &str = include_str!("../../../drafts/checkout/kinds.json");
 
 /// The draft with each `from` replaced by its `to`, where `from` appears
 /// exactly once.
@@ -20,7 +19,7 @@ fn planted(name: &str, edits: &[(&str, &str)]) -> Value {
 }
 
 fn checked(screen: &Value) -> Checked {
-    check(screen, Some(&serde_json::from_str(KINDS).unwrap()))
+    check(screen)
 }
 
 /// Text replaced in the draft: (what it says, what is planted instead).

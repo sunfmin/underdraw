@@ -5,7 +5,6 @@ use serde_json::Value;
 use underdraw_format::{Checked, Transition, check, model};
 
 const DRAFT: &str = include_str!("../../../drafts/orders/screen.json");
-const KINDS: &str = include_str!("../../../drafts/orders/kinds.json");
 
 /// The draft with `from` replaced by `to`, where `from` appears exactly once.
 fn planted(name: &str, from: &str, to: &str) -> Value {
@@ -14,7 +13,7 @@ fn planted(name: &str, from: &str, to: &str) -> Value {
 }
 
 fn checked(screen: &Value) -> Checked {
-    check(screen, Some(&serde_json::from_str(KINDS).unwrap()))
+    check(screen)
 }
 
 const OPEN: &str = r#"{ "from": "default", "on": "order-{index}-cancel.tap", "to": "cancel-dialog" }"#;
@@ -24,8 +23,7 @@ const CONFIRM: &str =
 #[test]
 fn the_drafts_transitions_are_read_as_written() {
     let screen: Value = serde_json::from_str(DRAFT).unwrap();
-    let model =
-        model(&screen, Some(&serde_json::from_str(KINDS).unwrap())).unwrap_or_else(|c| panic!("{c:#?}"));
+    let model = model(&screen).unwrap_or_else(|c| panic!("{c:#?}"));
     assert_eq!(
         model.transitions.first(),
         Some(&Transition {

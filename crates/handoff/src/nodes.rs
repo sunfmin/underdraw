@@ -88,9 +88,9 @@ impl Walk<'_> {
             _ => return,
         };
         if let Some(name) = object.get("ref").and_then(Value::as_str) {
-            let component = self.components.get(name).cloned();
-            if let Some(component) = component {
-                self.node(&component, parent, slot);
+            let nodes = self.components.get(name).and_then(|component| component.get("nodes")).cloned();
+            if let Some(nodes) = nodes {
+                self.node(&nodes, parent, slot);
             }
             return;
         }

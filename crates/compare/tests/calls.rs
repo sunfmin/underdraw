@@ -31,9 +31,9 @@ fn run(capture: &Value) -> Result<Comparison, String> {
 }
 
 fn run_in(fixture: &str, capture: &Value) -> Result<Comparison, String> {
-    let (screen, tokens, kinds) = (read("screen.json"), read("tokens.json"), read("kinds.json"));
+    let (screen, tokens) = (read("screen.json"), read("tokens.json"));
     let mapping = read("platforms/web.json");
-    compare(&screen, &mapping, &tokens, Some(&kinds), State::Fixture(fixture), capture, &mut Fixed)
+    compare(&screen, &mapping, &tokens, State::Fixture(fixture), capture, &mut Fixed)
 }
 
 #[test]

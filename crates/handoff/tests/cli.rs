@@ -11,8 +11,7 @@ fn draft(file: &str) -> Value {
 }
 
 fn interface() -> underdraw_handoff::Interface {
-    let model = model(&draft("screen.json"), Some(&draft("kinds.json")))
-        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = model(&draft("screen.json")).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     cli(&model)
 }
 
@@ -270,8 +269,7 @@ fn deleting_from_the_menu(destructive: bool) -> Value {
 
 #[test]
 fn a_command_whose_precondition_does_not_hold_is_refused() {
-    let model = model(&deleting_from_the_menu(false), Some(&draft("kinds.json")))
-        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = model(&deleting_from_the_menu(false)).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let interface = cli(&model);
     let golden: Vec<Value> = interface.golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
     let deletes: Vec<(&Value, &Value, &Value, &Value)> = golden
@@ -290,7 +288,7 @@ fn a_command_whose_precondition_does_not_hold_is_refused() {
 
 #[test]
 fn a_destructive_command_called_outside_its_confirmation_derives_no_cli() {
-    let refused = model(&deleting_from_the_menu(true), Some(&draft("kinds.json"))).err().unwrap();
+    let refused = model(&deleting_from_the_menu(true)).err().unwrap();
     assert!(
         refused
             .findings
@@ -325,8 +323,7 @@ fn a_destructive_command_refused_by_its_precondition_is_refused_with_yes_too() {
                 r#""disabled": "!canDelete",
               "text": "删除""#,
             );
-    let model = model(&serde_json::from_str(&text).unwrap(), Some(&draft("kinds.json")))
-        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = model(&serde_json::from_str(&text).unwrap()).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let golden: Vec<Value> = cli(&model).golden.iter().map(|g| serde_json::to_value(g).unwrap()).collect();
     let deletes: Vec<(&Value, &Value, &Value)> = golden
         .iter()
@@ -348,8 +345,7 @@ fn an_argument_outside_its_range_is_refused() {
     let read = |file: &str| -> Value {
         serde_json::from_str(&std::fs::read_to_string(path(file)).unwrap()).unwrap()
     };
-    let model = model(&read("screen.json"), Some(&read("kinds.json")))
-        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = model(&read("screen.json")).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let interface = cli(&model);
     let apply = interface.commands.iter().find(|c| c.name == "apply-promo").unwrap();
     let args = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
@@ -364,7 +360,7 @@ fn an_argument_outside_its_range_is_refused() {
 
 #[test]
 fn it_answers_each_fixture_resolved_as_handoff_does() {
-    let model = model(&draft("screen.json"), Some(&draft("kinds.json"))).unwrap();
+    let model = model(&draft("screen.json")).unwrap();
     let fixtures = cli(&model).fixtures;
     let names: Vec<&String> = fixtures.keys().collect();
     let written: Vec<&String> = model.fixtures.iter().map(|(name, _)| name).collect();

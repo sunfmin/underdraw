@@ -220,34 +220,171 @@
   },
 
   "components": {
+    "Thumb": {
+      "doc": "A product photo as a fixed square.",
+      "params": [],
+      "look": { "size": 64, "radius": 8, "stroke": "line", "cross": "line" }
+    },
+    "SummaryLine": {
+      "doc": "One line of the order summary: name at the start, amount at the end; strong for the total.",
+      "params": ["strong", "label", "value"],
+      "look": {
+        "box": "row", "justify": "between", "items": "center",
+        "children": [
+          { "cases": [
+            { "if": "strong", "then": { "text": "{label}", "font": "font.subhead" } },
+            { "else": { "text": "{label}", "ink": "muted" } }
+          ] },
+          { "cases": [
+            { "if": "strong", "then": { "text": "{value}", "font": "font.price" } },
+            { "else": { "text": "{value}" } }
+          ] }
+        ]
+      }
+    },
+    "TextField": {
+      "doc": "A one-line text input: label above, placeholder until filled, error below.",
+      "params": ["label", "value", "placeholder", "error"],
+      "look": {
+        "box": "column", "gap": 6, "grow": 1,
+        "children": [
+          { "if": "label", "text": "{label}", "font": "font.caption", "ink": "muted" },
+          { "box": "row", "padding": [12, 12], "radius": 8, "stroke": "line",
+            "children": [
+              { "cases": [
+                { "if": "value && value != \"\"", "then": { "text": "{value}" } },
+                { "else": { "text": "{placeholder}", "ink": "muted" } }
+              ] }
+            ] },
+          { "if": "error", "text": "{error}", "font": "font.caption", "ink": "strong" }
+        ]
+      }
+    },
+    "OptionRow": {
+      "doc": "One choice of a single-choice group (delivery, payment): a radio, an optional icon, title and detail, and a price at the end. Outlined strong when selected.",
+      "params": ["selected", "icon", "title", "detail", "price"],
+      "look": {
+        "box": "row", "gap": 12, "padding": [12, 12], "radius": 12, "items": "center",
+        "stroke": { "cases": [ { "if": "selected", "then": "strong" }, { "else": "line" } ] },
+        "children": [
+          { "cases": [
+            { "if": "selected", "then": { "component": "Glyph", "icon": "radio_button_checked" } },
+            { "else": { "component": "Glyph", "icon": "radio_button_unchecked" } }
+          ] },
+          { "if": "icon", "component": "Glyph", "icon": "{icon}" },
+          { "box": "column", "gap": 2, "grow": 1,
+            "children": [
+              { "text": "{title}", "font": "font.subhead" },
+              { "if": "detail", "text": "{detail}", "font": "font.caption", "ink": "muted" }
+            ] },
+          { "if": "price", "text": "{price}" }
+        ]
+      }
+    },
     "nav": {
-      "id": "nav", "component": "NavBar",
-      "leading": { "id": "nav-back", "component": "IconButton", "icon": "arrow_back", "on": { "tap": { "back": true } } },
-      "children": { "id": "nav-title", "component": "Text", "text": "确认订单", "font": "font.subhead" },
-      "trailing": { "id": "nav-secure", "component": "Glyph", "icon": "lock", "font": "font.caption" }
+      "nodes": {
+        "id": "nav",
+        "component": "NavBar",
+        "leading": {
+          "id": "nav-back",
+          "component": "IconButton",
+          "icon": "arrow_back",
+          "on": {
+            "tap": {
+              "back": true
+            }
+          }
+        },
+        "children": {
+          "id": "nav-title",
+          "component": "Text",
+          "text": "确认订单",
+          "font": "font.subhead"
+        },
+        "trailing": {
+          "id": "nav-secure",
+          "component": "Glyph",
+          "icon": "lock",
+          "font": "font.caption"
+        }
+      }
     },
     "place-order": {
-      "id": "place-order", "component": "Button", "variant": "primary",
-      "text": "提交订单 · {summary.total|money}",
-      "disabled": "!canPlace",
-      "on": { "tap": { "call": "placeOrder", "with": { "method": "{payment.method}" } } }
+      "nodes": {
+        "id": "place-order",
+        "component": "Button",
+        "variant": "primary",
+        "text": "提交订单 · {summary.total|money}",
+        "disabled": "!canPlace",
+        "on": {
+          "tap": {
+            "call": "placeOrder",
+            "with": {
+              "method": "{payment.method}"
+            }
+          }
+        }
+      }
     },
     "place-hint": {
-      "id": "place-hint", "component": "Text", "if": "!canPlace", "font": "font.caption", "color": "color.danger",
-      "text": { "cases": [
-        { "if": "!hasAddress", "then": "请先添加收货地址" },
-        { "else": "有商品缺货，移除后才能提交" }
-      ] }
+      "nodes": {
+        "id": "place-hint",
+        "component": "Text",
+        "if": "!canPlace",
+        "font": "font.caption",
+        "color": "color.danger",
+        "text": {
+          "cases": [
+            {
+              "if": "!hasAddress",
+              "then": "请先添加收货地址"
+            },
+            {
+              "else": "有商品缺货，移除后才能提交"
+            }
+          ]
+        }
+      }
     },
     "summary": {
-      "id": "summary", "component": "Section", "title": "订单金额", "gap": "space.3",
-      "children": [
-        { "id": "sum-subtotal", "component": "SummaryLine", "label": "商品小计（{cart.itemCount} 件）", "value": "{summary.subtotal|money}" },
-        { "id": "sum-shipping", "component": "SummaryLine", "label": "运费", "value": "{summary.shipping|money}" },
-        { "id": "sum-discount", "component": "SummaryLine", "if": "promoApplied", "label": "优惠码 {promo.code}", "value": "−{promo.discount|money}" },
-        { "id": "sum-divider", "component": "Divider" },
-        { "id": "sum-total", "component": "SummaryLine", "strong": true, "label": "应付合计", "value": "{summary.total|money}" }
-      ]
+      "nodes": {
+        "id": "summary",
+        "component": "Section",
+        "title": "订单金额",
+        "gap": "space.3",
+        "children": [
+          {
+            "id": "sum-subtotal",
+            "component": "SummaryLine",
+            "label": "商品小计（{cart.itemCount} 件）",
+            "value": "{summary.subtotal|money}"
+          },
+          {
+            "id": "sum-shipping",
+            "component": "SummaryLine",
+            "label": "运费",
+            "value": "{summary.shipping|money}"
+          },
+          {
+            "id": "sum-discount",
+            "component": "SummaryLine",
+            "if": "promoApplied",
+            "label": "优惠码 {promo.code}",
+            "value": "−{promo.discount|money}"
+          },
+          {
+            "id": "sum-divider",
+            "component": "Divider"
+          },
+          {
+            "id": "sum-total",
+            "component": "SummaryLine",
+            "strong": true,
+            "label": "应付合计",
+            "value": "{summary.total|money}"
+          }
+        ]
+      }
     }
   },
 

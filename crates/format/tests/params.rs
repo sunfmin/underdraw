@@ -43,7 +43,7 @@ fn problems(checked: &Checked) -> Vec<(&str, &str)> {
 
 #[test]
 fn a_screen_declaring_params_its_fixtures_give_checks() {
-    let checked = check(&detail(), None);
+    let checked = check(&detail());
     assert!(checked.ok, "{:#?}", checked.findings);
     let declared: Vec<String> = params(&detail())
         .unwrap()
@@ -59,7 +59,7 @@ fn a_param_is_a_field_of_data_every_fixture_gives() {
     let mut screen = detail();
     screen["params"] = json!(["orderId", "nope", "menu", "note"]);
     screen["fixtures"]["bare"] = json!({ "orderId": "o2", "history": true });
-    let checked = check(&screen, None);
+    let checked = check(&screen);
     let found = problems(&checked);
     assert!(
         found.iter().any(|(at, said)| *at == "params.nope" && said.contains("not a field of data")),
@@ -77,16 +77,16 @@ fn a_param_is_a_field_of_data_every_fixture_gives() {
     screen["fixtures"]["default"]["note"] = json!(null);
     screen["fixtures"]["bare"]["note"] = json!("hi");
     screen["params"] = json!(["orderId", "note"]);
-    assert!(check(&screen, None).ok, "{:#?}", check(&screen, None).findings);
+    assert!(check(&screen).ok, "{:#?}", check(&screen).findings);
 }
 
 #[test]
 fn a_navigate_gives_each_param_of_its_type_and_no_other() {
     let good = list(json!({ "orderId": "{item.id}", "history": "{item.paid}" }));
-    assert!(check_among(&good, None, &others()).ok, "{:#?}", check_among(&good, None, &others()).findings);
+    assert!(check_among(&good, &others()).ok, "{:#?}", check_among(&good, &others()).findings);
 
     let at = "row-{item.id}.on.tap.with";
-    let missing = check_among(&list(json!({ "orderId": "{item.id}" })), None, &others());
+    let missing = check_among(&list(json!({ "orderId": "{item.id}" })), &others());
     assert!(
         problems(&missing)
             .contains(&(at, "OrderDetail is opened with history (bool), which with does not give")),
@@ -94,7 +94,7 @@ fn a_navigate_gives_each_param_of_its_type_and_no_other() {
         missing.findings
     );
 
-    let wrong = check_among(&list(json!({ "orderId": "{count}", "history": true })), None, &others());
+    let wrong = check_among(&list(json!({ "orderId": "{count}", "history": true })), &others());
     let found = problems(&wrong);
     assert!(
         found.iter().any(|(where_, said)| *where_ == format!("{at}.orderId") && said.contains("is int")),
@@ -102,7 +102,7 @@ fn a_navigate_gives_each_param_of_its_type_and_no_other() {
     );
 
     let extra =
-        check_among(&list(json!({ "orderId": "{item.id}", "history": false, "tab": "x" })), None, &others());
+        check_among(&list(json!({ "orderId": "{item.id}", "history": false, "tab": "x" })), &others());
     assert!(
         problems(&extra)
             .iter()
@@ -116,7 +116,7 @@ fn a_navigate_gives_each_param_of_its_type_and_no_other() {
 fn a_navigate_to_a_screen_not_drawn_or_alone_is_held_to_nothing() {
     // Invoice is not under the root; alone, OrderDetail is not either.
     let bare = list(json!({ "whatever": "{count}" }));
-    assert!(check(&bare, None).ok, "{:#?}", check(&bare, None).findings);
-    let among = check_among(&bare, None, &others());
+    assert!(check(&bare).ok, "{:#?}", check(&bare).findings);
+    let among = check_among(&bare, &others());
     assert!(problems(&among).iter().all(|(at, _)| !at.starts_with("later")), "{:#?}", among.findings);
 }

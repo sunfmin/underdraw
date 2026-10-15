@@ -2,7 +2,7 @@
 //! found where it was planted, and says what is wrong.
 
 use serde_json::{Value, json};
-use underdraw_format::{Checked, Kinds, check};
+use underdraw_format::{Checked, Components, check};
 
 const DRAFT: &str = include_str!("../../../drafts/airbnb-listing/screen.json");
 
@@ -23,7 +23,7 @@ fn found(checked: &Checked, at: &str, said: &str) -> bool {
 
 #[test]
 fn the_draft_is_sound() {
-    let checked = check(&draft(), None);
+    let checked = check(&draft());
     assert!(checked.ok, "{:#?}", checked.findings);
 }
 
@@ -224,7 +224,7 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
     ];
     for (name, from, to, at, said) in cases {
-        let checked = check(&planted(name, from, to), None);
+        let checked = check(&planted(name, from, to));
         assert!(!checked.ok, "{name}");
         assert!(
             found(&checked, at, said),
@@ -234,19 +234,67 @@ fn each_planted_fault_is_found_where_it_was_planted() {
     }
 }
 
+/// The draft with `own` among its own components, over any of the same name.
+fn with_own(own: Value) -> Value {
+    let mut draft = draft();
+    for (name, component) in own.as_object().unwrap() {
+        draft["components"][name] = component.clone();
+    }
+    draft
+}
+
 #[test]
-fn underdraws_own_components_pass_as_a_projects() {
-    let defaults: Value =
-        serde_json::from_str(include_str!("../../format/kinds.json")).expect("the defaults are JSON");
-    let checked = check(&draft(), Some(&defaults));
+fn underdraws_own_components_pass_as_a_screens() {
+    let builtins: Value =
+        serde_json::from_str(include_str!("../../format/components.json")).expect("the built-ins are JSON");
+    let checked = check(&with_own(builtins["components"].clone()));
     assert!(checked.findings.is_empty(), "{:#?}", checked.findings);
 }
 
 #[test]
-fn each_fault_in_a_projects_components_is_found() {
-    let kinds = json!({ "components": {
-        "NoLook": { "doc": "forgot its look" },
-        "Wrong": { "assumed": "looks like a Badge for now", "look": { "box": "row", "colour": "line", "children": [
+fn a_component_has_a_look_or_nodes_never_both() {
+    let checked = check(&with_own(json!({
+        "Both": { "params": [], "look": { "box": "row" }, "nodes": { "id": "both", "component": "Row" } },
+        "Neither": { "params": [], "doc": "forgot its body" },
+        "Look": { "params": [], "look": { "box": "row" } },
+        "Nodes": { "nodes": { "id": "nodes", "component": "Row" } }
+    })));
+    assert!(found(&checked, "components.Both", "a look or nodes, never both"), "{:#?}", checked.findings);
+    assert!(found(&checked, "components.Neither", "needs a body"), "{:#?}", checked.findings);
+    for fine in ["components.Look", "components.Nodes"] {
+        assert!(!checked.findings.iter().any(|f| f.at.starts_with(fine)), "{fine}: {:#?}", checked.findings);
+    }
+}
+
+#[test]
+fn a_look_reads_only_the_params_its_component_declares() {
+    let checked = check(&with_own(json!({
+        "Tag": { "params": ["text"], "look": { "box": "row", "children": [
+            { "text": "{text} {count|or:0}", "ink": "{tone}" },
+            { "if": "selected && kind != \"x\"", "text": "{label.short}" },
+            { "repeat": "{text|count}", "each": { "text": "{n}. {item} {index}" } },
+            { "component": "Badge", "text": "{badge}" }
+        ] } },
+        "Framed": { "params": ["gap"], "look": { "box": "column", "frame": true, "children": ["$children"] } },
+        "Unlisted": { "params": "text", "look": { "text": "{text}" } }
+    })));
+    for read in ["count", "tone", "selected", "kind", "label", "badge"] {
+        let said = format!("reads {read}, which is not one of its params");
+        assert!(found(&checked, "components.Tag.look", &said), "{read}: {:#?}", checked.findings);
+    }
+    for bound in ["text", "item", "index", "n", "x", "Badge"] {
+        let said = format!("reads {bound}, which");
+        assert!(!found(&checked, "components.Tag.look", &said), "{bound} passes: {:#?}", checked.findings);
+    }
+    assert!(found(&checked, "components.Framed.look", "reads padding, which"), "{:#?}", checked.findings);
+    assert!(!found(&checked, "components.Framed.look", "reads gap, which"), "{:#?}", checked.findings);
+    assert!(found(&checked, "components.Unlisted.params", "params is a list"), "{:#?}", checked.findings);
+}
+
+#[test]
+fn each_fault_in_a_screens_components_is_found() {
+    let own = with_own(json!({
+        "Wrong": { "params": ["title", "width", "edge"], "assumed": "looks like a Badge for now", "look": { "box": "row", "colour": "line", "children": [
             { "text": "{title|upper}" },
             { "component": "Nowhere" },
             { "cases": [ { "if": "title", "then": "$kids" } ] },
@@ -257,10 +305,11 @@ fn each_fault_in_a_projects_components_is_found() {
             { "box": "stack", "justify": { "cases": [ { "if": "title", "then": "end" }, { "else": "left" } ] } },
             { "text": "{title}", "underline": "yes", "pin": { "x": "right", "y": "{edge}", "z": 1 } }
         ] }, "pinned": "yes" }
-    }, "icons": { "checklist": "☑" } });
-    let checked = check(&draft(), Some(&kinds));
+    }));
+    let mut own = own;
+    own["icons"] = json!({ "checklist": "☑" });
+    let checked = check(&own);
     let expected = [
-        ("components.NoLook", "needs \"look\""),
         ("components.Wrong.look", "colour is not a key"),
         ("components.Wrong.look.children[0].text", "upper is not a filter"),
         ("components.Wrong.look.children[1]", "component Nowhere is not defined"),
@@ -299,21 +348,20 @@ fn each_fault_in_a_projects_components_is_found() {
 
 #[test]
 fn a_component_with_a_backdrop_must_be_an_overlay() {
-    let kinds = json!({ "components": { "Badge": { "look": {
-        "box": "row", "backdrop": true, "children": [ { "text": "{text}" } ] } } } });
-    let checked = check(&draft(), Some(&kinds));
+    let checked = check(&with_own(json!({ "Badge": { "params": ["text"], "look": {
+        "box": "row", "backdrop": true, "children": [ { "text": "{text}" } ] } } })));
     assert!(found(&checked, "guest-favorite", "put it in \"overlay\""), "{:#?}", checked.findings);
 }
 
 #[test]
 fn a_component_says_whether_it_scrolls_or_is_pinned() {
-    let defaults = Kinds::read(None);
+    let defaults = Components::read(&json!({}));
     assert!(defaults.scrolls("Carousel") && defaults.pinned("StickyBar"));
     assert!(!defaults.scrolls("Row") && !defaults.pinned("Row"));
-    let project = json!({ "components": {
+    let screen = json!({ "components": {
         "Feed": { "scrolls": true, "look": "$children" },
         "StickyBar": { "look": "$children" } } });
-    let kinds = Kinds::read(Some(&project));
-    assert!(kinds.scrolls("Feed"), "a project's own component scrolls when it says so");
-    assert!(!kinds.pinned("StickyBar"), "a project's component replaces the default whole");
+    let components = Components::read(&screen);
+    assert!(components.scrolls("Feed"), "a screen's own component scrolls when it says so");
+    assert!(!components.pinned("StickyBar"), "a screen's own component replaces underdraw's whole");
 }
