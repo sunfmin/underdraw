@@ -521,11 +521,14 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
             if state_gone.is_some()
                 || (!region.nodes.is_empty() && region.nodes.iter().all(|node| !writes(&node.written))) =>
         {
-            let covered: Vec<String> = region.nodes.iter().map(|node| format!("`{}`", node.written)).collect();
+            let covered: Vec<String> =
+                region.nodes.iter().map(|node| format!("`{}`", node.written)).collect();
             let covering = if covered.is_empty() { "no node".to_string() } else { covered.join(", ") };
             in_state(format!("a region covering {covering}"))
         }
-        On::State { state } if state_gone.is_some() => now_gone(format!("the whole of {}", said_state(state))),
+        On::State { state } if state_gone.is_some() => {
+            now_gone(format!("the whole of {}", said_state(state)))
+        }
         On::Transition { transition } => {
             let declared = underdraw_format::transitions(screen).into_iter().any(|declared| {
                 declared.from == transition.from
@@ -935,7 +938,12 @@ mod tests {
         };
         let whole = |state: Shown| On::State { state };
         let transition = |to: &str| On::Transition {
-            transition: Transition { from: "default".into(), on: "go.tap".into(), outcome: None, to: to.into() },
+            transition: Transition {
+                from: "default".into(),
+                on: "go.tap".into(),
+                outcome: None,
+                to: to.into(),
+            },
         };
         let navigate = |to: &str| On::Navigate {
             navigate: Navigate { from: "Orders".into(), node: "go".into(), to: to.into() },

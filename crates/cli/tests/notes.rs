@@ -355,11 +355,12 @@ fn a_note_on_what_is_gone_joins_its_states_note_listed_like_any_other() {
     ] });
     std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
     let file = dir.join("screen.json");
-    let screen = std::fs::read_to_string(&file)
-        .unwrap()
-        .replace(r#""id": "export""#, r#""id": "download""#)
-        .replace(r#",
-    { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" }"#, "");
+    let screen =
+        std::fs::read_to_string(&file).unwrap().replace(r#""id": "export""#, r#""id": "download""#).replace(
+            r#",
+    { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" }"#,
+            "",
+        );
     std::fs::write(&file, screen).unwrap();
     let (checked, _) = underdraw(&["check", dir.to_str().unwrap()]);
     assert_eq!(checked["ok"], true, "{checked}");
@@ -387,7 +388,10 @@ fn a_note_on_what_is_gone_joins_its_states_note_listed_like_any_other() {
     );
     assert_eq!(
         answer["notes"][1]["messages"],
-        json!([line("on transition from error on retry.tap outcome offline to error, now gone"), person("why?")]),
+        json!([
+            line("on transition from error on retry.tap outcome offline to error, now gone"),
+            person("why?")
+        ]),
         "a state with no note gets one, keeping its id"
     );
     assert_eq!(answer["notes"][1]["reference"], format!("{} · phase error", dir.display()));

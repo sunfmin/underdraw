@@ -6384,10 +6384,20 @@ mod tests {
         let joined = notes::read(&dir).unwrap();
         assert_eq!(joined.len(), 1, "its node renamed, the note is never closed: {joined:?}");
         assert_eq!(joined[0].id, note.id, "it keeps its id");
-        assert_eq!(joined[0].on, On::State { state: State::Fixture("pending".into()) }, "the state's note now");
+        assert_eq!(
+            joined[0].on,
+            On::State { state: State::Fixture("pending".into()) },
+            "the state's note now"
+        );
         let said: Vec<(notes::By, &str)> =
             joined[0].messages.iter().map(|said| (said.by, said.says.as_str())).collect();
-        assert_eq!(said, [(notes::By::Underdraw, "on `order-row-cancel`, now gone"), (notes::By::Person, "say which order")]);
+        assert_eq!(
+            said,
+            [
+                (notes::By::Underdraw, "on `order-row-cancel`, now gone"),
+                (notes::By::Person, "say which order")
+            ]
+        );
         assert_eq!(gallery.notes[&dir], joined, "the gallery shows it joined");
         gallery.reload();
         assert_eq!(notes::read(&dir).unwrap(), joined, "read again, nothing moves twice");
