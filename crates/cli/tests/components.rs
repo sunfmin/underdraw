@@ -251,4 +251,6 @@ fn help_says_where_shared_components_live() {
     assert!(help(&["--help"]).contains("components/<Name>.json"));
     let check = help(&["check", "--help"]);
     assert!(check.contains("components/<Name>.json") && check.contains("shadows the project's"), "{check}");
+    assert!(check.contains("\"fixtures\", each a value of its params"), "{check}");
+    assert!(help(&["gallery", "--help"]).contains("in a section of their own"));
 }

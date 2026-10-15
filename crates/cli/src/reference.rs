@@ -175,7 +175,7 @@ impl Reference {
                     "{description} · {} · {} at {} · pointed at {}",
                     state(shown),
                     origin.written,
-                    written_in(&origin.at),
+                    written_in(&origin.at, &self.description),
                     context.join(", ")
                 )
             }
@@ -201,15 +201,20 @@ impl Reference {
 
 /// Where the node at `at` (a JSON pointer into the description as read) is
 /// written: in screen.json, or, inside a component the project shares, in
-/// its components/<Name>.json.
-fn written_in(at: &str) -> String {
+/// its components/<Name>.json. In the description in `description` that
+/// shows a shared component on its own, a node outside the component's
+/// nodes is the instance the gallery draws it as, written nowhere.
+fn written_in(at: &str, description: &std::path::Path) -> String {
     let shared = at
         .strip_prefix('/')
         .and_then(|at| at.strip_prefix(underdraw_format::SHARED_COMPONENTS))
         .and_then(|at| at.strip_prefix('/'));
     match shared.and_then(|at| at.split_once('/')) {
         Some((name, inside)) => format!("/{inside} in {}/{name}.json", crate::project::COMPONENTS),
-        None => format!("{at} in screen.json"),
+        None => match crate::project::showcased(description) {
+            Some((name, _)) => format!("the instance shown of {}/{name}.json", crate::project::COMPONENTS),
+            None => format!("{at} in screen.json"),
+        },
     }
 }
 
@@ -224,6 +229,8 @@ pub fn instance(of: &[usize]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -251,9 +258,16 @@ mod tests {
             "/d/orders · fixture default · order-{index} at /root/children/1/item in screen.json · pointed at [2], label 4, width 390"
         );
         assert_eq!(
-            written_in("/$components/OrderRow/nodes/children/1"),
+            written_in("/$components/OrderRow/nodes/children/1", Path::new("/d/orders")),
             "/nodes/children/1 in components/OrderRow.json",
             "a node of a component the project shares is written in its file"
+        );
+        let shop =
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/shop/components/OrderStatus"));
+        assert_eq!(
+            written_in("/root/children/0", shop),
+            "the instance shown of components/OrderStatus.json",
+            "the instance the gallery shows a shared component as is written nowhere"
         );
     }
 

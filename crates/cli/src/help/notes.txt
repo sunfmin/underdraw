@@ -14,7 +14,10 @@ READS
   notes.json beside each screen.json under <path>: <path> itself, when it
   is a description's directory, or every description under it at any
   depth, as the gallery finds them. A description with no notes.json has no
-  notes. Writes nothing, but with --answer, and to close a note that closes
+  notes. A shared component shown on its own, the description
+  components/<Name> under its project's root, keeps them in
+  components/<Name>/notes.json; what they are on is edited in
+  components/<Name>.json, its fixture under "fixtures". Writes nothing, but with --answer, and to close a note that closes
   itself (GONE, below).
 
 DOES

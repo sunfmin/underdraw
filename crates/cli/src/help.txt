@@ -18,7 +18,10 @@ one design language and one domain. Every command finds it the same way:
   components    components/<Name>.json at the project root: each a
                 component every screen of the project uses by its name, as
                 if it declared it in its own "components"; a screen may add
-                its own, never one of a name the project shares
+                its own, never one of a name the project shares. Its
+                "fixtures", each a value of its params, show it on its
+                own: the description components/<Name>, which check and
+                the gallery take as they take a screen's directory
                 (`underdraw check --help`, COMPONENTS)
   tokens        tokens.json in the nearest directory at or above the
                 screen that has one, so a screen's own tokens.json wins

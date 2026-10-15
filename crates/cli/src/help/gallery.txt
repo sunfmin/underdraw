@@ -9,7 +9,12 @@ WHO
 READS
   Every screen description under <root>: each directory, at any depth,
   that holds screen.json. The tree leaves out renders/ and platforms/,
-  hidden directories, and directories leading to no description. Nothing is
+  hidden directories, and directories leading to no description. A
+  project's root lists the components it shares in a section of their own,
+  components/, each a description (components/<Name>) whose states are the
+  fixtures in its components/<Name>.json: one instance of it, drawn in each,
+  picked, noted and copied as a screen's nodes are, its notes kept in
+  components/<Name>/notes.json (`underdraw check --help`, COMPONENTS). Nothing is
   read from renders/: the window draws from the descriptions themselves,
   from the notes.json beside each, the person's notes, and from each
   journey under <root> (<dir>/journeys/<name>.json).
