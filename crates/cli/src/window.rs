@@ -2,7 +2,9 @@
 //! descriptions and their states on the left and, for the state picked, its
 //! picture drawn at a phone and a desktop width side by side, where a node
 //! can be picked to read what it is. The tree and panels are drawn by hand,
-//! in the inks a wireframe is drawn in.
+//! in the inks a wireframe is drawn in. The window is drawn from the files
+//! as they now stand: as they change under its root, the tree and the state
+//! shown follow.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -45,8 +47,13 @@ const PANEL_LINE: f64 = 20.0;
 /// The space between one finding and the next.
 const GAP: f64 = 12.0;
 
-/// What a later run of the command over the same root asks of the window.
-struct ComeForward;
+/// What the window is told from other threads.
+enum Told {
+    /// A later run of the command over the same root asks it forward.
+    ComeForward,
+    /// A file it is drawn from changed, appeared or went.
+    Changed,
+}
 
 /// Opens the window over `root` and runs it until the person closes it.
 /// Says on stdout, in one JSON line, whether the window opened, and nothing
@@ -82,6 +89,10 @@ struct Gallery {
     lines: Vec<Line>,
     /// The line of the state shown, or of the description when it has none.
     picked: Option<usize>,
+    /// The description and state the person last picked, by name, so that
+    /// the files changing keeps showing them, or shows them again once
+    /// they are back: a description gone unreadable lists no states.
+    wanted: Option<Picked>,
     picture: Picture,
     /// The id of the node picked in the picture, kept from state to state
     /// while the state shown has it.
@@ -99,8 +110,9 @@ struct Gallery {
     shown: Option<Shown>,
     /// Whether the starting command has been told the window opened.
     reported: bool,
-    /// What brings the window forward, from another thread.
-    proxy: Option<EventLoopProxy<ComeForward>>,
+    /// What brings the window forward, or says its files changed, from
+    /// another thread.
+    proxy: Option<EventLoopProxy<Told>>,
     /// Later runs of the command answered, once the window is open.
     answering: Option<Answering>,
 }
@@ -129,6 +141,13 @@ fn lines(root: &Path) -> Vec<Line> {
         }
     }
     lines
+}
+
+/// A line of the tree by name: its description, and its state's name.
+#[derive(Clone)]
+struct Picked {
+    description: PathBuf,
+    state: Option<String>,
 }
 
 /// The window open, and the GPU drawing in it.
@@ -183,6 +202,7 @@ impl Gallery {
             root: root.to_path_buf(),
             lines: lines(root),
             picked: None,
+            wanted: None,
             picture: Picture::Faults(Vec::new()),
             node: None,
             scroll: 0.0,
@@ -241,6 +261,37 @@ impl Gallery {
         Some(if first.is_some() { index + 1 } else { index })
     }
 
+    /// The tree read again from the files as they now stand, and the state
+    /// shown drawn again from them, scrolled as it was. Where that state
+    /// went, its description's first state is shown; where its description
+    /// went too, the first description's.
+    fn reload(&mut self) {
+        let (wanted, scroll) = (self.wanted.take(), self.scroll);
+        self.lines = lines(&self.root);
+        self.picked = None;
+        self.picture = Picture::Faults(Vec::new());
+        let named = |line: &Line, wanted: &Picked| {
+            line.row.description.as_ref() == Some(&wanted.description)
+                && line.state.as_ref().map(|state| state.name()) == wanted.state.as_deref()
+        };
+        let again = wanted.as_ref().and_then(|wanted| self.lines.iter().position(|line| named(line, wanted)));
+        let description = wanted.as_ref().and_then(|wanted| {
+            self.lines.iter().position(|line| {
+                line.state.is_none() && line.row.description.as_ref() == Some(&wanted.description)
+            })
+        });
+        let first = self.lines.iter().position(|line| line.row.description.is_some());
+        if let Some(index) = again.or(description).or(first) {
+            self.pick(index);
+        }
+        if again.is_some() {
+            self.scroll = scroll;
+        } else if description.is_some() {
+            self.wanted = wanted;
+        }
+        self.clamp();
+    }
+
     /// What picking line `index` shows drawn at each of `WIDTHS`.
     fn pick(&mut self, index: usize) {
         let Some(index) = self.shows(index) else {
@@ -252,6 +303,8 @@ impl Gallery {
         };
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
+        let name = state.as_ref().map(|state| state.name().to_string());
+        self.wanted = Some(Picked { description: dir.clone(), state: name });
         self.scroll = 0.0;
         if !faults.is_empty() {
             self.picture = Picture::Faults(faults);
@@ -607,7 +660,7 @@ fn words(rect: Rect, text: String, ink: Ink, weight: u16) -> Draw {
     }
 }
 
-impl ApplicationHandler<ComeForward> for Gallery {
+impl ApplicationHandler<Told> for Gallery {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.shown.is_some() {
             return;
@@ -627,8 +680,10 @@ impl ApplicationHandler<ComeForward> for Gallery {
                 let size = shown.window.inner_size().to_logical::<f64>(shown.window.scale_factor());
                 self.size = (size.width, size.height);
                 if let Some(proxy) = self.proxy.clone() {
+                    let forward = proxy.clone();
                     self.answering =
-                        Answering::start(&self.root, move || proxy.send_event(ComeForward).is_ok());
+                        Answering::start(&self.root, move || forward.send_event(Told::ComeForward).is_ok());
+                    gallery::watch(&self.root, move || proxy.send_event(Told::Changed).is_ok());
                 }
                 report(&json!({ "opened": true }));
                 self.reported = true;
@@ -647,11 +702,22 @@ impl ApplicationHandler<ComeForward> for Gallery {
         }
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, _: ComeForward) {
-        if let Some(shown) = &self.shown {
-            shown.window.set_minimized(false);
-            shown.window.set_visible(true);
-            shown.window.focus_window();
+    fn user_event(&mut self, _: &ActiveEventLoop, told: Told) {
+        match told {
+            Told::ComeForward => {
+                if let Some(shown) = &self.shown {
+                    shown.window.set_minimized(false);
+                    shown.window.set_visible(true);
+                    shown.window.focus_window();
+                }
+            }
+            // Drawn again in place: the window is not brought forward.
+            Told::Changed => {
+                self.reload();
+                if let Some(shown) = &self.shown {
+                    shown.window.request_redraw();
+                }
+            }
         }
     }
 
@@ -718,10 +784,17 @@ mod tests {
         gallery.lines.iter().position(|line| line.row.name == name && line.state.is_none()).unwrap()
     }
 
+    /// The line of the state named `name`.
+    fn state_of(gallery: &Gallery, name: &str) -> usize {
+        gallery.lines.iter().position(|line| line.row.name == name && line.state.is_some()).unwrap()
+    }
+
     /// The names of the pictures drawn, each with its width.
     fn captions(gallery: &Gallery) -> Vec<&str> {
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
-        pages.iter().map(|page| page.caption.as_str()).collect()
+        match &gallery.picture {
+            Picture::Pages(pages) => pages.iter().map(|page| page.caption.as_str()).collect(),
+            Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+        }
     }
 
     #[test]
@@ -921,6 +994,166 @@ mod tests {
                 "{texts:?}"
             );
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A root of its own named `name`, holding a copy of the todo draft
+    /// at `todo/`.
+    fn todo_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("todo")).unwrap();
+        for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+            std::fs::copy(Path::new(DRAFTS).join("todo").join(file), root.join("todo").join(file)).unwrap();
+        }
+        root
+    }
+
+    /// The todo description under `root`, as JSON.
+    fn todo_screen(root: &Path) -> Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join("todo").join(crate::SCREEN)).unwrap())
+            .unwrap()
+    }
+
+    fn write_todo_screen(root: &Path, screen: &Value) {
+        std::fs::write(root.join("todo").join(crate::SCREEN), screen.to_string()).unwrap();
+    }
+
+    /// How tall each picture is.
+    fn heights(gallery: &Gallery) -> Vec<f64> {
+        match &gallery.picture {
+            Picture::Pages(pages) => pages.iter().map(|page| page.height).collect(),
+            Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+        }
+    }
+
+    #[test]
+    fn an_edited_description_is_drawn_again_in_the_state_shown() {
+        let root = todo_root("edited");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 120.0);
+        let typing = state_of(&gallery, "typing");
+        gallery.pick(typing);
+        let before = heights(&gallery);
+        gallery.cursor = (TREE + 100.0, 100.0);
+        gallery.wheel(40.0);
+        assert_eq!(gallery.scroll, 40.0);
+
+        let mut screen = todo_screen(&root);
+        let todos = screen["fixtures"]["default"]["todos"].as_array_mut().unwrap();
+        for id in 4..12 {
+            todos.push(json!({ "id": id.to_string(), "title": format!("第 {id} 项") }));
+        }
+        // A state added above the one shown.
+        let fixtures = screen["fixtures"].as_object_mut().unwrap();
+        let empty = fixtures["empty"].clone();
+        fixtures.shift_insert(0, "first".to_string(), empty);
+        write_todo_screen(&root, &screen);
+        gallery.reload();
+
+        let typing = state_of(&gallery, "typing");
+        assert_eq!(gallery.picked, Some(typing), "the same state, though a state was added above it");
+        assert_eq!(gallery.lines[typing - 2].row.name, "first", "the tree lists the new state");
+        assert_eq!(captions(&gallery), ["typing · 390", "typing · 1120"]);
+        let after = heights(&gallery);
+        assert!(
+            after[0] > before[0] && after[1] > before[1],
+            "drawn again with more todos: {before:?} {after:?}"
+        );
+        assert_eq!(gallery.scroll, 40.0, "scrolled as it was");
+
+        let mut screen = todo_screen(&root);
+        let fixtures = screen["fixtures"].as_object_mut().unwrap();
+        let typing = fixtures.shift_remove("typing").unwrap();
+        fixtures.insert("typed".to_string(), typing);
+        write_todo_screen(&root, &screen);
+        gallery.reload();
+        let todo = line_of(&gallery, "todo");
+        assert_eq!(gallery.picked, Some(todo + 1), "a state gone: its description's first state");
+        assert_eq!(captions(&gallery), ["first · 390", "first · 1120"]);
+        assert_eq!(gallery.scroll, 0.0, "another state, from its top");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_added_or_removed_comes_into_the_tree_or_leaves_it() {
+        let root = todo_root("added");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let typing = state_of(&gallery, "typing");
+        gallery.pick(typing);
+
+        let added = root.join("a-flow").join("sign-in");
+        std::fs::create_dir_all(&added).unwrap();
+        for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+            std::fs::copy(root.join("todo").join(file), added.join(file)).unwrap();
+        }
+        gallery.reload();
+        let names: Vec<&str> = gallery
+            .lines
+            .iter()
+            .filter(|line| line.state.is_none())
+            .map(|line| line.row.name.as_str())
+            .collect();
+        assert_eq!(names, ["a-flow", "sign-in", "todo"], "the new one, under its directory");
+        let typing = line_of(&gallery, "todo") + 2;
+        assert_eq!(gallery.lines[typing].row.name, "typing");
+        assert_eq!(gallery.picked, Some(typing), "still the state shown");
+        assert_eq!(
+            gallery.lines[gallery.picked.unwrap()].row.description.as_deref(),
+            Some(&*root.join("todo"))
+        );
+
+        std::fs::remove_dir_all(root.join("todo")).unwrap();
+        gallery.reload();
+        let names: Vec<&str> = gallery
+            .lines
+            .iter()
+            .filter(|line| line.state.is_none())
+            .map(|line| line.row.name.as_str())
+            .collect();
+        assert_eq!(names, ["a-flow", "sign-in"], "the removed one has left");
+        assert_eq!(gallery.picked, Some(2), "its description gone: the first description's first state");
+        assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
+
+        std::fs::remove_dir_all(root.join("a-flow")).unwrap();
+        gallery.reload();
+        assert!(gallery.lines.is_empty(), "nothing left to list");
+        assert_eq!(gallery.picked, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_that_gains_faults_shows_them_and_its_picture_once_fixed() {
+        let root = todo_root("gains");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let typing = state_of(&gallery, "typing");
+        gallery.pick(typing);
+        let fine = todo_screen(&root);
+
+        let mut broken = fine.clone();
+        broken["data"]["stray"] = json!("nonsense");
+        write_todo_screen(&root, &broken);
+        gallery.reload();
+        assert!(!gallery.lines[0].row.faults.is_empty(), "the tree marks it");
+        assert_eq!(gallery.picked, Some(typing), "the same state");
+        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
+
+        std::fs::write(root.join("todo").join(crate::KINDS), "{").unwrap();
+        gallery.reload();
+        let Picture::Faults(shown) = &gallery.picture else { panic!("kinds that are not JSON are a fault") };
+        assert!(shown.iter().any(|f| f.problem.contains("kinds.json")), "{shown:?}");
+
+        std::fs::copy(
+            Path::new(DRAFTS).join("todo").join(crate::KINDS),
+            root.join("todo").join(crate::KINDS),
+        )
+        .unwrap();
+        write_todo_screen(&root, &fine);
+        gallery.reload();
+        assert!(gallery.lines[0].row.faults.is_empty(), "fixed");
+        assert_eq!(captions(&gallery), ["typing · 390", "typing · 1120"], "drawn again");
         std::fs::remove_dir_all(root).unwrap();
     }
 
