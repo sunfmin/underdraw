@@ -4,7 +4,10 @@
 use serde_json::{Value, json};
 use underdraw_format::{Checked, Components, check};
 
-const DRAFT: &str = include_str!("../../../drafts/airbnb-listing/screen.json");
+/// A frozen copy of `drafts/airbnb-listing`, kept beside the tests so that
+/// designing in the live draft never moves a planted fault. The other crates'
+/// tests on the Airbnb draft read this copy too.
+const DRAFT: &str = include_str!("airbnb-listing/screen.json");
 
 fn draft() -> Value {
     serde_json::from_str(DRAFT).unwrap()

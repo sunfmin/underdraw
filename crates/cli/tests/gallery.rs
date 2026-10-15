@@ -33,7 +33,7 @@ fn opens_one_window_over_every_draft_and_answers_at_once() {
     assert_eq!(answer["faults"], serde_json::json!([]), "no draft has faults");
     let found: Vec<&str> =
         answer["descriptions"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
-    assert!(found.contains(&"airbnb-listing") && found.contains(&"todo"), "{found:?}");
+    assert!(found.contains(&"docs") && found.contains(&"todo"), "{found:?}");
     assert!(!found.iter().any(|d| d.contains("platforms") || d.contains("captures")), "{found:?}");
     close(&answer);
     std::fs::remove_dir_all(root).unwrap();
