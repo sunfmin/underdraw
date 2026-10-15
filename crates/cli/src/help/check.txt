@@ -103,6 +103,14 @@ EXIT
   notes, waiting or answered.
 
 WHAT TRIPS YOU UP
+  - Only a node a person acts on or answers about needs an "id" written:
+    one with "on", "bind" or "assumed", or an instance of a component
+    holding one. Leave it out of a text, a divider, a row of layout: it is
+    given one from the node it is in, its component and the first words
+    of what it shows ("page-text-total"), as NODES below says, and a
+    finding, the picture and a note name it so. Changing what it shows
+    renames it, and a note on it then joins its state's note: write an id
+    to keep a node's name through such edits.
   - "assumed" says what was guessed and what else it could be, in a
     sentence in the language you speak with the person: a word or two is
     refused (ASSUMED below).

@@ -21,7 +21,9 @@ _Avoid_: workspace, app
 
 **Node**:
 One element of the screen, with a stable **id** that becomes each platform's
-test id, and the **component** it is.
+test id, and the **component** it is. The id is written on a node a person
+acts on or answers about; any other may leave it out and is **given** one,
+from the node it is in, its component and what it shows.
 _Avoid_: element, view
 
 **Component**:
