@@ -155,7 +155,7 @@ fn gallery_help_says_what_the_inbox_lists_and_what_a_click_on_an_item_does() {
     for said in [
         "The inbox:",
         "waits on you · <how many>",
-        "assumption no note answers yet",
+        "assumption no message answers yet",
         "A directory's lists every",
         "root's line too",
         "waiting on the agent · 2",

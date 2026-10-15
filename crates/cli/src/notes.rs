@@ -10,9 +10,11 @@
 //! more: when `--wait` handed the person's message to the agent (it is
 //! taken), and whether the person has seen the agent's answer (until then
 //! it is unread). What the agent wants to ask unprompted is
-//! an assumption. An assumption is answered with a note on its node: ✓
-//! says the guess was right; ✗ says it was wrong, with what is right. A
-//! note whose node or arrow is gone joins its state's note ([`settle`]).
+//! an assumption. An assumption is answered with a message in its node's
+//! note, marked as answering it: ✓ says the guess was right; ✗ says it was
+//! wrong, with what is right. Proposing where acting on a node should go is
+//! a message there too, marked as the proposal ([`Mark`]). A note whose
+//! node or arrow is gone joins its state's note ([`settle`]).
 //! Each change is read from the file as it now stands and written back
 //! whole, so the window and the agent never undo each other's.
 
@@ -75,13 +77,28 @@ pub struct Said {
     /// when the agent says it until the gallery shows its conversation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unread: bool,
+    /// What the message is besides talk, for the agent to tell it from
+    /// plain talk: none for plain talk. Written as its key beside `says`.
+    #[serde(flatten, default, skip_serializing_if = "Option::is_none")]
+    pub mark: Option<Mark>,
 }
 
 impl Said {
-    /// `says`, said by `by`: not taken, not unread.
+    /// `says`, said by `by`: plain talk, not taken, not unread.
     pub fn new(by: By, says: impl Into<String>) -> Said {
-        Said { by, says: says.into(), taken: None, unread: false }
+        Said { by, says: says.into(), taken: None, unread: false, mark: None }
     }
+}
+
+/// What a message of the person's is besides talk: written as one key,
+/// `"answers"` or `"proposes"`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mark {
+    /// It answers the assumption on the note's node, ✓ or ✗.
+    Answers(Answers),
+    /// It proposes where acting on the note's node should go.
+    Proposes(Proposal),
 }
 
 /// The time now, in seconds since 1970, as a message is marked taken.
@@ -105,19 +122,10 @@ pub struct Note {
     /// What the person and the agent said, in the order said; the
     /// person's first.
     pub messages: Vec<Said>,
-    /// Where acting on the node should go, when the person proposed it
-    /// where nothing was declared: from `state`, on an event, to a state
-    /// or another screen. The agent declares it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proposes: Option<Proposal>,
-    /// The assumption on its node it answers, and how: none for a note
-    /// that answers none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub answers: Option<Answers>,
 }
 
-/// What a note answering an assumption says of it: the guess as the panel
-/// showed it, what made it, and the person's answer. Written as one
+/// What a message answering an assumption says of it: the guess as the
+/// sidebar showed it, what made it, and the person's answer. Written as one
 /// object: `{"assumed", "guess", "answer"}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Answers {
@@ -197,8 +205,8 @@ pub enum Goes {
 }
 
 impl Proposal {
-    /// The proposal as the person says it, from state `from`: the line a
-    /// note holding it starts its thread with.
+    /// The proposal as the person says it, from state `from`: what the
+    /// message holding it says.
     pub fn says(&self, from: &str) -> String {
         match &self.goes {
             Goes::To(to) => format!("{} in {from} should go to {to}: declare the transition", self.on),
@@ -242,24 +250,30 @@ impl Note {
         self.messages.iter().rev().find(|said| said.by == By::Agent).map(|said| said.says.as_str())
     }
 
+    /// The answers to the assumption on its node its messages hold, in
+    /// the order said.
+    pub fn answers(&self) -> impl Iterator<Item = &Answers> {
+        self.messages.iter().filter_map(|said| match &said.mark {
+            Some(Mark::Answers(answers)) => Some(answers),
+            _ => None,
+        })
+    }
+
     /// The note as the `notes` command answers it: with the description it
-    /// is in, where it stands, and its reference as one line.
+    /// is in, where it stands, and its reference as one line; each message
+    /// with its mark.
     pub fn answer(&self, root: &Path, dir: &Path) -> Value {
         let mut answer = json!({
             "description": crate::gallery::within(root, dir),
             "id": self.id,
             "stands": self.stands(),
             "messages": self.messages,
-            "proposes": self.proposes,
             "reference": self.reference(dir).line(),
         });
         if let (Some(answer), Ok(Value::Object(on))) =
             (answer.as_object_mut(), serde_json::to_value(&self.on))
         {
             answer.extend(on);
-        }
-        if let Some(answers) = &self.answers {
-            answer["answers"] = json!(answers);
         }
         answer
     }
@@ -321,13 +335,32 @@ pub fn read(dir: &Path) -> anyhow::Result<Vec<Note>> {
     if let Some(old) = old_form(dir) {
         bail!("{old}");
     }
-    let read: File = serde_json::from_str(&text).with_context(|| {
+    let not_notes = || {
         format!(
             "{} is not notes as the gallery writes them: undo the hand edit (`git diff` it) at the line and column named here",
             file.display()
         )
-    })?;
+    };
+    let mut written: Value = serde_json::from_str(&text).with_context(not_notes)?;
+    marks_onto_messages(&mut written);
+    let read: File = serde_json::from_value(written).with_context(not_notes)?;
     Ok(read.notes)
+}
+
+/// The notes in `file`, as written, with a note's own `answers` or
+/// `proposes`, as the gallery wrote them before they became marks of a
+/// message, moved onto its first message: such a note was started by the
+/// answer or the proposal, and held it alone.
+fn marks_onto_messages(file: &mut Value) {
+    let notes = file.get_mut("notes").and_then(Value::as_array_mut).into_iter().flatten();
+    for note in notes.filter_map(Value::as_object_mut) {
+        for key in ["answers", "proposes"] {
+            let Some(mark) = note.remove(key).filter(|mark| !mark.is_null()) else { continue };
+            if let Some(first) = note.get_mut("messages").and_then(|messages| messages.get_mut(0)) {
+                first[key] = mark;
+            }
+        }
+    }
 }
 
 /// `notes` written whole as the notes of the description in `dir`: to a
@@ -354,31 +387,19 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
 }
 
 /// What the person said, `says`, added to the note on what `on`
-/// references: the last of its description's notes on the same thing
-/// ([`On::same`]), where the conversation goes on; or a note started on
-/// it, numbered after the last, when there is none. The note's id.
+/// references ([`added`]). The note's id.
 pub fn say(on: &Reference, says: &str) -> anyhow::Result<String> {
-    let says = said(says)?;
-    let found = change(&on.description, |notes| {
-        let note = notes.iter_mut().rev().find(|note| note.on.same(&on.on));
-        Ok(note.map(|note| {
-            note.messages.push(Said::new(By::Person, says.clone()));
-            note.id.clone()
-        }))
-    })?;
-    match found {
-        Some(id) => Ok(id),
-        None => added(on, says, None, None),
-    }
+    added(on, Said::new(By::Person, said(says)?))
 }
 
-/// What a ✓ note says when the person writes nothing more.
+/// What a ✓ says when the person writes nothing more.
 pub const RIGHT: &str = "✓ right, keep it: take the guess out of the description";
 
-/// A note answering the assumption on the node `on` references, as
-/// `answers` says, added to its description's notes, numbered after the last:
-/// ✓ says `says`, or [`RIGHT`] when that is empty; ✗ must say what is
-/// right, and is refused without it. Its id.
+/// The person's answer to the assumption on the node `on` references, as
+/// `answers` says, added to the node's note as a message marked as
+/// answering it ([`added`]): ✓ says `says`, or [`RIGHT`] when that is
+/// empty; ✗ must say what is right, and is refused without it. The note's
+/// id.
 pub fn judge(on: &Reference, answers: Answers, says: &str) -> anyhow::Result<String> {
     if !matches!(on.on, On::Node { .. }) {
         bail!("an assumption is on a node: pick the node with the orange \"?\" first");
@@ -388,38 +409,33 @@ pub fn judge(on: &Reference, answers: Answers, says: &str) -> anyhow::Result<Str
         (Answer::Wrong, "") => bail!("✗ says what is right, for the agent to change: write it first"),
         (_, says) => says.to_string(),
     };
-    added(on, says, None, Some(answers))
+    added(on, Said { mark: Some(Mark::Answers(answers)), ..Said::new(By::Person, says) })
 }
 
-/// A note proposing where acting on the node `on` references should go,
-/// `proposal`, added to its description's notes, numbered after the last, its
-/// first message saying the proposal. Its id.
+/// The person's proposal of where acting on the node `on` references
+/// should go, `proposal`, added to the node's note as a message saying it,
+/// marked as the proposal ([`added`]). The note's id.
 pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
     let On::Node { state, .. } = &on.on else {
         bail!("a proposal is on a node, where acting on it should go: pick one first");
     };
-    added(on, proposal.says(state.name()), Some(proposal), None)
+    let says = proposal.says(state.name());
+    added(on, Said { mark: Some(Mark::Proposes(proposal)), ..Said::new(By::Person, says) })
 }
 
-/// A note the person started saying `says`, and proposing `proposes`, on
-/// what `on` references, added to its description's notes, numbered after
-/// the last. Its id.
-fn added(
-    on: &Reference,
-    says: String,
-    proposes: Option<Proposal>,
-    answers: Option<Answers>,
-) -> anyhow::Result<String> {
+/// `said` added to the note on what `on` references: the last of its
+/// description's notes on the same thing ([`On::same`]), where the
+/// conversation goes on; or a note started on it, numbered after the last,
+/// when there is none. The note's id.
+fn added(on: &Reference, said: Said) -> anyhow::Result<String> {
     change(&on.description, |notes| {
+        if let Some(note) = notes.iter_mut().rev().find(|note| note.on.same(&on.on)) {
+            note.messages.push(said);
+            return Ok(note.id.clone());
+        }
         let last = notes.iter().filter_map(|note| note.id.strip_prefix('N')?.parse::<u32>().ok()).max();
         let id = format!("N{}", last.unwrap_or(0) + 1);
-        notes.push(Note {
-            id: id.clone(),
-            on: on.on.clone(),
-            messages: vec![Said::new(By::Person, says)],
-            proposes,
-            answers,
-        });
+        notes.push(Note { id: id.clone(), on: on.on.clone(), messages: vec![said] });
         Ok(id)
     })
 }
@@ -694,8 +710,6 @@ fn join(notes: &mut Vec<Note>, screen: &Value, states: &[Shown]) -> bool {
                 let note = &mut notes[i];
                 note.on = whole;
                 note.messages.insert(0, line);
-                note.proposes = None;
-                note.answers = None;
             }
         }
     }
@@ -877,32 +891,67 @@ mod tests {
     }
 
     #[test]
-    fn an_assumption_is_answered_right_or_wrong_and_listed_with_how() {
+    fn an_assumption_is_answered_with_marked_messages_in_its_nodes_note() {
         let dir = dir("judged");
         let answers =
             |answer| Answers { assumed: "Card fields; or hosted".into(), guess: Guess::Author, answer };
-        assert_eq!(judge(&on(&dir), answers(Answer::Right), " ").unwrap(), "N1");
-        let error = judge(&on(&dir), answers(Answer::Wrong), "").unwrap_err().to_string();
+        say(&on(&dir), "the card form").unwrap();
+        assert_eq!(judge(&on(&dir), answers(Answer::Right), " ").unwrap(), "N1", "in the node's note");
+        let error = judge(&on(&dir), answers(Answer::Wrong), "  ").unwrap_err().to_string();
         assert!(error.contains("✗ says what is right"), "{error}");
-        assert_eq!(judge(&on(&dir), answers(Answer::Wrong), "hosted fields").unwrap(), "N2");
+        assert_eq!(read(&dir).unwrap()[0].messages.len(), 2, "a ✗ without text is not sent");
+        assert_eq!(judge(&on(&dir), answers(Answer::Wrong), " hosted fields ").unwrap(), "N1");
         let state =
             Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
         assert!(judge(&state, answers(Answer::Right), "").is_err(), "an assumption is on a node");
 
-        let notes = read(&dir).unwrap();
-        assert_eq!(notes[0].messages, [Said::new(By::Person, RIGHT)], "✓ needs no line");
-        assert_eq!(notes[1].messages[0].says, "hosted fields");
-        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        let note = read(&dir).unwrap().remove(0);
+        assert_eq!(note.messages[0], Said::new(By::Person, "the card form"), "plain talk is unmarked");
         assert_eq!(
-            file["notes"][1]["answers"],
-            json!({ "assumed": "Card fields; or hosted", "guess": "author", "answer": "wrong" })
+            note.messages[1],
+            Said { mark: Some(Mark::Answers(answers(Answer::Right))), ..Said::new(By::Person, RIGHT) },
+            "✓ needs no line"
         );
-        assert_eq!(notes[0].answer(&dir, &dir)["answers"]["answer"], "right", "`notes` lists how it answers");
-        assert_eq!(notes[1].answers.as_ref().unwrap().answer, Answer::Wrong);
+        assert_eq!(note.messages[2].says, "hosted fields");
+        let how: Vec<Answer> = note.answers().map(|answers| answers.answer).collect();
+        assert_eq!(how, [Answer::Right, Answer::Wrong]);
+        assert_eq!(note.stands(), Stands::Waiting);
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"].as_array().unwrap().len(), 1, "no note of its own");
+        assert_eq!(
+            file["notes"][0]["messages"][2],
+            json!({ "by": "person", "says": "hosted fields", "answers": { "assumed": "Card fields; or hosted", "guess": "author", "answer": "wrong" } })
+        );
+        let listed = note.answer(&dir, &dir);
+        assert_eq!(listed["messages"][1]["answers"]["answer"], "right", "`notes` lists how it answers");
+        assert_eq!(listed["messages"][0].get("answers"), None);
         let others = [Guess::Undrawn(vec!["OrderDetail".into()]), Guess::Component("Gauge".into())];
         assert_eq!(
             others.map(|guess| serde_json::to_value(guess).unwrap()),
             [json!({ "undrawn": ["OrderDetail"] }), json!({ "component": "Gauge" })]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_note_written_with_its_own_answer_or_proposal_has_it_on_its_first_message() {
+        let dir = dir("marks-moved");
+        let node = json!({ "id": "card", "at": "/root", "instance": [], "label": null, "width": 390 });
+        let written = json!({ "notes": [
+            { "id": "N1", "state": { "fixture": "default" }, "node": node,
+              "messages": [{ "by": "person", "says": "hosted" }, { "by": "agent", "says": "done" }],
+              "answers": { "assumed": "a; or b", "guess": "author", "answer": "wrong" } },
+            { "id": "N2", "state": { "fixture": "default" }, "node": node,
+              "messages": [{ "by": "person", "says": "go" }],
+              "proposes": { "on": "card.tap", "to": "empty" }, "answers": null },
+        ] });
+        std::fs::write(dir.join(NOTES), written.to_string()).unwrap();
+        let notes = read(&dir).unwrap();
+        assert_eq!(notes[0].answers().next().map(|answers| answers.answer), Some(Answer::Wrong));
+        assert_eq!(notes[0].messages[1].mark, None, "the agent's answer stays plain");
+        assert_eq!(
+            notes[1].messages[0].mark,
+            Some(Mark::Proposes(Proposal { on: "card.tap".into(), goes: Goes::To("empty".into()) }))
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -951,20 +1000,26 @@ mod tests {
         );
         let proposal =
             Proposal { on: "order-{index}.tap".into(), goes: Goes::Navigate("OrderDetail".into()) };
-        assert_eq!(propose(&on(&dir), proposal.clone()).unwrap(), "N2");
+        assert_eq!(propose(&on(&dir), proposal.clone()).unwrap(), "N1", "a message in the node's note");
         let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
-        assert_eq!(file["notes"][0].get("proposes"), None, "a plain note proposes nothing");
         assert_eq!(
-            file["notes"][1]["proposes"],
-            json!({ "on": "order-{index}.tap", "navigate": "OrderDetail" })
-        );
-        assert_eq!(
-            file["notes"][1]["messages"],
-            json!([{ "by": "person", "says": "order-{index}.tap in default should navigate to OrderDetail" }])
+            file["notes"][0]["messages"],
+            json!([
+                { "by": "person", "says": "the price" },
+                {
+                    "by": "person",
+                    "says": "order-{index}.tap in default should navigate to OrderDetail",
+                    "proposes": { "on": "order-{index}.tap", "navigate": "OrderDetail" },
+                },
+            ])
         );
         let to = Proposal { on: "cd-keep.tap".into(), goes: Goes::To("default".into()) };
         assert_eq!(serde_json::to_value(&to).unwrap(), json!({ "on": "cd-keep.tap", "to": "default" }));
-        assert_eq!(read(&dir).unwrap()[1].proposes, Some(proposal), "read back as written");
+        assert_eq!(
+            read(&dir).unwrap()[0].messages[1].mark,
+            Some(Mark::Proposes(proposal)),
+            "read back as written"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1101,13 +1156,7 @@ mod tests {
         let person = |says: &str| Said::new(By::Person, says);
         let agent = |says: &str| Said::new(By::Agent, says);
         let line = |says: &str| Said::new(By::Underdraw, says);
-        let note = |id: &str, on: On, messages: Vec<Said>| Note {
-            id: id.into(),
-            on,
-            messages,
-            proposes: None,
-            answers: None,
-        };
+        let note = |id: &str, on: On, messages: Vec<Said>| Note { id: id.into(), on, messages };
         let kept = vec![
             note("N1", node("default", "price"), vec![person("there")]),
             note("N2", transition("empty"), vec![person("there")]),
@@ -1120,13 +1169,11 @@ mod tests {
         assert!(join(&mut alone, &screen, &states), "one gone alone is pinned to its state");
         assert_eq!(alone[0].on, whole(Shown::Fixture("empty".into())));
 
-        let proposal = Proposal { on: "price.tap".into(), goes: Goes::To("empty".into()) };
+        let proposal = Proposal { on: "total.tap".into(), goes: Goes::To("empty".into()) };
+        let proposed = Said { mark: Some(Mark::Proposes(proposal)), ..person("cut") };
         let mut notes = vec![
             note("N1", whole(Shown::Fixture("default".into())), vec![person("too dense")]),
-            Note {
-                proposes: Some(proposal),
-                ..note("N2", node("empty", "total"), vec![person("cut"), agent("wrapped it")])
-            },
+            note("N2", node("empty", "total"), vec![proposed.clone(), agent("wrapped it")]),
             note("N3", node("default", "total"), vec![person("bold")]),
             note("N4", node("removed", "price"), vec![person("red")]),
             note("N5", whole(Shown::Phase("loading".into())), vec![person("slow")]),
@@ -1140,9 +1187,9 @@ mod tests {
             note(
                 "N2",
                 whole(Shown::Fixture("empty".into())),
-                vec![line("on `total`, now gone"), person("cut"), agent("wrapped it")]
+                vec![line("on `total`, now gone"), proposed, agent("wrapped it")]
             ),
-            "a state with no note gets the gone one, keeping its id, proposing nothing"
+            "a state with no note gets the gone one, keeping its id and what each message is"
         );
         assert_eq!(notes[1].stands(), Stands::Read, "read past underdraw's line");
         assert_eq!(notes.len(), 3, "the rest joined default's: {notes:#?}");
