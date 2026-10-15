@@ -1,8 +1,7 @@
 {
-  "doc": "A line of the tree: indented by its depth, a directory or description in bold, a phase in gray.",
+  "doc": "A line of the tree, a directory or description in bold, a phase in gray: the tree it is a row of moves it in by its level.",
   "params": [
     "name",
-    "depth",
     "heading",
     "phase",
     "meta",
@@ -13,43 +12,10 @@
     "gap": 6,
     "items": "center",
     "height": 26,
-    "padding": {
-      "cases": [
-        {
-          "if": "depth == 0",
-          "then": [
-            0,
-            12
-          ]
-        },
-        {
-          "if": "depth == 1",
-          "then": [
-            0,
-            12,
-            0,
-            24
-          ]
-        },
-        {
-          "if": "depth == 2",
-          "then": [
-            0,
-            12,
-            0,
-            36
-          ]
-        },
-        {
-          "else": [
-            0,
-            12,
-            0,
-            48
-          ]
-        }
-      ]
-    },
+    "padding": [
+      0,
+      12
+    ],
     "children": [
       {
         "text": "{name}",
@@ -100,7 +66,6 @@
   "fixtures": {
     "directory": {
       "name": "shop/",
-      "depth": 1,
       "heading": true,
       "phase": false,
       "meta": "",
@@ -108,7 +73,6 @@
     },
     "description": {
       "name": "order",
-      "depth": 2,
       "heading": true,
       "phase": false,
       "meta": "3 states",
@@ -116,7 +80,6 @@
     },
     "phase": {
       "name": "loading",
-      "depth": 3,
       "heading": false,
       "phase": true,
       "meta": "",

@@ -29,6 +29,10 @@ const MOST_REPEATED: u64 = 1000;
 /// How far in from its node's edges an overlay that is not flush stands.
 const OVERLAY_INSET: f32 = 16.0;
 
+/// How far in each level of a tree (`"nest"`) is drawn when its node gives
+/// no `"indent"`.
+const INDENT: f32 = 16.0;
+
 /// What a look reads: the props of the component it draws, the names a `repeat`
 /// binds (`n` from 1, `index` from 0, `item`), and the node whose children
 /// `"$children"` stands for.
@@ -440,7 +444,7 @@ impl Catalog<'_> {
                 "trailing" => trailing.push(self.node(child)),
                 "foot" => foot.push(self.node(child)),
                 "overlay" => {}
-                _ => built.push(self.node(child)),
+                _ => built.push(self.indented(self.node(child), child.level, node)),
             }
         }
         if !trailing.is_empty() || !foot.is_empty() {
@@ -465,6 +469,17 @@ impl Catalog<'_> {
             }
         }
         built
+    }
+
+    /// `elem`, a row of the tree `node` repeats, moved in `level` times
+    /// the step its `"indent"` gives, whatever the row is drawn as.
+    fn indented<'a>(&self, mut elem: Elem<'a>, level: usize, node: &Node) -> Elem<'a> {
+        if level > 0 {
+            let step = self.tokens.length(node.props.get("indent"), INDENT);
+            let own = elem.style.margin.left.resolve_to_option(0.0, |_, _| 0.0).unwrap_or(0.0);
+            elem.style.margin.left = length(own + step * level as f32);
+        }
+        elem
     }
 
     /// A dashed box that names `component`, holding `node`'s children, for a component

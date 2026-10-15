@@ -51,12 +51,24 @@
     },
     "TreeRow": {
       "name": "string 1..",
-      "depth": "int 0..4",
       "kind": "RowKind",
       "meta": "string = \"\"",
-      "picked": "bool = false"
+      "picked": "bool = false",
+      "folded": {
+        "type": "bool = false",
+        "view": true,
+        "doc": "Its lines folded away, so not drawn; the tree still lists them"
+      },
+      "entry": {
+        "type": "TreeJourney?",
+        "doc": "The journey a journey's line is"
+      },
+      "children": {
+        "type": "TreeRow[]",
+        "doc": "The lines a level in: what the directory, description or journeys/ holds"
+      }
     },
-    "RowKind": "enum(directory, description, state, phase)",
+    "RowKind": "enum(directory, description, state, phase, journeys, journey)",
     "Note": {
       "id": "string 1..",
       "stands": "NoteStands",
@@ -119,7 +131,15 @@
       }
     },
     "Mode": "enum(inspect, play)",
-    "Agent": "enum(listening, away)"
+    "Agent": "enum(listening, away)",
+    "TreeJourney": {
+      "journey": "Journey",
+      "played": "bool = false",
+      "drawn": {
+        "type": "bool = false",
+        "doc": "Its path drawn on the flow"
+      }
+    }
   },
   "conditions": {
     "Journey.broken": {
@@ -135,8 +155,8 @@
       "label": "Said by the person"
     },
     "TreeRow.heading": {
-      "when": "kind == \"directory\" || kind == \"description\"",
-      "label": "A directory or a description"
+      "when": "kind == \"directory\" || kind == \"description\" || kind == \"journeys\"",
+      "label": "A directory, a description or journeys/"
     },
     "TreeRow.phase": {
       "when": "kind == \"phase\"",
@@ -173,6 +193,10 @@
     "Bar.sidebarShown": {
       "when": "sidebar == true",
       "label": "The sidebar shown"
+    },
+    "TreeRow.journeyLine": {
+      "when": "entry != null",
+      "label": "A journey's line"
     }
   }
 }

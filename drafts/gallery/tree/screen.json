@@ -39,87 +39,159 @@
       "lines": [
         {
           "name": "root/",
-          "depth": 0,
           "kind": "directory",
           "meta": "",
-          "picked": false
-        },
-        {
-          "name": "shop/",
-          "depth": 1,
-          "kind": "directory",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "components/",
-          "depth": 2,
-          "kind": "directory",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "OrderRow",
-          "depth": 3,
-          "kind": "description",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "OrderStatus",
-          "depth": 3,
-          "kind": "description",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "order",
-          "depth": 2,
-          "kind": "description",
-          "meta": "3 states",
-          "picked": false
-        },
-        {
-          "name": "open",
-          "depth": 3,
-          "kind": "state",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "shipped",
-          "depth": 3,
-          "kind": "state",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "cancelled",
-          "depth": 3,
-          "kind": "state",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "orders",
-          "depth": 2,
-          "kind": "description",
-          "meta": "2 states",
-          "picked": false
-        },
-        {
-          "name": "default",
-          "depth": 3,
-          "kind": "state",
-          "meta": "",
-          "picked": false
-        },
-        {
-          "name": "loading",
-          "depth": 3,
-          "kind": "phase",
-          "meta": "",
-          "picked": false
+          "picked": false,
+          "children": [
+            {
+              "name": "shop/",
+              "kind": "directory",
+              "meta": "",
+              "picked": false,
+              "children": [
+                {
+                  "name": "components/",
+                  "kind": "directory",
+                  "meta": "",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "OrderRow",
+                      "kind": "description",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "OrderStatus",
+                      "kind": "description",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "order",
+                  "kind": "description",
+                  "meta": "3 states",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "open",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "shipped",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "cancelled",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "orders",
+                  "kind": "description",
+                  "meta": "2 states",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "default",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "loading",
+                      "kind": "phase",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "journeys/",
+                  "kind": "journeys",
+                  "meta": "paths through shop",
+                  "children": [
+                    {
+                      "name": "cancel-an-order",
+                      "kind": "journey",
+                      "entry": {
+                        "journey": {
+                          "name": "cancel-an-order",
+                          "about": "The person opens an order from the list and cancels it before it ships.",
+                          "steps": 3,
+                          "route": "orders › order",
+                          "brokenAt": null,
+                          "stops": [
+                            {
+                              "number": 1,
+                              "screen": "orders",
+                              "state": "default"
+                            },
+                            {
+                              "number": 2,
+                              "screen": "order",
+                              "state": "open"
+                            },
+                            {
+                              "number": 3,
+                              "screen": "order",
+                              "state": "cancelled",
+                              "last": true
+                            }
+                          ]
+                        }
+                      },
+                      "children": []
+                    },
+                    {
+                      "name": "refund-a-cancelled-order",
+                      "kind": "journey",
+                      "entry": {
+                        "journey": {
+                          "name": "refund-a-cancelled-order",
+                          "about": "",
+                          "steps": 2,
+                          "route": "order",
+                          "brokenAt": 2,
+                          "stops": [
+                            {
+                              "number": 1,
+                              "screen": "order",
+                              "state": "cancelled"
+                            },
+                            {
+                              "number": 2,
+                              "screen": "order",
+                              "state": "refunded",
+                              "last": true,
+                              "broken": true
+                            }
+                          ]
+                        }
+                      },
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       ],
       "journeys": [
@@ -172,6 +244,168 @@
       ],
       "journeyCount": 2
     },
+    "components-folded": {
+      "$patch": "default",
+      "lines": [
+        {
+          "name": "root/",
+          "kind": "directory",
+          "meta": "",
+          "picked": false,
+          "children": [
+            {
+              "name": "shop/",
+              "kind": "directory",
+              "meta": "",
+              "picked": false,
+              "children": [
+                {
+                  "name": "components/",
+                  "kind": "directory",
+                  "meta": "",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "OrderRow",
+                      "kind": "description",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "OrderStatus",
+                      "kind": "description",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ],
+                  "folded": true
+                },
+                {
+                  "name": "order",
+                  "kind": "description",
+                  "meta": "3 states",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "open",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "shipped",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "cancelled",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "orders",
+                  "kind": "description",
+                  "meta": "2 states",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "default",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "loading",
+                      "kind": "phase",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "journeys/",
+                  "kind": "journeys",
+                  "meta": "paths through shop",
+                  "children": [
+                    {
+                      "name": "cancel-an-order",
+                      "kind": "journey",
+                      "entry": {
+                        "journey": {
+                          "name": "cancel-an-order",
+                          "about": "The person opens an order from the list and cancels it before it ships.",
+                          "steps": 3,
+                          "route": "orders › order",
+                          "brokenAt": null,
+                          "stops": [
+                            {
+                              "number": 1,
+                              "screen": "orders",
+                              "state": "default"
+                            },
+                            {
+                              "number": 2,
+                              "screen": "order",
+                              "state": "open"
+                            },
+                            {
+                              "number": 3,
+                              "screen": "order",
+                              "state": "cancelled",
+                              "last": true
+                            }
+                          ]
+                        }
+                      },
+                      "children": []
+                    },
+                    {
+                      "name": "refund-a-cancelled-order",
+                      "kind": "journey",
+                      "entry": {
+                        "journey": {
+                          "name": "refund-a-cancelled-order",
+                          "about": "",
+                          "steps": 2,
+                          "route": "order",
+                          "brokenAt": 2,
+                          "stops": [
+                            {
+                              "number": 1,
+                              "screen": "order",
+                              "state": "cancelled"
+                            },
+                            {
+                              "number": 2,
+                              "screen": "order",
+                              "state": "refunded",
+                              "last": true,
+                              "broken": true
+                            }
+                          ]
+                        }
+                      },
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "no-journeys": {
       "$patch": "default",
       "journeys": [],
@@ -184,7 +418,98 @@
         "waitingOnYou": 0,
         "sidebar": false,
         "back": false
-      }
+      },
+      "lines": [
+        {
+          "name": "root/",
+          "kind": "directory",
+          "meta": "",
+          "picked": false,
+          "children": [
+            {
+              "name": "shop/",
+              "kind": "directory",
+              "meta": "",
+              "picked": false,
+              "children": [
+                {
+                  "name": "components/",
+                  "kind": "directory",
+                  "meta": "",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "OrderRow",
+                      "kind": "description",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "OrderStatus",
+                      "kind": "description",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "order",
+                  "kind": "description",
+                  "meta": "3 states",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "open",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "shipped",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "cancelled",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "orders",
+                  "kind": "description",
+                  "meta": "2 states",
+                  "picked": false,
+                  "children": [
+                    {
+                      "name": "default",
+                      "kind": "state",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    },
+                    {
+                      "name": "loading",
+                      "kind": "phase",
+                      "meta": "",
+                      "picked": false,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   },
   "root": {
@@ -219,40 +544,34 @@
                 "gap": 0,
                 "each": "lines",
                 "item": {
-                  "id": "line-{index}",
-                  "component": "TreeLine",
-                  "name": "{item.name}",
-                  "depth": "{item.depth}",
-                  "heading": "{item.heading}",
-                  "phase": "{item.phase}",
-                  "meta": "{item.meta}",
-                  "picked": "{item.picked}"
-                }
-              },
-              {
-                "id": "journeys-heading",
-                "component": "TreeLine",
-                "if": "hasJourneys",
-                "name": "journeys/",
-                "depth": 2,
-                "heading": true,
-                "phase": false,
-                "meta": "paths through shop",
-                "picked": false
-              },
-              {
-                "id": "journeys",
-                "component": "List",
-                "gap": 0,
-                "if": "hasJourneys",
-                "each": "journeys",
-                "item": {
-                  "id": "journey-{index}",
-                  "component": "JourneyEntry",
-                  "with": {
-                    "journey": "{item}"
-                  }
-                }
+                  "id": "row-{index}",
+                  "component": "Stack",
+                  "gap": 0,
+                  "children": [
+                    {
+                      "id": "line-{index}",
+                      "component": "TreeLine",
+                      "name": "{item.name}",
+                      "heading": "{item.heading}",
+                      "phase": "{item.phase}",
+                      "meta": "{item.meta}",
+                      "picked": "{item.picked}",
+                      "if": "!item.journeyLine"
+                    },
+                    {
+                      "id": "journey-{index}",
+                      "component": "JourneyEntry",
+                      "if": "item.journeyLine",
+                      "with": {
+                        "journey": "{item.entry.journey}",
+                        "picked": "{item.entry.played}"
+                      }
+                    }
+                  ]
+                },
+                "nest": "children",
+                "fold": "folded",
+                "indent": "space.3"
               }
             ],
             "border": "color.border"
