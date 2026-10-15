@@ -49,6 +49,7 @@ pub(super) const WORDS: Words = Words {
     could_not_copy: "无法复制（{e}）：{line}",
     hint_click: "点一个节点、状态或箭头，查看它并就它交谈。",
     hint_act: "按住 ⌘ 点节点，像原型一样操作它。",
+    hint_marks: "紫色标出操作会去哪里：↗ 别的屏幕，→ 别的状态。按住 ⌘ 全部点亮。",
     hint_keys: "⌘C 复制引用 · ⌘\\ 隐藏侧栏",
     whole_state: "{state} · 整个状态",
     whole_screen: "{screen} · 整个屏幕",

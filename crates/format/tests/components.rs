@@ -235,6 +235,40 @@ fn a_bool_param_takes_a_condition_of_the_screens() {
     assert!(find(&root, "row-0-name").is_some(), "hasItems holds where there is a row");
 }
 
+#[test]
+fn a_shared_component_shown_on_its_own_sets_the_param_it_is_passed() {
+    let strip = json!({
+        "params": { "at": "int 1.." },
+        "fixtures": { "first": { "at": 1 } },
+        "nodes": { "component": "Row", "children": [
+            { "id": "second", "component": "Button", "label": "2", "on": { "tap": { "set": "at", "to": 2 } } }
+        ] }
+    });
+    let shown = underdraw_format::showcase("RouteStrip", &strip);
+    let shared = json!({ "RouteStrip": strip });
+    let shared = Shared { domain: None, components: shared.as_object() };
+    let checked = underdraw_format::check(&Screen::read(&shown, shared));
+    assert!(checked.ok, "the showcase alone holds what it passes: {:#?}", checked.findings);
+
+    // A screen that passes it domain data is still refused: the set acts
+    // on what was passed.
+    let mut description =
+        screen(row(), json!({ "id": "strip", "component": "RouteStrip", "with": { "at": "{count}" } }));
+    description["data"]["count"] = json!("int 1..");
+    description["fixtures"]["none"]["count"] = json!(1);
+    description["components"]["RouteStrip"] = strip.clone();
+    description["components"]["RouteStrip"].as_object_mut().unwrap().remove("fixtures");
+    let checked = check(&description);
+    assert!(
+        checked
+            .findings
+            .iter()
+            .any(|f| f.problem.contains("set writes at, and at is given {count}, which is domain data")),
+        "{:#?}",
+        checked.findings
+    );
+}
+
 /// `description` read as a screen of its own, with nothing shared.
 fn read(description: &Value) -> Screen {
     Screen::read(description, Shared::default())

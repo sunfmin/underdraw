@@ -12,8 +12,10 @@ tree
 picture
   page default · 390
     picked address: 16, 106 · 358 × 66
+    ↗ nav-back, address
   page default · 1120
     picked address: 16, 106 · 675 × 66
+    ↗ nav-back, address
 sidebar
   假定，等你回答
     这里跳转到 AddressBook，但根目录下没有任何描述声明它，所以猜测 AddressBook 是还没画的屏幕

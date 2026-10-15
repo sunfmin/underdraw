@@ -11,7 +11,8 @@
 //! size) does [`drawn`] render the window's real frame headless on the GPU
 //! `render` uses, one pixel a point, and hold it to the golden
 //! `<name>.png`; those draw a fixture root of their own ([`fixture`]), not
-//! the drafts, so a draft changed never moves a pixel golden.
+//! the drafts, so a draft changed never moves a pixel golden; the
+//! journey's surfaces draw a frozen shop of their own ([`frozen_shop`]).
 //! `UNDERDRAW_GOLDENS=rewrite cargo nextest run -p underdraw frames`
 //! rewrites every golden from what is shown instead; look at each before
 //! committing it.
@@ -33,6 +34,10 @@ const PER_MILLION: usize = 20;
 /// The description the pixel goldens draw: a copy of the Airbnb listing
 /// frozen for the tests, which no draft changes.
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
+
+/// The shop the journey goldens draw: a copy of the shop draft frozen for
+/// the tests, its journey walkable, with a broken journey of its own.
+const SHOP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/shop");
 
 /// The window this size by default, as it opens.
 const WINDOW: (f64, f64) = (1440.0, 900.0);
@@ -91,6 +96,23 @@ fn fixture(name: &str, at: &str) -> PathBuf {
     root
 }
 
+/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
+/// its directory `shop`.
+fn frozen_shop(name: &str) -> PathBuf {
+    fn copy(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let path = entry.unwrap().path();
+            let into = to.join(path.file_name().unwrap());
+            if path.is_dir() { copy(&path, &into) } else { std::fs::copy(&path, into).map(drop).unwrap() }
+        }
+    }
+    let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    copy(Path::new(SHOP), &root.join("shop"));
+    root
+}
+
 /// What the window shows, as text, a heading for each part: the tree's
 /// lines when `tree` (it is left out over the drafts, whose tree changes
 /// with every draft added), the picture shown and what is picked on it,
@@ -138,20 +160,32 @@ fn tree_shown(gallery: &mut Gallery) -> Vec<String> {
 }
 
 /// The picture shown, as text: a state's pages by their captions, the node
-/// picked and its box in each page, and the pins; an overview's states,
+/// picked and its box in each page, the nodes marked ↗ and → in each, and
+/// the pins; an overview's states,
 /// its arrows and the journeys marked on it; a flow's words; a
 /// description's faults.
 fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
     let mut out = Vec::new();
     match &gallery.picture {
-        Picture::Pages(Pages { pages, .. }) => {
-            for page in pages {
+        Picture::Pages(shown @ Pages { pages, .. }) => {
+            let leading = shown.leading(&gallery.desk());
+            for (index, page) in pages.iter().enumerate() {
                 out.push(format!("page {}", page.caption));
                 if let Some((id, _)) = gallery.node()
                     && let Some(node) = page.nodes.iter().find(|node| node.id == id)
                 {
                     let r = node.rect;
                     out.push(format!("  picked {id}: {}, {} · {} × {}", r.x, r.y, r.width, r.height));
+                }
+                for leads in [Leads::Screen, Leads::State] {
+                    let ids: Vec<&str> = leading
+                        .iter()
+                        .filter(|l| l.page == index && l.leads == leads)
+                        .map(|l| l.id.as_str())
+                        .collect();
+                    if !ids.is_empty() {
+                        out.push(format!("  {} {}", leads.badge(), ids.join(", ")));
+                    }
                 }
             }
             if gallery.playing.is_some() {
@@ -676,6 +710,82 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
         gallery.let_go();
     });
     assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+// The journey's every surface, drawn over the frozen shop: the "before" its
+// redesign starts from.
+
+/// The gallery playing the shop's journey to its step `step`, from 1.
+fn playing_to(gallery: &mut Gallery, step: usize) {
+    let journey = journey_of(gallery, "cancel-an-order");
+    showing(gallery, journey);
+    for _ in 1..step {
+        press_keys(gallery, &["→"]);
+    }
+    assert_eq!(played(gallery).0, step);
+}
+
+#[test]
+fn the_journey_in_the_tree_nothing_picked() {
+    let root = frozen_shop("frame-journey-tree");
+    let gallery = drawn("journey-tree", &root, WINDOW, |_| {});
+    assert!(gallery.line.is_none() && gallery.lines.iter().any(|line| line.journey));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_journey_played_at_its_first_middle_and_last_steps() {
+    let root = frozen_shop("frame-journey-steps");
+    for (name, step) in [("journey-first", 1), ("journey-middle", 2), ("journey-last", 3)] {
+        let mut gallery = drawn(name, &root, WINDOW, |gallery| playing_to(gallery, step));
+        fits(&mut gallery);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_step_of_the_journey_with_a_node_picked() {
+    let root = frozen_shop("frame-journey-node");
+    let mut gallery = drawn("journey-node", &root, WINDOW, |gallery| {
+        playing_to(gallery, 2);
+        gallery.press_at(on_node(gallery, 0, "summary-total"));
+    });
+    fits(&mut gallery);
+    assert_eq!(picked_node(&gallery), Some("summary-total"));
+    assert_eq!(played(&gallery).0, 2, "still played");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_overview_with_the_journey_marked_on_its_states() {
+    let root = frozen_shop("frame-journey-overview");
+    let order = root.join("shop").join("order");
+    let gallery = drawn("journey-overview", &root, WINDOW, |gallery| {
+        let line = gallery.lines.iter().position(|line| line.row.dir == order && line.state.is_none());
+        showing(gallery, line.unwrap());
+    });
+    assert_eq!(passes_shown(&gallery).len(), 2, "the journey's marks");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_broken_journey_picked_its_faults_shown() {
+    let root = frozen_shop("frame-journey-broken");
+    let gallery = drawn("journey-broken", &root, WINDOW, |gallery| {
+        let journey = journey_of(gallery, "refund-a-cancelled-order");
+        showing(gallery, journey);
+    });
+    assert!(gallery.playing.is_none());
+    assert!(matches!(&gallery.picture, Picture::Faults(Faults { findings, .. }) if !findings.is_empty()));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_journey_playing_in_a_narrow_window() {
+    let root = frozen_shop("frame-journey-narrow");
+    let mut gallery = drawn("journey-narrow", &root, (1000.0, 900.0), |gallery| playing_to(gallery, 2));
+    fits(&mut gallery);
     std::fs::remove_dir_all(root).unwrap();
 }
 
