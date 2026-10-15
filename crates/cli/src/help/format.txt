@@ -210,7 +210,8 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
-  A component draws its slots only if its look places "$children".
+  A component draws its slots only if its look places "$children"; check
+  refuses a node in a slot of one whose look does not (IconButton, Badge).
   "each" with no "item" passes the elements to the component as "items" (photos):
     { "id": "photos", "component": "ImageCarousel", "each": "listing.photos" }
   "item" sees item and index; "children" of the same node are drawn once
