@@ -2,9 +2,10 @@
 //! one for its solid form (`favorite.fill`). Why:
 //! [ADR 0008](../../../docs/adr/0008-icons-are-material-symbols.md).
 
-/// Every Material Symbols name and its character, one `name hex` a line, as
-/// Google releases it (scripts/material-symbols.py copies it here).
-const CODEPOINTS: &str = include_str!("../material-symbols.codepoints");
+// Every Material Symbols name and its character, sorted by name: ICONS,
+// made by build.rs from material-symbols.codepoints, one `name hex` a line,
+// as Google releases it (scripts/material-symbols.py copies it there).
+include!(concat!(env!("OUT_DIR"), "/icons.rs"));
 
 /// Where the solid font holds each icon: past the outlined one's character
 /// by this much, in a plane of its own.
@@ -37,14 +38,8 @@ pub(crate) fn unknown(icon: &str) -> String {
 }
 
 fn codepoint(name: &str) -> Option<u32> {
-    for line in CODEPOINTS.lines() {
-        if let Some((listed, hex)) = line.split_once(' ')
-            && listed == name
-        {
-            return u32::from_str_radix(hex.trim(), 16).ok();
-        }
-    }
-    None
+    let at = ICONS.binary_search_by(|(listed, _)| (*listed).cmp(name)).ok()?;
+    ICONS.get(at).map(|(_, code)| *code)
 }
 
 /// Whether a node's or look's `key` holds an icon's name.
