@@ -728,6 +728,8 @@ BUILT-IN COMPONENTS
   Map              aspectRatio (default "16:9"): a gray area with a marker
   DateRangePicker  bind [from, to], months (1..3): the dates over month grids
   DateField        label, bind (a date): "add date" until set
+  TextField        bind (a string), placeholder, lines (default 1): a box to type
+                   in, lines high: the value, or the placeholder muted while it is ""
   Stepper          label, bind (an int): − value +
   PriceBreakdown   lines (list of names), total (default "合计")
   Skeleton         shape: a list of "image 4:3" and "line 70%"
