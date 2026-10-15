@@ -6,10 +6,11 @@
 //! sidebar ([`crate::sidebar`]), the cards of what is picked and the buttons
 //! of what can be done with it; for a directory picked, the
 //! flow between the screens under it; for a journey picked (ADR 0022), its
-//! steps played one by one. The person writes notes (ADR 0019)
-//! on its nodes, on regions dragged over it, on a whole state, and on the
-//! arrows of an overview or a flow, each drawn as a numbered pin where it
-//! was written; the window writes nothing else. The tree and panels are drawn by hand, in
+//! steps played one by one. The person talks to the agent about what they
+//! picked (ADR 0023): a node, a whole state, or an arrow of an overview or
+//! a flow has one note, a conversation shown in the sidebar under its
+//! card, said more in from the box at its foot, and drawn as a numbered pin
+//! where it was written; the window writes nothing else. The tree and panels are drawn by hand, in
 //! the chrome's look ([`chrome`]). The window is drawn from the files as
 //! they now stand: as they change under its root, the tree, the state shown
 //! and its notes follow.
@@ -1924,7 +1925,7 @@ impl Gallery {
     }
 
     /// What the sidebar shows: its cards, then the inbox; and, while nothing
-    /// is picked, what a person can do in the window.
+    /// is picked to talk about, what a person can do in the window.
     fn sidebar_cards(&self) -> Vec<Card<Do>> {
         let mut cards = self.cards();
         let picked = !cards.is_empty();
