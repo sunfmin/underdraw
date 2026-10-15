@@ -344,3 +344,89 @@ impl Shows for Pages {
         pins
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{PANE, seen};
+    use super::*;
+
+    /// A node `id` written as `written`, at `r`, in page points.
+    fn node(id: &str, (x, y, width, height): (f32, f32, f32, f32)) -> Placed {
+        Placed {
+            id: id.to_string(),
+            component: "Box".to_string(),
+            rect: Rect { x, y, width, height },
+            label: None,
+            assumed: None,
+        }
+    }
+
+    /// One state on one page 390 wide: a card, and a button inside it.
+    fn pages() -> Pages {
+        let nodes = vec![node("card", (10.0, 10.0, 200.0, 100.0)), node("buy", (20.0, 20.0, 50.0, 30.0))];
+        let origins = nodes
+            .iter()
+            .map(|n| {
+                (n.id.clone(), Origin { written: n.id.clone(), at: String::new(), instance: Vec::new() })
+            })
+            .collect();
+        let page = Page {
+            caption: "default · 390".to_string(),
+            scene: Scene::new(),
+            width: 390.0,
+            height: 600.0,
+            nodes,
+            tags: Vec::new(),
+            calls: BTreeMap::new(),
+            handlers: BTreeMap::new(),
+            origins,
+        };
+        let state = Some(State::Fixture("default".to_string()));
+        Pages { dir: PathBuf::from("shop"), state, pages: vec![page] }
+    }
+
+    #[test]
+    fn a_press_is_on_the_innermost_node_or_the_caption_and_references_it() {
+        let pages = pages();
+        // Unscaled in a pane this wide, under its caption.
+        let (left, top) = (PANE.left + MARGIN, MARGIN + CAPTION);
+        assert_eq!(pages.origins(&PANE), vec![(left, top)]);
+        let on = |x: f64, y: f64| pages.target_at((left + x, top + y), &PANE);
+        let buy = Target::Node { id: "buy".to_string(), pointed: 0 };
+        assert_eq!(on(25.0, 25.0), Some(buy.clone()), "the innermost");
+        assert_eq!(on(150.0, 50.0), Some(Target::Node { id: "card".to_string(), pointed: 0 }));
+        assert_eq!(on(300.0, 300.0), None, "on the page, on no node");
+        assert_eq!(on(4.0, -CAPTION / 2.0), Some(Target::Caption));
+        assert_eq!(on(-2.0 * MARGIN, 10.0), None, "off the page");
+
+        let reference = pages.reference(&buy).unwrap();
+        assert_eq!(reference.description, PathBuf::from("shop"));
+        assert!(
+            matches!(&reference.on, On::Node { node, .. } if node.origin.written == "buy"),
+            "{reference:?}"
+        );
+        let whole = pages.reference(&Target::Caption).unwrap();
+        assert!(matches!(whole.on, On::State { .. }), "the caption is the whole state");
+        assert_eq!(pages.reference(&Target::Arrow(0)), None, "pages have no arrows");
+    }
+
+    #[test]
+    fn pages_draw_their_caption_and_outline_the_node_picked() {
+        let pages = pages();
+        let (wide, tall) = pages.size(&PANE, &mut Typesetter::new(None).unwrap());
+        assert_eq!((wide, tall), (MARGIN + 390.0 + MARGIN, MARGIN + CAPTION + 600.0 + MARGIN));
+        let picked = Some(Target::Node { id: "buy".to_string(), pointed: 0 });
+        let drawn = pages.draw(&mut Scene::new(), &PANE, &seen(picked), &mut Typesetter::new(None).unwrap());
+        assert!(drawn.iter().any(|d| matches!(d, Draw::Text { text, .. } if text == "default · 390")));
+        let outline = drawn.iter().find_map(|d| match d {
+            Draw::Box { rect, stroke: Some(Ink::Strong), dashed: false, .. } => Some(*rect),
+            _ => None,
+        });
+        let (left, top) = (PANE.left + MARGIN, MARGIN + CAPTION);
+        assert_eq!(
+            outline,
+            Some(rect(left + 18.0, top + 18.0, 54.0, 34.0)),
+            "around the button, at both its edges"
+        );
+    }
+}

@@ -79,3 +79,31 @@ impl Shows for Faults {
         Vec::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{PANE, seen};
+    use super::*;
+
+    #[test]
+    fn faults_are_listed_down_the_pane_and_nothing_on_them_is_pressed() {
+        let findings = vec![Finding { at: "nodes.0".to_string(), problem: "is not JSON".to_string() }];
+        let faults = Faults { findings, within: "shop/home".to_string(), journey: false };
+        assert_eq!(faults.target_at((PANE.left + 40.0, 40.0), &PANE), None);
+        assert_eq!(faults.reference(&Target::Caption), None);
+        let mut typesetter = Typesetter::new(None).unwrap();
+        let drawn = faults.draw(&mut Scene::new(), &PANE, &seen(None), &mut typesetter);
+        let texts: Vec<(&str, f32)> = drawn
+            .iter()
+            .filter_map(|d| match d {
+                Draw::Text { text, rect, .. } => Some((text.as_str(), rect.x)),
+                _ => None,
+            })
+            .collect();
+        let left = (PANE.left + MARGIN) as f32;
+        assert!(texts[0].0.contains("shop/home"), "{texts:?}");
+        assert_eq!(&texts[1..], [("nodes.0", left), ("is not JSON", left)]);
+        let (_, tall) = faults.size(&PANE, &mut typesetter);
+        assert!(tall > MARGIN + CAPTION + GAP + 18.0, "as far down as the last fault, and a margin");
+    }
+}

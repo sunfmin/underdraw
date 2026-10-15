@@ -238,3 +238,67 @@ impl Shows for Flow {
         arrow_pins(references.zip(spots), notes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{PANE, middle, seen};
+    use super::*;
+    use crate::flow::{Arrow, Place};
+    use crate::links::Link;
+
+    /// The screens `home` and `cart`, side by side, and `pay`, not drawn
+    /// yet, under `cart`; `home` navigates to `cart`.
+    fn flow() -> Flow {
+        let place = |screen, x, y| Place { screen, x, y };
+        let places = vec![
+            place(Screen::Drawn(PathBuf::from("shop/home")), 0.0, 0.0),
+            place(Screen::Drawn(PathBuf::from("shop/cart")), 320.0, 0.0),
+            place(Screen::Undrawn("Pay".to_string()), 320.0, 340.0),
+        ];
+        let link = Link {
+            description: PathBuf::from("shop/home"),
+            from: "Home".to_string(),
+            node: "open-cart".to_string(),
+            to: "Cart".to_string(),
+            target: Some(PathBuf::from("shop/cart")),
+        };
+        let map = Map { places, arrows: vec![Arrow { from: 0, to: 1, link }], width: 500.0, height: 640.0 };
+        Flow { map, tiles: vec![Tile::Faulty(1), Tile::Faulty(2), Tile::Undrawn] }
+    }
+
+    #[test]
+    fn a_press_is_on_an_arrow_or_the_box_of_a_description_drawn() {
+        let flow = flow();
+        let (left, top) = Flow::origin(&PANE);
+        assert_eq!((left, top), (PANE.left + MARGIN, MARGIN));
+        let on = |x: f64, y: f64| flow.target_at((left + x, top + y), &PANE);
+        assert_eq!(on(90.0, 150.0), Some(Target::Box(PathBuf::from("shop/home"))));
+        assert_eq!(on(410.0, 500.0), None, "a screen not drawn yet");
+        let label = flow.spots(&PANE)[0].0;
+        assert_eq!(flow.target_at(middle(label), &PANE), Some(Target::Arrow(0)));
+
+        let navigate = flow.reference(&Target::Arrow(0)).unwrap();
+        assert_eq!(navigate.description, PathBuf::from("shop/home"), "where it is written");
+        assert!(matches!(&navigate.on, On::Navigate { navigate } if navigate.node == "open-cart"));
+        assert_eq!(flow.reference(&Target::Box(PathBuf::from("shop/home"))), None, "a box is not noted");
+    }
+
+    #[test]
+    fn a_flow_draws_its_boxes_and_its_arrow_picked_strong() {
+        let flow = flow();
+        let mut typesetter = Typesetter::new(None).unwrap();
+        assert_eq!(flow.size(&PANE, &mut typesetter), (0.0, MARGIN + 640.0 + MARGIN), "never scaled up");
+        let picked = seen(Some(Target::Arrow(0)));
+        assert!(flow.draw(&mut Scene::new(), &PANE, &picked, &mut typesetter).is_empty(), "all in its scene");
+        let drawn = flow.draws(Some(0), Lang::En);
+        let texts: Vec<(&str, Ink)> = drawn
+            .iter()
+            .filter_map(|d| match d {
+                Draw::Text { text, ink, .. } => Some((text.as_str(), *ink)),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.contains(&("open-cart", Ink::Strong)), "{texts:?}");
+        assert!(texts.contains(&("Pay", Ink::Assumed)), "{texts:?}");
+    }
+}

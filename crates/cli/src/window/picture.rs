@@ -171,3 +171,22 @@ fn arrow_pins(
     }
     pins
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A pane 1000 wide right of a tree 100 wide, unscrolled: each kind's
+    /// tests draw in it.
+    pub(super) const PANE: Pane = Pane { left: 100.0, width: 1000.0, scroll: 0.0, across: 0.0 };
+
+    /// What the window marks with `picked` picked, in English.
+    pub(super) fn seen(picked: Option<Target>) -> Seen {
+        Seen { picked, dragged: None, marked: None, lang: Lang::En }
+    }
+
+    /// The middle of `r`.
+    pub(super) fn middle(r: Rect) -> (f64, f64) {
+        (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0))
+    }
+}

@@ -2570,8 +2570,7 @@ impl Gallery {
         };
         let (x, y) = (f64::from(field.x), f64::from(field.y));
         let at = self.cursor;
-        let on = (x..=x + f64::from(field.width)).contains(&at.0)
-            && (y..=y + f64::from(field.height)).contains(&at.1);
+        let on = over(field, at);
         let shift = self.shift;
         let Some(draft) = self.draft_mut().filter(|_| on) else {
             return false;
@@ -2591,16 +2590,9 @@ impl Gallery {
         true
     }
 
-    /// The notes on what is shown, drawn on it; blue while waiting on the
-    /// agent, green once answered. On a state's pictures, each on a node or a
-    /// region a numbered pin at the top-right corner of its node, or of its
-    /// region as it now is, in the picture of the state and width it was
-    /// written in, and a faint dot there in every other that holds the
-    /// node, or a node the region covers; each on the whole state a pin at
-    /// the right of the first picture's caption. In the overview, each on a
-    /// state a pin at the right of its caption, and each on a transition one
-    /// beside its arrow's label; in the flow, each on a navigate one under
-    /// its arrow, where it leaves its box.
+    /// The notes on what is shown, drawn on it where its picture says
+    /// ([`picture::Shows::pins`]); blue while waiting on the agent, green
+    /// once answered.
     fn pins(&self) -> Vec<Pin> {
         self.picture.shows().pins(&self.notes, &self.pane_at())
     }

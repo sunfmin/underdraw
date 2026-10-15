@@ -288,3 +288,82 @@ impl Shows for Overview {
         pins
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{PANE, middle, seen};
+    use super::*;
+
+    /// A thumb of `state`, on the tree's line `line`, as tall as a page
+    /// 390 wide and 780 tall drawn small.
+    fn thumb(state: State, line: usize, journeys: Vec<Pass>) -> Thumb {
+        Thumb { state, line, scene: Scene::new(), width: 390.0, height: 780.0, journeys }
+    }
+
+    /// Two states, `ready` (line 2, a journey's first step marked on it)
+    /// and the phase `loading` (line 3), and one transition from the first
+    /// to the second.
+    fn overview() -> Overview {
+        let pass = Pass { line: 9, step: 0, label: "buy 1".to_string(), wide: 60.0 };
+        let thumbs = vec![
+            thumb(State::Fixture("ready".to_string()), 2, vec![pass]),
+            thumb(State::Phase("loading".to_string()), 3, Vec::new()),
+        ];
+        let transition = reference::Transition {
+            from: "ready".to_string(),
+            on: "buy.tap".to_string(),
+            outcome: None,
+            to: "loading".to_string(),
+        };
+        let arrow = Arrow { from: 0, to: 1, label: "1".to_string(), wide: 30.0, transition };
+        Overview { dir: PathBuf::from("shop"), thumbs, arrows: vec![arrow] }
+    }
+
+    #[test]
+    fn a_press_is_on_an_arrow_a_journeys_mark_or_a_state() {
+        let overview = overview();
+        let cells = overview.cells(&PANE);
+        assert_eq!(cells[0], (PANE.left + MARGIN, MARGIN + CAPTION, THUMB, THUMB_TALL));
+        assert_eq!(cells[1].0, PANE.left + MARGIN + THUMB + SPACE, "side by side");
+        let (x, y, _, _) = cells[1];
+        assert_eq!(overview.target_at((x + 80.0, y + 40.0), &PANE), Some(Target::State(3)));
+        assert_eq!(
+            overview.target_at((x + 4.0, y - CAPTION / 2.0), &PANE),
+            Some(Target::State(3)),
+            "its caption"
+        );
+        let (label, mark) = (overview.paths(&PANE)[0].1, overview.passes(&PANE)[0].0);
+        assert_eq!(overview.target_at(middle(label), &PANE), Some(Target::Arrow(0)));
+        let pass = overview.target_at(middle(mark), &PANE);
+        assert_eq!(pass, Some(Target::Pass { journey: 9, step: 0, state: 2 }), "over its state");
+        assert_eq!(overview.target_at((10.0, 10.0), &PANE), None);
+
+        let transition = overview.reference(&Target::Arrow(0)).unwrap();
+        assert!(matches!(&transition.on, On::Transition { transition } if transition.on == "buy.tap"));
+        let state = overview.reference(&pass.unwrap()).unwrap();
+        assert_eq!(
+            state.on,
+            On::State { state: State::Fixture("ready".to_string()) },
+            "a mark notes its state"
+        );
+        assert_eq!(overview.reference(&Target::Arrow(1)), None, "past the last arrow");
+    }
+
+    #[test]
+    fn an_overview_draws_each_state_named_and_its_arrow_picked_strong() {
+        let overview = overview();
+        let (_, tall) = overview.size(&PANE, &mut Typesetter::new(None).unwrap());
+        assert_eq!(tall, MARGIN + CAPTION + THUMB_TALL + MARGIN, "one row");
+        let picked = seen(Some(Target::Arrow(0)));
+        let drawn = overview.draw(&mut Scene::new(), &PANE, &picked, &mut Typesetter::new(None).unwrap());
+        let said = |ink: Ink| {
+            drawn.iter().filter_map(move |d| match d {
+                Draw::Text { text, ink: i, .. } if *i == ink => Some(text.as_str()),
+                _ => None,
+            })
+        };
+        assert_eq!(said(Ink::Muted).collect::<Vec<_>>(), ["loading"], "a phase quieter");
+        assert!(said(Ink::Strong).any(|text| text == "1"), "the arrow picked");
+        assert!(said(Ink::Paper).any(|text| text == "buy 1"), "the journey's mark");
+    }
+}
