@@ -61,6 +61,31 @@
           "unread": true
         }
       ]
+    },
+    {
+      "id": "N3",
+      "state": {
+        "fixture": "default"
+      },
+      "node": {
+        "id": "list",
+        "at": "/root/children/1/children/0",
+        "instance": [],
+        "label": null,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792064217,
+          "answers": {
+            "assumed": "点一张地址卡就把这一单改寄到那里，留在本页看到选中变化，再自己返回；也可能选完直接回到确认订单",
+            "guess": "author",
+            "answer": "right"
+          }
+        }
+      ]
     }
   ]
 }
