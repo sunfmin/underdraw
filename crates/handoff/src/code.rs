@@ -330,7 +330,7 @@ fn condition_name(language: Language, name: &str) -> String {
 struct Writer<'a> {
     language: Language,
     schema: &'a Schema,
-    model: &'a Model,
+    model: &'a Model<'a>,
     /// Where its paths start: the root model's fields, or the type's for a
     /// condition declared on one.
     scope: Scope,

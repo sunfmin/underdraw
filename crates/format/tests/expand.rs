@@ -4,7 +4,7 @@
 //! given; and a component that uses itself refused.
 
 use serde_json::{Map, Value, json};
-use underdraw_format::{Instances, Met, Subtrees};
+use underdraw_format::{Instances, Met, Screen, Shared};
 
 fn screen() -> Value {
     json!({
@@ -26,8 +26,9 @@ fn node(value: &Value) -> &Map<String, Value> {
 #[test]
 fn a_node_inside_an_instance_is_named_by_the_instance_joined_to_its_own() {
     let screen = screen();
-    let subtrees = Subtrees::read(&screen);
-    let mut instances: Instances<&str> = Instances::new(&subtrees);
+    let screen = Screen::read(&screen, Shared::default());
+    let subtrees = screen.components.subtrees();
+    let mut instances: Instances<&str> = Instances::new(subtrees);
     assert_eq!(instances.ids("row-{index}", "row-2"), ("row-2".to_string(), "row-{index}".to_string()));
     let card = json!({ "id": "row-{index}", "component": "Card", "with": { "order": "{item}", "open": "{menuOpen}" } });
     let Met::Instance(component) = instances.met(node(&card)) else { panic!("an instance") };
@@ -53,8 +54,9 @@ fn a_node_inside_an_instance_is_named_by_the_instance_joined_to_its_own() {
 #[test]
 fn a_slot_is_what_the_instance_gives_read_where_the_instance_is() {
     let screen = screen();
-    let subtrees = Subtrees::read(&screen);
-    let mut instances: Instances<&str> = Instances::new(&subtrees);
+    let screen = Screen::read(&screen, Shared::default());
+    let subtrees = screen.components.subtrees();
+    let mut instances: Instances<&str> = Instances::new(subtrees);
     let card = json!({ "id": "row", "component": "Card", "with": { "order": "{item}" },
                        "children": { "id": "title", "component": "Text" } });
     let Met::Instance(component) = instances.met(node(&card)) else { panic!("an instance") };
@@ -71,8 +73,9 @@ fn a_slot_is_what_the_instance_gives_read_where_the_instance_is() {
 #[test]
 fn a_slot_outside_any_instance_has_nothing_to_stand_for() {
     let screen = screen();
-    let subtrees = Subtrees::read(&screen);
-    let mut instances: Instances<()> = Instances::new(&subtrees);
+    let screen = Screen::read(&screen, Shared::default());
+    let subtrees = screen.components.subtrees();
+    let mut instances: Instances<()> = Instances::new(subtrees);
     assert!(matches!(instances.met(node(&json!({ "slot": "children" }))), Met::Slot(_)));
     assert!(instances.leave().is_none());
     assert!(matches!(instances.met(node(&json!({ "id": "a", "component": "Text" }))), Met::Node));
@@ -81,8 +84,9 @@ fn a_slot_outside_any_instance_has_nothing_to_stand_for() {
 #[test]
 fn a_component_that_uses_itself_is_refused() {
     let screen = screen();
-    let subtrees = Subtrees::read(&screen);
-    let mut instances: Instances<()> = Instances::new(&subtrees);
+    let screen = Screen::read(&screen, Shared::default());
+    let subtrees = screen.components.subtrees();
+    let mut instances: Instances<()> = Instances::new(subtrees);
     let outer = json!({ "id": "loop", "component": "Loop" });
     let Met::Instance(component) = instances.met(node(&outer)) else { panic!("an instance") };
     instances.enter(component, node(&outer), "loop".into(), "loop".into(), ()).unwrap();

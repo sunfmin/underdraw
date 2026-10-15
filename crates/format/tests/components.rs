@@ -3,9 +3,7 @@
 //! params the instance gives, and `check` names what breaks that.
 
 use serde_json::{Value, json};
-use underdraw_format::{
-    Breakpoint, Checked, Node, State, check, instantiate, navigates, transitions, writes,
-};
+use underdraw_format::{Breakpoint, Checked, Node, Screen, Shared, State};
 
 const ORDERS: &str = include_str!("../../../drafts/orders/screen.json");
 
@@ -36,10 +34,11 @@ fn the_orders_rows_are_named_by_their_instance_and_their_transition_names_them()
     let cancel = find(&root, "order-0-cancel").expect("the row's cancel button, its id joined to the row's");
     assert_eq!(cancel.written_id, "order-{index}-cancel");
     assert_eq!(cancel.instance, [0]);
-    assert!(writes(&screen, "order-{index}-cancel"), "a transition can name it");
-    assert!(!writes(&screen, "cancel"), "and never by its own id alone");
-    assert_eq!(transitions(&screen)[0].node, "order-{index}-cancel");
-    assert!(navigates(&screen).iter().any(|n| n.node == "order-{index}" && n.to == "OrderDetail"));
+    let screen = read(&screen);
+    assert!(screen.writes("order-{index}-cancel"), "a transition can name it");
+    assert!(!screen.writes("cancel"), "and never by its own id alone");
+    assert_eq!(screen.transitions[0].node, "order-{index}-cancel");
+    assert!(screen.navigates().iter().any(|n| n.node == "order-{index}" && n.to == "OrderDetail"));
 }
 
 /// A screen with one component, `ItemRow`, used once in a list of items.
@@ -207,4 +206,17 @@ fn a_bool_param_takes_a_condition_of_the_screens() {
     assert!(checked.ok, "{:#?}", checked.findings);
     let root = instantiate(&screen, State::Fixture("some"), Breakpoint::Compact).unwrap();
     assert!(find(&root, "row-0-name").is_some(), "hasItems holds where there is a row");
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
+}
+
+fn instantiate(description: &Value, state: State, breakpoint: Breakpoint) -> Result<Node, String> {
+    read(description).instantiate(state, breakpoint, None)
 }

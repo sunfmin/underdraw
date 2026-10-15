@@ -1,13 +1,19 @@
-//! Each surface of the gallery window drawn to a PNG, as the window would
-//! show it, and held to a golden PNG kept in `crates/cli/goldens/gallery`.
+//! Each surface of the gallery window held to a golden kept in
+//! `crates/cli/goldens/gallery`: most as text, a few as pixels.
 //!
-//! [`held`] is the glue: a test gives it a root, a window size and its acts
-//! on the gallery (pick a line, click a node, press keys),
-//! and the window's real frame is rendered headless on the GPU `render`
-//! uses, one pixel a point. A frame that strays from its golden fails the
-//! test, and is written beside the path the failure names to be looked at.
+//! What most of a frame shows is text and structure: the tree's lines, the
+//! pictures and what is picked on them, the pins, the sidebar's cards.
+//! [`held`] is the glue for those: a test gives it a root, a window size
+//! and its acts on the gallery (pick a line, click a node, press keys), and
+//! what the window then shows is written as text ([`said`]) and held to
+//! the golden `<name>.txt`, a failure saying which lines differ. Only where
+//! the look is the point (the chrome, the scrollbars, the pictures at half
+//! size) does [`drawn`] render the window's real frame headless on the GPU
+//! `render` uses, one pixel a point, and hold it to the golden
+//! `<name>.png`; those draw a fixture root of their own ([`fixture`]), not
+//! the drafts, so a draft changed never moves a pixel golden.
 //! `UNDERDRAW_GOLDENS=rewrite cargo nextest run -p underdraw frames`
-//! rewrites every golden from the frames drawn instead; look at each before
+//! rewrites every golden from what is shown instead; look at each before
 //! committing it.
 
 use std::io::BufReader;
@@ -24,18 +30,19 @@ const CHANNEL: u8 = 32;
 /// How many pixels in a million may differ before the frame does: a line
 /// of text changed is hundreds of pixels at 1440 × 900.
 const PER_MILLION: usize = 20;
+/// The description the pixel goldens draw: a copy of the Airbnb listing
+/// frozen for the tests, which no draft changes.
+const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
 /// The window this size by default, as it opens.
 const WINDOW: (f64, f64) = (1440.0, 900.0);
 
-/// The gallery over `root`, `size` points, after `acts`: its frame rendered
-/// on the GPU and held to the golden named `name`. The gallery is handed
-/// back for what the test asserts of it.
-fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
+/// The gallery over `root`, `size` points, after `acts`. A root of a
+/// test's own is named for its process: its line is named the same in
+/// every run, for what is held to hold, and again after acts that reload
+/// the tree.
+fn acted(root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
     let mut gallery = opened(root, size);
-    // A root of a test's own is named for its process: its line is named
-    // the same in every run, for the frame to hold, and again after acts
-    // that reload the tree.
     let named = |gallery: &mut Gallery| {
         if let Some(line) =
             gallery.lines.first_mut().filter(|line| line.row.dir == root && !line.row.described)
@@ -46,12 +53,172 @@ fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Galler
     named(&mut gallery);
     acts(&mut gallery);
     named(&mut gallery);
+    gallery
+}
+
+/// The gallery over `root`, `size` points, after `acts`: what it shows,
+/// as [`said`] writes it, held to the golden text named `name`. The
+/// gallery is handed back for what the test asserts of it.
+fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
+    let mut gallery = acted(root, size, acts);
+    let shown = said(&mut gallery, root != drafts());
+    hold_text(name, &shown);
+    gallery
+}
+
+/// The gallery over `root`, `size` points, after `acts`: its frame
+/// rendered on the GPU and held to the golden PNG named `name`.
+fn drawn(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
+    let mut gallery = acted(root, size, acts);
     let scene = gallery.drawn();
     let (width, height) = (size.0 as u32, size.1 as u32);
     let mut gpu = gpu::Gpu::open().expect("drawing the window needs a GPU");
     let pixels = gpu.render(&scene, width, height).unwrap();
     hold(name, width, height, &pixels);
     gallery
+}
+
+/// A root of its own named `name`, holding the frozen Airbnb listing
+/// ([`FIXTURE`]) as the description `at`.
+fn fixture(name: &str, at: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let at = root.join(at);
+    std::fs::create_dir_all(&at).unwrap();
+    for file in [crate::SCREEN, crate::TOKENS] {
+        std::fs::copy(Path::new(FIXTURE).join(file), at.join(file)).unwrap();
+    }
+    root
+}
+
+/// What the window shows, as text, a heading for each part: the tree's
+/// lines when `tree` (it is left out over the drafts, whose tree changes
+/// with every draft added), the picture shown and what is picked on it,
+/// the pins, and the sidebar's cards and what its box holds.
+fn said(gallery: &mut Gallery, tree: bool) -> String {
+    let mut out = Vec::new();
+    if tree {
+        out.push("tree".to_string());
+        out.extend(tree_shown(gallery).into_iter().map(|line| format!("  {line}")));
+    }
+    out.push("picture".to_string());
+    out.extend(picture_shown(gallery).into_iter().map(|line| format!("  {line}")));
+    out.push("sidebar".to_string());
+    for card in gallery.sidebar_cards() {
+        out.push(format!("  {}", card.title));
+        out.extend(card.blocks.iter().flat_map(Block::says).map(|says| format!("    {}", says.trim_end())));
+    }
+    let typed = gallery.sidebar.talk().text();
+    if !typed.is_empty() {
+        out.push(format!("  box: {typed:?}"));
+    }
+    out.join("\n") + "\n"
+}
+
+/// The tree's lines as drawn, each indented two spaces a level: `▸` before
+/// the line picked, and its marks after its name in brackets.
+fn tree_shown(gallery: &mut Gallery) -> Vec<String> {
+    let (mut lines, mut picked, mut marks) = (Vec::new(), false, Vec::new());
+    for draw in gallery.tree_draws() {
+        match draw {
+            Draw::Box { fill: Some(Ink::Fill), .. } => picked = true,
+            Draw::Text { text, font, .. } if font == MARK => marks.push(text),
+            Draw::Text { text, rect, .. } => {
+                let depth = ((f64::from(rect.x) - 14.0) / INDENT).round() as usize;
+                let mark = if picked { "▸ " } else { "" };
+                let marked =
+                    if marks.is_empty() { String::new() } else { format!("  [{}]", marks.join(", ")) };
+                lines.push(format!("{}{mark}{text}{marked}", "  ".repeat(depth)));
+                (picked, marks) = (false, Vec::new());
+            }
+            _ => {}
+        }
+    }
+    lines
+}
+
+/// The picture shown, as text: a state's pages by their captions, the node
+/// picked and its box in each page, and the pins; an overview's states,
+/// its arrows and the journeys marked on it; a flow's words; a
+/// description's faults.
+fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
+    let mut out = Vec::new();
+    match &gallery.picture {
+        Picture::Pages(Pages { pages, .. }) => {
+            for page in pages {
+                out.push(format!("page {}", page.caption));
+                if let Some((id, _)) = gallery.node()
+                    && let Some(node) = page.nodes.iter().find(|node| node.id == id)
+                {
+                    let r = node.rect;
+                    out.push(format!("  picked {id}: {}, {} · {} × {}", r.x, r.y, r.width, r.height));
+                }
+            }
+            if gallery.playing.is_some() {
+                let (step, marked) = played(gallery);
+                out.push(format!("journey step {step}, marked {marked:?}"));
+            }
+            for (id, picture, ink, faint) in pins_shown(gallery) {
+                let faint = if faint { ", faint" } else { "" };
+                out.push(format!("pin {id} on page {picture}: {ink:?}{faint}"));
+            }
+        }
+        Picture::Overview(_) => {
+            let (names, arrows) = overview(gallery);
+            out.push(format!("overview {}", names.join(", ")));
+            for (index, (from, to, label)) in arrows.into_iter().enumerate() {
+                let picked = if gallery.arrow() == Some(index) { "▸ " } else { "" };
+                out.push(format!("  {picked}{from} → {to}: {label}"));
+            }
+            for (state, journeys) in passes_shown(gallery) {
+                out.push(format!("  journeys through {state}: {}", journeys.join(", ")));
+            }
+        }
+        Picture::Flow(flow) => {
+            out.push("flow".to_string());
+            out.extend(flow_texts(flow).into_iter().map(|text| format!("  {text}")));
+        }
+        Picture::Faults(_) => {
+            out.push("faults".to_string());
+            let listed = faults_listed(gallery);
+            out.extend(listed.into_iter().filter_map(|draw| match draw {
+                Draw::Text { text, .. } => Some(format!("  {text}")),
+                _ => None,
+            }));
+        }
+    }
+    out
+}
+
+/// `shown` held to the golden text named `name`, or written as it when
+/// [`REWRITE`] says so. A failure lists the lines that differ, `-` for the
+/// golden's and `+` for what is shown, between the lines both share.
+fn hold_text(name: &str, shown: &str) {
+    let golden = Path::new(GOLDENS).join(format!("{name}.txt"));
+    if std::env::var(REWRITE).as_deref() == Ok("rewrite") {
+        std::fs::create_dir_all(GOLDENS).unwrap();
+        std::fs::write(&golden, shown).unwrap();
+        return;
+    }
+    let Ok(kept) = std::fs::read_to_string(&golden) else {
+        panic!("no golden {}: {REWRITE}=rewrite writes it", golden.display())
+    };
+    if kept == shown {
+        return;
+    }
+    let (kept, shown): (Vec<&str>, Vec<&str>) = (kept.lines().collect(), shown.lines().collect());
+    let same = kept.iter().zip(&shown).take_while(|(a, b)| a == b).count();
+    let tail = kept[same..].iter().rev().zip(shown[same..].iter().rev()).take_while(|(a, b)| a == b).count();
+    let mut diff = Vec::new();
+    diff.extend(kept[same.saturating_sub(2)..same].iter().map(|line| format!("  {line}")));
+    diff.extend(kept[same..kept.len() - tail].iter().map(|line| format!("- {line}")));
+    diff.extend(shown[same..shown.len() - tail].iter().map(|line| format!("+ {line}")));
+    diff.extend(kept[kept.len() - tail..].iter().take(2).map(|line| format!("  {line}")));
+    panic!(
+        "{name} strays from its golden {}; {REWRITE}=rewrite rewrites it:\n{}",
+        golden.display(),
+        diff.join("\n")
+    );
 }
 
 /// `pixels`, `width` × `height`, held to the golden named `name`, or
@@ -424,29 +591,6 @@ fn the_sidebar_hidden_the_pictures_take_its_width() {
 }
 
 #[test]
-fn a_narrow_window_at_half_size_scrolled_across() {
-    let gallery = held("narrow", drafts(), (1000.0, 900.0), |gallery| {
-        show(gallery, "airbnb-listing", "default");
-        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
-        gallery.wheel_by(1e6, 0.0);
-        gallery.press_at(on_node(gallery, 1, "nav-save"));
-    });
-    assert_eq!(zoom(&gallery), SMALLEST);
-    assert_eq!(picked_node(&gallery), Some("nav-save"), "picked, scaled and scrolled");
-}
-
-#[test]
-fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
-    let gallery = held("tree-narrow", drafts(), WINDOW, |gallery| {
-        show(gallery, "airbnb-listing", "default");
-        gallery.press_at((gallery.panes.pictures().x0, MARGIN));
-        gallery.move_to((0.0, MARGIN));
-        gallery.let_go();
-    });
-    assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
-}
-
-#[test]
 fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
     let mut gallery = held("sidebar-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
@@ -489,5 +633,48 @@ fn the_window_in_japanese() {
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "▸ 詳細"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+// The pixel goldens: only where the look is the point, over the fixture.
+
+#[test]
+fn the_window_drawn_its_tree_pictures_and_sidebar_in_their_chrome() {
+    let root = fixture("frame-window", "airbnb-listing");
+    let mut gallery = drawn("window", &root, WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.press_at(on_node(gallery, 0, "nav-save"));
+        gallery.details = true;
+    });
+    fits(&mut gallery);
+    assert_eq!(picked_node(&gallery), Some("nav-save"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_narrow_window_at_half_size_scrolled_across() {
+    let root = fixture("frame-narrow", "airbnb-listing");
+    let gallery = drawn("narrow", &root, (1000.0, 900.0), |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
+        gallery.wheel_by(1e6, 0.0);
+        gallery.press_at(on_node(gallery, 1, "nav-save"));
+    });
+    assert_eq!(zoom(&gallery), SMALLEST);
+    assert_eq!(picked_node(&gallery), Some("nav-save"), "picked, scaled and scrolled");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
+    let listing = "a-listing-whose-name-runs-past-the-narrowest-tree";
+    let root = fixture("frame-tree-narrow", listing);
+    let gallery = drawn("tree-narrow", &root, WINDOW, |gallery| {
+        show(gallery, listing, "default");
+        gallery.press_at((gallery.panes.pictures().x0, MARGIN));
+        gallery.move_to((0.0, MARGIN));
+        gallery.let_go();
+    });
+    assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
     std::fs::remove_dir_all(root).unwrap();
 }

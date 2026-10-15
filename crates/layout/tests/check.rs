@@ -2,8 +2,7 @@
 //! would cut is found in the state and at the width it is cut.
 
 use serde_json::{Value, json};
-use underdraw_format::ScreenParams;
-use underdraw_layout::check;
+use underdraw_format::{Checked, Screen, ScreenParams, Shared};
 
 mod fixed;
 use fixed::Fixed;
@@ -41,4 +40,15 @@ fn an_overlay_taller_than_what_it_floats_over_is_found() {
 /// No other screen: the menu alone.
 fn none() -> ScreenParams {
     ScreenParams::new()
+}
+
+/// `underdraw_layout::check` of the description `screen`, read as a
+/// screen of its own.
+fn check(
+    screen: &Value,
+    tokens: &Value,
+    others: &ScreenParams,
+    measure: &mut Fixed,
+) -> Result<Checked, String> {
+    underdraw_layout::check(&Screen::read(screen, Shared::default()), tokens, others, measure)
 }

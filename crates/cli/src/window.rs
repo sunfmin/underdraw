@@ -928,8 +928,9 @@ impl Gallery {
         let state = here.state.clone().unwrap_or_default();
         let on = format!("{}.{}", handlers.written, act::event(&handlers.events));
         let lang = self.lang;
-        let screen = crate::read(&here.dir).map(|(screen, _)| screen).unwrap_or(Value::Null);
-        match act::act(&screen, &state, &handlers.written, &handlers.events) {
+        let screen = crate::read(&here.dir).ok().map(|(screen, _)| screen);
+        let transitions = screen.as_ref().map_or(&[][..], |screen| screen.transitions.as_slice());
+        match act::act(transitions, &state, &handlers.written, &handlers.events) {
             Act::Go { to } => {
                 let says = say!(lang, acted_to_state, on, state, to);
                 self.go(Named { dir: here.dir, state: Some(to) }, says);
@@ -1875,19 +1876,18 @@ impl Gallery {
         let (On::Node { node, .. }, Picture::Pages(pages)) = (&on.on, &self.picture) else {
             return;
         };
-        let screen = crate::read(&on.description).map(|(screen, _)| screen).unwrap_or(Value::Null);
+        let screen = crate::read(&on.description).ok().map(|(screen, _)| screen);
         let id = self.node().map(|(id, _)| id.to_string()).unwrap_or_default();
         let component = pages
             .pages
             .iter()
             .find_map(|page| page.nodes.iter().find(|n| n.id == id))
-            .map(|n| n.component.clone());
-        let guess = Guess::of(
-            &screen,
-            &node.origin.written,
-            &component.unwrap_or_default(),
-            &links::drawn(&self.root),
-        );
+            .map(|n| n.component.clone())
+            .unwrap_or_default();
+        let guess = match &screen {
+            Some(screen) => Guess::of(screen, &node.origin.written, &component, &links::drawn(&self.root)),
+            None => Guess::Component(component),
+        };
         let answers = Answers { assumed, guess, answer };
         self.acted = None;
         match answer {
@@ -2405,16 +2405,10 @@ impl Gallery {
         Seen { picked, marked: self.written_marked().map(str::to_string), lang: self.lang }
     }
 
-    /// The whole window, in points.
-    fn frame(&mut self) -> Scene {
-        let (width, height) = self.panes.window();
-        // The pictures' thumbs drawn under their labels so that none covers
-        // an orange "?", the tree's and the sidebar's over the rest in the
-        // space right of the tree's names and of the sidebar's cards.
-        let thumbs = self.panes.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?)));
-        let hot = self.panes.hot();
-        let (pictures_bars, side_bars): (Vec<_>, Vec<_>) =
-            thumbs.partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
+    /// The tree's lines, in window points, top to bottom: for each, the
+    /// fill behind it when it is picked, the marks at its right end (its
+    /// notes waiting, then its faults), then its name.
+    fn tree_draws(&mut self) -> Vec<Draw> {
         let tree = self.panes.pictures().x0;
         let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
@@ -2456,6 +2450,21 @@ impl Gallery {
             let top = y + (ROW - f64::from(chrome::BODY.line_height)) / 2.0;
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
+        list
+    }
+
+    /// The whole window, in points.
+    fn frame(&mut self) -> Scene {
+        let (width, height) = self.panes.window();
+        // The pictures' thumbs drawn under their labels so that none covers
+        // an orange "?", the tree's and the sidebar's over the rest in the
+        // space right of the tree's names and of the sidebar's cards.
+        let thumbs = self.panes.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?)));
+        let hot = self.panes.hot();
+        let (pictures_bars, side_bars): (Vec<_>, Vec<_>) =
+            thumbs.partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
+        let tree = self.panes.pictures().x0;
+        let list = self.tree_draws();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let seen = self.seen();
         let right = self.panes.pictures().x1;

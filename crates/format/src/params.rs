@@ -17,17 +17,12 @@ use crate::schema::{Schema, object};
 /// nothing that navigates to it is held to any.
 pub type ScreenParams = BTreeMap<String, Vec<(String, Field)>>;
 
-/// The params `screen` declares, each with its field: none when it has no
-/// "params". A param that is not a field of its `data` is left out.
-pub fn params(screen: &Value) -> Option<Vec<(String, Field)>> {
-    let schema = Schema::read(screen, &mut Findings::default());
-    read(screen, &schema, &mut Findings::default())
-}
-
 /// The params `screen` declares, each a field of `data` given by every
 /// fixture and none that only the screen holds, fills from a query or
 /// derives; each fault found added to `findings`.
-pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Option<Vec<(String, Field)>> {
+pub(crate) fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Option<Vec<(String, Field)>> {
+    #[cfg(test)]
+    crate::screen::tests::count("params");
     let declared = screen.get("params")?;
     let Some(names) = declared.as_array() else {
         findings.add("params", "params is a list of data's fields: [\"orderId\"]");

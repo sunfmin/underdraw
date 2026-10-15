@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 use underdraw_compare::{Comparison, compare};
-use underdraw_format::State;
+use underdraw_format::{Screen, Shared, State};
 use underdraw_layout::{Font, Measure, Size};
 
 const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/docs");
@@ -33,6 +33,7 @@ fn run(capture: &Value) -> Result<Comparison, String> {
 fn run_in(fixture: &str, capture: &Value) -> Result<Comparison, String> {
     let (screen, tokens) = (read("screen.json"), read("tokens.json"));
     let mapping = read("platforms/web.json");
+    let screen = Screen::read(&screen, Shared::default());
     compare(&screen, &mapping, &tokens, State::Fixture(fixture), capture, &mut Fixed)
 }
 

@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
-use underdraw_format::{check, model};
+use underdraw_format::{Screen, Shared};
 use underdraw_handoff::json_schema;
 
 const DRAFTS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts");
@@ -18,12 +18,16 @@ fn read(path: &Path) -> Option<Value> {
 /// Whether `check` and the schema agree on `data`, written as a fixture of
 /// its own; what each says when they do not.
 fn agree(screen: &Value, data: &Value) -> Result<bool, String> {
-    let schema = json_schema(&model(screen).map_err(|c| format!("{:?}", c.findings))?);
+    let schema =
+        json_schema(&underdraw_format::model(&read_screen(screen)).map_err(|c| format!("{:?}", c.findings))?);
     let validator = jsonschema::validator_for(&schema).unwrap();
     let mut probed = screen.clone();
     probed["fixtures"]["probe"] = data.clone();
-    let findings: Vec<_> =
-        check(&probed).findings.into_iter().filter(|f| f.at.starts_with("fixtures.probe")).collect();
+    let findings: Vec<_> = underdraw_format::check(&read_screen(&probed))
+        .findings
+        .into_iter()
+        .filter(|f| f.at.starts_with("fixtures.probe"))
+        .collect();
     let by_schema = validator.is_valid(data);
     if by_schema == findings.is_empty() {
         Ok(by_schema)
@@ -39,7 +43,9 @@ fn every_draft_fixture_is_valid_and_every_planted_fault_is_refused() {
         let dir = entry.unwrap().path();
         let Some(screen) = read(&dir.join("screen.json")) else { continue };
         drafts += 1;
-        let model = model(&screen).unwrap_or_else(|c| panic!("{dir:?}: {:?}", c.findings));
+        let described = read_screen(&screen);
+        let model =
+            underdraw_format::model(&described).unwrap_or_else(|c| panic!("{dir:?}: {:?}", c.findings));
         let schema = json_schema(&model);
         let validator = jsonschema::validator_for(&schema).unwrap();
         for (name, data) in &model.fixtures {
@@ -123,10 +129,17 @@ fn each_type_is_bounded_as_check_bounds_it() {
         }
         assert_eq!(agree(&screen, &data), Ok(valid), "{change}");
     }
-    let schema = json_schema(&model(&screen).unwrap_or_else(|c| panic!("{:?}", c.findings)));
+    let schema = json_schema(
+        &underdraw_format::model(&read_screen(&screen)).unwrap_or_else(|c| panic!("{:?}", c.findings)),
+    );
     assert_eq!(
         schema["properties"]["owner"]["description"],
         "Who owns it. Derived by the server: from the session"
     );
     assert_eq!(schema["properties"]["on"]["default"], false);
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read_screen(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
 }
