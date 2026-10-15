@@ -160,6 +160,20 @@ fn each_node_says_where_it_is_written_and_for_which_element() {
     assert_eq!(find(&root, "amenities-list").unwrap().instance, Vec::<usize>::new(), "outside any each");
 }
 
+#[test]
+fn a_use_site_chain_holds_exactly_when_each_term_does() {
+    let from = r#""component": "Link", "if": "hasDates", "font": "font.caption""#;
+    let to = r#""component": "Link", "if": "hasDates && !booking.available", "font": "font.caption""#;
+    let text = include_str!("airbnb-listing/screen.json");
+    assert_eq!(text.matches(from).count(), 1);
+    let screen: Value = serde_json::from_str(&text.replace(from, to)).unwrap();
+    // (fixture, whether the dates are shown): only dates chosen and not available
+    for (fixture, shown) in [("default", false), ("no-dates", false), ("unavailable", true)] {
+        let root = instantiate(&screen, State::Fixture(fixture), Breakpoint::Compact).unwrap();
+        assert_eq!(find(&root, "bar-dates").is_some(), shown, "{fixture}");
+    }
+}
+
 /// `description` read as a screen of its own, with nothing shared.
 fn read(description: &Value) -> Screen {
     Screen::read(description, Shared::default())

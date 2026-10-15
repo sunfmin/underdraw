@@ -12,7 +12,9 @@ The rules:
 
 - **Strings only interpolate** (`{path|format}`); no operators inside strings.
 - **Every decision is a named condition** in a `conditions` table, with no
-  truthiness and no arithmetic. Use sites name a condition or a Bool path.
+  truthiness and no arithmetic. Use sites name conditions or Bool paths,
+  each with an optional `!`, joined by `&&` (`walks && !picked`); `||` and
+  comparisons are named.
 - **Choosing between values is structural**: an ordered `cases` list that must
   end in `else`.
 - **Business values are data**, not expressions: derived fields are declared in
@@ -33,3 +35,6 @@ The rules:
   in another, so no state goes unrendered.
 - More keystrokes for one-off conditions: anything beyond a Bool path needs a
   name.
+- A use site's `&&` chain (#238) names no new decision: each term is still a
+  named condition or a Bool path, so a one-off "this and not that" no longer
+  needs a name of its own, while `||` and comparisons still do.
