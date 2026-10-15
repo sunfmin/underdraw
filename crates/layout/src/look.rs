@@ -85,11 +85,6 @@ impl Catalog<'_> {
                 elem
             }
         };
-        // A node with a foot fills what its parent gives it across, as a
-        // pane fills its row, so the foot sits on the pane's bottom edge.
-        if node.children.iter().any(|child| child.slot == "foot") {
-            elem.style.align_self = Some(AlignSelf::STRETCH);
-        }
         elem.source = Some(node);
         elem
     }

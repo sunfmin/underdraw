@@ -244,9 +244,9 @@ NODES
     foot       stays at the foot of the node while what is above it scrolls,
                out of its siblings' order: a chat's box to write in, a side
                panel's buttons. Drawn after everything else, on the bottom
-               edge of a column (Stack, Card), which then fills the height
-               its parent gives it, as a pane fills its row; `compare`
-               treats it as pinned. StickyBar does this for a whole screen:
+               edge of a column (Stack, Card): a pane in a Columns is as
+               tall as its row. `compare` treats it as pinned. StickyBar
+               does this for a whole screen:
                { "id": "side", "component": "Stack", "children": [ …cards ],
                  "foot": { "id": "composer", "component": "Row", … } }
   A component draws its slots only if its look places "$children"; check
