@@ -52,7 +52,7 @@ pub(crate) fn give(
     findings: &mut Findings,
 ) -> Map<String, Value> {
     let acted = acted(description, shared);
-    let mut giving = Giving { taken: BTreeSet::new(), acted: &acted, findings };
+    let mut giving = Giving { taken: BTreeSet::new(), acted: &acted, findings, repeat: None };
     if let Some(root) = description.get("root") {
         written(root, &mut giving.taken);
     }
@@ -123,7 +123,7 @@ fn acts(value: &Value, acted: &BTreeSet<String>) -> bool {
 /// An id given to each node inside `component`'s nodes, its root apart,
 /// findings named under `at`.
 fn nodes(component: &mut Value, at: &str, acted: &BTreeSet<String>, findings: &mut Findings) {
-    let mut giving = Giving { taken: BTreeSet::new(), acted, findings };
+    let mut giving = Giving { taken: BTreeSet::new(), acted, findings, repeat: None };
     if let Some(root) = component.get("nodes") {
         written(root, &mut giving.taken);
     }
@@ -160,6 +160,9 @@ struct Giving<'f> {
     /// The components an instance of which needs an id written by hand.
     acted: &'f BTreeSet<String>,
     findings: &'f mut Findings,
+    /// The name the innermost repeat around the node being given an id
+    /// gives its index (`"index": "row"`), when it gives one.
+    repeat: Option<String>,
 }
 
 impl Giving<'_> {
@@ -207,10 +210,23 @@ impl Giving<'_> {
     }
 
     /// An id given to each node the node `node`, named `id`, holds.
+    /// Inside its `item`, the node's own `{index}` is the inner repeat's,
+    /// so `id` names the one around it by the name that repeat gives it.
     fn slots(&mut self, node: &mut Map<String, Value>, id: &str, at: &str) {
+        let named = node.get("index").and_then(Value::as_str).map(str::to_string);
         for slot in SLOTS {
             if let Some(held) = node.get_mut(slot) {
-                self.value(held, id, &format!("{at}.{slot}"), slot);
+                if slot != "item" {
+                    self.value(held, id, &format!("{at}.{slot}"), slot);
+                    continue;
+                }
+                let parent = match &self.repeat {
+                    Some(outer) => id.replace("{index}", &format!("{{{outer}}}")),
+                    None => id.to_string(),
+                };
+                let outer = std::mem::replace(&mut self.repeat, named.clone());
+                self.value(held, &parent, &format!("{at}.{slot}"), slot);
+                self.repeat = outer;
             }
         }
     }
