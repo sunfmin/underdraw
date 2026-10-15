@@ -1,0 +1,41 @@
+{
+  "doc": "An icon in the window's top bar: 32 square, no ring, muted when there is nowhere for it to go.",
+  "params": [
+    "icon",
+    "dim"
+  ],
+  "look": {
+    "box": "row",
+    "size": 32,
+    "radius": 8,
+    "items": "center",
+    "justify": "center",
+    "children": [
+      {
+        "text": "{icon|glyph}",
+        "font": 20,
+        "ink": {
+          "cases": [
+            {
+              "if": "dim",
+              "then": "line"
+            },
+            {
+              "else": "text"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": {
+    "enabled": {
+      "icon": "arrow_back",
+      "dim": false
+    },
+    "dim": {
+      "icon": "arrow_forward",
+      "dim": true
+    }
+  }
+}

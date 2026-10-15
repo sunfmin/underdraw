@@ -1,0 +1,56 @@
+{
+  "doc": "One choice inside an outlined pill track of the top bar: filled when it is the one in force.",
+  "params": [
+    "selected",
+    "text"
+  ],
+  "look": {
+    "box": "row",
+    "height": 26,
+    "padding": [
+      0,
+      12
+    ],
+    "radius": 999,
+    "items": "center",
+    "fill": {
+      "cases": [
+        {
+          "if": "selected",
+          "then": "strong"
+        },
+        {
+          "else": null
+        }
+      ]
+    },
+    "children": [
+      {
+        "text": "{text}",
+        "font": "font.subhead",
+        "ink": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "paper"
+            },
+            {
+              "else": "text"
+            }
+          ]
+        }
+      }
+    ],
+    "shrink": 0
+  },
+  "fixtures": {
+    "selected": {
+      "selected": true,
+      "text": "Inspect"
+    },
+    "unselected": {
+      "selected": false,
+      "text": "Play"
+    }
+  }
+}

@@ -22,54 +22,12 @@
   "fixtures": {
     "playing": {
       "journey": {
-        "name": "cancel-an-order",
-        "about": "The person opens an order from the list and cancels it before it ships.",
-        "steps": 3,
-        "brokenAt": null,
-        "stops": [
-          {
-            "number": 1,
-            "screen": "orders",
-            "state": "default",
-            "passed": true
-          },
-          {
-            "number": 2,
-            "screen": "order",
-            "state": "open",
-            "here": true
-          },
-          {
-            "number": 3,
-            "screen": "order",
-            "state": "cancelled",
-            "last": true
-          }
-        ],
-        "route": "orders › order"
+        "$sample": "cancelAnOrderAtStep2"
       }
     },
     "broken": {
       "journey": {
-        "name": "refund-a-cancelled-order",
-        "about": "",
-        "steps": 2,
-        "brokenAt": 2,
-        "stops": [
-          {
-            "number": 1,
-            "screen": "order",
-            "state": "cancelled"
-          },
-          {
-            "number": 2,
-            "screen": "order",
-            "state": "refunded",
-            "last": true,
-            "broken": true
-          }
-        ],
-        "route": "order"
+        "$sample": "refundACancelledOrder"
       }
     }
   },

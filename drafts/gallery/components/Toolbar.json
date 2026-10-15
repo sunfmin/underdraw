@@ -9,21 +9,41 @@
     "leading": [
       {
         "id": "back",
-        "component": "IconButton",
+        "component": "BarIcon",
         "icon": "arrow_back",
-        "disabled": "!bar.canBack",
         "on": {
           "tap": {
             "back": true
           }
+        },
+        "dim": {
+          "cases": [
+            {
+              "if": "bar.canBack",
+              "then": false
+            },
+            {
+              "else": true
+            }
+          ]
         }
       },
       {
         "id": "forward",
-        "component": "IconButton",
+        "component": "BarIcon",
         "icon": "arrow_forward",
-        "disabled": "!bar.canForward",
-        "only": "regular"
+        "only": "regular",
+        "dim": {
+          "cases": [
+            {
+              "if": "bar.canForward",
+              "then": false
+            },
+            {
+              "else": true
+            }
+          ]
+        }
       }
     ],
     "children": [
@@ -45,96 +65,106 @@
         "children": [
           {
             "id": "inspect",
-            "component": "Button",
-            "size": "small",
+            "component": "Segment",
             "text": "Inspect",
-            "variant": {
-              "cases": [
-                {
-                  "if": "bar.inspecting",
-                  "then": "primary"
-                },
-                {
-                  "else": "secondary"
-                }
-              ]
-            },
             "on": {
               "tap": {
                 "set": "bar.mode",
                 "to": "inspect"
               }
+            },
+            "selected": {
+              "cases": [
+                {
+                  "if": "bar.inspecting",
+                  "then": true
+                },
+                {
+                  "else": false
+                }
+              ]
             }
           },
           {
             "id": "play",
-            "component": "Button",
-            "size": "small",
+            "component": "Segment",
             "text": "Play",
-            "variant": {
-              "cases": [
-                {
-                  "if": "bar.playing",
-                  "then": "primary"
-                },
-                {
-                  "else": "secondary"
-                }
-              ]
-            },
             "on": {
               "tap": {
                 "set": "bar.mode",
                 "to": "play"
               }
+            },
+            "selected": {
+              "cases": [
+                {
+                  "if": "bar.playing",
+                  "then": true
+                },
+                {
+                  "else": false
+                }
+              ]
             }
           }
-        ]
+        ],
+        "padding": 2,
+        "radius": 999,
+        "border": "color.border"
       },
       {
         "id": "agent",
-        "component": "Badge",
+        "component": "AgentStatus",
         "only": "regular",
-        "text": {
+        "assumed": "工具栏常驻显示有没有 agent 在用 notes --wait 听这个目录，没人听时人一眼就知道写的笔记暂时没人处理；也可以只在发出笔记之后才在对话里说。",
+        "listening": {
           "cases": [
             {
               "if": "bar.listening",
-              "then": "● agent listening"
+              "then": true
             },
             {
-              "else": "○ no agent listening"
+              "else": false
             }
           ]
-        },
-        "assumed": "工具栏常驻显示有没有 agent 在用 notes --wait 听这个目录，没人听时人一眼就知道写的笔记暂时没人处理；也可以只在发出笔记之后才在对话里说。"
+        }
       },
       {
         "id": "inbox",
-        "component": "Button",
-        "size": "small",
+        "component": "Row",
         "if": "bar.owed",
-        "text": "{bar.waitingOnYou} waiting on you",
-        "variant": {
-          "cases": [
-            {
-              "if": "bar.inboxOpen",
-              "then": "primary"
-            },
-            {
-              "else": "secondary"
-            }
-          ]
-        },
         "on": {
           "tap": {
             "toggle": "bar.inboxOpen"
           }
         },
-        "assumed": "「等你处理」的数量常驻在工具栏，点一下就在侧栏列出来，不管当前选中了什么；也可以像现在一样只在什么都没选中时才在侧栏里出现。"
+        "assumed": "「等你处理」的数量常驻在工具栏，点一下就在侧栏列出来，不管当前选中了什么；也可以像现在一样只在什么都没选中时才在侧栏里出现。",
+        "gap": 0,
+        "padding": 2,
+        "radius": 999,
+        "border": "color.border",
+        "children": [
+          {
+            "id": "inbox-count",
+            "component": "Segment",
+            "text": "{bar.waitingOnYou} waiting on you",
+            "selected": {
+              "cases": [
+                {
+                  "if": "bar.inboxOpen",
+                  "then": true
+                },
+                {
+                  "else": false
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "id": "sidebar",
-        "component": "IconButton",
+        "component": "BarIcon",
         "only": "regular",
         "icon": {
           "cases": [
@@ -151,9 +181,11 @@
           "tap": {
             "toggle": "bar.sidebar"
           }
-        }
+        },
+        "dim": false
       }
-    ]
+    ],
+    "gap": 8
   },
   "fixtures": {
     "inspecting": {
