@@ -33,6 +33,14 @@ pub fn declared(root: &Path) -> BTreeMap<String, PathBuf> {
     declared
 }
 
+/// Each description under `root` that can be read, by its directory's path
+/// from `root`.
+pub fn described(root: &Path) -> BTreeMap<String, Screen> {
+    let dirs = description_dirs(root);
+    let screens = screens(&dirs);
+    dirs.iter().zip(screens).filter_map(|(dir, screen)| Some((within(root, dir), screen?))).collect()
+}
+
 /// The params each screen under `root` declares, by the screen's name;
 /// where two declare one, the first the tree lists. A screen that declares
 /// none is not in it.

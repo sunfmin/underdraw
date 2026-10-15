@@ -252,6 +252,68 @@ fn a_grid_track_is_a_share_a_part_or_points() {
     assert_eq!((width("share"), width("points"), width("part")), (390.0 - 48.0 - 195.0, 48.0, 195.0));
 }
 
+/// The lines a page draws in `ink`, each from and to.
+fn lines(page: &Page, ink: Ink) -> Vec<([f32; 2], [f32; 2])> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Line { from, to, ink: drawn } if *drawn == ink => Some((*from, *to)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_column_fills_its_row_and_panes_are_split_by_a_line() {
+    let text = |id: &str| serde_json::json!({ "id": id, "component": "Text", "text": id });
+    let page = tiny(serde_json::json!([
+        { "id": "panes", "component": "Columns", "gap": 0, "columns": [100, "1fr"], "dividers": true,
+          "children": [
+            { "id": "tree", "component": "Stack", "border": "color.border", "children": [text("a")] },
+            { "id": "pictures", "component": "Stack", "children": [text("b"), text("c"), text("d")] } ] }
+    ]));
+    let (tree, pictures) = (placed(&page, "tree").rect, placed(&page, "pictures").rect);
+    assert!(pictures.height > placed(&page, "b").rect.height * 2.0, "the pictures pane is three lines tall");
+    assert_eq!((tree.y, tree.height), (pictures.y, pictures.height), "the tree fills its row");
+    let outline = page.draws.iter().find_map(|d| match d {
+        Draw::Box { rect, stroke: Some(Ink::Line), .. } if rect.x == tree.x => Some(*rect),
+        _ => None,
+    });
+    assert_eq!(outline, Some(tree), "its border reaches the row's foot");
+    assert_eq!(
+        lines(&page, Ink::Line),
+        [([100.0, tree.y], [100.0, tree.y + tree.height])],
+        "one line between the panes, as tall as the row"
+    );
+}
+
+#[test]
+fn a_grid_draws_lines_between_its_rows_and_columns_halfway_across_the_gap() {
+    let text = |id: &str| serde_json::json!({ "id": id, "component": "Text", "text": id });
+    let page = tiny(serde_json::json!([
+        { "id": "grid", "component": "Grid", "gap": 10, "columns": 2, "dividers": true,
+          "children": [text("a"), text("b"), text("c"), text("d")] }
+    ]));
+    let (a, d) = (placed(&page, "a").rect, placed(&page, "d").rect);
+    let (middle_x, middle_y) = ((a.x + a.width + d.x) / 2.0, (a.y + a.height + d.y) / 2.0);
+    let (top, bottom) = (a.y, d.y + d.height);
+    let (left, right) = (a.x, d.x + d.width);
+    assert_eq!(
+        lines(&page, Ink::Line),
+        [
+            ([middle_x, top], [middle_x, middle_y]),
+            ([left, middle_y], [middle_x, middle_y]),
+            ([middle_x, middle_y], [middle_x, bottom]),
+            ([middle_x, middle_y], [right, middle_y]),
+        ],
+        "b's line down, c's across, d's down and across: they meet in the middle"
+    );
+    let plain = tiny(serde_json::json!([
+        { "id": "grid", "component": "Grid", "columns": 2, "children": [text("a"), text("b")] }
+    ]));
+    assert!(lines(&plain, Ink::Line).is_empty(), "no lines unless asked for");
+}
+
 #[test]
 fn an_overlay_anchored_at_the_center_sits_in_the_middle() {
     let page = tiny(serde_json::json!([

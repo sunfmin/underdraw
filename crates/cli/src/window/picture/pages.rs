@@ -57,8 +57,9 @@ pub(crate) struct Page {
     /// Every node with an id, in the order drawn: one drawn later is over
     /// one drawn before, and an overlay is drawn after what it floats over.
     pub nodes: Vec<Placed>,
-    /// The labels the nodes are tagged with, and the "?" of each guess, in
-    /// the page's points: drawn apart from `scene`, at their own size.
+    /// The marks over the wireframe, in the page's points, drawn apart
+    /// from `scene`: the labels the nodes are tagged with and the "?" of
+    /// each guess, at their own size, and each guess's outline.
     pub tags: Vec<Draw>,
     /// The operations each node calls when acted on, by id.
     pub calls: BTreeMap<String, Vec<String>>,
@@ -190,6 +191,12 @@ impl Pages {
         leading
     }
 
+    /// The nodes marked as going somewhere, as `seen` has them: each while
+    /// the marks are shown or lit, none while they are hidden and not.
+    pub fn leads_shown(&self, pane: &Desk, seen: &Seen) -> Vec<Leading> {
+        if seen.marks || seen.lit { self.leading(pane) } else { Vec::new() }
+    }
+
     /// A tag at `r`, in the page at `at` drawn at `zoom`, in window points:
     /// where the page puts it, scaled with it, but at its own size.
     fn tag_spot(r: Rect, (left, top): (f64, f64), zoom: f64) -> Area {
@@ -256,21 +263,35 @@ impl Pages {
         (x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom)
     }
 
-    /// The labels the nodes of each page are tagged with, and the "?" of
-    /// each guess, in window points: where the page puts them, scaled with
-    /// it, but each at its own size, so that it reads as well at
-    /// [`SMALLEST`] as at full size.
+    /// The marks over each page, in window points: where the page puts
+    /// them, scaled with it, but the labels the nodes are tagged with and
+    /// the "?" of each guess each at its own size, so that it reads as well
+    /// at [`SMALLEST`] as at full size.
     fn labels(&self, pane: &Desk) -> Vec<Draw> {
         let zoom = self.zoom(pane.width);
         let mut labels = Vec::new();
         for (page, (left, top)) in self.pages.iter().zip(self.origins(pane)) {
             for tag in &page.tags {
-                let Draw::Tag { rect: r, text, ink } = tag else { continue };
-                let at = Self::tag_spot(*r, (left, top), zoom);
-                labels.push(Draw::Tag {
-                    rect: rect(at.x0, at.y0, at.width(), at.height()),
-                    text: text.clone(),
-                    ink: *ink,
+                labels.push(match tag {
+                    Draw::Tag { rect: r, text, ink } => {
+                        let at = Self::tag_spot(*r, (left, top), zoom);
+                        Draw::Tag {
+                            rect: rect(at.x0, at.y0, at.width(), at.height()),
+                            text: text.clone(),
+                            ink: *ink,
+                        }
+                    }
+                    Draw::Box { rect: r, radius, fill, stroke, dashed } => {
+                        let (x, y, w, h) = Self::spot(*r, (left, top), zoom);
+                        Draw::Box {
+                            rect: rect(x, y, w, h),
+                            radius: *radius,
+                            fill: *fill,
+                            stroke: *stroke,
+                            dashed: *dashed,
+                        }
+                    }
+                    _ => continue,
                 });
             }
         }
@@ -310,13 +331,14 @@ impl Shows for Pages {
         on_caption.then_some(Target::Caption)
     }
 
-    /// Each page on a sheet under its caption, each node that acting on
-    /// goes somewhere and the node picked marked in the interaction ink on
-    /// each page that shows it; over them, the node a journey acts on next
-    /// ringed twice in the notes' ink.
+    /// Each page on a sheet under its caption, the node picked marked in
+    /// the interaction ink on each page that shows it; while the marks are
+    /// shown, its labels and guesses over it, each node that acting on goes
+    /// somewhere marked in the interaction ink (while lit too), and the
+    /// node a journey acts on next ringed twice in the notes' ink.
     fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
         let (zoom, origins) = (self.zoom(pane.width), self.origins(pane));
-        let mut over = self.labels(pane);
+        let mut over = if seen.marks { self.labels(pane) } else { Vec::new() };
         for (page, &(x, y)) in self.pages.iter().zip(&origins) {
             over.push(caption(rect(x, y - CAPTION, page.width * zoom, 16.0), page.caption.clone()));
             sheet(scene, Affine::IDENTITY, rect(x, y, page.width * zoom, page.height * zoom), 0.0);
@@ -324,11 +346,12 @@ impl Shows for Pages {
         for (page, &(x, y)) in self.pages.iter().zip(&origins) {
             scene.append(&page.scene, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
         }
-        for leading in self.leading(pane) {
+        for leading in self.leads_shown(pane, seen) {
             lead(scene, &leading, seen.lit, typesetter);
         }
         // No wireframe draws in the notes' ink.
-        let marked = seen.marked.as_deref().map(|written| self.marked(written)).unwrap_or_default();
+        let marked = seen.marked.as_deref().filter(|_| seen.marks).map(|written| self.marked(written));
+        let marked = marked.unwrap_or_default();
         for (node, &at) in marked.into_iter().zip(&origins) {
             let Some(node) = node else { continue };
             let (x, y, w, h) = Self::spot(node.rect, at, zoom);

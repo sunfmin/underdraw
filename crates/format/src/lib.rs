@@ -50,7 +50,7 @@ pub use expr::{Atom, Expr, Op};
 pub use field::{Base, By, Derived, Field};
 pub use instance::{Call, Node, SLOTS, State};
 pub use jobs::{STATES as JOB_STATES, STATUS as JOB_STATUS};
-pub use journeys::walk as walk_journey;
+pub use journeys::{named as journey_screen, walk as walk_journey};
 pub use links::{Navigate, Undrawn};
 pub use model::{Model, model};
 pub use operations::{BulkOf, Does, Fill, Operation, Operations};
