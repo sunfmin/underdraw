@@ -90,4 +90,7 @@ RULES TO KNOW FIRST
   - No truthiness: a date or a number is not a condition; write != null, > 0.
   - Every condition must be true in one fixture and false in another, so every
     state can be shown. `check` reports one that is not.
+  - A condition shared by the domain is declared on a type
+    ("Order.cancellable") and used through a value of it
+    ("if": "item.cancellable"); one over a screen's data stays the screen's.
   - Loading and error are "phases", trees that read no data.

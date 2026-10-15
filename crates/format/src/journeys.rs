@@ -124,7 +124,8 @@ impl<'a> Step<'a> {
         let expanded = domain::expand(screen, &mut ignored);
         let schema = Schema::read(&expanded, &mut ignored);
         let conditions = Conditions::read(&expanded, &schema, &mut ignored);
-        let fixtures = fixture::read(&expanded, &schema, &mut ignored);
+        let mut fixtures = fixture::read(&expanded, &schema, &mut ignored);
+        conditions.fill(&schema, &mut fixtures);
         let mut states: Vec<String> = fixtures.iter().map(|(name, _)| name.clone()).collect();
         for (name, _) in object(&expanded, "phases") {
             if !name.starts_with('$') {

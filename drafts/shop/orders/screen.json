@@ -9,8 +9,8 @@
   "fixtures": {
     "default": {
       "orders": [
-        { "id": "o-1042", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "cancellable": true },
-        { "id": "o-1041", "number": "#1041", "customer": "Ken Mori", "total": { "amount": 12800, "currency": "JPY" }, "cancellable": false }
+        { "id": "o-1042", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" },
+        { "id": "o-1041", "number": "#1041", "customer": "Ken Mori", "total": { "amount": 12800, "currency": "JPY" }, "status": "shipped" }
       ]
     }
   },

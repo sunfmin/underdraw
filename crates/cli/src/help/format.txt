@@ -129,6 +129,22 @@ CONDITIONS
   A use site ("if", "disabled", a cases branch's "if") is only
   !? <condition or Bool path>: "hasTodos", "!canAdd", "item.done".
   Anything more is a named condition.
+  A condition on a type is named <Type>.<name>, and its "when" reads the
+  type's own fields, never the screen's data:
+    "Order.cancellable": { "when": "status == \"pending\"", "label": "Not shipped yet" }
+  A value of the type reads it as a Bool field, wherever the value is: a
+  use site ("if": "item.cancellable"), a placeholder ({item.cancellable}),
+  or a condition of the screen ("order != null && order.cancellable").
+  Inside one on a type, another of that type is named short ("cancellable
+  && !hasNote" in Order.quiet); a condition over the screen's data is not
+  named there at all, and one on a type is never named whole elsewhere.
+  It is no field: fixtures never give it, the type has no field of its
+  name, and it is used only through a value of its type (check names one
+  used on a value of another type). It must be true of one value of the
+  type and false of another, in any fixtures, wherever they hold one.
+  Declare one in domain.json (DOMAIN.JSON) to share it: the domain has no
+  screen's data, so a condition every screen asks of an Order is one on
+  Order. A condition over a screen's data stays that screen's.
 
 TEMPLATES AND FORMATS
   Any string may hold placeholders: {path} or {path|format}. A path is
@@ -275,7 +291,8 @@ OPERATIONS
     "result"   what it answers with: one of "types", written as a field type
                ("Doc", "Doc[] ..50", "Doc?"); never a built-in, and holding no
                view state. A query needs one; a command may have none.
-    "requires" a condition (CONDITIONS) that must hold before it is called
+    "requires" a condition (CONDITIONS) that must hold before it is called:
+               the screen's, or one on a type ("Order.cancellable")
     "destructive"  true: a command that cannot be undone (deleting, sending,
                paying). Only its confirmation may call it (below), and its
                CLI command does nothing without --yes (`underdraw cli --help`)
@@ -318,7 +335,10 @@ OPERATIONS
   A node that calls an operation with "requires" is gated by that
   condition, or one whose && chain names it: "disabled": "!canDelete" on
   the node, or "if": "canDelete" on it or around it (a handler's cases
-  branch counts). check refuses a call that is not.
+  branch counts). check refuses a call that is not. One that requires a
+  condition on a type is gated through a value of that type, the one it
+  acts on: "if": "item.cancellable" on a row that calls cancelOrder with
+  { "id": "{item.id}" }, or "disabled": "!item.cancellable".
   A destructive operation is called only from inside its confirmation: a
   popup (POPUPS) whose kind's look has "backdrop": true, and that a node
   opens by its id with { "open": "<id>" }. The node a person first acts on
@@ -584,9 +604,10 @@ DOMAIN.JSON
   directory at or above a screen holding it.
   {
     "types":      { "Order": { "id": "string", "total": "money" } },
-    "conditions": { … },
+    "conditions": { "Order.cancellable": { "when": "status == \"pending\"", … } },
     "operations": { "cancelOrder": { "command": "Cancels an order",
                                      "params": { "id": "string" },
+                                     "requires": "Order.cancellable",
                                      "fails": { "notFound": "…" } } }
   }
   Each key is written as in screen.json (DATA AND TYPES, CONDITIONS,
@@ -601,8 +622,11 @@ DOMAIN.JSON
   the domain's in its place. A finding about the domain's file itself is
   at "domain.json …"; one inside a declaration it holds is at its dotted
   path, as if the screen held it, and is fixed in domain.json.
-  A condition in the domain reads the data of each screen that uses it, so
-  share one only when every such screen holds the fields it names.
+  A condition the domain shares is declared on a type (CONDITIONS), as
+  "Order.cancellable", and each screen reads it through its own values
+  of the type. One that is not on a type reads the data of each screen
+  that uses it, so share one only when every such screen holds the fields
+  it names; a condition over one screen's data stays that screen's.
 
 TOKENS.JSON
   {
