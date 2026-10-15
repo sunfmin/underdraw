@@ -1,0 +1,7 @@
+{
+  "$comment": "The person sees a journey's mark on a state in a screen's overview and plays the journey from that step.",
+  "steps": [
+    { "screen": "overview", "state": "order", "on": "state-{state}-mark-{index}.tap" },
+    { "screen": "play", "state": "first" }
+  ]
+}

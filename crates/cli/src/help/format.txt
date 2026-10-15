@@ -155,8 +155,9 @@ CONDITIONS
 
 TEMPLATES AND FORMATS
   Any string may hold placeholders: {path} or {path|format}. A path is
-  dot-separated: a data root, or inside "item" also item and index. No
-  operators in a placeholder. {{ and }} are literal braces.
+  dot-separated: a data root, or inside "item" also item, index and the
+  index a repeat around it names ("index": "row"). No operators in a
+  placeholder. {{ and }} are literal braces.
     "text": "{summary.remaining} left · {booking.total|money}"
   Formats (closed set; a value that needs one and lacks it is a fault):
     (none)       string, int
@@ -185,7 +186,9 @@ CASES
 
 NODES
   A node is an object:
-    "id"        unique: "todo-{index}" inside an item template. Required on
+    "id"        unique in every state: "todo-{index}" inside an item
+                template, "cell-{row}-{index}" inside one inside another
+                ("index" below); check names an id two nodes share. Required on
                 a node with "on", "bind" or "assumed", and on an instance
                 of a component holding one; any other may leave it out
                 and is given one, the same on every run and unchanged by
@@ -194,7 +197,9 @@ NODES
                 text, title, label or icon ("page-text-hello-name" for
                 {"component": "Text", "text": "Hello {name}"} in "page";
                 four hex digits for text with no ASCII word), "-{index}"
-                after an item's, "-2", "-3"… after one taken. A component's
+                after an item's (inside a repeat inside one, the outer's
+                {index} in the id it is in said by the outer's "index"
+                name), "-2", "-3"… after one taken. A component's
                 own nodes are given theirs without its root's. check,
                 render, handoff and the gallery all name it so
     "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
@@ -204,6 +209,15 @@ NODES
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
     "item"      the node repeated; it sees item (the element) and index (0..)
+    "index"     a name for this repeat's index, beside "each": "row". A
+                repeat inside one rebinds item and index, so a node there
+                reaches this one's index only by its name:
+                  { "id": "rows", "component": "List", "each": "rows", "index": "row",
+                    "item": { "id": "row-{index}", "component": "List", "each": "item.cells",
+                      "item": { "id": "cell-{row}-{index}", "component": "Button", … } } }
+                gives cell-0-0, cell-0-1, cell-1-0…; a transition or a
+                journey names it as written, "cell-{row}-{index}.tap". A
+                word no data root, enclosing repeat, item, index or n takes
     "limit"     at most this many elements: 5, or {"compact": 6, "regular": 9}
     "bind"      a path (or a list of paths) the person edits; its value is
                 given to the component as "value" ("bind": "composer.text";
