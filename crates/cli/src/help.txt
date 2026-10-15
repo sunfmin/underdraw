@@ -36,7 +36,7 @@ START HERE
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
   underdraw notes <root>     what the person said there: each open note, pinned
-                             to a node; act on it, then answer it with
+                             to a node, a state or an arrow; act on it, then answer it with
                              `underdraw notes <dir> --answer N1 --reply "…"`;
                              `underdraw notes <root> --wait` in the background
                              answers when the person writes the next one
@@ -62,7 +62,7 @@ COMMANDS
                              and each navigate resolved to the screen it names
     underdraw gallery <root> a window for the person: every description under
                              <root>, each drawn at a phone and a desktop width,
-                             where they write notes on its nodes
+                             where they write notes on its nodes, states and arrows
     underdraw notes <root>   the person's open notes, each with where it is pinned;
                              with --answer <id> --reply "…", one answered;
                              with --wait, once one is open

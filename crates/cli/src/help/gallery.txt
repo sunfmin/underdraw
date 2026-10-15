@@ -82,11 +82,16 @@ DOES
   box, and a panel with its box, its width and the outermost nodes wholly
   inside it ("covers"); a node inside another is in it already.
 
+  Pick an arrow by clicking its label: a transition's in an overview, a
+  navigate's (the node's id) in a flow. It is drawn in the strong ink, and
+  the panel says what it is. Click where no arrow is to drop it.
+
   Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
   and Windows) puts one line on the clipboard naming the region picked,
   or the node picked as the description writes it, or, with neither
   picked (click a picture's caption, or where no node is), the state
-  shown; the panel says "copied" and the line. For a node:
+  shown, or the arrow picked; the panel says "copied" and the line. For a
+  node:
     <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
   e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
   /root/children/2/children/0/children/1/item/children in screen.json ·
@@ -102,22 +107,38 @@ DOES
   there. What follows "pointed at" is context, the one instance the person
   pointed at: the element of each repeat around it ([2] is the third,
   outermost first), its label and the width it was drawn at, which say
-  which data showed what they mean; it is not where to edit.
+  which data showed what they mean; it is not where to edit. For an arrow,
+  with the keys screen.json's `transitions`, and the "links" of `underdraw
+  check <root>`, name it by:
+    <description dir> · transition from <state> on <node id as written>.<event> outcome <outcome> to <state>
+    <description dir> · navigate from <screen> on <node id as written> to <screen>
+  "outcome" only for an event that calls an operation; a navigate's
+  <description dir> is the description it is written in.
 
-  Write a note, for the agent, on a node or a region: press N, then click
-  the node, or drag over the region (or pick the node or region and click
-  "write a note on it" in its panel), and type. Enter saves it,
-  Shift+Enter breaks a line, Esc drops it; ⌘V pastes. It is kept in
-  notes.json beside the description's screen.json, pinned as ⌘C references
-  it: the node as written, the state, and the instance pointed at; or the
-  region's box and the nodes it covered. A blue pin numbered N1, N2… is
-  drawn at the node's top-right corner, in the state and at the width it
-  was written in; every other state and width that holds that node shows a
-  faint dot there. A region's pin is drawn the same way at the corner of a
-  dashed box around the nodes it covered, where the layout now puts them,
-  so it follows them as the description changes; a region that covered no
-  node stays at the box dragged, at that width only. The tree shows how
-  many notes are open on each description and each state ("2 notes").
+  Write a note, for the agent: press N, then click what it is on, and
+  type. A note can be pinned to any of these:
+  - a node: click it in a state's picture;
+  - a region: drag over it in a state's picture;
+  - a whole state: click a picture's caption, or a state in an overview;
+  - a transition: click its arrow's label in an overview;
+  - a navigate: click its arrow's label in a flow.
+  Or pick the node, region or arrow and click "write a note on it" in the
+  panel. Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V
+  pastes. It is kept in notes.json beside the description's screen.json (a
+  navigate's, beside the one it is written in), pinned as ⌘C references it:
+  the node as written, the state, and the instance pointed at; the region's
+  box and the nodes it covered; the state; the transition; or the
+  navigate. A blue pin numbered N1, N2… is drawn on it: at a node's
+  top-right corner, in the state and at the width it was written in, every
+  other state and width that holds that node showing a faint dot there; at
+  the corner of a dashed box around the nodes a region covered, where the
+  layout now puts them, so it follows them as the description changes (a
+  region that covered no node stays at the box dragged, at that width
+  only); at the right of a state's caption, in its pictures and in the
+  overview; beside a transition's label; under a navigate's arrow, where it
+  leaves its box. The tree shows how many notes are open on each
+  description and on each state ("2 notes"): a note on an arrow counts on
+  its description.
   The agent reads them with `underdraw notes <root>` and answers one with a
   line of reply: its pin turns green, and the pointer over it shows the
   reply. Click a pin to read its note in the panel, then close it, or

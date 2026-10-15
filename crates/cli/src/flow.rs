@@ -40,12 +40,12 @@ pub struct Place {
 }
 
 /// One navigate drawn: from box `from` to box `to`, by their places in the
-/// map, labelled with the node it is on.
+/// map, labelled with the node it is on: the navigate it stands for.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arrow {
     pub from: usize,
     pub to: usize,
-    pub node: String,
+    pub link: Link,
 }
 
 /// The screens under one directory and the navigates between them, laid out.
@@ -87,7 +87,7 @@ pub fn map(descriptions: &[PathBuf], links: &[Link]) -> Map {
             screens.push(to);
             screens.len() - 1
         });
-        arrows.push(Arrow { from, to, node: link.node.clone() });
+        arrows.push(Arrow { from, to, link: link.clone() });
     }
     let columns = columns(screens.len(), &arrows);
     let mut down = vec![0usize; columns.iter().max().map_or(0, |deepest| deepest + 1)];
@@ -196,7 +196,7 @@ mod tests {
             "a loop between detail and list starts at the first of them; other leads nowhere"
         );
         let arrows: Vec<(usize, usize, &str)> =
-            map.arrows.iter().map(|a| (a.from, a.to, a.node.as_str())).collect();
+            map.arrows.iter().map(|a| (a.from, a.to, a.link.node.as_str())).collect();
         assert_eq!(arrows, [(1, 0, "row"), (1, 3, "add"), (0, 3, "edit"), (0, 1, "back")]);
         assert_eq!(map.width, 2.0 * WIDE + ACROSS);
         assert_eq!(map.height, 2.0 * TALL + DOWN);
