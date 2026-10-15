@@ -1,0 +1,161 @@
+{
+  "$comment": "What each kind looks like in a wireframe: underdraw's defaults. A project's kinds.json adds kinds and replaces these by name. The look vocabulary is docs/format/kinds.md.",
+  "kinds": {
+    "Screen":     { "scrolls": true, "look": { "box": "column", "frame": true, "fill": "paper", "children": ["$children"] } },
+    "Scroll":     { "scrolls": true, "look": { "box": "column", "frame": true, "children": ["$children"] } },
+    "Stack":      { "look": { "box": "column", "frame": true, "children": ["$children"] } },
+    "List":       { "look": { "box": "column", "frame": true, "children": ["$children"] } },
+    "FieldGroup": { "look": { "box": "column", "frame": true, "children": ["$children"] } },
+    "Card":       { "look": { "box": "column", "gap": 16, "frame": true, "clip": false, "children": ["$children"] } },
+    "Row":        { "look": { "box": "row", "frame": true, "children": ["$children"] } },
+    "NavBar":     { "look": { "box": "row", "gap": 8, "height": 56, "padding": [0, 16], "frame": true, "children": ["$children"] } },
+    "StickyBar":  { "pinned": true, "look": { "box": "row", "gap": 16, "justify": "between", "frame": true, "topLine": "line", "children": ["$children"] } },
+    "Grid":       { "look": { "box": "grid", "columns": "{columns|or:2}", "gap": 16, "frame": true, "children": ["$children"] } },
+    "Columns":    { "look": { "box": "grid", "columns": "{columns|or:1}", "items": "start", "gap": 24, "frame": true, "children": ["$children"] } },
+    "Carousel": {
+      "doc": "Cards side by side, cut at the edge: the rest scrolls into view.",
+      "scrolls": true,
+      "look": { "box": "row", "gap": 16, "items": "start", "overflowX": "clip", "frame": true, "itemWidth": 280, "clip": 0,
+                "children": ["$children"] }
+    },
+    "Section": {
+      "look": { "box": "column", "gap": "{gap|or:16}", "padding": "{padding|or:0}", "children": [
+        { "if": "title || subtitle", "box": "column", "gap": 4, "children": [
+          { "if": "title", "text": "{title}", "font": "font.heading" },
+          { "if": "subtitle", "text": "{subtitle}", "font": "font.body", "ink": "muted" } ] },
+        "$children" ] }
+    },
+    "Text": {
+      "look": { "text": "{text}", "font": "{font|or:font.body}", "ink": "{color}", "maxLines": "{maxLines}",
+                "underline": "{underline}", "align": "{align}" }
+    },
+    "Link": {
+      "look": { "self": "start", "font": "{font|or:font.subhead}", "underline": true,
+                "text": { "cases": [ { "if": "trailingIcon", "then": "{text} ›" }, { "else": "{text}" } ] } }
+    },
+    "Rating": { "look": { "text": "★ {value}", "font": "font.subhead" } },
+    "Badge": {
+      "look": { "self": "start", "padding": [4, 10], "stroke": "text", "radius": 999,
+                "children": [ { "text": "{text}", "font": "font.caption" } ] }
+    },
+    "Button": {
+      "look": {
+        "box": "row", "justify": "center", "radius": 8,
+        "height":  { "cases": [ { "if": "size == \"small\"", "then": 32 }, { "else": 48 } ] },
+        "padding": { "cases": [ { "if": "size == \"small\"", "then": [0, 12] }, { "else": [0, 24] } ] },
+        "fill":    { "cases": [ { "if": "disabled", "then": "fill" }, { "if": "variant == \"secondary\"", "then": null }, { "else": "strong" } ] },
+        "stroke":  { "cases": [ { "if": "disabled", "then": null }, { "if": "variant == \"secondary\"", "then": "text" }, { "else": null } ] },
+        "children": [ {
+          "text": "{text}", "weight": 600,
+          "font": { "cases": [ { "if": "size == \"small\"", "then": "font.caption" }, { "else": "font.subhead" } ] },
+          "ink":  { "cases": [ { "if": "disabled", "then": "muted" }, { "if": "variant == \"secondary\"", "then": "text" }, { "else": "paper" } ] }
+        } ]
+      }
+    },
+    "Glyph": {
+      "doc": "An icon in the middle of a square of size, as big as the square unless font says a smaller size.",
+      "look": { "box": "row", "justify": "center", "size": "{size|or:24}", "shrink": 0, "fill": "{background}", "radius": 999,
+                "children": [ { "text": "{icon|glyph}", "font": { "cases": [ { "if": "font", "then": "{font}" }, { "else": "{size|or:24}" } ] }, "align": "center" } ] }
+    },
+    "IconButton": {
+      "look": { "box": "row", "justify": "center", "size": 40, "shrink": 0, "radius": 20, "fill": "paper", "stroke": "line",
+                "children": [ { "text": "{icon|glyph}", "font": 24, "align": "center" } ] }
+    },
+    "Avatar":  { "look": { "self": "start", "size": "{size|or:40}", "fill": "fill", "radius": 999 } },
+    "Divider": { "look": { "height": 1, "fill": "line" } },
+    "ListItem": {
+      "look": { "box": "row", "gap": 12, "padding": [12, 0], "children": [
+        { "if": "leadingIcon", "kind": "Glyph", "icon": "{leadingIcon}", "size": 24 },
+        { "box": "column", "gap": 2, "grow": 1, "shrink": 1, "children": [
+          { "text": "{title}", "font": "font.body", "strike": "{strikethrough}" },
+          { "if": "detail", "text": "{detail}", "font": "font.caption", "ink": "muted" } ] },
+        { "if": "trailingIcon", "kind": "Glyph", "icon": "{trailingIcon}", "size": 24 } ] }
+    },
+    "Metric": {
+      "look": { "box": "column", "gap": 2, "children": [
+        { "text": "{value}", "font": "font.price" },
+        { "text": "{label}", "font": "font.caption", "ink": "muted" } ] }
+    },
+    "EmptyState": {
+      "look": { "box": "column", "gap": 8, "items": "center", "padding": 24, "children": [
+        { "kind": "Glyph", "icon": "{icon}", "size": 48, "font": 28, "background": "fill" },
+        { "text": "{title}", "font": "font.subhead", "align": "center" },
+        { "if": "detail", "text": "{detail}", "font": "font.body", "ink": "muted", "align": "center" },
+        "$children" ] }
+    },
+    "ImageCarousel": {
+      "doc": "One photo at a time, with \"1 / N\" over its corner.",
+      "scrolls": true,
+      "look": { "aspect": "{aspectRatio|or:4:3}", "fill": "fill", "cross": "line", "children": [
+        { "padding": [4, 10], "fill": "strong", "radius": 999, "pin": { "x": "end", "y": "end", "inset": 12 },
+          "children": [ { "text": "1 / {items|count}", "font": "font.caption", "ink": "paper" } ] } ] }
+    },
+    "ImageGrid": {
+      "doc": "One large photo beside four small ones.",
+      "look": { "box": "grid", "columns": ["1fr", "1fr", "1fr", "1fr"], "rows": ["1fr", "1fr"], "gap": 8, "aspect": 2,
+                "clip": "{radius|or:0}", "children": [
+        { "repeat": "{items|count|atMost:5}",
+          "each": { "span": { "cases": [ { "if": "index == 0", "then": 2 }, { "else": null } ] }, "fill": "fill", "cross": "line" } },
+        "$children" ] }
+    },
+    "Map": {
+      "doc": "A gray area of aspectRatio, its marker in the middle.",
+      "look": { "aspect": "{aspectRatio|or:16:9}", "fill": "fill", "children": [
+        { "size": 24, "fill": "strong", "radius": 999, "pin": { "x": "center", "y": "center", "inset": 0 } } ] }
+    },
+    "DateRangePicker": {
+      "doc": "The chosen dates over one month per months, each a grid of days.",
+      "look": { "box": "column", "gap": 12, "children": [
+        { "font": "font.subhead",
+          "text": { "cases": [ { "if": "value|first && value|last", "then": "{value|first|slashes} – {value|last|slashes}" },
+                               { "else": "选择日期" } ] } },
+        { "box": "row", "gap": 24, "items": "start", "children": [
+          { "repeat": "{months|or:1|atLeast:1|atMost:3}", "each":
+            { "box": "grid", "columns": 7, "gap": 2, "grow": 1, "basis": 0, "children": [
+              { "repeat": 30, "each": { "box": "row", "justify": "center", "height": 32, "children": [
+                { "text": "{n}", "font": "font.caption", "ink": "muted", "align": "center" } ] } } ] } } ] } ] }
+    },
+    "DateField": {
+      "look": { "box": "column", "gap": 2, "padding": [10, 12], "grow": 1, "basis": 0, "stroke": "line", "children": [
+        { "text": "{label}", "font": "font.caption", "weight": 600 },
+        { "cases": [ { "if": "value", "then": { "text": "{value|slashes}", "font": "font.body" } },
+                     { "else": { "text": "添加日期", "font": "font.body", "ink": "muted" } } ] } ] }
+    },
+    "Stepper": {
+      "look": { "box": "row", "justify": "between", "padding": [8, 12], "children": [
+        { "text": "{label}", "font": "font.body" },
+        { "box": "row", "gap": 12, "children": [
+          { "kind": "Glyph", "icon": "remove", "size": 32, "font": 20 },
+          { "text": "{value}", "font": "font.body" },
+          { "kind": "Glyph", "icon": "add", "size": 32, "font": 20 } ] } ] }
+    },
+    "PriceBreakdown": {
+      "doc": "Lines of a price: each of lines and then total, named, beside a gray amount; gray bars for the names too when lines are not given.",
+      "look": { "cases": [
+        { "if": "lines", "then": { "box": "column", "gap": 12, "children": [
+          { "repeat": "{lines}", "each": { "box": "row", "gap": 16, "justify": "between", "children": [
+            { "text": "{item}", "font": "font.body" },
+            { "width": "20%", "height": 14, "fill": "fill", "radius": 4 } ] } },
+          { "height": 1, "fill": "line" },
+          { "box": "row", "gap": 16, "justify": "between", "children": [
+            { "text": "{total|or:合计}", "font": "font.subhead" },
+            { "width": "25%", "height": 14, "fill": "fill", "radius": 4 } ] } ] } },
+        { "else": { "box": "column", "gap": 12, "children": [
+        { "repeat": ["50%", "35%", "40%"], "each": { "box": "row", "gap": 16, "justify": "between", "children": [
+          { "width": "{item}", "height": 14, "fill": "fill", "radius": 4 },
+          { "width": "20%", "height": 14, "fill": "fill", "radius": 4 } ] } },
+        { "height": 1, "fill": "line" },
+        { "box": "row", "gap": 16, "justify": "between", "children": [
+          { "width": "30%", "height": 14, "fill": "fill", "radius": 4 },
+          { "width": "25%", "height": 14, "fill": "fill", "radius": 4 } ] } ] } } ] }
+    },
+    "Skeleton": {
+      "doc": "What a phase shows while data is on its way: shape lists \"image 4:3\" and \"line 70%\".",
+      "look": { "box": "column", "gap": 12, "padding": 16, "children": [
+        { "repeat": "{shape}", "each": { "cases": [
+          { "if": "item|head == \"image\"", "then": { "aspect": "{item|tail|or:4:3}", "margin": [-16, -16, 0, -16], "fill": "fill" } },
+          { "if": "item|head == \"line\"", "then": { "width": "{item|tail}", "height": 14, "fill": "fill", "radius": 4 } },
+          { "else": null } ] } } ] }
+    }
+  }
+}
