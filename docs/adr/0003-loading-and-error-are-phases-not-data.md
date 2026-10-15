@@ -17,6 +17,6 @@ which forced a `listing != null` guard on nearly every path and could describe
 
 ## Consequences
 
-- Shared elements (the back button) are reused across phase trees with `ref`.
+- Shared elements (the back button) are reused across phase trees as a component (`ref` until ADR 0021).
 - A section that loads separately is still modelled as a nullable field plus a
   condition. If that becomes common, revisit union types.

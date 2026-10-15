@@ -12,7 +12,7 @@
 | `data`, `types` | The view model: see [data](data.md). |
 | `fixtures` | Sample view models, one state each: see [data](data.md#fixtures). |
 | `conditions` | The named yes/no tests: see [expressions](expressions.md). |
-| `components` | Nodes used more than once, by `ref`. |
+| `components` | The screen's own components: `{"params": …, "nodes": …}`, used by name with `"with"` (ADR 0021). |
 | `root` | The node tree shown once data is present. |
 | `phases` | Trees shown before data arrives, such as `loading`: see [data](data.md#phases). |
 
