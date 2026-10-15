@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use underdraw_format::Lang;
+use underdraw_format::{Lang, say};
 
 use crate::draw::{Origin, Shown};
 
@@ -65,20 +65,6 @@ pub struct Frame {
     pub height: u32,
 }
 
-impl Region {
-    /// The region in a few words, as the gallery's panel names it: its box
-    /// and how many nodes it covers.
-    pub fn named(&self) -> String {
-        let Frame { x, y, width, height } = self.area;
-        let covering = match self.nodes.len() {
-            0 => "no node".to_string(),
-            1 => "1 node".to_string(),
-            n => format!("{n} nodes"),
-        };
-        format!("region {x}, {y} · {width} × {height} covering {covering}")
-    }
-}
-
 /// A node as the description writes it, and the one instance of it the
 /// person pointed at: which data showed it, its label, and the width.
 /// Written as one object: `{"id", "at", "instance", "label", "width"}`.
@@ -124,37 +110,29 @@ impl On {
     /// `lang`: `on <id> in <state> at <width>`, `on the whole of <state>`,
     /// `on transition …`, `on navigate …`.
     pub fn said(&self, lang: Lang) -> String {
-        match (self, lang) {
-            (On::Node { state, node }, Lang::En) => {
-                format!("on {} in {} at {}", node.origin.written, state.name(), node.width)
+        match self {
+            On::Node { state, node } => {
+                say!(lang, on_node, node = node.origin.written, state = state.name(), width = node.width)
             }
-            (On::Node { state, node }, Lang::Zh) => {
-                format!("在 {}，{}，宽 {}", node.origin.written, state.name(), node.width)
+            On::Region { state, region } => {
+                let Frame { x, y, width: w, height: h } = region.area;
+                let covering = match region.nodes.len() {
+                    0 => say!(lang, covering_none),
+                    1 => say!(lang, covering_one),
+                    n => say!(lang, covering_many, n),
+                };
+                say!(lang, on_region, x, y, w, h, covering, state = state.name(), width = region.width)
             }
-            (On::Region { state, region }, Lang::En) => {
-                format!("on {} in {} at {}", region.named(), state.name(), region.width)
+            On::State { state } => say!(lang, on_state, state = state.name()),
+            On::Transition { transition: t } => {
+                let outcome = t
+                    .outcome
+                    .as_ref()
+                    .map(|outcome| say!(lang, transition_outcome, outcome))
+                    .unwrap_or_default();
+                say!(lang, on_transition, from = t.from, on = t.on, outcome, to = t.to)
             }
-            (On::Region { state, region }, Lang::Zh) => {
-                let Frame { x, y, width, height } = region.area;
-                let nodes = region.nodes.len();
-                format!(
-                    "在区域 {x}, {y} · {width} × {height}（覆盖 {nodes} 个节点），{}，宽 {}",
-                    state.name(),
-                    region.width
-                )
-            }
-            (On::State { state }, Lang::En) => format!("on the whole of {}", state.name()),
-            (On::State { state }, Lang::Zh) => format!("在整个 {}", state.name()),
-            (On::Transition { transition }, Lang::En) => format!("on transition {}", transition.said()),
-            (On::Transition { transition: t }, Lang::Zh) => {
-                let outcome =
-                    t.outcome.as_ref().map(|outcome| format!("，结果 {outcome}")).unwrap_or_default();
-                format!("在过渡上：从 {} 经 {}{outcome} 到 {}", t.from, t.on, t.to)
-            }
-            (On::Navigate { navigate }, Lang::En) => format!("on navigate {}", navigate.said()),
-            (On::Navigate { navigate: n }, Lang::Zh) => {
-                format!("在跳转上：从 {} 经 {} 到 {}", n.from, n.node, n.to)
-            }
+            On::Navigate { navigate: n } => say!(lang, on_navigate, from = n.from, node = n.node, to = n.to),
         }
     }
 }
@@ -341,5 +319,77 @@ mod tests {
             Navigate { from: "Orders".into(), node: "nav-export".into(), to: "ExportDocuments".into() };
         let reference = Reference { description: "/d/orders".into(), on: On::Navigate { navigate } };
         assert_eq!(reference.line(), "/d/orders · navigate from Orders on nav-export to ExportDocuments");
+    }
+
+    #[test]
+    fn what_a_note_is_on_is_said_in_each_language() {
+        let origin = |written: &str| Origin { written: written.into(), at: "/root".into(), instance: vec![] };
+        let default = || Shown::Fixture("default".into());
+        let area = Frame { x: 16, y: 120, width: 358, height: 200 };
+        let region =
+            |nodes: Vec<Origin>| On::Region { state: default(), region: Region { area, width: 390, nodes } };
+        let transition = |outcome: Option<&str>| On::Transition {
+            transition: Transition {
+                from: "default".into(),
+                on: "order-{index}-cancel.tap".into(),
+                outcome: outcome.map(Into::into),
+                to: "cancel-dialog".into(),
+            },
+        };
+        let cases = [
+            (
+                On::Node {
+                    state: default(),
+                    node: Pointed { origin: origin("order-{index}"), label: None, width: 390 },
+                },
+                "on order-{index} in default at 390",
+                "在 order-{index}，default，宽 390",
+            ),
+            (
+                region(vec![]),
+                "on region 16, 120 · 358 × 200 covering no node in default at 390",
+                "在区域 16, 120 · 358 × 200（覆盖 0 个节点），default，宽 390",
+            ),
+            (
+                region(vec![origin("a")]),
+                "on region 16, 120 · 358 × 200 covering 1 node in default at 390",
+                "在区域 16, 120 · 358 × 200（覆盖 1 个节点），default，宽 390",
+            ),
+            (
+                region(vec![origin("a"), origin("b")]),
+                "on region 16, 120 · 358 × 200 covering 2 nodes in default at 390",
+                "在区域 16, 120 · 358 × 200（覆盖 2 个节点），default，宽 390",
+            ),
+            (
+                On::State { state: Shown::Phase("loading".into()) },
+                "on the whole of loading",
+                "在整个 loading",
+            ),
+            (
+                transition(Some("ok")),
+                "on transition from default on order-{index}-cancel.tap outcome ok to cancel-dialog",
+                "在过渡上：从 default 经 order-{index}-cancel.tap，结果 ok 到 cancel-dialog",
+            ),
+            (
+                transition(None),
+                "on transition from default on order-{index}-cancel.tap to cancel-dialog",
+                "在过渡上：从 default 经 order-{index}-cancel.tap 到 cancel-dialog",
+            ),
+            (
+                On::Navigate {
+                    navigate: Navigate {
+                        from: "Orders".into(),
+                        node: "nav-export".into(),
+                        to: "ExportDocuments".into(),
+                    },
+                },
+                "on navigate from Orders on nav-export to ExportDocuments",
+                "在跳转上：从 Orders 经 nav-export 到 ExportDocuments",
+            ),
+        ];
+        for (on, en, zh) in cases {
+            assert_eq!(on.said(Lang::En), en);
+            assert_eq!(on.said(Lang::Zh), zh);
+        }
     }
 }
