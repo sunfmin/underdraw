@@ -170,7 +170,21 @@ DOES
   lists its closed notes, each with why it closed; click one to read it,
   and reopen it, saying what is still to do: one whose target went is
   then on the whole state (the one it was in, or its transition was from,
-  while there is one; else the first). The window writes
+  while there is one; else the first).
+
+  Answer an assumption: click its orange "?" (or the node it is on). The
+  panel shows what was guessed ("assumed"), what else it could be ("or
+  else", what the assumption says after its first ";"), and what each
+  answer means:
+  - ✓ right, keep it: writes a note on the node at once, saying so; the
+    agent takes the guess out of the description (a screen not drawn yet:
+    draws it), and the note then closes itself, saying so ("N3 closed: the
+    assumption on card-number, confirmed, is taken out").
+  - ✗ wrong, tell the agent what is right: type it, as a note's line; it
+    is not saved without one. The agent changes the description and
+    answers it, and you close it or reopen it, as any note.
+  The panel lists the notes that answer it already ("N3 answers it ✗
+  wrong · answered"). The window writes
   notes.json, and only the person's acts; it never writes a description:
   the agent makes every change. Commit notes.json with the description.
 

@@ -51,4 +51,4 @@ pub use operations::{BulkOf, Does, Fill, Operation, Operations};
 pub use overlay::{Anchor, Edge, Placement};
 pub use params::{ScreenParams, params};
 pub use schema::{Schema, Shape};
-pub use transitions::{Transition, read as transitions, writes};
+pub use transitions::{Transition, read as transitions, writes, written_node};

@@ -112,6 +112,14 @@ pub struct Placed {
     pub assumed: Option<String>,
 }
 
+impl Placed {
+    /// Where its orange "?" is drawn, when it was guessed: a click there is
+    /// on its assumption.
+    pub fn guess_tag(&self) -> Option<Rect> {
+        self.assumed.as_ref().map(|_| place::guess_tag(self.rect))
+    }
+}
+
 /// A screen laid out: its size and what to draw.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Page {

@@ -35,7 +35,7 @@ use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::journeys::{self, Step};
-use crate::notes::{self, By, Goes, Note, Proposal, Status};
+use crate::notes::{self, Answer, Answers, By, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
 use crate::{gpu, links, paint, text};
 
@@ -202,6 +202,8 @@ enum Writing {
     /// The line that reopens the note of this id, in the description in
     /// this directory.
     Reopening(PathBuf, String),
+    /// A ✗ on the assumption of the node this references: what is right.
+    Rejecting(Reference, Answers),
 }
 
 /// What a click on a line of the panel does.
@@ -221,6 +223,9 @@ enum Do {
     Reopen(PathBuf, String),
     /// Picks the note named so: one of a description's closed notes.
     Show(PathBuf, String),
+    /// Answers the assumption on the node picked: ✓ writes the note at
+    /// once; ✗ starts writing what is right.
+    Judge(Answer),
     /// Shows the step of this place in the journey played.
     Step(usize),
 }
@@ -241,16 +246,16 @@ struct Pin {
     region: Option<Rect>,
 }
 
-/// Every description's notes on the lines of the tree, by its directory,
-/// each whose target is gone closed first; one whose notes.json cannot be
-/// read has none (`check` says why).
-fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
+/// Every description's notes on the lines of the tree over `root`, by its
+/// directory, each that closes itself closed first; one whose notes.json
+/// cannot be read has none (`check` says why).
+fn notes_of(root: &Path, lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
     lines
         .iter()
         .filter(|line| line.state.is_none())
         .filter_map(|line| line.row.description())
         .map(|dir| {
-            let _ = notes::settle(dir);
+            let _ = notes::settle(dir, root);
             (dir.to_path_buf(), notes::read(dir).unwrap_or_default())
         })
         .collect()
@@ -441,12 +446,15 @@ const ARROW_FONT: Font = Font { size: 12.0, weight: 600, line_height: 16.0 };
 impl Page {
     /// The node that a press at `at`, in the page's points, is on: the
     /// innermost there, an overlay before what it floats over.
+    /// A press on a node's orange "?" is on that node, whatever is under
+    /// it.
     fn node_at(&self, at: (f64, f64)) -> Option<&Placed> {
-        self.nodes.iter().rev().find(|node| {
-            let r = node.rect;
+        let over = |r: Rect| {
             let (x, y) = (f64::from(r.x), f64::from(r.y));
             (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1)
-        })
+        };
+        let guessed = self.nodes.iter().rev().find(|node| node.guess_tag().is_some_and(over));
+        guessed.or_else(|| self.nodes.iter().rev().find(|node| over(node.rect)))
     }
 
     /// Whether a node of id `id` is in it.
@@ -496,7 +504,7 @@ impl Gallery {
         Gallery {
             root: root.to_path_buf(),
             lang: Lang::default(),
-            notes: notes_of(&lines),
+            notes: notes_of(root, &lines),
             lines,
             picked: None,
             wanted: None,
@@ -712,7 +720,7 @@ impl Gallery {
         let journey = self.picked.and_then(|index| self.lines.get(index)).filter(|line| line.journey);
         let journey = journey.map(|line| (line.row.dir.clone(), self.playing.as_ref().map_or(0, |p| p.at)));
         self.lines = lines(&self.root);
-        let notes = notes_of(&self.lines);
+        let notes = notes_of(&self.root, &self.lines);
         let closed = closed_itself(&self.notes, &notes);
         self.notes = notes;
         self.picked = None;
@@ -877,6 +885,10 @@ impl Gallery {
                 self.acted = None;
                 true
             }
+            Some(Do::Judge(answer)) => {
+                self.judge(answer);
+                true
+            }
             Some(Do::Step(at)) => self.step(at),
             None => false,
         }
@@ -903,7 +915,7 @@ impl Gallery {
         };
         match notes::propose(&on, proposal) {
             Ok(id) => {
-                self.notes = notes_of(&self.lines);
+                self.notes = notes_of(&self.root, &self.lines);
                 self.say(format!("{id} saved, proposing it for the agent: `underdraw notes` lists it"));
                 self.note = Some((on.description, id));
             }
@@ -1689,6 +1701,9 @@ impl Gallery {
                 match &draft.on {
                     Writing::On(on) => format!("note {} · {keys}", on.on.said()),
                     Writing::Reopening(_, id) => format!("reopening {id}: say what is still to do · {keys}"),
+                    Writing::Rejecting(on, _) => {
+                        format!("✗ wrong {}: say what is right, for the agent · {keys}", on.on.said())
+                    }
                 },
                 None,
             ));
@@ -1717,12 +1732,91 @@ impl Gallery {
         let writable = !picked.is_empty() && self.draft.is_none() && !self.noting;
         rows.extend(picked.into_iter().map(|line| (line, None)));
         if writable {
+            rows.extend(self.assumption_panel());
             rows.push(("    write a note on it  (N)".to_string(), Some(Do::Write)));
         }
         if self.note.is_none() && self.draft.is_none() && !self.noting {
             rows.extend(self.closed_panel());
         }
         rows
+    }
+
+    /// What the panel says of the assumption on the node picked, past what
+    /// was guessed and what else it could be (the node's lines say those):
+    /// the notes that already answer it, then ✓ and ✗, each saying what it
+    /// means. Nothing when the node picked has none.
+    fn assumption_panel(&self) -> Vec<(String, Option<Do>)> {
+        let Some((on, _)) = self.assumption() else {
+            return Vec::new();
+        };
+        let mut rows = Vec::new();
+        if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
+            for note in notes.iter().filter(|note| note.status != Status::Closed) {
+                let (Some(answers), On::Node { node: on, .. }) = (&note.answers, &note.on) else { continue };
+                if on.origin.written == node.origin.written {
+                    let (mark, status) = (answered(answers.answer), note_status(note));
+                    rows.push((format!("    {} answers it {mark} · {status}", note.id), None));
+                }
+            }
+        }
+        rows.push((
+            "    ✓ right, keep it: the agent takes the guess out, and the note closes itself".to_string(),
+            Some(Do::Judge(Answer::Right)),
+        ));
+        rows.push((
+            "    ✗ wrong, tell the agent what is right: write it, for the agent to change and answer"
+                .to_string(),
+            Some(Do::Judge(Answer::Wrong)),
+        ));
+        rows
+    }
+
+    /// The node picked, as a note on it references it, and what was assumed
+    /// there; none when nothing was.
+    fn assumption(&self) -> Option<(Reference, String)> {
+        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+            return None;
+        };
+        let assumed =
+            pages.iter().find_map(|page| page.nodes.iter().find(|n| &n.id == id)?.assumed.clone())?;
+        let on = self.reference().filter(|on| matches!(on.on, On::Node { .. }))?;
+        Some((on, assumed))
+    }
+
+    /// The assumption on the node picked answered `answer`: ✓ writes its
+    /// note at once; ✗ starts writing what is right. The window writes the
+    /// note only, never the description.
+    fn judge(&mut self, answer: Answer) {
+        let Some((on, assumed)) = self.assumption() else {
+            return self.say("nothing is assumed there: pick a node with an orange \"?\" first".to_string());
+        };
+        let (On::Node { node, .. }, Picture::Pages(pages)) = (&on.on, &self.picture) else {
+            return;
+        };
+        let screen = crate::read(&on.description).map(|(screen, _)| screen).unwrap_or(Value::Null);
+        let id = self.node.clone().unwrap_or_default();
+        let kind =
+            pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)).map(|n| n.kind.clone());
+        let guess =
+            Guess::of(&screen, &node.origin.written, &kind.unwrap_or_default(), &links::drawn(&self.root));
+        let answers = Answers { assumed, guess, answer };
+        match answer {
+            Answer::Right => match notes::judge(&on, answers, "") {
+                Ok(id) => {
+                    self.notes = notes_of(&self.root, &self.lines);
+                    self.say(format!(
+                        "{id} saved ✓, for the agent to take the guess out: the note then closes itself"
+                    ));
+                    self.note = Some((on.description, id));
+                }
+                Err(e) => self.say(format!("not saved: {e:#}")),
+            },
+            Answer::Wrong => {
+                self.acted = None;
+                self.note = None;
+                self.draft = Some(Draft { on: Writing::Rejecting(on, answers), text: String::new() });
+            }
+        }
     }
 
     /// The closed notes of the description whose overview is shown, each
@@ -1762,15 +1856,12 @@ impl Gallery {
         let (Some(note), Some((dir, _))) = (self.picked_note(), &self.note) else {
             return Vec::new();
         };
-        let status = match note.status {
-            Status::Open => "open, for the agent to answer",
-            Status::Answered => "answered",
-            Status::Closed => match &note.closed_because {
-                Some(why) => &format!("closed: {why}"),
-                None => "closed",
-            },
+        let status = note_status(note);
+        let answers = match &note.answers {
+            Some(answers) => format!(" · answers the assumption {}", answered(answers.answer)),
+            None => String::new(),
         };
-        let mut rows = vec![(format!("{} · {status} · {}", note.id, note.on.said()), None)];
+        let mut rows = vec![(format!("{} · {status} · {}{answers}", note.id, note.on.said()), None)];
         for said in &note.thread {
             let who = match said.by {
                 By::Person => "you",
@@ -1908,10 +1999,12 @@ impl Gallery {
             Writing::Reopening(dir, id) => {
                 notes::reopen(dir, id, &draft.text).map(|()| (dir.clone(), id.clone(), "reopened"))
             }
+            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text)
+                .map(|id| (on.description.clone(), id, "saved ✗")),
         };
         match saved {
             Ok((dir, id, done)) => {
-                self.notes = notes_of(&self.lines);
+                self.notes = notes_of(&self.root, &self.lines);
                 self.say(format!("{id} {done}, for the agent: `underdraw notes` lists it"));
                 self.note = Some((dir, id));
             }
@@ -1926,7 +2019,7 @@ impl Gallery {
     fn close(&mut self, dir: &Path, id: &str) {
         match notes::close(dir, id) {
             Ok(()) => {
-                self.notes = notes_of(&self.lines);
+                self.notes = notes_of(&self.root, &self.lines);
                 self.note = None;
                 self.say(format!("{id} closed"));
             }
@@ -2147,12 +2240,18 @@ impl Gallery {
             Some(operations) => operations.join(", "),
             None => "nothing".to_string(),
         };
-        let mut lines = vec![
-            format!("id  {id}"),
-            format!("kind  {}", node.kind),
-            format!("calls  {calls}"),
-            format!("assumed  {}", node.assumed.as_deref().unwrap_or("nothing")),
-        ];
+        let mut lines = vec![format!("id  {id}"), format!("kind  {}", node.kind), format!("calls  {calls}")];
+        match node.assumed.as_deref() {
+            Some(assumed) => {
+                let (guessed, other) = parts(assumed);
+                lines.push(format!("assumed  {guessed}"));
+                lines.push(match other {
+                    Some(other) => format!("or else  {other}"),
+                    None => "or else  not said: ✗ says what it is".to_string(),
+                });
+            }
+            None => lines.push("assumed  nothing".to_string()),
+        }
         for page in pages {
             let width = page.width;
             lines.push(match page.nodes.iter().find(|n| &n.id == id) {
@@ -2655,6 +2754,40 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
 }
 
 /// A line from `from` to `to`.
+/// What an assumption says, in its two parts: what was guessed, and what
+/// else it could be, split where it first says "; " (or "；"); the second
+/// none when it does not.
+fn parts(assumed: &str) -> (&str, Option<&str>) {
+    match assumed.find([';', '；']) {
+        Some(at) => {
+            let split = assumed[at..].chars().next().map_or(1, char::len_utf8);
+            let other = assumed[at + split..].trim();
+            (assumed[..at].trim(), (!other.is_empty()).then_some(other))
+        }
+        None => (assumed.trim(), None),
+    }
+}
+
+/// An answer to an assumption, as the panel marks it.
+fn answered(answer: Answer) -> &'static str {
+    match answer {
+        Answer::Right => "✓ right",
+        Answer::Wrong => "✗ wrong",
+    }
+}
+
+/// Where `note` is in its life, as the panel says it.
+fn note_status(note: &Note) -> String {
+    match note.status {
+        Status::Open => "open, for the agent to answer".to_string(),
+        Status::Answered => "answered".to_string(),
+        Status::Closed => match &note.closed_because {
+            Some(why) => format!("closed: {why}"),
+            None => "closed".to_string(),
+        },
+    }
+}
+
 fn line(from: (f64, f64), to: (f64, f64), ink: Ink) -> Draw {
     Draw::Line { from: [from.0 as f32, from.1 as f32], to: [to.0 as f32, to.1 as f32], ink }
 }
@@ -4040,6 +4173,134 @@ mod tests {
         assert_eq!(note.closed_because, None);
         assert_eq!(note.thread.len(), 3, "its thread kept, the new line added");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The middle of the orange "?" of node `id`, in picture `page`.
+    fn on_guess(gallery: &Gallery, page: usize, id: &str) -> (f64, f64) {
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
+        let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
+        let r = node.guess_tag().expect("it is guessed");
+        let (left, top) = gallery.origins()[page];
+        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
+        (left + middle.0 * zoom, top + middle.1 * zoom)
+    }
+
+    #[test]
+    fn an_assumption_is_answered_with_a_note_and_a_confirmed_one_closes_once_taken_out() {
+        let root = root_of("assume", &[("checkout", "checkout")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let checkout = line_of(&gallery, "checkout");
+        let states = gallery.lines[checkout + 1..].iter().take_while(|line| line.state.is_some()).count();
+        let shown = (1..=states).find(|offset| {
+            showing(&mut gallery, checkout + offset);
+            let Picture::Pages(pages) = &gallery.picture else { return false };
+            pages[0].has("card-number")
+        });
+        assert!(shown.is_some(), "a state of checkout shows the card form");
+        gallery.cursor = on_guess(&gallery, 0, "card-number");
+        gallery.press();
+        assert_eq!(gallery.node.as_deref(), Some("card-number"), "a click on its \"?\" picks it");
+        let panel = gallery.panel();
+        for part in [
+            "assumed  Card fields are drawn here",
+            "or else  the real build may use the payment provider's hosted fields",
+            "    ✓ right, keep it: the agent takes the guess out, and the note closes itself",
+            "    ✗ wrong, tell the agent what is right: write it, for the agent to change and answer",
+        ] {
+            assert!(panel.iter().any(|line| line == part), "{part:?} in {panel:?}");
+        }
+
+        assert!(click_panel_line(
+            &mut gallery,
+            "✗ wrong, tell the agent what is right: write it, for the agent to change and answer"
+        ));
+        press_keys(&mut gallery, &["Enter"]);
+        assert!(gallery.panel()[0].starts_with("not saved: ✗ says what is right"), "{:?}", gallery.panel());
+        assert!(gallery.draft.is_some(), "the ✗ stays to write");
+        type_text(&mut gallery, "use the hosted fields");
+        press_keys(&mut gallery, &["Enter"]);
+        let dir = root.join("checkout");
+        let wrong = notes::read(&dir).unwrap().remove(0);
+        assert_eq!(wrong.status, Status::Open);
+        assert_eq!(wrong.thread[0].says, "use the hosted fields");
+        let answers = wrong.answers.clone().unwrap();
+        assert_eq!((answers.answer, answers.guess), (Answer::Wrong, Guess::Author));
+        assert!(answers.assumed.starts_with("Card fields are drawn here;"));
+
+        gallery.note = None;
+        assert!(click_panel_line(
+            &mut gallery,
+            "✓ right, keep it: the agent takes the guess out, and the note closes itself"
+        ));
+        let right = notes::read(&dir).unwrap().remove(1);
+        assert_eq!(right.answers.as_ref().map(|answers| answers.answer), Some(Answer::Right));
+        assert_eq!(right.thread[0].says, notes::RIGHT, "✓ needs no line");
+        assert!(
+            gallery
+                .panel()
+                .iter()
+                .any(|line| line == "    N1 answers it ✗ wrong · open, for the agent to answer")
+        );
+
+        notes::answer(&dir, "N1", "kept them drawn: hosted fields are for the build").unwrap();
+        let file = dir.join(crate::SCREEN);
+        let screen = std::fs::read_to_string(&file).unwrap().replace(
+            ",\n                        \"assumed\": \"Card fields are drawn here; the real build may use the payment provider's hosted fields\"",
+            "",
+        );
+        assert!(!screen.contains("Card fields are drawn here"), "the guess taken out");
+        std::fs::write(&file, screen).unwrap();
+        gallery.reload();
+        assert_eq!(
+            gallery.panel()[0],
+            "N2 closed: the assumption on card-number, confirmed, is taken out · its description's overview lists it, to reopen"
+        );
+        let notes = notes::read(&dir).unwrap();
+        assert_eq!(notes[1].status, Status::Closed, "the ✓ closes itself");
+        assert_eq!(notes[0].status, Status::Answered, "the ✗ waits for the person, as any note does");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_confirmed_screen_not_drawn_yet_closes_once_it_is_drawn() {
+        let root = root_of("assume-undrawn", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        gallery.cursor = on_guess(&gallery, 0, "nav-export");
+        gallery.press();
+        let panel = gallery.panel();
+        assert!(
+            panel.iter().any(|line| line.starts_with("assumed  This navigates to ExportDocuments")),
+            "{panel:?}"
+        );
+        assert!(
+            panel.iter().any(|line| line.starts_with("or else  it could instead be a misspelt name")),
+            "{panel:?}"
+        );
+        assert!(click_panel_line(
+            &mut gallery,
+            "✓ right, keep it: the agent takes the guess out, and the note closes itself"
+        ));
+        let dir = root.join("orders");
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!(note.answers.unwrap().guess, Guess::Undrawn(vec!["ExportDocuments".into()]));
+        gallery.reload();
+        assert_eq!(notes::read(&dir).unwrap()[0].status, Status::Open, "not drawn yet: it stands");
+
+        let drawn = root_of("assume-undrawn-export", &[("export", "export")]);
+        std::fs::rename(drawn.join("export"), root.join("export")).unwrap();
+        gallery.reload();
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!(note.status, Status::Closed);
+        assert_eq!(
+            note.closed_because.as_deref(),
+            Some("the assumption on nav-export, confirmed, is taken out")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(drawn).unwrap();
     }
 
     #[test]
