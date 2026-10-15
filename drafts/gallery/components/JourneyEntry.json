@@ -93,80 +93,16 @@
   "fixtures": {
     "walks": {
       "journey": {
-        "name": "cancel-an-order",
-        "about": "The person opens an order from the list and cancels it before it ships.",
-        "steps": 3,
-        "route": "orders › order",
-        "brokenAt": null,
-        "stops": [
-          {
-            "number": 1,
-            "screen": "orders",
-            "state": "default"
-          },
-          {
-            "number": 2,
-            "screen": "order",
-            "state": "open"
-          },
-          {
-            "number": 3,
-            "screen": "order",
-            "state": "cancelled",
-            "last": true
-          }
-        ]
+        "$sample": "cancelAnOrder"
       }
     },
     "broken": {
       "journey": {
-        "name": "refund-a-cancelled-order",
-        "about": "",
-        "steps": 2,
-        "route": "order",
-        "brokenAt": 2,
-        "stops": [
-          {
-            "number": 1,
-            "screen": "order",
-            "state": "cancelled"
-          },
-          {
-            "number": 2,
-            "screen": "order",
-            "state": "refunded",
-            "last": true,
-            "broken": true
-          }
-        ]
+        "$sample": "refundACancelledOrder"
       }
     },
     "picked": {
-      "journey": {
-        "name": "cancel-an-order",
-        "about": "The person opens an order from the list and cancels it before it ships.",
-        "steps": 3,
-        "route": "orders › order",
-        "brokenAt": null,
-        "stops": [
-          {
-            "number": 1,
-            "screen": "orders",
-            "state": "default"
-          },
-          {
-            "number": 2,
-            "screen": "order",
-            "state": "open"
-          },
-          {
-            "number": 3,
-            "screen": "order",
-            "state": "cancelled",
-            "last": true
-          }
-        ]
-      },
+      "$patch": "walks",
       "picked": true
     }
   }

@@ -187,5 +187,244 @@
       "when": "heading && !open",
       "label": "Folded"
     }
+  },
+  "samples": {
+    "cancelAnOrderAtStep2": {
+      "about": "The person opens an order from the list and cancels it before it ships.",
+      "brokenAt": null,
+      "name": "cancel-an-order",
+      "route": "orders › order",
+      "steps": 3,
+      "stops": [
+        {
+          "number": 1,
+          "passed": true,
+          "screen": "orders",
+          "state": "default"
+        },
+        {
+          "here": true,
+          "number": 2,
+          "screen": "order",
+          "state": "open"
+        },
+        {
+          "last": true,
+          "number": 3,
+          "screen": "order",
+          "state": "cancelled"
+        }
+      ]
+    },
+    "refundACancelledOrder": {
+      "about": "",
+      "brokenAt": 2,
+      "name": "refund-a-cancelled-order",
+      "route": "order",
+      "steps": 2,
+      "stops": [
+        {
+          "number": 1,
+          "screen": "order",
+          "state": "cancelled"
+        },
+        {
+          "broken": true,
+          "last": true,
+          "number": 2,
+          "screen": "order",
+          "state": "refunded"
+        }
+      ]
+    },
+    "cancelAnOrder": {
+      "about": "The person opens an order from the list and cancels it before it ships.",
+      "brokenAt": null,
+      "name": "cancel-an-order",
+      "route": "orders › order",
+      "steps": 3,
+      "stops": [
+        {
+          "number": 1,
+          "screen": "orders",
+          "state": "default"
+        },
+        {
+          "number": 2,
+          "screen": "order",
+          "state": "open"
+        },
+        {
+          "last": true,
+          "number": 3,
+          "screen": "order",
+          "state": "cancelled"
+        }
+      ]
+    },
+    "shopLines": [
+      {
+        "depth": 1,
+        "kind": "directory",
+        "meta": "",
+        "name": "shop/",
+        "picked": false
+      },
+      {
+        "depth": 2,
+        "kind": "description",
+        "meta": "3 states",
+        "name": "order",
+        "picked": false
+      },
+      {
+        "depth": 3,
+        "kind": "state",
+        "meta": "",
+        "name": "open",
+        "picked": false
+      },
+      {
+        "depth": 3,
+        "kind": "state",
+        "meta": "",
+        "name": "shipped",
+        "picked": false
+      },
+      {
+        "depth": 3,
+        "kind": "state",
+        "meta": "",
+        "name": "cancelled",
+        "picked": false
+      },
+      {
+        "depth": 2,
+        "kind": "description",
+        "meta": "2 states",
+        "name": "orders",
+        "picked": false
+      },
+      {
+        "depth": 3,
+        "kind": "state",
+        "meta": "",
+        "name": "default",
+        "picked": false
+      },
+      {
+        "depth": 3,
+        "kind": "phase",
+        "meta": "",
+        "name": "loading",
+        "picked": false
+      }
+    ],
+    "playedJourneys": [
+      {
+        "journey": {
+          "about": "The person opens an order from the list and cancels it before it ships.",
+          "brokenAt": null,
+          "name": "cancel-an-order",
+          "route": "orders › order",
+          "steps": 3,
+          "stops": [
+            {
+              "number": 1,
+              "screen": "orders",
+              "state": "default"
+            },
+            {
+              "number": 2,
+              "screen": "order",
+              "state": "open"
+            },
+            {
+              "last": true,
+              "number": 3,
+              "screen": "order",
+              "state": "cancelled"
+            }
+          ]
+        },
+        "played": true
+      },
+      {
+        "journey": {
+          "about": "",
+          "brokenAt": 2,
+          "name": "refund-a-cancelled-order",
+          "route": "order",
+          "steps": 2,
+          "stops": [
+            {
+              "number": 1,
+              "screen": "order",
+              "state": "cancelled"
+            },
+            {
+              "broken": true,
+              "last": true,
+              "number": 2,
+              "screen": "order",
+              "state": "refunded"
+            }
+          ]
+        },
+        "played": false
+      }
+    ],
+    "shopJourneys": [
+      {
+        "journey": {
+          "about": "The person opens an order from the list and cancels it before it ships.",
+          "brokenAt": null,
+          "name": "cancel-an-order",
+          "route": "orders › order",
+          "steps": 3,
+          "stops": [
+            {
+              "number": 1,
+              "screen": "orders",
+              "state": "default"
+            },
+            {
+              "number": 2,
+              "screen": "order",
+              "state": "open"
+            },
+            {
+              "last": true,
+              "number": 3,
+              "screen": "order",
+              "state": "cancelled"
+            }
+          ]
+        }
+      },
+      {
+        "journey": {
+          "about": "",
+          "brokenAt": 2,
+          "name": "refund-a-cancelled-order",
+          "route": "order",
+          "steps": 2,
+          "stops": [
+            {
+              "number": 1,
+              "screen": "order",
+              "state": "cancelled"
+            },
+            {
+              "broken": true,
+              "last": true,
+              "number": 2,
+              "screen": "order",
+              "state": "refunded"
+            }
+          ]
+        }
+      }
+    ]
   }
 }
