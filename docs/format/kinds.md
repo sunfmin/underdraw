@@ -76,7 +76,7 @@ Any look may carry `"if"`, and it is left out when the condition fails.
 | `width`, `height`, `size` | A length, or a share of the parent such as `"70%"`. `size` sets both. |
 | `aspect` | `"4:3"`, or a number. |
 | `grow`, `shrink`, `basis` | How the box takes up spare room in its row or column, or gives it back. |
-| `self` | `"start"`: as wide as its content, not its column. |
+| `self` | `"start"`: as wide as its content, not its column. In a row it is centred across, as its siblings are. |
 | `items`, `justify` | Alignment of its children: `items` `"start"` or `"center"`; `justify` `"center"`, `"between"` or `"end"`. `check` refuses any other word, here and for `box`, `align`, `self`, `overflowX` and a `pin`'s edges. |
 | `columns`, `rows`, `span` | Grid tracks: a count, or a list such as `["58%", "1fr"]`. `span` makes a cell cover that many columns and rows. |
 | `fill`, `stroke`, `radius`, `dashed` | Its outline and fill, in an ink (below). |

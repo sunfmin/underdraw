@@ -908,7 +908,7 @@ LOOKS
     width height size    a length or "70%" of the parent; size sets both
     aspect               "4:3" or a number
     grow shrink basis    flex sharing in the parent row or column
-    self                 "start": as wide as its content
+    self                 "start": as wide as its content; in a row, centred across
     items                "start" | "center";  justify "center" | "between" | "end"
                          check refuses a word a key does not take
     columns rows span    grid tracks: a count or ["1fr", "1fr"]; span covers cells
