@@ -23,14 +23,6 @@
     }
   },
   "types": {
-    "TreeRow": {
-      "name": "string 1..",
-      "depth": "int 0..4",
-      "kind": "RowKind",
-      "meta": "string = \"\"",
-      "picked": "bool = false"
-    },
-    "RowKind": "enum(directory, description, state, phase)",
     "PlayStep": {
       "number": "int 1..",
       "screen": "string 1..",
@@ -55,22 +47,6 @@
       "id": "string 1..",
       "component": "string 1..",
       "calls": "string"
-    },
-    "Note": {
-      "id": "string 1..",
-      "stands": "NoteStands",
-      "messages": "Message[] 1.."
-    },
-    "NoteStands": "enum(waiting, answered)",
-    "Message": {
-      "who": "Who",
-      "text": "string 1.."
-    },
-    "Who": "enum(person, agent)",
-    "Fault": {
-      "at": "string 1..",
-      "problem": "string 1..",
-      "file": "string 1.."
     },
     "TreeJourney": {
       "journey": "Journey",
@@ -117,18 +93,6 @@
     "answers": {
       "when": "step.answer != \"\"",
       "label": "The act answers an outcome"
-    },
-    "Message.mine": {
-      "when": "who == \"person\"",
-      "label": "Said by the person"
-    },
-    "TreeRow.heading": {
-      "when": "kind == \"directory\" || kind == \"description\"",
-      "label": "A directory or a description"
-    },
-    "TreeRow.phase": {
-      "when": "kind == \"phase\"",
-      "label": "A phase"
     },
     "labelled": {
       "when": "!atLast && step.label != null",
@@ -1610,107 +1574,6 @@
                 ]
               }
             ]
-          }
-        ]
-      }
-    },
-    "Bubble": {
-      "doc": "A message of a note: the person's on the right, filled; the agent's on the left, outlined.",
-      "params": [
-        "text",
-        "mine"
-      ],
-      "look": {
-        "cases": [
-          {
-            "if": "mine",
-            "then": {
-              "box": "row",
-              "justify": "end",
-              "children": [
-                {
-                  "box": "column",
-                  "padding": [
-                    6,
-                    10
-                  ],
-                  "radius": 10,
-                  "width": "85%",
-                  "fill": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": "fill"
-                      },
-                      {
-                        "else": null
-                      }
-                    ]
-                  },
-                  "stroke": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": null
-                      },
-                      {
-                        "else": "line"
-                      }
-                    ]
-                  },
-                  "children": [
-                    {
-                      "text": "{text}",
-                      "font": "font.caption"
-                    }
-                  ]
-                }
-              ]
-            }
-          },
-          {
-            "else": {
-              "box": "row",
-              "children": [
-                {
-                  "box": "column",
-                  "padding": [
-                    6,
-                    10
-                  ],
-                  "radius": 10,
-                  "width": "85%",
-                  "fill": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": "fill"
-                      },
-                      {
-                        "else": null
-                      }
-                    ]
-                  },
-                  "stroke": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": null
-                      },
-                      {
-                        "else": "line"
-                      }
-                    ]
-                  },
-                  "children": [
-                    {
-                      "text": "{text}",
-                      "font": "font.caption"
-                    }
-                  ]
-                }
-              ]
-            }
           }
         ]
       }

@@ -13,32 +13,11 @@
       }
     }
   },
-  "types": {
-    "TreeRow": {
-      "name": "string 1..",
-      "depth": "int 0..4",
-      "kind": "RowKind",
-      "meta": "string = \"\"",
-      "picked": "bool = false"
-    },
-    "RowKind": "enum(directory, description, state, phase)"
-  },
+  "types": {},
   "conditions": {
     "hasJourneys": {
       "when": "journeyCount > 0",
       "label": "Journeys under shop"
-    },
-    "TreeRow.heading": {
-      "when": "kind == \"directory\" || kind == \"description\"",
-      "label": "A directory or a description"
-    },
-    "TreeRow.phase": {
-      "when": "kind == \"phase\"",
-      "label": "A phase"
-    },
-    "TreeRow.metered": {
-      "when": "meta != \"\"",
-      "label": "Says how many"
     }
   },
   "fixtures": {
