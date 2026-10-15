@@ -130,7 +130,7 @@ pub enum Takes {
 
 /// Every key a look may hold, and what it takes: what underdraw-layout
 /// reads. A look with `component` holds that component's props instead.
-pub const LOOK: [(&str, Takes); 44] = [
+pub const LOOK: [(&str, Takes); 45] = [
     ("if", Takes::Any),
     ("cases", Takes::Any),
     ("repeat", Takes::Any),
@@ -175,6 +175,7 @@ pub const LOOK: [(&str, Takes); 44] = [
     ("pin", Takes::Pin),
     ("backdrop", Takes::Bool),
     ("itemWidth", Takes::Any),
+    ("wireframe", Takes::Any),
 ];
 
 /// What `key` takes in a look, when a look reads it.
@@ -580,7 +581,7 @@ impl Components {
                     {
                         findings.add(&format!("{at}.{name}"), &icons::unknown(icon.as_str()));
                     }
-                    if name != "pin" && !NOTES.contains(&name) {
+                    if name != "pin" && name != "wireframe" && !NOTES.contains(&name) {
                         self.look_faults(&key.look, &format!("{at}.{name}"), false, findings);
                     }
                 }

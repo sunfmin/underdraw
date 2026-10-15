@@ -17,7 +17,11 @@ use underdraw_format::{Anchor, Atom, Components, Edge, Expr, Lang, Node, Track};
 
 use crate::place::{Elem, Look, Pin, Words};
 use crate::tokens::Tokens;
-use crate::{Align, Ink};
+use crate::{Align, Ink, Page, Pictures};
+
+/// How high a box that cannot draw the state it names is for its width,
+/// when nothing else says: as a phone's screen.
+const UNPICTURED_ASPECT: f32 = 390.0 / 844.0;
 
 /// The most a `repeat` makes, so a wrong count cannot run away.
 const MOST_REPEATED: u64 = 1000;
@@ -67,6 +71,8 @@ pub(crate) struct Catalog<'t> {
     pub(crate) components: &'t Components,
     /// The language a guess underdraw makes itself is said in.
     pub(crate) lang: Lang,
+    /// Other descriptions' states, for a `wireframe` to draw.
+    pub(crate) pictures: &'t dyn Pictures,
 }
 
 impl Catalog<'_> {
@@ -87,6 +93,25 @@ impl Catalog<'_> {
         };
         elem.source = Some(node);
         elem
+    }
+
+    /// The state a `wireframe`'s value names, `{"screen", "state"}`, laid
+    /// out by whoever reads the descriptions; or why it cannot be drawn.
+    fn picture(&self, wanted: &Value) -> Result<Page, String> {
+        let screen = match wanted.get("screen") {
+            Some(Value::String(screen)) if !screen.is_empty() => screen,
+            _ => {
+                return Err(
+                    "it draws no description: give it \"screen\", the screen a description under the project declares"
+                        .to_string(),
+                );
+            }
+        };
+        let state = match wanted.get("state") {
+            Some(Value::String(state)) if !state.is_empty() => Some(state.as_str()),
+            _ => None,
+        };
+        self.pictures.picture(screen, state)
     }
 
     /// The one box `look` makes: the first, or an empty one when it makes
@@ -182,7 +207,8 @@ impl Catalog<'_> {
     }
 
     /// A box: its layout (`box`, sizes, `gap`, `padding`, …), how it looks
-    /// (`fill`, `stroke`, `radius`, `cross`, `topLine`, `dividers`) and its
+    /// (`fill`, `stroke`, `radius`, `cross`, `topLine`, `dividers`,
+    /// `wireframe`) and its
     /// `children`.
     /// A `frame` also takes the container props a description may set on
     /// the node: `padding`, `gap`, `radius`, `border`, `elevation`.
@@ -190,6 +216,18 @@ impl Catalog<'_> {
         let get = |key: &str| self.get(object, key, scope);
         let mut style = get("box").as_str().and_then(look::Flow::read).map(box_style).unwrap_or_default();
         self.style(object, scope, &mut style);
+        let wireframe = get("wireframe");
+        let picture = match wireframe {
+            Value::Null => None,
+            wanted => Some(self.picture(&wanted)),
+        };
+        if style.aspect_ratio.is_none() && style.size.height == Dimension::auto() {
+            style.aspect_ratio = match &picture {
+                Some(Ok(page)) if page.height > 0.0 => Some(page.width / page.height),
+                Some(_) => Some(UNPICTURED_ASPECT),
+                None => None,
+            };
+        }
         let mut gap = self.tokens.find_length(&get("gap"));
         let mut radius = self.tokens.find_length(&get("radius")).unwrap_or(0.0);
         let mut stroke = ink(self.tokens, &get("stroke"));
@@ -227,6 +265,16 @@ impl Catalog<'_> {
         }
         if let Some(line) = ink(self.tokens, &get("topLine")) {
             elem = elem.with(Look::TopLine(line));
+        }
+        match picture {
+            Some(Ok(page)) => elem = elem.with(Look::Picture(Box::new(page))),
+            Some(Err(problem)) => {
+                elem = elem
+                    .with(Look::Box { radius: 0.0, fill: Some(Ink::Fill), stroke: None, dashed: false })
+                    .with(Look::Cross(Ink::Line));
+                elem.unpictured = Some(problem);
+            }
+            None => {}
         }
         // A line between its cells: true for the line ink, or an ink.
         elem.dividers = match get("dividers") {
@@ -754,7 +802,12 @@ mod tests {
         let tokens_json = json!({});
         let tokens = Tokens(&tokens_json);
         let components = underdraw_format::Screen::read(&json!({}), Default::default()).components;
-        let catalog = Catalog { tokens: &tokens, components: &components, lang: Lang::default() };
+        let catalog = Catalog {
+            tokens: &tokens,
+            components: &components,
+            lang: Lang::default(),
+            pictures: &crate::NoPictures,
+        };
         let scope = Scope { props, vars: Map::new(), node: None };
         LOOKED_UP.with(|all| all.borrow_mut().clear());
         match &parsed {

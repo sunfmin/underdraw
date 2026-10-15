@@ -117,6 +117,12 @@
       "look": { "aspect": "{aspectRatio|or:16:9}", "fill": "fill", "children": [
         { "size": 24, "fill": "strong", "radius": 999, "pin": { "x": "center", "y": "center", "inset": 0 } } ] }
     },
+    "Wireframe": {
+      "doc": "Another description's state drawn inside the box, scaled to it: the screen a description under the project declares, in state.",
+      "params": ["screen", "state", "aspectRatio"],
+      "look": { "wireframe": { "screen": "{screen}", "state": "{state}" }, "aspect": "{aspectRatio}",
+                "fill": "paper", "stroke": "line" }
+    },
     "DateRangePicker": {
       "doc": "The chosen dates over one month per months, each a grid of days.",
       "params": ["value", "months"],

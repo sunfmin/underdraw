@@ -774,6 +774,22 @@ BUILT-IN COMPONENTS
   Stepper          label, bind (an int): − value +
   PriceBreakdown   lines (list of names), total (default "合计")
   Skeleton         shape: a list of "image 4:3" and "line 70%"
+  Wireframe        screen (named), state, aspectRatio: another description's
+                   state drawn inside, scaled to the box. screen is the
+                   "screen" a description under the project (the directory
+                   holding domain.json) declares, as a navigate names it;
+                   state one of its fixtures or phases (its first fixture
+                   when not given). Drawn at the first of its widths, as
+                   tall as that state for the box's width unless aspectRatio
+                   says; its labels are left out, and nothing in it is a
+                   node of this screen. check names the node when no
+                   description declares the screen, it has no such state, or
+                   the state cannot be drawn (it has findings), and refuses
+                   a description that draws itself, at any depth (A draws B,
+                   B draws A). Draws the gallery's screens in a design of a
+                   tool that shows them:
+                     { "id": "preview", "component": "Wireframe",
+                       "screen": "OrderList", "state": "empty" }
   Each is a look component (COMPONENTS) whose params are the props above.
   Props a component does not read still reach `handoff` (and so the builder):
   write what the platform needs to know, such as "minLength", "sticky".
@@ -900,6 +916,8 @@ LOOKS
                          ["3fr", "1fr", 48]; check refuses anything else
     fill stroke radius dashed   outline and fill in an ink
     cross topLine        a crossed placeholder, a line on top, in an ink
+    wireframe            {"screen": "{screen}", "state": "{state}"}: that state
+                         of another description drawn in the box (Wireframe)
     dividers             a line between the cells, in an ink (true: line)
     clip                 cut children at this radius (false: never)
     overflowX            "clip": a row that runs off the edge
