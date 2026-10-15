@@ -63,6 +63,24 @@ impl Look {
         }
     }
 
+    /// Whether it places `"$children"` anywhere in it, so its node's slots
+    /// are drawn. A component it nests is drawn without them.
+    pub fn places_children(&self) -> bool {
+        match self {
+            Look::Children => true,
+            Look::List(looks) => looks.iter().any(Look::places_children),
+            Look::Object(object) => {
+                object.component().is_none() && object.keys.iter().any(|key| key.look.places_children())
+                    || object.cases.as_ref().is_some_and(|cases| {
+                        cases.branches.iter().any(|branch| {
+                            [&branch.then, &branch.otherwise].into_iter().flatten().any(Look::places_children)
+                        })
+                    })
+            }
+            Look::Text { .. } | Look::Plain(_) => false,
+        }
+    }
+
     /// Each component this nests (`{"component": "Chip", …}`), at any
     /// depth of it, added to `nested`.
     pub(crate) fn nests(&self, nested: &mut Vec<String>) {
