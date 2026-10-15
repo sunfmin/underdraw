@@ -210,7 +210,8 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
-  A component draws its slots only if its look places "$children".
+  A component draws its slots only if its look places "$children"; check
+  refuses a node in a slot of one whose look does not (IconButton, Badge).
   "each" with no "item" passes the elements to the component as "items" (photos):
     { "id": "photos", "component": "ImageCarousel", "each": "listing.photos" }
   "item" sees item and index; "children" of the same node are drawn once
@@ -686,7 +687,7 @@ BUILT-IN COMPONENTS
   Columns          columns (default 1), gap 24, children aligned at the top
   Carousel         a row of 280-wide cards cut at the edge
   Section          title, subtitle (font.heading / muted), then children; gap, padding
-  Text             text, font (token, default font.body), color (token), maxLines,
+  Text             text, font (token, default font.body), color (an ink or colour token), maxLines,
                    align (start|center|end), underline
   Link             text, font (default font.subhead), trailingIcon (adds ›)
   Button           text, variant ("primary" filled | "secondary" outlined),
@@ -822,7 +823,9 @@ LOOKS
     children             looks inside it
   Text keys: text, font (token or a size number), ink, weight, maxLines,
   align (start|center|end), underline, strike; also self and pin.
-  Inks: text, muted, line, fill, strong, paper (or a colour token).
+  Inks: text, muted, line, fill, strong, paper, or a colour token, drawn in
+  the ink it reads as: color.primary strong, color.textSecondary muted,
+  color.border line, a colour near white in tokens.json paper, else text.
   Look placeholders take filters, left to right: or:v (when missing),
   count, first, last, head, tail (first word / the rest), slashes
   (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.

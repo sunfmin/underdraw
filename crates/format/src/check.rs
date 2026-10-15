@@ -406,6 +406,28 @@ impl<'a> Walk<'a> {
                 &format!("component {kind} has a backdrop, which only an overlay draws: put it in \"overlay\", or take backdrop out of its look"),
             );
         }
+        if let Some(Value::String(kind)) = object.get("component")
+            && self.known.look(kind).is_some_and(|look| !look.places_children())
+        {
+            for (slot, held) in object {
+                if !crate::instance::SLOTS.contains(&slot.as_str()) {
+                    continue;
+                }
+                let held = match held {
+                    Value::Array(nodes) => nodes.iter().collect(),
+                    node => vec![node],
+                };
+                if held.is_empty() {
+                    continue;
+                }
+                let ids: Vec<&str> = held.iter().filter_map(|node| node.get("id")?.as_str()).collect();
+                let what = if ids.is_empty() { "what it holds".to_string() } else { ids.join(", ") };
+                self.findings.add(
+                    &format!("{at}.{slot}"),
+                    &format!("{kind}'s look places no \"$children\", so {what} in {slot} is never drawn: move it to a container, or define a component whose look places \"$children\""),
+                );
+            }
+        }
         let mut known = known.clone();
         if key == "overlay"
             && let Some(Value::String(kind)) = object.get("component")
