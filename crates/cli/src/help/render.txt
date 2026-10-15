@@ -1,7 +1,9 @@
 WHEN
   After `underdraw check` answers "ok": true, to read the node boxes and
-  know where each part went, at a phone width (390) and a desktop width
-  (1120); with --all, every state at both at once. What a person looks at is the gallery (`underdraw gallery`), not
+  know where each part went, at each of the widths the project draws at:
+  those its tokens.json names ("widths"), or a phone width (390) and a
+  desktop width (1120); with --all, every state at each of them at once.
+  What a person looks at is the gallery (`underdraw gallery`), not
   these PNGs.
 
 WHO
@@ -22,7 +24,8 @@ WRITES
   it again overwrites the same file.
   With --all, one sheet instead: --out, or <dir>/renders/all.png. A row
   for each state, the fixtures then the phases in the order written (as
-  `check` lists them), each drawn at 390 and at 1120 side by side, each
+  `check` lists them), each drawn at each of the project's widths side
+  by side, in the order its tokens.json names them, each
   page captioned with its state and width ("default · 390"). --all takes
   no --fixture, --phase or --width.
 
@@ -54,7 +57,7 @@ ANSWERS, WITH --all
                   one render of that state at that width answers it, its
                   node boxes in that page's own points,
                 "at": {"x", "y"}, where the page's top left sits on the
-                  sheet, in points}, …], each state at 390, then at 1120
+                  sheet, in points}, …], each state at each width in turn
   }
   A node's place on the sheet is "at" plus its box, times "scale" in
   pixels. A long sheet is drawn at a lower scale, so its pages are

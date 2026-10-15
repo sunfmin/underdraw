@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 use underdraw_format::{Lang, Node, Screen};
 
-pub use check::{CHECKED_WIDTHS, check};
+pub use check::{DEFAULT_WIDTHS, WIDTH_RANGE, check, named_widths, widths};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct Font {
