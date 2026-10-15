@@ -16,6 +16,7 @@ use anyhow::{Context, bail};
 use serde_json::{Value, json};
 use underdraw_format::{Checked, Finding, Lang};
 
+use crate::notes::NOTES;
 use crate::{KINDS, SCREEN, TOKENS, check_at};
 
 /// Directories a description keeps beside it that hold no description.
@@ -30,8 +31,9 @@ const ANSWERING: Duration = Duration::from_secs(2);
 /// How often the window looks at its root for files changed.
 const WATCHING: Duration = Duration::from_millis(250);
 
-/// The files of a description the window draws from.
-const DRAWN_FROM: [&str; 3] = [SCREEN, TOKENS, KINDS];
+/// The files of a description the window draws from: the person's notes
+/// among them, which the agent answers.
+const DRAWN_FROM: [&str; 4] = [SCREEN, TOKENS, KINDS, NOTES];
 
 /// One row of the tree: a directory, or a description.
 #[derive(Debug, PartialEq)]
@@ -489,6 +491,7 @@ mod tests {
         step("the description edited", &|| std::fs::write(dir.join(SCREEN), "{ }").unwrap(), true);
         step("its tokens written", &|| std::fs::write(dir.join(TOKENS), "{}").unwrap(), true);
         step("its kinds written", &|| std::fs::write(dir.join(KINDS), "{}").unwrap(), true);
+        step("a note written or answered", &|| std::fs::write(dir.join(NOTES), "{}").unwrap(), true);
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
         step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);
         step("a directory added", &|| std::fs::create_dir_all(root.join("a/b")).unwrap(), true);
