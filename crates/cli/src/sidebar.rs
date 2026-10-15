@@ -4,7 +4,9 @@
 //! title's ink: who it is from (the person's cobalt, the agent's green, the
 //! orange of what was assumed, dashed as a guess is in a picture). A button,
 //! an item of the inbox or a fold is clicked by its own box, never by the
-//! line it is on. The sidebar knows nothing of
+//! line it is on. Under the cards, fixed at its foot while they scroll,
+//! the box the person writes in to the conversation shown, and its Send
+//! button. The sidebar knows nothing of
 //! what a button does: each carries the window's own `A`, handed back when
 //! it is clicked. Drawn by hand, as the rest of the window is (ADR 0017).
 
@@ -63,6 +65,20 @@ pub enum Block<A> {
     Field(Shown, String),
 }
 
+/// The box at the sidebar's foot, fixed there below the cards as they
+/// scroll: the field the person writes in to the conversation shown, and
+/// the button that sends what it holds.
+pub struct Foot<A> {
+    pub field: Shown,
+    /// What the field says while it holds nothing.
+    pub empty: String,
+    /// What the button says.
+    pub send: String,
+    /// What a click on the button does; none while there is nothing to
+    /// send, the button then gray and clicked to no effect.
+    pub does: Option<A>,
+}
+
 /// An item of a list, as [`Block::Item`] holds it.
 pub struct Item<A> {
     pub mark: String,
@@ -101,7 +117,13 @@ impl<A> Block<A> {
 /// The sidebar laid out: what to draw, where each button is, in window
 /// points, with what it says, and where the caret of a field is.
 pub struct Laid<'a, A> {
+    /// The cards, drawn above [`Laid::foot`] and cut there.
     pub draws: Vec<Draw>,
+    /// The box at the foot, drawn over the cards.
+    pub foot_draws: Vec<Draw>,
+    /// Where the box at the foot starts, from the window's top: where the
+    /// cards are cut; the sidebar's bottom when there is none.
+    pub foot: f64,
     pub buttons: Vec<(Rect, &'a str, &'a A)>,
     /// The caret of the field being written in, for an input method to put
     /// what it offers beside.
@@ -114,9 +136,15 @@ pub struct Laid<'a, A> {
 }
 
 impl<A> Laid<'_, A> {
-    /// What the button under `at`, a point in the window, does.
+    /// What the button under `at`, a point in the window, does: one of
+    /// the box at the foot there, else one of the cards above it, never a
+    /// card's under the box.
     pub fn at(&self, at: (f64, f64)) -> Option<&A> {
-        self.buttons.iter().find(|(r, _, _)| over(*r, at)).map(|(_, _, does)| *does)
+        let below = at.1 >= self.foot;
+        self.buttons
+            .iter()
+            .find(|(r, _, _)| (f64::from(r.y) >= self.foot) == below && over(*r, at))
+            .map(|(_, _, does)| *does)
     }
 }
 
@@ -134,16 +162,26 @@ pub fn field_width(width: f64) -> f64 {
 
 /// `cards` laid out one under another in a sidebar `width` wide whose left
 /// edge is at `left` and whose top is `top` (scrolled), its text set by
-/// `typesetter` to wrap within that width.
+/// `typesetter` to wrap within that width; and `foot`, when there is one,
+/// fixed at its bottom, `bottom` from the window's top.
 pub fn lay_out<'a, A>(
     cards: &'a [Card<A>],
+    foot: Option<&'a Foot<A>>,
     (left, width): (f64, f64),
-    top: f64,
+    (top, bottom): (f64, f64),
     typesetter: &mut Typesetter,
 ) -> Laid<'a, A> {
     let inner = text_width(width);
     let x = left + GUTTER + PADDING;
-    let mut laid = Laid { draws: Vec::new(), buttons: Vec::new(), caret: None, field: None, height: 0.0 };
+    let mut laid = Laid {
+        draws: Vec::new(),
+        foot_draws: Vec::new(),
+        foot: bottom,
+        buttons: Vec::new(),
+        caret: None,
+        field: None,
+        height: 0.0,
+    };
     let mut y = top + GUTTER;
     for card in cards {
         let card_top = y;
@@ -219,7 +257,69 @@ pub fn lay_out<'a, A>(
         y += GUTTER;
     }
     laid.height = y - top;
+    if let Some(foot) = foot {
+        self::foot(&mut laid, typesetter, (left, width), bottom, foot);
+    }
     laid
+}
+
+/// `foot` laid at the bottom of a sidebar `width` wide from `left`, its
+/// bottom edge `bottom` from the window's top: on the paper, under a
+/// hairline, the field a card's text wide, and the Send button under it
+/// on the right.
+fn foot<'a, A>(
+    laid: &mut Laid<'a, A>,
+    typesetter: &mut Typesetter,
+    (left, width): (f64, f64),
+    bottom: f64,
+    foot: &'a Foot<A>,
+) {
+    let inner = text_width(width);
+    let x = left + GUTTER + PADDING;
+    let field_tall = set(typesetter, &foot.field.text, BODY, inner - 2.0 * INSET) + 2.0 * INSET;
+    let send_wide = f64::from(typesetter.text(&foot.send, BUTTON, None).width) + 2.0 * PADDING;
+    let send_tall = f64::from(BUTTON.line_height) + 2.0 * BUTTON_PAD;
+    let top = bottom - (PADDING + field_tall + BETWEEN + send_tall + PADDING);
+    laid.foot = top;
+    let mut draws = vec![
+        Draw::Box {
+            rect: rect(left, top, width, bottom - top),
+            radius: 0.0,
+            fill: Some(Ink::Paper),
+            stroke: None,
+            dashed: false,
+        },
+        Draw::Line { from: [left as f32, top as f32], to: [(left + width) as f32, top as f32], ink: Ink::Line },
+    ];
+    let (_, caret, words) = field(&mut draws, typesetter, (x, top + PADDING, inner), &foot.field, &foot.empty);
+    (laid.caret, laid.field) = (Some(caret), Some(words));
+    let at = rect(x + inner - send_wide, top + PADDING + field_tall + BETWEEN, send_wide, send_tall);
+    match &foot.does {
+        Some(does) => {
+            draws.push(Draw::Box {
+                rect: at,
+                radius: BUTTON_RADIUS,
+                fill: Some(Ink::Note),
+                stroke: None,
+                dashed: false,
+            });
+            let inside = rect(f64::from(at.x), f64::from(at.y) + BUTTON_PAD, send_wide, f64::from(BUTTON.line_height));
+            draws.push(centred(inside, foot.send.clone(), Ink::Paper));
+            laid.buttons.push((at, &foot.send, does));
+        }
+        None => {
+            draws.push(Draw::Box {
+                rect: at,
+                radius: BUTTON_RADIUS,
+                fill: Some(Ink::Paper),
+                stroke: Some(Ink::Line),
+                dashed: false,
+            });
+            let inside = rect(f64::from(at.x), f64::from(at.y) + BUTTON_PAD, send_wide, f64::from(BUTTON.line_height));
+            draws.push(centred(inside, foot.send.clone(), Ink::Muted));
+        }
+    }
+    laid.foot_draws = draws;
 }
 
 /// `said` set in `font` and `ink` at `at`, as wide as it; how tall.
@@ -433,6 +533,20 @@ fn text(rect: Rect, text: String, font: Font, ink: Ink) -> Draw {
     }
 }
 
+/// `text` on one line, centred in `rect`, as a button says it.
+fn centred(rect: Rect, text: String, ink: Ink) -> Draw {
+    Draw::Text {
+        rect,
+        text,
+        font: BUTTON,
+        ink,
+        max_lines: Some(1),
+        align: Align::Center,
+        underline: false,
+        strike: false,
+    }
+}
+
 fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
     Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
 }
@@ -461,7 +575,7 @@ mod tests {
             ),
         ];
         let mut typesetter = Typesetter::new(None).unwrap();
-        let laid = lay_out(&cards, (1000.0, 360.0), 0.0, &mut typesetter);
+        let laid = lay_out(&cards, None, (1000.0, 360.0), (0.0, 800.0), &mut typesetter);
         assert_eq!(laid.buttons.len(), 2);
         let (first, second) = (laid.buttons[0].0, laid.buttons[1].0);
         assert!(first.y + first.height < second.y, "the second below the first");
@@ -485,12 +599,54 @@ mod tests {
             vec![Block::Text("a long line ".repeat(20)), Block::Button("go".to_string(), 1)],
         )];
         let mut typesetter = Typesetter::new(None).unwrap();
-        let wide = lay_out(&cards, (1000.0, 360.0), 0.0, &mut typesetter);
-        let narrow = lay_out(&cards, (1080.0, 280.0), 0.0, &mut typesetter);
+        let wide = lay_out(&cards, None, (1000.0, 360.0), (0.0, 800.0), &mut typesetter);
+        let narrow = lay_out(&cards, None, (1080.0, 280.0), (0.0, 800.0), &mut typesetter);
         assert!(narrow.height > wide.height, "taller, the text wrapped to more lines");
         let button = narrow.buttons[0].0;
         assert!(f64::from(button.x) >= 1080.0 && f64::from(button.x + button.width) <= 1080.0 + 280.0);
         let middle = (f64::from(button.x + button.width / 2.0), f64::from(button.y + button.height / 2.0));
         assert_eq!(narrow.at(middle), Some(&1), "the button clicked by its own box");
+    }
+
+    #[test]
+    fn the_box_at_the_foot_stays_there_and_sends_only_what_it_holds() {
+        let cards: Vec<Card<u8>> =
+            vec![Card::new("one".to_string(), vec![Block::Button("under the box".to_string(), 1)])];
+        let mut typesetter = Typesetter::new(None).unwrap();
+        let mut field = crate::field::Field::new(&typesetter, field_width(360.0));
+        let foot = |field: &crate::field::Field, does| Foot {
+            field: field.shown(),
+            empty: "say".to_string(),
+            send: "Send".to_string(),
+            does,
+        };
+        let empty = foot(&field, None);
+        let laid = lay_out(&cards, Some(&empty), (1000.0, 360.0), (0.0, 800.0), &mut typesetter);
+        assert!(laid.foot < 800.0 && laid.foot > 700.0, "at the bottom: {}", laid.foot);
+        let words = laid.field.unwrap();
+        assert!(f64::from(words.y) > laid.foot, "the field in it");
+        assert_eq!(laid.buttons.len(), 1, "an empty box has no Send to click");
+        field.type_in("the price is cut");
+        let full = foot(&field, Some(2));
+        for scrolled in [0.0, -500.0] {
+            let laid = lay_out(&cards, Some(&full), (1000.0, 360.0), (scrolled, 800.0), &mut typesetter);
+            let send = laid.buttons.iter().find(|(_, said, _)| *said == "Send").unwrap().0;
+            assert!(f64::from(send.y) > laid.foot && f64::from(send.y + send.height) <= 800.0, "fixed at the foot");
+            let middle = (f64::from(send.x + send.width / 2.0), f64::from(send.y + send.height / 2.0));
+            assert_eq!(laid.at(middle), Some(&2));
+        }
+        let card_button = |laid: &Laid<u8>| laid.buttons.iter().find(|(_, _, does)| **does == 1).unwrap().0;
+        let laid = lay_out(&cards, Some(&full), (1000.0, 360.0), (laid_under(&cards, &mut typesetter), 800.0), &mut typesetter);
+        let under = card_button(&laid);
+        let middle = (f64::from(under.x + under.width / 2.0), f64::from(under.y + under.height / 2.0));
+        assert!(middle.1 > laid.foot, "scrolled under the box");
+        assert_ne!(laid.at(middle), Some(&1), "a card's button under the box is not clicked");
+    }
+
+    /// How far down the cards must start for their first button to lie
+    /// behind the box at the foot of a sidebar 800 tall.
+    fn laid_under(cards: &[Card<u8>], typesetter: &mut Typesetter) -> f64 {
+        let laid = lay_out(cards, None, (1000.0, 360.0), (0.0, 800.0), typesetter);
+        790.0 - f64::from(laid.buttons[0].0.y)
     }
 }

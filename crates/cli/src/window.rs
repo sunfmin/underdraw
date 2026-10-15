@@ -46,10 +46,10 @@ use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Stands};
-use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
+use crate::reference::{self, Navigate, On, Pointed, Reference};
 use crate::scrollbar::{Axis, Bar, Part};
 use crate::sidebar::Item as Listed;
-use crate::sidebar::{self, Block, Card};
+use crate::sidebar::{self, Block, Card, Foot};
 use crate::{chrome, gpu, links, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
@@ -61,9 +61,6 @@ const NOTCH: f64 = 40.0;
 /// How small the pictures of a state get, fitting the width left, before
 /// they scroll sideways instead.
 const SMALLEST: f64 = 0.5;
-/// How far the pointer moves, held down, before a press is a drag over a
-/// region rather than a click.
-const DRAG: f64 = 6.0;
 /// How long a ✓ on an assumption can be undone before it is written.
 const UNDO: Duration = Duration::from_secs(5);
 
@@ -123,12 +120,6 @@ struct Gallery {
     /// The id of the node picked in the picture, kept from state to state
     /// while the state shown has it.
     node: Option<String>,
-    /// The region dragged over a picture and picked, in place of a node,
-    /// while the same state is shown.
-    region: Option<Region>,
-    /// Where the left button went down on a picture, while it is held: a
-    /// drag from there picks a region.
-    held: Option<(f64, f64)>,
     /// The picture, of those at each of `WIDTHS`, the node was picked in:
     /// the instance the person pointed at.
     pointed: usize,
@@ -186,28 +177,28 @@ struct Gallery {
     /// Every description's notes, by its directory, as notes.json now
     /// holds them.
     notes: BTreeMap<PathBuf, Vec<Note>>,
-    /// Whether the next click on a node, or drag over a region, starts a
-    /// note on it: N was pressed.
-    noting: bool,
-    /// The note being written, while it is.
+    /// The box at the sidebar's foot, where the person writes to the
+    /// conversation on what is picked, kept as typed from one pick to the
+    /// next.
+    talk: Field,
+    /// A ✗ on an assumption being written, in place of the box, while it
+    /// is.
     draft: Option<Draft>,
     /// A ✓ on an assumption waiting to be written, while it can be undone.
     confirming: Option<Confirming>,
-    /// Where the caret of the note being written was last drawn, in window
+    /// Where the caret of the field written in was last drawn, in window
     /// points: an input method shows what it offers beside it.
     caret: Option<Rect>,
-    /// Where the text of the note being written was, in window points,
+    /// Where the text of the field written in was, in window points,
     /// while the left button, pressed on it, is held: a drag selects.
     selecting: Option<(f64, f64)>,
     /// The arrow picked in the overview or the flow shown, by its place
     /// among their arrows.
     arrow: Option<usize>,
-    /// The note whose pin was clicked: its description, and its id.
-    note: Option<(PathBuf, String)>,
     /// The answered note whose pin the pointer is over, as `note` names it:
     /// its reply is shown.
     hovered: Option<(PathBuf, String)>,
-    /// Whether Shift is held: Enter then breaks a line of a note.
+    /// Whether Shift is held: Enter then breaks a line of what is written.
     shift: bool,
     /// The journey picked, while one is played.
     playing: Option<Playing>,
@@ -223,18 +214,12 @@ struct Gallery {
     waiting: bool,
 }
 
-/// A note being written: what it is for, and the field it is typed in.
+/// A ✗ on the assumption of the node `on` references being written: what
+/// it answers, and the field what is right is typed in.
 struct Draft {
-    on: Writing,
+    on: Reference,
+    answers: Answers,
     text: Field,
-}
-
-impl Draft {
-    /// A note on `on`, nothing typed yet, set by `typesetter`'s fonts in a
-    /// sidebar `width` wide.
-    fn new(on: Writing, typesetter: &text::Typesetter, width: f64) -> Draft {
-        Draft { on, text: Field::new(typesetter, sidebar::field_width(width)) }
-    }
 }
 
 /// A ✓ on an assumption, not yet written: notes.json gets it once
@@ -247,14 +232,6 @@ struct Confirming {
     at: Instant,
 }
 
-/// What a note being written is for.
-enum Writing {
-    /// A new note, on what this references.
-    On(Reference),
-    /// A ✗ on the assumption of the node this references: what is right.
-    Rejecting(Reference, Answers),
-}
-
 /// What a click on a button of the sidebar does.
 #[derive(Clone, Debug, PartialEq)]
 enum Do {
@@ -264,8 +241,9 @@ enum Do {
     /// Writes a note on the node acted on, proposing where acting on it
     /// should go.
     Propose(Proposal),
-    /// Starts writing a note on the node, region or arrow picked.
-    Write,
+    /// Sends what the box at the sidebar's foot holds to the conversation
+    /// on what is picked.
+    Send,
     /// Answers the assumption on the node picked: ✓ is written once it can
     /// no longer be undone; ✗ starts writing what is right.
     Judge(Answer),
@@ -292,8 +270,7 @@ enum Visit {
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
-/// a faint dot, in another state or width that holds its node, or the
-/// nodes its region covers.
+/// a faint dot, in another state or width that holds its node.
 struct Pin {
     /// The directory of the description that keeps it.
     dir: PathBuf,
@@ -302,9 +279,6 @@ struct Pin {
     rect: Rect,
     ink: Ink,
     faint: bool,
-    /// For a pin on a region, where it was written: the region, as it is
-    /// now drawn, in window points.
-    region: Option<Rect>,
 }
 
 /// Every description's notes on the lines of the tree, by its directory;
@@ -567,31 +541,6 @@ impl Page {
         })?;
         self.nodes.iter().find(|node| &node.id == id)
     }
-
-    /// Where `region` is drawn here: around the nodes it covers that are
-    /// here, as the layout now places them; where none of them is, at its
-    /// box, in a picture of the width it was dragged at; elsewhere, nowhere.
-    fn region(&self, region: &Region) -> Option<Rect> {
-        let found: Vec<Rect> =
-            region.nodes.iter().filter_map(|origin| Some(self.placed(origin)?.rect)).collect();
-        let Some(first) = found.first() else {
-            let Frame { x, y, width, height } = region.area;
-            let here = self.width as u32 == region.width;
-            return here.then_some(Rect {
-                x: x as f32,
-                y: y as f32,
-                width: width as f32,
-                height: height as f32,
-            });
-        };
-        let (mut x, mut y) = (first.x, first.y);
-        let (mut right, mut bottom) = (first.x + first.width, first.y + first.height);
-        for r in &found {
-            (x, y) = (x.min(r.x), y.min(r.y));
-            (right, bottom) = (right.max(r.x + r.width), bottom.max(r.y + r.height));
-        }
-        Some(Rect { x, y, width: right - x, height: bottom - y })
-    }
 }
 
 impl Gallery {
@@ -611,6 +560,7 @@ impl Gallery {
     /// The tree of `root`, nothing picked and no window open yet.
     fn new(root: &Path, typesetter: text::Typesetter) -> Gallery {
         let lines = lines(root);
+        let talk = Field::new(&typesetter, sidebar::field_width(SIDEBAR));
         Gallery {
             root: root.to_path_buf(),
             lang: Lang::default(),
@@ -620,8 +570,6 @@ impl Gallery {
             wanted: None,
             picture: Picture::Faults(Vec::new()),
             node: None,
-            region: None,
-            held: None,
             pointed: 0,
             scroll: 0.0,
             tree_scroll: 0.0,
@@ -645,13 +593,12 @@ impl Gallery {
             proxy: None,
             answering: None,
             clipboard: None,
-            noting: false,
+            talk,
             draft: None,
             confirming: None,
             caret: None,
             selecting: None,
             arrow: None,
-            note: None,
             hovered: None,
             shift: false,
             playing: None,
@@ -785,8 +732,8 @@ impl Gallery {
     }
 
     /// A press where the pointer is: on the tree, picks the line under it;
-    /// on a button of the sidebar, does what it does; while N is pressed, starts
-    /// a note there; on a pin, picks its note; on the pictures, picks the
+    /// on a button of the sidebar, does what it does; on a pin, picks what
+    /// its note is on; on the pictures, picks the
     /// node under it, or none, or acts on it while [`Gallery::acting`]; on
     /// the overview, picks the arrow under it, or plays the journey whose
     /// mark is, from that step, or picks the state; on the flow,
@@ -794,7 +741,7 @@ impl Gallery {
     /// that changed what is shown.
     fn press(&mut self) -> bool {
         // On a line between two panes, only taking hold of it: no line of
-        // the tree, nor region, is picked, nor button pressed.
+        // the tree, nor node, is picked, nor button pressed.
         if let Some(edge) = self.edge_at() {
             self.resizing = Some(edge);
             return false;
@@ -827,27 +774,13 @@ impl Gallery {
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
             }
-            if self.on_picture(self.cursor).is_some() && self.pin_at(self.cursor).is_none() {
-                self.held = Some(self.cursor);
-            }
-            if self.noting {
-                // On a picture, a click or a drag: the release says which.
-                if self.held.is_some() {
-                    return false;
-                }
-                return self.note_where_pressed();
-            }
-            if let Some(note) = self.pin_at(self.cursor) {
-                let changed = Some(&note) != self.note.as_ref() || self.acted.is_some();
-                self.note = Some(note);
-                self.acted = None;
-                return changed;
+            if let Some((dir, id)) = self.pin_at(self.cursor) {
+                return self.visit(Visit::Note(dir, id));
             }
             if let Some(arrow) = self.arrow_at(self.cursor) {
-                let changed = Some(arrow) != self.arrow || self.acted.is_some() || self.note.is_some();
+                let changed = Some(arrow) != self.arrow || self.acted.is_some();
                 self.arrow = Some(arrow);
                 self.acted = None;
-                self.note = None;
                 return changed;
             }
             return match &self.picture {
@@ -882,16 +815,10 @@ impl Gallery {
                         Some((pointed, _, node)) => (Some(node.id.clone()), pointed),
                         None => (None, 0),
                     };
-                    let changed = node != self.node
-                        || pointed != self.pointed
-                        || self.acted.is_some()
-                        || self.note.is_some()
-                        || self.region.is_some();
+                    let changed = node != self.node || pointed != self.pointed || self.acted.is_some();
                     self.node = node;
                     self.pointed = pointed;
                     self.acted = None;
-                    self.note = None;
-                    self.region = None;
                     changed
                 }
             };
@@ -911,69 +838,22 @@ impl Gallery {
         }
     }
 
-    /// No arrow picked, nor note, nor what was said: a press where none is.
-    /// Whether that changed what is shown.
+    /// No arrow picked, nor what was said: a press where none is. Whether
+    /// that changed what is shown.
     fn unpick_arrow(&mut self) -> bool {
-        let changed = self.arrow.is_some() || self.note.is_some() || self.acted.is_some();
+        let changed = self.arrow.is_some() || self.acted.is_some();
         self.arrow = None;
-        self.note = None;
         self.acted = None;
         changed
     }
 
-    /// The left button let go: after a drag over a picture, the region
-    /// dragged picked, and while N is pressed a note started on it; after a
-    /// click while N is pressed, a note started on the node clicked.
-    /// Whether that changed what is shown.
+    /// The left button let go: a line between panes, a scrollbar's thumb
+    /// or the text of a field no longer held. Whether that changed what is
+    /// shown.
     fn release(&mut self) -> bool {
         self.selecting = None;
         self.resizing = None;
-        let let_go = self.grabbed.take().is_some();
-        let Some(from) = self.held.take() else {
-            return let_go;
-        };
-        let moved = (self.cursor.0 - from.0).hypot(self.cursor.1 - from.1);
-        if moved < DRAG {
-            return self.noting && self.note_where_pressed();
-        }
-        let Some((pointed, region)) = self.region_between(from, self.cursor) else {
-            return false;
-        };
-        self.node = None;
-        self.pointed = pointed;
-        self.region = Some(region);
-        self.acted = None;
-        self.note = None;
-        if self.noting {
-            self.noting = false;
-            self.write();
-        }
-        true
-    }
-
-    /// The region between `from` and `to`, points in the window, on the
-    /// picture `from` is on, cut at its edges: its box in that picture's
-    /// points, and the outermost nodes wholly inside it, in the order laid
-    /// out. With the picture's place among them.
-    fn region_between(&self, from: (f64, f64), to: (f64, f64)) -> Option<(usize, Region)> {
-        let (pointed, page, start) = self.on_picture(from)?;
-        let (left, top) = self.origins()[pointed];
-        let zoom = self.zoom(self.pane());
-        let end =
-            (((to.0 - left) / zoom).clamp(0.0, page.width), ((to.1 - top) / zoom).clamp(0.0, page.height));
-        let (x, y) = (start.0.min(end.0).round(), start.1.min(end.1).round());
-        let (right, bottom) = (start.0.max(end.0).round(), start.1.max(end.1).round());
-        let area = Frame { x: x as i32, y: y as i32, width: (right - x) as u32, height: (bottom - y) as u32 };
-        let dragged =
-            Rect { x: x as f32, y: y as f32, width: (right - x) as f32, height: (bottom - y) as f32 };
-        let mut kept: Vec<&Placed> = Vec::new();
-        for node in page.nodes.iter().filter(|node| within(node.rect, dragged)) {
-            if !kept.iter().any(|outer| within(node.rect, outer.rect)) {
-                kept.push(node);
-            }
-        }
-        let nodes = kept.iter().filter_map(|node| page.origins.get(&node.id).cloned()).collect();
-        Some((pointed, Region { area, width: page.width as u32, nodes }))
+        self.grabbed.take().is_some()
     }
 
     /// The line picking line `index` shows: its own, a directory's (its
@@ -1055,7 +935,6 @@ impl Gallery {
         };
         self.node = Some(id);
         self.pointed = pointed;
-        self.region = None;
         let Some(here) = self.wanted.clone() else {
             return true;
         };
@@ -1138,8 +1017,8 @@ impl Gallery {
                 self.propose(proposal);
                 true
             }
-            Do::Write => {
-                self.write();
+            Do::Send => {
+                self.send();
                 true
             }
             Do::Judge(answer) => {
@@ -1188,7 +1067,6 @@ impl Gallery {
             Ok(id) => {
                 self.notes = notes_of(&self.lines);
                 self.say(say!(self.lang, proposal_saved, id));
-                self.note = Some((on.description, id));
             }
             Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
         }
@@ -1245,19 +1123,7 @@ impl Gallery {
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
         self.arrow = None;
-        // A note stays picked while what is shown holds it: its description,
-        // or a flow over it.
-        if self
-            .note
-            .as_ref()
-            .is_some_and(|(of, _)| if described { *of != dir } else { !of.starts_with(&dir) })
-        {
-            self.note = None;
-        }
         let name = state.as_ref().map(|state| state.name().to_string());
-        if self.wanted.as_ref().is_none_or(|was| was.dir != dir || was.state != name) {
-            self.region = None;
-        }
         self.wanted = Some(Picked { dir: dir.clone(), state: name });
         (self.scroll, self.across) = (0.0, 0.0);
         if !described {
@@ -1353,7 +1219,7 @@ impl Gallery {
         let (file, faults) = (line.row.dir.clone(), line.row.faults.clone());
         self.picked = Some(index);
         self.playing = None;
-        (self.arrow, self.note, self.region, self.node) = (None, None, None, None);
+        (self.arrow, self.node) = (None, None);
         (self.scroll, self.across) = (0.0, 0.0);
         if !faults.is_empty() {
             self.wanted = None;
@@ -1885,11 +1751,11 @@ impl Gallery {
         })
     }
 
-    /// What ⌘C copies: the region picked, its box and the nodes it covers;
-    /// or the node picked, as the description writes it, and the instance
-    /// of it pointed at (in the picture it was picked in, or the first that
-    /// has it); or, with neither picked, the state shown; or the arrow
-    /// picked in an overview or a flow. None where nothing is.
+    /// What ⌘C copies, and what the conversation in the sidebar is on: the
+    /// node picked, as the description writes it, and the instance of it
+    /// pointed at (in the picture it was picked in, or the first that has
+    /// it); or, with none picked, the state shown; or the arrow picked in
+    /// an overview or a flow. None where nothing is.
     fn reference(&self) -> Option<Reference> {
         if let Picture::Overview(_) | Picture::Flow(_) = self.picture {
             return self.arrow_references().into_iter().nth(self.arrow?);
@@ -1905,10 +1771,9 @@ impl Gallery {
             let origin = page.origins.get(id)?.clone();
             Some(Pointed { origin, label: placed.label, width: page.width as u32 })
         });
-        let on = match (self.region.clone(), node) {
-            (Some(region), _) => On::Region { state, region },
-            (None, Some(node)) => On::Node { state, node },
-            (None, None) => On::State { state },
+        let on = match node {
+            Some(node) => On::Node { state, node },
+            None => On::State { state },
         };
         Some(Reference { description: wanted.dir.clone(), on })
     }
@@ -1969,9 +1834,10 @@ impl Gallery {
         if !self.sidebar {
             return None;
         }
-        let cards = self.sidebar_cards();
-        let laid =
-            sidebar::lay_out(&cards, (self.pane_right(), self.side), -self.side_scroll, &mut self.typesetter);
+        let (cards, foot) = (self.sidebar_cards(), self.foot());
+        let (right, bottom) = (self.pane_right(), self.size.1);
+        let top = -self.side_scroll;
+        let laid = sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), (top, bottom), &mut self.typesetter);
         laid.at(at).cloned()
     }
 
@@ -2020,30 +1886,6 @@ impl Gallery {
             .collect()
     }
 
-    /// The dashed boxes over the pictures, in window points: the region
-    /// picked, where it is now drawn, and the one being dragged, from where
-    /// the button went down to the pointer.
-    fn regions(&self) -> Vec<Rect> {
-        let mut boxes = Vec::new();
-        if let (Some(region), Picture::Pages(pages)) = (&self.region, &self.picture) {
-            let zoom = self.zoom(self.pane());
-            for (page, (left, top)) in pages.iter().zip(self.origins()) {
-                if let Some(r) = page.region(region) {
-                    let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
-                    boxes.push(rect(x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom));
-                }
-            }
-        }
-        if let Some(from) = self.held {
-            let to = self.cursor;
-            if (to.0 - from.0).hypot(to.1 - from.1) >= DRAG {
-                let (x, y) = (from.0.min(to.0), from.1.min(to.1));
-                boxes.push(rect(x, y, (to.0 - from.0).abs(), (to.1 - from.1).abs()));
-            }
-        }
-        boxes
-    }
-
     /// What the sidebar's cards say, one string each: a card's title, then
     /// each of its blocks.
     #[cfg(test)]
@@ -2060,14 +1902,13 @@ impl Gallery {
     /// The sidebar's cards, top to bottom, with a button for each thing a
     /// click does: the journey played, its step and the steps beside it;
     /// what the last act on a node came to, and any outcomes to choose
-    /// from; a ✓ waiting to be written, to undo; then a new note being
-    /// written, or how to start one; then the note picked, as a
-    /// conversation; then the assumption on the node picked, to answer;
-    /// then the node picked (what it is, what it calls, and, folded into
-    /// "details", its id and its label and box at each width), the region or the arrow picked, with a button
-    /// to write a note on it. None when none of these is there.
+    /// from; a ✓ waiting to be written, to undo; the assumption on the node
+    /// picked, to answer; then what is picked: the node (what it is, what
+    /// it calls, and, folded into "details", its id and its label and box
+    /// at each width), the arrow, or, with neither, the state shown; then
+    /// its note, as a conversation, newest at the bottom. None when none of
+    /// these is there.
     fn cards(&self) -> Vec<Card<Do>> {
-        let lang = self.lang;
         let mut cards: Vec<Card<Do>> = self.playing_card().into_iter().collect();
         if let Some(Acted { says, choices }) = &self.acted {
             let buttons =
@@ -2075,31 +1916,9 @@ impl Gallery {
             cards.push(Card::new(says.clone(), buttons));
         }
         cards.extend(self.confirming_card(Instant::now()));
-        if let Some(Draft { on: Writing::On(on), .. }) = &self.draft {
-            let title = say!(lang, note_title, on = on.on.said(lang));
-            cards.push(Card { ink: Ink::Note, ..Card::new(title, self.field_blocks()) });
-        } else if self.noting {
-            let words = lang.words();
-            let click = match &self.picture {
-                Picture::Overview(_) => words.click_overview,
-                Picture::Flow(_) => words.click_flow,
-                Picture::Pages(_) | Picture::Faults(_) => words.click_pages,
-            };
-            let blocks = vec![Block::Text(click.to_string()), Block::Muted(say!(lang, esc_cancels))];
-            cards.push(Card { ink: Ink::Note, ..Card::new(say!(lang, write_note), blocks) });
-        }
-        cards.extend(self.note_card());
-        let writing = self.noting || matches!(&self.draft, Some(Draft { on: Writing::On(_), .. }));
-        if !writing {
-            cards.extend(self.assumption_card());
-        }
-        let picked = self.node_card().or_else(|| self.region_card()).or_else(|| self.arrow_card());
-        if let Some(mut card) = picked {
-            if self.draft.is_none() && !self.noting {
-                card.blocks.push(Block::Button(say!(lang, write_note_on_it), Do::Write));
-            }
-            cards.push(card);
-        }
+        cards.extend(self.assumption_card());
+        cards.extend(self.node_card().or_else(|| self.arrow_card()).or_else(|| self.state_card()));
+        cards.extend(self.conversation_card());
         cards
     }
 
@@ -2124,14 +1943,14 @@ impl Gallery {
 
     /// The descriptions whose inbox the sidebar shows: the one picked, or
     /// whose state is, or each under the directory picked, in the order the
-    /// tree lists them. None while a node, a region or an arrow is picked,
-    /// a note is written, or a journey played.
+    /// tree lists them. None while a node or an arrow is picked, a ✗ is
+    /// written, or a journey played.
     fn inboxed(&self) -> Vec<PathBuf> {
         // The node picked is kept through an overview, for the next state:
         // it is picked only while a state is drawn.
         let drawn = matches!(self.picture, Picture::Pages(_));
-        let busy = drawn && (self.node.is_some() || self.region.is_some()) || self.arrow.is_some();
-        if busy || self.draft.is_some() || self.noting || self.playing.is_some() {
+        let busy = drawn && self.node.is_some() || self.arrow.is_some();
+        if busy || self.draft.is_some() || self.playing.is_some() {
             return Vec::new();
         }
         let Some(line) = self.picked.and_then(|index| self.lines.get(index)).filter(|line| !line.journey)
@@ -2279,23 +2098,23 @@ impl Gallery {
         Some(Card { ink: Ink::Note, ..Card::new(say!(lang, waits_on_you, yours), blocks) })
     }
 
-    /// What an item of the inbox is on shown: an assumption's state, its
-    /// node picked; a note's state with its node or region picked, its
+    /// What an item of the inbox, or a pin, is on shown: an assumption's
+    /// state, its node picked; a note's state with its node picked, its
     /// description's overview with its transition picked, or the flow its
-    /// navigate is drawn in with that picked; and the note picked, with its
-    /// card. Whether there was anything to show.
+    /// navigate is drawn in with that picked; and so its conversation in
+    /// the sidebar. The state shown already is not drawn again. Whether
+    /// there was anything to show.
     fn visit(&mut self, visit: Visit) -> bool {
         self.history.clear();
         self.acted = None;
-        let (dir, on, note) = match visit {
+        let (dir, on) = match visit {
             Visit::Guess(dir, state, id) => {
                 let Some(index) = self.line_named(&Picked { dir, state: Some(state.name().to_string()) })
                 else {
                     return false;
                 };
-                self.note = None;
                 self.pick(index);
-                (self.region, self.arrow) = (None, None);
+                self.arrow = None;
                 self.pick_node(|page| page.has(&id).then(|| id.clone()), None);
                 return true;
             }
@@ -2305,34 +2124,26 @@ impl Gallery {
                 else {
                     return false;
                 };
-                (dir, note.on.clone(), id)
+                (dir, note.on.clone())
             }
         };
         match &on {
-            On::Node { state, .. } | On::Region { state, .. } | On::State { state } => {
+            On::Node { state, .. } | On::State { state } => {
                 let Some(index) =
                     self.line_named(&Picked { dir: dir.clone(), state: Some(state.name().to_string()) })
                 else {
                     return false;
                 };
-                self.pick(index);
-                (self.node, self.region, self.arrow) = (None, None, None);
-                match &on {
-                    On::Node { node, .. } => {
-                        let origin = node.origin.clone();
-                        self.pick_node(
-                            |page| page.placed(&origin).map(|placed| placed.id.clone()),
-                            Some(node.width),
-                        );
-                    }
-                    On::Region { region, .. } => {
-                        if let Picture::Pages(pages) = &self.picture {
-                            self.pointed =
-                                pages.iter().position(|page| page.width as u32 == region.width).unwrap_or(0);
-                        }
-                        self.region = Some(region.clone());
-                    }
-                    _ => {}
+                if self.picked != Some(index) {
+                    self.pick(index);
+                }
+                (self.node, self.arrow) = (None, None);
+                if let On::Node { node, .. } = &on {
+                    let origin = node.origin.clone();
+                    self.pick_node(
+                        |page| page.placed(&origin).map(|placed| placed.id.clone()),
+                        Some(node.width),
+                    );
                 }
             }
             On::Transition { .. } | On::Navigate { .. } => {
@@ -2357,7 +2168,7 @@ impl Gallery {
                 let wanted = Reference { description: dir.clone(), on: on.clone() };
                 for index in shown_in {
                     self.pick(index);
-                    (self.node, self.region) = (None, None);
+                    self.node = None;
                     self.arrow = self.arrow_references().iter().position(|arrow| *arrow == wanted);
                     if self.arrow.is_some() {
                         break;
@@ -2365,7 +2176,6 @@ impl Gallery {
                 }
             }
         }
-        self.note = Some((dir, note));
         true
     }
 
@@ -2389,7 +2199,19 @@ impl Gallery {
             return 0.0;
         }
         let cards = self.sidebar_cards();
-        sidebar::lay_out(&cards, (0.0, self.side), 0.0, &mut self.typesetter).height
+        sidebar::lay_out(&cards, None, (0.0, self.side), (0.0, self.size.1), &mut self.typesetter).height
+    }
+
+    /// Where the box at the sidebar's foot starts, from the window's top:
+    /// the foot of what the sidebar's cards scroll in; the window's
+    /// bottom while there is no box, or no sidebar.
+    fn sidebar_foot(&mut self) -> f64 {
+        let foot = self.foot();
+        if !self.sidebar || foot.is_none() {
+            return self.size.1;
+        }
+        let (right, bottom) = (self.pane_right(), self.size.1);
+        sidebar::lay_out(&[], foot.as_ref(), (right, self.side), (0.0, bottom), &mut self.typesetter).foot
     }
 
     /// The card of the arrow picked: what it is.
@@ -2428,7 +2250,7 @@ impl Gallery {
                 }
             }
         }
-        if matches!(&self.draft, Some(Draft { on: Writing::Rejecting(..), .. })) {
+        if self.draft.is_some() {
             blocks.extend(self.field_blocks());
         } else if self.confirming.as_ref().is_some_and(|confirming| confirming.on == on) {
             // Its ✓ waits, to be undone, in the card above.
@@ -2478,7 +2300,6 @@ impl Gallery {
         );
         let answers = Answers { assumed, guess, answer };
         self.acted = None;
-        self.note = None;
         match answer {
             Answer::Right => {
                 // One ✓ waits at a time: the one before it is written now.
@@ -2488,7 +2309,8 @@ impl Gallery {
                 self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
             Answer::Wrong => {
-                self.draft = Some(Draft::new(Writing::Rejecting(on, answers), &self.typesetter, self.side))
+                let text = Field::new(&self.typesetter, sidebar::field_width(self.side));
+                self.draft = Some(Draft { on, answers, text });
             }
         }
     }
@@ -2532,160 +2354,118 @@ impl Gallery {
         Some(Card { ink: Ink::Answered, ..Card::new(say!(lang, confirming_title, on), blocks) })
     }
 
-    /// The note picked, if the description it names has it.
-    fn picked_note(&self) -> Option<&Note> {
-        let (dir, id) = self.note.as_ref()?;
-        self.notes.get(dir)?.iter().find(|note| &note.id == id)
+    /// The notes on what the conversation in the sidebar is on
+    /// ([`Gallery::reference`]), in the order written: its note, and the
+    /// notes answering an assumption on it or proposing where acting on it
+    /// should go, each a part of the one conversation. Their description's
+    /// directory with them; none where nothing is picked to talk about.
+    fn conversation(&self) -> Option<(Reference, Vec<&Note>)> {
+        let on = self.reference()?;
+        let notes = self.notes.get(&on.description).map(Vec::as_slice).unwrap_or_default();
+        let held = notes.iter().filter(|note| note.on.same(&on.on)).collect();
+        Some((on, held))
     }
 
-    /// The card of the note picked, read as a conversation: where it
-    /// stands and where it is, and what the person and the agent said, each
-    /// in a bubble. None when no note is picked.
-    fn note_card(&self) -> Option<Card<Do>> {
-        let note = self.picked_note()?;
+    /// The card of the conversation on what is picked: its note's id and
+    /// where it stands, then what the person and the agent said, each in a
+    /// bubble, in the order said, newest at the bottom; or, where nothing
+    /// is said yet, how to say it in the box below. None where nothing is
+    /// picked to talk about.
+    fn conversation_card(&self) -> Option<Card<Do>> {
+        let (_, notes) = self.conversation()?;
         let lang = self.lang;
-        let answers = match &note.answers {
-            Some(answers) => {
-                let mark = answered(answers.answer, lang);
-                say!(lang, answers_assumption, mark)
-            }
-            None => String::new(),
+        let Some(last) = notes.last() else {
+            let blocks = vec![Block::Muted(say!(lang, talk_hint))];
+            return Some(Card { ink: Ink::Note, ..Card::new(say!(lang, talk_none), blocks) });
         };
-        let title = format!("{} · {} · {}{answers}", note.id, note_status(note, lang), note.on.said(lang));
-        let blocks = note.messages.iter().map(|said| Block::Bubble(said.by, said.says.clone())).collect();
-        let ink = if note.waits() { Ink::Note } else { Ink::Answered };
+        let ids = notes.iter().map(|note| note.id.as_str()).collect::<Vec<_>>().join(", ");
+        let title = say!(lang, talk_title, id = ids, status = note_status(last, lang));
+        let mut blocks = Vec::new();
+        for note in &notes {
+            if let Some(answers) = &note.answers {
+                blocks.push(Block::Muted(say!(lang, answers_assumption, mark = answered(answers.answer, lang))));
+            }
+            blocks.extend(note.messages.iter().map(|said| Block::Bubble(said.by, said.says.clone())));
+        }
+        let ink = if last.waits() { Ink::Note } else { Ink::Answered };
         Some(Card { ink, ..Card::new(title, blocks) })
     }
 
-    /// The field of the note being written, and what its keys do: Enter
-    /// sends what it holds, except a ✗ with nothing in it.
+    /// The box at the sidebar's foot, while there is something picked to
+    /// talk about and no ✗ is written in its place: what it holds, and
+    /// Send, which sends it unless it is empty.
+    fn foot(&self) -> Option<Foot<Do>> {
+        if self.draft.is_some() {
+            return None;
+        }
+        self.reference()?;
+        let lang = self.lang;
+        Some(Foot {
+            field: self.talk.shown(),
+            empty: say!(lang, talk_box),
+            send: say!(lang, send),
+            does: (!self.talk.is_blank()).then_some(Do::Send),
+        })
+    }
+
+    /// The field of the ✗ being written, and what its keys do: Enter
+    /// sends what it holds, unless it is empty.
     fn field_blocks(&self) -> Vec<Block<Do>> {
         let Some(draft) = &self.draft else {
             return Vec::new();
         };
         let lang = self.lang;
-        let empty = match &draft.on {
-            Writing::On(_) => say!(lang, ask_change),
-            Writing::Rejecting(..) => say!(lang, ask_right),
-        };
-        let keys = if draft.text.is_blank() && !matches!(draft.on, Writing::On(_)) {
-            say!(lang, not_sent_empty)
-        } else {
-            say!(lang, enter_sends)
-        };
-        vec![Block::Field(draft.text.shown(), empty), Block::Muted(keys)]
+        let keys = if draft.text.is_blank() { say!(lang, not_sent_empty) } else { say!(lang, enter_sends) };
+        vec![Block::Field(draft.text.shown(), say!(lang, ask_right)), Block::Muted(keys)]
     }
 
-    /// The next click on a node, a state's caption or an arrow starts a note
-    /// on it; the panel says so. Not where a description's faults are
-    /// shown. Whether that changed what is shown.
-    fn start_noting(&mut self) -> bool {
-        if matches!(self.picture, Picture::Faults(_)) {
-            self.say(say!(self.lang, note_needs_picture));
-            return true;
+    /// The field keys and an input method type into: the ✗ being written,
+    /// or else the box at the sidebar's foot while it is shown; none while
+    /// neither is.
+    fn field_mut(&mut self) -> Option<&mut Field> {
+        let talking = self.sidebar && self.reference().is_some();
+        match &mut self.draft {
+            Some(draft) => Some(&mut draft.text),
+            None => talking.then_some(&mut self.talk),
         }
-        self.noting = true;
-        self.note = None;
-        self.acted = None;
-        true
     }
 
-    /// A note started on what is under the pointer: a node, a picture's
-    /// caption (the whole state), a state or a transition's arrow in the
-    /// overview, or a navigate's arrow in the flow, picked; or, where none
-    /// is, the panel says so. Whether that changed what is shown.
-    fn note_where_pressed(&mut self) -> bool {
-        self.noting = false;
-        let on = match &self.picture {
-            Picture::Pages(_) => {
-                self.region = None;
-                match self.hit(self.cursor).map(|(pointed, _, node)| (pointed, node.id.clone())) {
-                    Some((pointed, id)) => {
-                        self.node = Some(id);
-                        self.pointed = pointed;
-                        self.reference()
-                    }
-                    None if self.caption_at(self.cursor) => {
-                        self.node = None;
-                        self.reference()
-                    }
-                    None => None,
-                }
+    /// What the box at the sidebar's foot holds said in the conversation on
+    /// what is picked, added to its note in notes.json, or a note started
+    /// on it, and shown at once, scrolled to; the box emptied. Nothing when
+    /// it is empty; where it cannot be written, the panel says why and the
+    /// box keeps it.
+    fn send(&mut self) {
+        let Some(on) = self.reference().filter(|_| !self.talk.is_blank()) else {
+            return;
+        };
+        match notes::say(&on, &self.talk.text()) {
+            Ok(_) => {
+                self.notes = notes_of(&self.lines);
+                self.talk = Field::new(&self.typesetter, sidebar::field_width(self.side));
+                self.side_scroll = f64::MAX;
+                self.clamp();
             }
-            Picture::Overview(_) => match self.arrow_at(self.cursor) {
-                Some(arrow) => {
-                    self.arrow = Some(arrow);
-                    self.reference()
-                }
-                None => self.state_at(self.cursor).and_then(|line| {
-                    let line = &self.lines[line];
-                    let state = line.state.clone()?;
-                    Some(Reference { description: line.row.dir.clone(), on: On::State { state } })
-                }),
-            },
-            Picture::Flow(_) => self.arrow_at(self.cursor).and_then(|arrow| {
-                self.arrow = Some(arrow);
-                self.reference()
-            }),
-            Picture::Faults(_) => None,
-        };
-        match on {
-            Some(on) => self.draft_on(on),
-            None => self.say(say!(self.lang, nothing_to_note)),
-        }
-        true
-    }
-
-    /// Whether `at`, a point in the window, is on a picture's caption.
-    fn caption_at(&self, at: (f64, f64)) -> bool {
-        let Picture::Pages(pages) = &self.picture else {
-            return false;
-        };
-        let zoom = self.zoom(self.pane());
-        pages.iter().zip(self.origins()).any(|(page, (left, top))| {
-            (left..=left + page.width * zoom).contains(&at.0) && (top - CAPTION..top).contains(&at.1)
-        })
-    }
-
-    /// A note started on the node or arrow picked, at the instance pointed
-    /// at.
-    fn write(&mut self) {
-        match self.reference() {
-            Some(on) => self.draft_on(on),
-            None => self.say(say!(self.lang, note_needs_target)),
+            Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
         }
     }
 
-    /// A note started on what `on` references.
-    fn draft_on(&mut self, on: Reference) {
-        self.acted = None;
-        self.note = None;
-        self.draft = Some(Draft::new(Writing::On(on), &self.typesetter, self.side));
-    }
-
-    /// The note being written saved to notes.json, and its pin drawn; or,
-    /// where it cannot be, the panel says why and the note stays to edit.
-    fn save(&mut self) {
+    /// The ✗ being written saved to notes.json as a note on its node; or,
+    /// where it cannot be, the panel says why and it stays to edit. Not
+    /// sent empty: its field says so.
+    fn reject(&mut self) {
         let Some(draft) = self.draft.take() else {
             return;
         };
-        if draft.text.is_blank() && !matches!(draft.on, Writing::On(_)) {
-            // Its field says it is not sent empty.
+        if draft.text.is_blank() {
             self.draft = Some(draft);
             return;
         }
         let lang = self.lang;
-        let saved = match &draft.on {
-            Writing::On(on) => notes::add(on, &draft.text.text())
-                .map(|id| (on.description.clone(), id, say!(lang, done_saved))),
-            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text.text())
-                .map(|id| (on.description.clone(), id, say!(lang, done_rejected))),
-        };
-        match saved {
-            Ok((dir, id, done)) => {
+        match notes::judge(&draft.on, draft.answers.clone(), &draft.text.text()) {
+            Ok(id) => {
                 self.notes = notes_of(&self.lines);
-                self.say(say!(lang, note_sent, id, done));
-                self.note = Some((dir, id));
+                self.say(say!(lang, note_sent, id, done = say!(lang, done_rejected)));
             }
             Err(e) => {
                 self.say(say!(lang, not_saved, e = format!("{e:#}")));
@@ -2695,115 +2475,121 @@ impl Gallery {
     }
 
     /// A key pressed, ⌘ not held, as `key` names it and with the `text` it
-    /// types: while a note is written, an edit of its field, Enter sending
-    /// it, Shift+Enter breaking a line and Esc dropping it, the keys an
-    /// input method takes while it composes left to it; otherwise N starts
-    /// a note and Esc stops one. Whether that changed what is shown.
+    /// types. Into the field written in ([`Gallery::field_mut`]): an edit,
+    /// Enter sending it and Shift+Enter breaking a line, the keys an input
+    /// method takes while it composes left to it, so that the Enter that
+    /// commits what it composes sends nothing. ← and → step a journey
+    /// played while the box is empty. Esc drops a ✗ being written, else
+    /// what is picked. Whether that changed what is shown.
     fn key(&mut self, key: &Key, text: Option<&str>) -> bool {
-        if let Some(draft) = &mut self.draft {
-            if draft.text.is_composing() {
-                return false;
-            }
-            return match key {
-                Key::Named(NamedKey::Enter) if self.shift => {
-                    draft.text.type_in("\n");
-                    true
-                }
-                Key::Named(NamedKey::Enter) => {
-                    self.save();
-                    true
-                }
-                Key::Named(NamedKey::Escape) => {
-                    self.draft = None;
-                    true
-                }
-                Key::Named(
-                    named @ (NamedKey::ArrowLeft
-                    | NamedKey::ArrowRight
-                    | NamedKey::ArrowUp
-                    | NamedKey::ArrowDown
-                    | NamedKey::Home
-                    | NamedKey::End),
-                ) => {
-                    let motion = match named {
-                        NamedKey::ArrowLeft => Motion::Left,
-                        NamedKey::ArrowRight => Motion::Right,
-                        NamedKey::ArrowUp => Motion::Up,
-                        NamedKey::ArrowDown => Motion::Down,
-                        NamedKey::Home => Motion::Home,
-                        _ => Motion::End,
-                    };
-                    draft.text.edit(if self.shift { Edit::Select(motion) } else { Edit::Move(motion) })
-                }
-                Key::Named(NamedKey::Backspace) => draft.text.edit(Edit::Back),
-                Key::Named(NamedKey::Delete) => draft.text.edit(Edit::Delete),
-                _ => match text {
-                    Some(text) if !text.chars().any(char::is_control) => {
-                        draft.text.type_in(text);
-                        true
-                    }
-                    _ => false,
-                },
-            };
-        }
+        let stepping = self.playing.is_some() && self.draft.is_none() && self.talk.is_blank();
         match key {
-            Key::Named(NamedKey::Escape) if self.noting || self.note.is_some() || self.region.is_some() => {
-                self.noting = false;
-                self.note = None;
-                self.region = None;
-                true
-            }
-            Key::Character(c) if c.eq_ignore_ascii_case("n") => self.start_noting(),
-            Key::Named(NamedKey::ArrowRight | NamedKey::ArrowLeft) => {
+            Key::Named(NamedKey::ArrowRight | NamedKey::ArrowLeft) if stepping => {
                 let Some(playing) = &self.playing else { return false };
                 let at = match key {
                     Key::Named(NamedKey::ArrowRight) => playing.at + 1,
                     _ => playing.at.wrapping_sub(1),
                 };
-                at < playing.steps.len() && self.step(at)
+                return at < playing.steps.len() && self.step(at);
             }
-            _ => false,
+            Key::Named(NamedKey::Escape) => {
+                if self.draft.take().is_some() {
+                    return true;
+                }
+                let picked = self.node.is_some() || self.arrow.is_some();
+                (self.node, self.arrow) = (None, None);
+                return picked;
+            }
+            _ => {}
+        }
+        let shift = self.shift;
+        let Some(field) = self.field_mut() else {
+            return false;
+        };
+        if field.is_composing() {
+            return false;
+        }
+        match key {
+            Key::Named(NamedKey::Enter) if shift => {
+                field.type_in("\n");
+                true
+            }
+            Key::Named(NamedKey::Enter) => {
+                if self.draft.is_some() {
+                    self.reject();
+                } else {
+                    self.send();
+                }
+                true
+            }
+            Key::Named(
+                named @ (NamedKey::ArrowLeft
+                | NamedKey::ArrowRight
+                | NamedKey::ArrowUp
+                | NamedKey::ArrowDown
+                | NamedKey::Home
+                | NamedKey::End),
+            ) => {
+                let motion = match named {
+                    NamedKey::ArrowLeft => Motion::Left,
+                    NamedKey::ArrowRight => Motion::Right,
+                    NamedKey::ArrowUp => Motion::Up,
+                    NamedKey::ArrowDown => Motion::Down,
+                    NamedKey::Home => Motion::Home,
+                    _ => Motion::End,
+                };
+                field.edit(if shift { Edit::Select(motion) } else { Edit::Move(motion) })
+            }
+            Key::Named(NamedKey::Backspace) => field.edit(Edit::Back),
+            Key::Named(NamedKey::Delete) => field.edit(Edit::Delete),
+            _ => match text {
+                Some(text) if !text.chars().any(char::is_control) => {
+                    field.type_in(text);
+                    true
+                }
+                _ => false,
+            },
         }
     }
 
-    /// `text` typed into the note being written at its caret: what an
-    /// input method committed, or what was pasted. Whether one is written.
+    /// `text` typed into the field written in at its caret: what an input
+    /// method committed, or what was pasted. Whether one is written in.
     fn type_in(&mut self, text: &str) -> bool {
-        let Some(draft) = &mut self.draft else {
+        let Some(field) = self.field_mut() else {
             return false;
         };
-        draft.text.type_in(text);
+        field.type_in(text);
         true
     }
 
-    /// What an input method says while a note is written: what it is
+    /// What an input method says while a field is written in: what it is
     /// composing, shown at the caret, then what it commits, typed there.
-    /// Whether one is written.
+    /// Whether one is written in.
     fn ime(&mut self, ime: Ime) -> bool {
-        let Some(draft) = &mut self.draft else {
+        let Some(field) = self.field_mut() else {
             return false;
         };
         match ime {
-            Ime::Preedit(composing, cursor) => draft.text.compose(&composing, cursor),
-            Ime::Commit(text) => draft.text.type_in(&text),
-            Ime::Enabled | Ime::Disabled => draft.text.compose("", None),
+            Ime::Preedit(composing, cursor) => field.compose(&composing, cursor),
+            Ime::Commit(text) => field.type_in(&text),
+            Ime::Enabled | Ime::Disabled => field.compose("", None),
         }
         true
     }
 
-    /// ⌘A in the note being written: all of it selected. Whether one is.
+    /// ⌘A in the field written in: all of it selected. Whether one is.
     fn select_all(&mut self) -> bool {
-        self.draft.as_mut().is_some_and(|draft| draft.text.edit(Edit::All))
+        self.field_mut().is_some_and(|field| field.edit(Edit::All))
     }
 
-    /// ⌘C, or ⌘X when `cut`, in the note being written: what is selected
-    /// put on the clipboard, and, cut, taken out. Whether something was
+    /// ⌘C, or ⌘X when `cut`, in the field written in: what is selected put
+    /// on the clipboard, and, cut, taken out. Whether something was
     /// selected: ⌘C with nothing selected copies the reference instead.
     fn copy_selected(&mut self, cut: bool) -> bool {
-        let Some(draft) = &mut self.draft else {
+        let Some(field) = self.field_mut() else {
             return false;
         };
-        let copied = if cut { draft.text.cut() } else { draft.text.selected().map(str::to_string) };
+        let copied = if cut { field.cut() } else { field.selected().map(str::to_string) };
         let Some(copied) = copied else {
             return false;
         };
@@ -2813,18 +2599,19 @@ impl Gallery {
         true
     }
 
-    /// Where the text of the note being written is, in window points,
-    /// while one is and the sidebar is shown.
+    /// Where the text of the field written in is, in window points, while
+    /// one is and the sidebar is shown.
     fn field_rect(&mut self) -> Option<Rect> {
-        if !self.sidebar || self.draft.is_none() {
+        if !self.sidebar {
             return None;
         }
-        let cards = self.sidebar_cards();
-        sidebar::lay_out(&cards, (self.pane_right(), self.side), -self.side_scroll, &mut self.typesetter)
-            .field
+        let (cards, foot) = (self.sidebar_cards(), self.foot());
+        let (right, bottom) = (self.pane_right(), self.size.1);
+        let top = -self.side_scroll;
+        sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), (top, bottom), &mut self.typesetter).field
     }
 
-    /// The caret of the note being written put where the pointer is on its
+    /// The caret of the field written in put where the pointer is on its
     /// text (with Shift, what is selected drawn to there), and held there to
     /// drag a selection. Whether the pointer is on its text.
     fn press_field(&mut self) -> bool {
@@ -2832,33 +2619,35 @@ impl Gallery {
             return false;
         };
         let (x, y) = (f64::from(field.x), f64::from(field.y));
-        let at = self.cursor;
+        let (at, shift) = (self.cursor, self.shift);
         let on = (x..=x + f64::from(field.width)).contains(&at.0)
             && (y..=y + f64::from(field.height)).contains(&at.1);
-        let Some(draft) = self.draft.as_mut().filter(|_| on) else {
+        let Some(text) = self.field_mut().filter(|_| on) else {
             return false;
         };
-        draft.text.point((at.0 - x, at.1 - y), self.shift);
+        text.point((at.0 - x, at.1 - y), shift);
         self.selecting = Some((x, y));
         true
     }
 
-    /// What is selected in the note being written drawn to where the
-    /// pointer is, while it drags from a press on its text. Whether it is.
+    /// What is selected in the field written in drawn to where the pointer
+    /// is, while it drags from a press on its text. Whether it is.
     fn drag_field(&mut self) -> bool {
-        let (Some((x, y)), Some(draft)) = (self.selecting, &mut self.draft) else {
+        let (Some((x, y)), cursor) = (self.selecting, self.cursor) else {
             return false;
         };
-        draft.text.point((self.cursor.0 - x, self.cursor.1 - y), true);
+        let Some(field) = self.field_mut() else {
+            return false;
+        };
+        field.point((cursor.0 - x, cursor.1 - y), true);
         true
     }
 
     /// The notes on what is shown, drawn on it; blue while waiting on the
-    /// agent, green once answered. On a state's pictures, each on a node or a
-    /// region a numbered pin at the top-right corner of its node, or of its
-    /// region as it now is, in the picture of the state and width it was
-    /// written in, and a faint dot there in every other that holds the
-    /// node, or a node the region covers; each on the whole state a pin at
+    /// agent, green once answered. On a state's pictures, each on a node a
+    /// numbered pin at the top-right corner of its node, in the picture of
+    /// the state and width it was written in, and a faint dot there in
+    /// every other that holds the node; each on the whole state a pin at
     /// the right of the first picture's caption. In the overview, each on a
     /// state a pin at the right of its caption, and each on a transition one
     /// beside its arrow's label; in the flow, each on a navigate one under
@@ -2889,7 +2678,7 @@ impl Gallery {
     /// its pin.
     fn pin(&self, dir: &Path, note: &Note, rect: Rect, faint: bool) -> Pin {
         let ink = if note.waits() { Ink::Note } else { Ink::Answered };
-        Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint, region: None }
+        Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint }
     }
 
     /// The pins of the notes on the state shown, on its pictures: on its
@@ -2917,10 +2706,6 @@ impl Gallery {
                         let Some(placed) = page.placed(&node.origin) else { continue };
                         (written, placed.rect, placed.id.clone(), node.width)
                     }
-                    On::Region { state: written, region } => {
-                        let Some(r) = page.region(region) else { continue };
-                        (written, r, format!("{} {}", r.x + r.width, r.y), region.width)
-                    }
                     On::State { state: written } if *written == state && index == 0 => {
                         let right = left + page.width * zoom - PIN / 2.0 - whole as f64 * (PIN + 2.0);
                         whole += 1;
@@ -2933,15 +2718,11 @@ impl Gallery {
                 let corner = (left + f64::from(r.x + r.width) * zoom, top + f64::from(r.y) * zoom);
                 let before = on.entry(key).or_default();
                 let faint = *written != state || page.width as u32 != width;
-                let region = (matches!(note.on, On::Region { .. }) && !faint).then(|| {
-                    let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
-                    rect(x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom)
-                });
                 let side = if faint { DOT } else { PIN };
                 let x = corner.0 - side / 2.0 - *before as f64 * (side + 2.0);
                 *before += 1;
                 let at = rect(x, corner.1 - side / 2.0, side, side);
-                pins.push(Pin { region, ..self.pin(&wanted.dir, note, at, faint) });
+                pins.push(self.pin(&wanted.dir, note, at, faint));
             }
         }
         pins
@@ -2982,22 +2763,15 @@ impl Gallery {
         })
     }
 
-    /// The card of the region picked: its box and width, then each node it
-    /// covers, as written. None when none is.
-    fn region_card(&self) -> Option<Card<Do>> {
-        let region = self.region.as_ref()?;
-        let lang = self.lang;
-        let (Frame { x, y, width, height }, at) = (region.area, region.width);
-        let title = say!(lang, region_title, x, y, width, height, at);
-        let mut blocks = Vec::new();
-        if region.nodes.is_empty() {
-            blocks.push(Block::Fact(say!(lang, covers), say!(lang, covers_nothing)));
-        }
-        for origin in &region.nodes {
-            let node = format!("{}{}", origin.written, reference::instance(&origin.instance));
-            blocks.push(Block::Fact(say!(lang, covers), node));
-        }
-        Some(Card::new(title, blocks))
+    /// The card of the state shown, with no node picked: its name, for the
+    /// conversation under it on the whole state. None where no state is
+    /// drawn.
+    fn state_card(&self) -> Option<Card<Do>> {
+        let Picture::Pages(_) = self.picture else {
+            return None;
+        };
+        let state = self.state_shown()?;
+        Some(Card::new(say!(self.lang, whole_state, state = state.name()), Vec::new()))
     }
 
     /// The card of the node picked: what it is (its component), the
@@ -3056,21 +2830,15 @@ impl Gallery {
         }
     }
 
-    /// The pins drawn: each numbered, the one picked ringed; each faint dot
-    /// a small ring.
+    /// The pins drawn: each numbered, those of the conversation in the
+    /// sidebar ringed; each faint dot a small ring.
     fn pin_draws(&self) -> Vec<Draw> {
-        let picked = self.note.as_ref().filter(|_| self.picked_note().is_some());
+        let talked: Vec<(PathBuf, String)> = self
+            .conversation()
+            .map(|(on, notes)| notes.iter().map(|note| (on.description.clone(), note.id.clone())).collect())
+            .unwrap_or_default();
         let mut list = Vec::new();
         for pin in self.pins() {
-            if let Some(around) = pin.region {
-                list.push(Draw::Box {
-                    rect: around,
-                    radius: 0.0,
-                    fill: None,
-                    stroke: Some(pin.ink),
-                    dashed: true,
-                });
-            }
             if pin.faint {
                 let radius = pin.rect.width / 2.0;
                 list.push(Draw::Box {
@@ -3082,7 +2850,7 @@ impl Gallery {
                 });
                 continue;
             }
-            if picked.is_some_and(|(dir, id)| *dir == pin.dir && *id == pin.id) {
+            if talked.iter().any(|(dir, id)| *dir == pin.dir && *id == pin.id) {
                 let r = pin.rect;
                 let around = rect(f64::from(r.x) - 3.0, f64::from(r.y) - 3.0, PIN + 6.0, PIN + 6.0);
                 let radius = around.width / 2.0;
@@ -3226,12 +2994,13 @@ impl Gallery {
         if let Some(draft) = &mut self.draft {
             draft.text.fit(sidebar::field_width(self.side));
         }
+        self.talk.fit(sidebar::field_width(self.side));
         let height = self.size.1;
         let below = (self.pictures_height(self.pane()) - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
         let beyond = (self.pictures_width(self.pane()) - self.pane()).max(0.0);
         self.across = self.across.clamp(0.0, beyond);
-        let below = (self.sidebar_height() - height).max(0.0);
+        let below = (self.sidebar_height() - self.sidebar_foot()).max(0.0);
         self.side_scroll = self.side_scroll.clamp(0.0, below);
         let below = (self.tree_height() - height).max(0.0);
         self.tree_scroll = self.tree_scroll.clamp(0.0, below);
@@ -3261,7 +3030,7 @@ impl Gallery {
         let lines = Bar { pane: lines, axis: Axis::Down, content, scrolled: self.tree_scroll, corner: 0.0 };
         let mut bars = vec![(Scrolls::Down, down), (Scrolls::Across, across), (Scrolls::Tree, lines)];
         if self.sidebar {
-            let side = Area::new(right, 0.0, width, height);
+            let side = Area::new(right, 0.0, width, self.sidebar_foot());
             let content = self.sidebar_height();
             let side = Bar { pane: side, axis: Axis::Down, content, scrolled: self.side_scroll, corner: 0.0 };
             bars.push((Scrolls::Side, side));
@@ -3343,7 +3112,6 @@ impl Gallery {
         let mut sheets = Vec::new();
         let (origins, outlines) = (self.origins(), self.outlines());
         let marks = self.marks();
-        let regions = self.regions();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let (cells, arrows) = (self.cells(), self.arrows());
         match &self.picture {
@@ -3381,15 +3149,6 @@ impl Gallery {
                         fill: None,
                         stroke: Some(Ink::Strong),
                         dashed: false,
-                    });
-                }
-                for around in regions {
-                    pane.push(Draw::Box {
-                        rect: around,
-                        radius: 0.0,
-                        fill: None,
-                        stroke: Some(Ink::Strong),
-                        dashed: true,
                     });
                 }
             }
@@ -3433,20 +3192,21 @@ impl Gallery {
         pane.extend(pins);
         pane.extend(reply);
         let right = self.pane_right();
-        let side = if self.sidebar {
-            let cards = self.sidebar_cards();
+        let (side, foot, cut_at) = if self.sidebar {
+            let (cards, foot) = (self.sidebar_cards(), self.foot());
             let mut side = vec![Draw::Line {
                 from: [right as f32, 0.0],
                 to: [right as f32, height as f32],
                 ink: Ink::Line,
             }];
-            let laid = sidebar::lay_out(&cards, (right, self.side), -self.side_scroll, &mut self.typesetter);
+            let at = (-self.side_scroll, height);
+            let laid = sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), at, &mut self.typesetter);
             self.caret = laid.caret;
             side.extend(laid.draws);
-            side
+            (side, laid.foot_draws, laid.foot)
         } else {
             self.caret = None;
-            Vec::new()
+            (Vec::new(), Vec::new(), height)
         };
 
         let mut scene = Scene::new();
@@ -3511,7 +3271,11 @@ impl Gallery {
         over.extend(pane);
         paint::draws(&mut scene, at, &over, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
+        // The cards cut where the box at the foot starts, drawn over them.
+        scene.push_clip_layer(Fill::NonZero, at, &Area::new(right, 0.0, width, cut_at));
         paint::draws(&mut scene, at, &side, chrome::colour, &mut self.typesetter);
+        scene.pop_layer();
+        paint::draws(&mut scene, at, &foot, chrome::colour, &mut self.typesetter);
         // The tree's names cut at its edge, however narrow it is dragged.
         scene.push_clip_layer(Fill::NonZero, at, &Area::new(0.0, 0.0, tree, height));
         paint::draws(&mut scene, at, &list, chrome::colour, &mut self.typesetter);
@@ -3922,7 +3686,7 @@ impl ApplicationHandler<Told> for Gallery {
                 };
                 window.set_cursor(grip);
                 let resized = self.resize() || self.drag_thumb();
-                if resized || self.hover() || self.held.is_some() || self.drag_field() {
+                if resized || self.hover() || self.drag_field() {
                     window.request_redraw();
                 }
             }
@@ -4006,25 +3770,18 @@ impl ApplicationHandler<Told> for Gallery {
             WindowEvent::RedrawRequested => self.redraw(),
             _ => {}
         }
-        // What an input method composes goes into a note, and only there,
-        // what it offers shown beside the caret.
+        // What an input method composes goes into the field written in, and
+        // only there, what it offers shown beside the caret.
+        let writing = self.field_mut().is_some();
         if let Some(shown) = &self.shown {
-            shown.window.set_ime_allowed(self.draft.is_some());
-            if let (Some(caret), Some(_)) = (self.caret, &self.draft) {
+            shown.window.set_ime_allowed(writing);
+            if let (Some(caret), true) = (self.caret, writing) {
                 let at = LogicalPosition::new(f64::from(caret.x), f64::from(caret.y));
                 let size = LogicalSize::new(1.0, f64::from(caret.height));
                 shown.window.set_ime_cursor_area(at, size);
             }
         }
     }
-}
-
-/// Whether `inner` lies wholly within `outer`, edges included.
-fn within(inner: Rect, outer: Rect) -> bool {
-    inner.x >= outer.x
-        && inner.y >= outer.y
-        && inner.x + inner.width <= outer.x + outer.width
-        && inner.y + inner.height <= outer.y + outer.height
 }
 
 /// Whether `event` is the C key pressed: ⌘C (Ctrl+C) copies, on any

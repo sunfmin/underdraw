@@ -178,9 +178,9 @@ fn the_inbox_of_the_root_grouped_by_description() {
     let dir = root.join("orders");
     let whole =
         Reference { description: dir.clone(), on: On::State { state: State::Fixture("default".into()) } };
-    notes::add(&whole, "too dense").unwrap();
-    notes::add(&whole, "a bigger title").unwrap();
-    notes::answer(&dir, "N2", "the title is a heading now").unwrap();
+    notes::say(&whole, "too dense").unwrap();
+    notes::say(&whole, "a bigger title").unwrap();
+    notes::answer(&dir, "N1", "the title is a heading now").unwrap();
     let mut gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
     let card = gallery.inbox_card().expect("the inbox of everything under the root");
     assert_eq!(card.title, "waits on you · 6");
