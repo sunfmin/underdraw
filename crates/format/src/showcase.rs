@@ -21,8 +21,8 @@ pub const ALONE: &str = "default";
 /// `cancel` is `order-row-cancel`), given each param from the fixture.
 /// A typed param (`{"order": "Order"}`) is a field of that type, held as
 /// view state: a component's set or toggle on a param acts on what was
-/// passed, and here the showcase alone holds it. A look's param
-/// (`["status"]`) takes text, a number or true or false, as the first
+/// passed, and here the showcase alone holds it; a look's typed param is
+/// given as a prop. A look's listed param (`["status"]`) takes text, a number or true or false, as the first
 /// fixture to give it does. One that declares no params has one state
 /// to show and needs no fixture written: without any, it is shown in
 /// [`ALONE`], an empty one.
@@ -44,12 +44,18 @@ pub fn showcase(name: &str, component: &Value) -> Value {
     instance.insert("component".to_string(), Value::String(name.to_string()));
     match component.get("params") {
         Some(Value::Object(params)) => {
+            // A look's typed params are props; a subtree's are given in `with`.
+            let look = component.get("nodes").is_none();
             let mut with = Map::new();
             for (param, field) in params {
                 data.insert(param.clone(), held(field));
                 with.insert(param.clone(), Value::String(format!("{{{param}}}")));
             }
-            instance.insert("with".to_string(), Value::Object(with));
+            if look {
+                instance.extend(with);
+            } else {
+                instance.insert("with".to_string(), Value::Object(with));
+            }
         }
         Some(Value::Array(params)) => {
             for param in params.iter().filter_map(Value::as_str) {
