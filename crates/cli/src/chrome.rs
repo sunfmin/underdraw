@@ -12,7 +12,7 @@ use vello::peniko::Color;
 
 /// The desk the pictures lie on, behind everything else in the pane.
 pub const DESK: Color = Color::from_rgb8(0xE8, 0xEB, 0xEF);
-/// The tree's surface, and the panel's at the foot of the pane.
+/// The tree's surface, and the sidebar's under its cards.
 pub const SIDE: Color = Color::from_rgb8(0xF7, 0xF8, 0xFA);
 /// The shadow a sheet casts on the desk, and how soft and how far down.
 pub const SHADOW: Color = Color::from_rgba8(0x1A, 0x22, 0x33, 0x24);
@@ -40,16 +40,29 @@ pub fn colour(ink: Ink) -> Color {
 }
 
 /// The chrome's type, one family (the system's) in four sizes: what is
-/// read, the tree's lines and the panel's; a caption over a picture; a mark
+/// read, the tree's lines; a caption over a picture; a mark
 /// (a count, a journey's step, a flow's arrow); and the overview's arrows.
 pub const BODY: Font = Font { size: 13.0, weight: 400, line_height: 16.0 };
 pub const CAPTION_FONT: Font = Font { size: 12.0, weight: 500, line_height: 16.0 };
 pub const MARK: Font = Font { size: 11.0, weight: 600, line_height: 14.0 };
 pub const ARROW_FONT: Font = Font { size: 12.0, weight: 600, line_height: 16.0 };
-/// The weight of what heads something: a description in the tree, the
-/// panel's first line, a state's name over its picture in the overview.
+/// The weight of what heads something: a description in the tree, a
+/// state's name over its picture in the overview, a flow's box.
 pub const HEADING: u16 = 600;
+/// The sidebar's type: a card's title, what it says, and its buttons'.
+pub const CARD_TITLE: Font = Font { size: 13.0, weight: 600, line_height: 18.0 };
+pub const CARD_TEXT: Font = Font { size: 13.0, weight: 400, line_height: 18.0 };
+pub const BUTTON: Font = Font { size: 13.0, weight: 600, line_height: 16.0 };
 
+/// The sidebar's width, on the right of the window, in points.
+pub const SIDEBAR: f64 = 360.0;
+/// The space around the sidebar's cards, and between them; inside a card,
+/// around what it holds; and between one block of a card and the next.
+pub const GUTTER: f64 = 12.0;
+pub const CARD_PADDING: f64 = 12.0;
+pub const CARD_BETWEEN: f64 = 6.0;
+/// How much taller than its text a button is.
+pub const BUTTON_PAD: f64 = 7.0;
 /// The tree's width, in points.
 pub const TREE: f64 = 260.0;
 /// One row of the tree, in points.
@@ -60,8 +73,6 @@ pub const INDENT: f64 = 14.0;
 pub const MARGIN: f64 = 28.0;
 /// The caption over each picture.
 pub const CAPTION: f64 = 24.0;
-/// One line of the panel of the node picked.
-pub const PANEL_LINE: f64 = 20.0;
 /// The space between one finding and the next.
 pub const GAP: f64 = 12.0;
 /// How wide and, at most, how tall a state's picture is in its
@@ -84,3 +95,6 @@ pub const MARK_INSET: f64 = 6.0;
 pub const SHEET_RADIUS: f32 = 6.0;
 pub const PICKED_RADIUS: f32 = 6.0;
 pub const MARK_RADIUS: f32 = 9.0;
+/// The corners of a card of the sidebar, and of a button on it.
+pub const CARD_RADIUS: f32 = 8.0;
+pub const BUTTON_RADIUS: f32 = 6.0;

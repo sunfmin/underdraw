@@ -1,8 +1,10 @@
 //! The gallery's window, run in a process of its own: the tree of
-//! descriptions and their states on the left and, for the state picked, its
-//! picture drawn at a phone and a desktop width side by side, where a node
-//! can be picked to read what it is, or acted on to follow what the
-//! description says happens, as a prototype; for a directory picked, the
+//! descriptions and their states on the left; for the state picked, its
+//! picture drawn at a phone and a desktop width side by side in the middle,
+//! where a node can be picked to read what it is, or acted on to follow what
+//! the description says happens, as a prototype; and on the right the
+//! sidebar ([`crate::sidebar`]), the cards of what is picked and the buttons
+//! of what can be done with it; for a directory picked, the
 //! flow between the screens under it; for a journey picked (ADR 0022), its
 //! steps played one by one. The person writes notes (ADR 0019)
 //! on its nodes, on regions dragged over it, on a whole state, and on the
@@ -33,8 +35,8 @@ use winit::window::{Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::chrome::{
-    ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PANEL_LINE, PIN, ROW,
-    SPACE, THUMB, THUMB_TALL, TREE,
+    ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SPACE,
+    THUMB, THUMB_TALL, TREE,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
@@ -42,7 +44,25 @@ use crate::gallery::{self, Answering, Row};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, By, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
+use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
+
+/// The window's own words in the language it was opened in (`--lang`):
+/// the same format string in English and in Chinese.
+macro_rules! chrome {
+    ($lang:expr, $en:literal, $zh:literal $(,)?) => {
+        match $lang {
+            Lang::En => format!($en),
+            Lang::Zh => format!($zh),
+        }
+    };
+    ($lang:expr, $en:literal, $zh:literal, $($arg:expr),+ $(,)?) => {
+        match $lang {
+            Lang::En => format!($en, $($arg),+),
+            Lang::Zh => format!($zh, $($arg),+),
+        }
+    };
+}
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
@@ -50,7 +70,9 @@ const WIDTHS: [u32; 2] = [390, 1120];
 const OVERVIEW: u32 = 390;
 /// How far one notch of a mouse wheel scrolls.
 const NOTCH: f64 = 40.0;
-
+/// How small the pictures of a state get, fitting the width left, before
+/// they scroll sideways instead.
+const SMALLEST: f64 = 0.5;
 /// How far the pointer moves, held down, before a press is a drag over a
 /// region rather than a click.
 const DRAG: f64 = 6.0;
@@ -118,9 +140,17 @@ struct Gallery {
     /// The picture, of those at each of `WIDTHS`, the node was picked in:
     /// the instance the person pointed at.
     pointed: usize,
-    /// How far the pictures, and the tree, are scrolled down, in points.
+    /// How far the pictures, the tree and the sidebar are scrolled down,
+    /// and the pictures across, in points.
     scroll: f64,
     tree_scroll: f64,
+    side_scroll: f64,
+    across: f64,
+    /// Whether the sidebar is shown: ⌘\ hides and shows it.
+    sidebar: bool,
+    /// Whether the card of the node picked is unfolded to its details: its
+    /// id, and its label and box at each width.
+    details: bool,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
@@ -190,7 +220,7 @@ enum Writing {
     Rejecting(Reference, Answers),
 }
 
-/// What a click on a line of the panel does.
+/// What a click on a button of the sidebar does.
 #[derive(Clone, Debug, PartialEq)]
 enum Do {
     /// Chooses the outcome the last act's operation answered with: the
@@ -212,6 +242,8 @@ enum Do {
     Judge(Answer),
     /// Shows the step of this place in the journey played.
     Step(usize),
+    /// Folds or unfolds the details of the node picked.
+    Details,
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
@@ -248,7 +280,11 @@ fn notes_of(root: &Path, lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
 /// What closed itself between the notes `before` and `after`, each with
 /// why, as the panel says it once: `N3 closed: order-{index} is gone
 /// (removed or renamed)`.
-fn closed_itself(before: &BTreeMap<PathBuf, Vec<Note>>, after: &BTreeMap<PathBuf, Vec<Note>>) -> Vec<String> {
+fn closed_itself(
+    before: &BTreeMap<PathBuf, Vec<Note>>,
+    after: &BTreeMap<PathBuf, Vec<Note>>,
+    lang: Lang,
+) -> Vec<String> {
     let mut said = Vec::new();
     for (dir, notes) in after {
         for note in notes {
@@ -258,7 +294,8 @@ fn closed_itself(before: &BTreeMap<PathBuf, Vec<Note>>, after: &BTreeMap<PathBuf
                 .and_then(|was| was.iter().find(|was| was.id == note.id))
                 .is_none_or(|was| was.status == Status::Closed);
             if !was_closed {
-                said.push(format!("{} closed: {why}", note.id));
+                let id = &note.id;
+                said.push(chrome!(lang, "{id} closed: {why}", "{id} 已关闭：{why}"));
             }
         }
     }
@@ -364,11 +401,11 @@ enum Picture {
 struct Flow {
     map: Map,
     /// One for each of the map's places, in their order.
-    cards: Vec<Card>,
+    tiles: Vec<Tile>,
 }
 
 /// What one box of the flow shows under its name.
-enum Card {
+enum Tile {
     /// The description's first state, drawn at the phone's width.
     Picture { scene: Box<Scene>, width: f64 },
     /// A description that cannot be drawn: how many faults it has.
@@ -386,6 +423,9 @@ struct Page {
     /// Every node with an id, in the order drawn: one drawn later is over
     /// one drawn before, and an overlay is drawn after what it floats over.
     nodes: Vec<Placed>,
+    /// The labels the nodes are tagged with, and the "?" of each guess, in
+    /// the page's points: drawn apart from `scene`, at their own size.
+    tags: Vec<Draw>,
     /// The operations each node calls when acted on, by id.
     calls: BTreeMap<String, Vec<String>>,
     /// What each node does when acted on, by id.
@@ -512,6 +552,10 @@ impl Gallery {
             pointed: 0,
             scroll: 0.0,
             tree_scroll: 0.0,
+            side_scroll: 0.0,
+            across: 0.0,
+            sidebar: true,
+            details: false,
             cursor: (0.0, 0.0),
             acting: false,
             history: Vec::new(),
@@ -545,19 +589,39 @@ impl Gallery {
         Ok(description)
     }
 
-    /// Scrolled `down` points, the pane under the pointer: the tree or the
-    /// pictures.
-    fn wheel(&mut self, down: f64) {
+    /// Scrolled `right` and `down` points, the pane under the pointer: the
+    /// tree, the sidebar, or the pictures, which alone scroll across.
+    fn wheel(&mut self, right: f64, down: f64) {
         if self.cursor.0 < TREE {
             self.tree_scroll += down;
+        } else if self.cursor.0 >= self.pane_right() {
+            self.side_scroll += down;
         } else {
             self.scroll += down;
+            self.across += right;
         }
         self.clamp();
     }
 
+    /// Where the pictures' pane ends on the right, in window points: where
+    /// the sidebar starts while it is shown, else the window's edge.
+    fn pane_right(&self) -> f64 {
+        if self.sidebar { self.size.0 - sidebar::WIDTH } else { self.size.0 }
+    }
+
+    /// How wide the pictures' pane is, between the tree and the sidebar.
+    fn pane(&self) -> f64 {
+        self.pane_right() - TREE
+    }
+
+    /// The sidebar shown, or hidden, its width given to the pictures.
+    fn toggle_sidebar(&mut self) {
+        self.sidebar = !self.sidebar;
+        self.clamp();
+    }
+
     /// A press where the pointer is: on the tree, picks the line under it;
-    /// on a line of the panel, does what it does; while N is pressed, starts
+    /// on a button of the sidebar, does what it does; while N is pressed, starts
     /// a note there; on a pin, picks its note; on the pictures, picks the
     /// node under it, or none, or acts on it while [`Gallery::acting`]; on
     /// the overview, picks the arrow under it, or plays the journey whose
@@ -565,10 +629,13 @@ impl Gallery {
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
+        if self.cursor.0 >= self.pane_right() {
+            return match self.button_at(self.cursor) {
+                Some(does) => self.click(does),
+                None => false,
+            };
+        }
         if self.cursor.0 >= TREE {
-            if let Some(line) = self.panel_line(self.cursor.1) {
-                return self.click_panel(line);
-            }
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
             }
@@ -700,7 +767,7 @@ impl Gallery {
     fn region_between(&self, from: (f64, f64), to: (f64, f64)) -> Option<(usize, Region)> {
         let (pointed, page, start) = self.on_picture(from)?;
         let (left, top) = self.origins()[pointed];
-        let zoom = self.zoom(self.size.0 - TREE);
+        let zoom = self.zoom(self.pane());
         let end =
             (((to.0 - left) / zoom).clamp(0.0, page.width), ((to.1 - top) / zoom).clamp(0.0, page.height));
         let (x, y) = (start.0.min(end.0).round(), start.1.min(end.1).round());
@@ -738,7 +805,7 @@ impl Gallery {
         self.lines = lines(&self.root);
         self.descriptions.borrow_mut().clear();
         let notes = notes_of(&self.root, &self.lines);
-        let closed = closed_itself(&self.notes, &notes);
+        let closed = closed_itself(&self.notes, &notes, self.lang);
         self.notes = notes;
         self.picked = None;
         self.picture = Picture::Faults(Vec::new());
@@ -749,7 +816,7 @@ impl Gallery {
             self.play(index, at);
             self.scroll = scroll;
             if !closed.is_empty() {
-                self.say(format!("{} · its description's overview lists it, to reopen", closed.join(" · ")));
+                self.say(self.reopen_from(&closed));
             }
             self.clamp();
             return;
@@ -772,9 +839,19 @@ impl Gallery {
             self.wanted = wanted;
         }
         if !closed.is_empty() {
-            self.say(format!("{} · its description's overview lists it, to reopen", closed.join(" · ")));
+            self.say(self.reopen_from(&closed));
         }
         self.clamp();
+    }
+
+    /// What the sidebar says of the notes that `closed` themselves.
+    fn reopen_from(&self, closed: &[String]) -> String {
+        let closed = closed.join(" · ");
+        chrome!(
+            self.lang,
+            "{closed} · its description's overview lists it, to reopen",
+            "{closed} · 可在它的描述的总览里重开"
+        )
     }
 
     /// The line of the state `named` names, or of its directory when it
@@ -810,23 +887,29 @@ impl Gallery {
         };
         let state = here.state.clone().unwrap_or_default();
         let on = format!("{}.{}", handlers.written, act::event(&handlers.events));
+        let lang = self.lang;
         let screen = crate::read(&here.dir).map(|(screen, _)| screen).unwrap_or(Value::Null);
         match act::act(&screen, &state, &handlers.written, &handlers.events) {
             Act::Go { to } => {
-                let says = format!("{on} in {state} → {to}");
+                let says = chrome!(lang, "{on} in {state} → {to}", "{on}（{state}）→ {to}");
                 self.go(Picked { dir: here.dir, state: Some(to) }, says);
             }
             Act::Choose(choices) => {
-                let says = format!("{on} in {state} calls {}: click how it answered", calls.join(", "));
+                let calls = calls.join(", ");
+                let says = chrome!(
+                    lang,
+                    "{on} in {state} calls {calls}: click how it answered",
+                    "{on}（{state}）调用 {calls}：点它的回答"
+                );
                 let choices = choices
                     .into_iter()
-                    .map(|(outcome, to)| (format!("    {outcome} → {to}"), Do::Choose { outcome, to }))
+                    .map(|(outcome, to)| (format!("{outcome} → {to}"), Do::Choose { outcome, to }))
                     .collect();
                 self.acted = Some(Acted { says, choices });
             }
             Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
                 Some(description) => {
-                    let says = format!("{on} navigates to {screen}");
+                    let says = chrome!(lang, "{on} navigates to {screen}", "{on} 跳转到 {screen}");
                     self.go(Picked { dir: description, state: None }, says);
                 }
                 None => {
@@ -839,17 +922,27 @@ impl Gallery {
                     match self.line_named(&back) {
                         Some(index) => {
                             self.pick(index);
-                            self.say(format!("{on} goes back to {to}"));
+                            self.say(chrome!(lang, "{on} goes back to {to}", "{on} 返回到 {to}"));
                         }
-                        None => self.say(format!("{on} goes back to {to}, which is gone")),
+                        None => self.say(chrome!(
+                            lang,
+                            "{on} goes back to {to}, which is gone",
+                            "{on} 返回到 {to}，但它已不在"
+                        )),
                     }
                 }
-                None => self.say(format!(
-                    "{on} goes back, but no act led here: back returns along the path taken by acting"
+                None => self.say(chrome!(
+                    lang,
+                    "{on} goes back, but no act led here: back returns along the path taken by acting",
+                    "{on} 要返回，但没有操作通到这里：返回沿着操作走过的路退回"
                 )),
             },
             Act::Nothing => {
-                let says = format!("no transition from {state} on {on} · should go to:");
+                let says = chrome!(
+                    lang,
+                    "no transition from {state} on {on} · should go to:",
+                    "{state} 上的 {on} 没有过渡 · 应该去："
+                );
                 let choices = self.proposals(&here.dir, &on);
                 self.acted = Some(Acted { says, choices });
             }
@@ -868,46 +961,51 @@ impl Gallery {
             .iter()
             .filter(|line| line.row.dir == dir)
             .filter_map(|line| line.state.as_ref())
-            .map(|state| (format!("    {}", state.name()), propose(Goes::To(state.name().to_string()))));
-        let screens = links::declared(&self.root)
-            .into_iter()
-            .filter(|(_, declared)| declared != dir)
-            .map(|(screen, _)| (format!("    navigate to {screen}"), propose(Goes::Navigate(screen))));
+            .map(|state| (state.name().to_string(), propose(Goes::To(state.name().to_string()))));
+        let screens = links::declared(&self.root).into_iter().filter(|(_, declared)| declared != dir).map(
+            |(screen, _)| {
+                let said = chrome!(self.lang, "navigate to {screen}", "跳转到 {screen}");
+                (said, propose(Goes::Navigate(screen)))
+            },
+        );
         states.chain(screens).collect()
     }
 
-    /// What line `line` of the panel does, done. Whether there was anything
-    /// to do there.
-    fn click_panel(&mut self, line: usize) -> bool {
-        match self.panel_rows().into_iter().nth(line).and_then(|(_, does)| does) {
-            Some(Do::Choose { outcome, to }) => self.choose(outcome, to),
-            Some(Do::Propose(proposal)) => {
+    /// What a button of the sidebar does, done. Whether there was anything
+    /// to do.
+    fn click(&mut self, does: Do) -> bool {
+        match does {
+            Do::Choose { outcome, to } => self.choose(outcome, to),
+            Do::Propose(proposal) => {
                 self.propose(proposal);
                 true
             }
-            Some(Do::Write) => {
+            Do::Write => {
                 self.write();
                 true
             }
-            Some(Do::Close(dir, id)) => {
+            Do::Close(dir, id) => {
                 self.close(&dir, &id);
                 true
             }
-            Some(Do::Reopen(dir, id)) => {
+            Do::Reopen(dir, id) => {
                 self.draft = Some(Draft { on: Writing::Reopening(dir, id), text: String::new() });
                 true
             }
-            Some(Do::Show(dir, id)) => {
+            Do::Show(dir, id) => {
                 self.note = Some((dir, id));
                 self.acted = None;
                 true
             }
-            Some(Do::Judge(answer)) => {
+            Do::Judge(answer) => {
                 self.judge(answer);
                 true
             }
-            Some(Do::Step(at)) => self.step(at),
-            None => false,
+            Do::Step(at) => self.step(at),
+            Do::Details => {
+                self.details = !self.details;
+                true
+            }
         }
     }
 
@@ -918,7 +1016,8 @@ impl Gallery {
             return false;
         };
         let state = here.state.clone().unwrap_or_default();
-        self.go(Picked { dir: here.dir, state: Some(to.clone()) }, format!("{outcome} in {state} → {to}"));
+        let says = chrome!(self.lang, "{outcome} in {state} → {to}", "{outcome}（{state}）→ {to}");
+        self.go(Picked { dir: here.dir, state: Some(to.clone()) }, says);
         true
     }
 
@@ -928,15 +1027,23 @@ impl Gallery {
     /// description.
     fn propose(&mut self, proposal: Proposal) {
         let Some(on) = self.reference().filter(|on| matches!(on.on, On::Node { .. })) else {
-            return self.say("a proposal is a note on a node: act on one first".to_string());
+            return self.say(chrome!(
+                self.lang,
+                "a proposal is a note on a node: act on one first",
+                "提议是节点上的便签：先操作一个节点"
+            ));
         };
         match notes::propose(&on, proposal) {
             Ok(id) => {
                 self.notes = notes_of(&self.root, &self.lines);
-                self.say(format!("{id} saved, proposing it for the agent: `underdraw notes` lists it"));
+                self.say(chrome!(
+                    self.lang,
+                    "{id} saved, proposing it for the agent: `underdraw notes` lists it",
+                    "{id} 已保存，作为提议交给代理：`underdraw notes` 会列出它"
+                ));
                 self.note = Some((on.description, id));
             }
-            Err(e) => self.say(format!("not saved: {e:#}")),
+            Err(e) => self.say(chrome!(self.lang, "not saved: {e:#}", "没有保存：{e:#}")),
         }
     }
 
@@ -945,7 +1052,11 @@ impl Gallery {
     /// the person was is kept for `back`, and the panel says `says`.
     fn go(&mut self, to: Picked, says: String) {
         let Some(mut index) = self.line_named(&to) else {
-            return self.say(format!("{says}, which the tree does not list"));
+            return self.say(chrome!(
+                self.lang,
+                "{says}, which the tree does not list",
+                "{says}，但目录树里没有它"
+            ));
         };
         // A description named alone: its first state, the line under it.
         if to.state.is_none()
@@ -1005,7 +1116,7 @@ impl Gallery {
             self.region = None;
         }
         self.wanted = Some(Picked { dir: dir.clone(), state: name });
-        self.scroll = 0.0;
+        (self.scroll, self.across) = (0.0, 0.0);
         if !described {
             self.node = None;
             self.picture = Picture::Flow(self.flow(&dir));
@@ -1048,8 +1159,16 @@ impl Gallery {
                                 // A description with no state: lay_out says why.
                                 None => Wanted { fixture: None, phase: None, width, scale: 1 },
                             };
-                            let drawing = description.lay_out(&wanted, Some(drawn), lang)?.draw(1, u32::MAX);
+                            let mut laid = description.lay_out(&wanted, Some(drawn), lang)?;
+                            // The labels, drawn by the window at their own
+                            // size over a picture scaled down.
+                            let (tags, draws) = std::mem::take(&mut laid.page.draws)
+                                .into_iter()
+                                .partition(|draw| matches!(draw, Draw::Tag { .. }));
+                            laid.page.draws = draws;
+                            let drawing = laid.draw(1, u32::MAX);
                             Ok(Page {
+                                tags,
                                 caption: format!("{} · {width}", drawing.shown.name()),
                                 width: f64::from(drawing.page.width),
                                 height: f64::from(drawing.page.height),
@@ -1092,7 +1211,7 @@ impl Gallery {
         self.picked = Some(index);
         self.playing = None;
         (self.arrow, self.note, self.region, self.node) = (None, None, None, None);
-        self.scroll = 0.0;
+        (self.scroll, self.across) = (0.0, 0.0);
         if !faults.is_empty() {
             self.wanted = None;
             self.picture = Picture::Faults(faults);
@@ -1115,7 +1234,8 @@ impl Gallery {
             .ok()
             .and_then(|states| states.into_iter().find(|state| state.name() == step.state));
         let Some(state) = state else {
-            let problem = format!("{} has no state {}", gallery::within(&self.root, &step.dir), step.state);
+            let (within, state) = (gallery::within(&self.root, &step.dir), &step.state);
+            let problem = chrome!(self.lang, "{within} has no state {state}", "{within} 没有状态 {state}");
             self.picture = Picture::Faults(vec![Finding { at: format!("steps.{at}"), problem }]);
             return;
         };
@@ -1160,7 +1280,7 @@ impl Gallery {
     /// The marks around the node the journey played acts on next, in
     /// window points, in each picture that shows it.
     fn marks(&self) -> Vec<Rect> {
-        let zoom = self.zoom(self.size.0 - TREE);
+        let zoom = self.zoom(self.pane());
         self.marked()
             .into_iter()
             .zip(self.origins())
@@ -1173,45 +1293,48 @@ impl Gallery {
             .collect()
     }
 
-    /// What the panel says of the journey played: which step is shown, of
-    /// how many, and its state; the act that leads on from it; and a line
-    /// to each step beside it.
-    fn playing_panel(&self) -> Vec<(String, Option<Do>)> {
+    /// The card of the journey played: which step is shown, of how many,
+    /// its description and state, the act that leads on from it, and a
+    /// button to each step beside it.
+    fn playing_card(&self) -> Option<Card<Do>> {
         let (Some(playing), Some(index)) = (&self.playing, self.picked) else {
-            return Vec::new();
+            return None;
         };
+        let lang = self.lang;
         let (at, step) = (playing.at, &playing.steps[playing.at]);
-        let mut rows = vec![(
-            format!(
-                "journey {} · step {} of {} · {} · {}",
-                self.lines[index].row.name,
-                at + 1,
-                playing.steps.len(),
-                gallery::within(&self.root, &step.dir),
-                step.state
-            ),
-            None,
-        )];
-        rows.push((
-            match &step.on {
-                Some((node, event)) => {
-                    let label = self.marked().into_iter().flatten().next().and_then(|node| node.label);
-                    let label = label.map(|label| format!(" (label {label})")).unwrap_or_default();
-                    let outcome =
-                        step.outcome.as_ref().map(|o| format!(", answered {o}")).unwrap_or_default();
-                    format!("    acts on {node}{label} · {event}{outcome} (marked)")
-                }
-                None => "    the journey ends here".to_string(),
-            },
-            None,
-        ));
+        let (name, number, steps) = (&self.lines[index].row.name, at + 1, playing.steps.len());
+        let (within, state) = (gallery::within(&self.root, &step.dir), &step.state);
+        let title = chrome!(
+            lang,
+            "journey {name} · step {number} of {steps} · {within} · {state}",
+            "旅程 {name} · 第 {number} 步，共 {steps} 步 · {within} · {state}"
+        );
+        let mut blocks = vec![Block::Text(match &step.on {
+            Some((node, event)) => {
+                let label = self.marked().into_iter().flatten().next().and_then(|node| node.label);
+                let label = label
+                    .map(|label| chrome!(lang, " (label {label})", "（编号 {label}）"))
+                    .unwrap_or_default();
+                let outcome = step
+                    .outcome
+                    .as_ref()
+                    .map(|o| chrome!(lang, ", answered {o}", "，结果 {o}"))
+                    .unwrap_or_default();
+                chrome!(
+                    lang,
+                    "acts on {node}{label} · {event}{outcome} (marked)",
+                    "作用于 {node}{label} · {event}{outcome}（已标出）"
+                )
+            }
+            None => chrome!(lang, "the journey ends here", "旅程到此结束"),
+        })];
         if at > 0 {
-            rows.push(("    ← previous step".to_string(), Some(Do::Step(at - 1))));
+            blocks.push(Block::Button(chrome!(lang, "← previous step", "← 上一步"), Do::Step(at - 1)));
         }
         if at + 1 < playing.steps.len() {
-            rows.push(("    → next step".to_string(), Some(Do::Step(at + 1))));
+            blocks.push(Block::Button(chrome!(lang, "→ next step", "→ 下一步"), Do::Step(at + 1)));
         }
-        rows
+        Some(Card { ink: Ink::Note, ..Card::new(title, blocks) })
     }
 
     /// The overview of the description on line `index`, in `dir`: its states
@@ -1277,7 +1400,8 @@ impl Gallery {
             for (step, on) in journeys::steps(&journey.row.dir).unwrap_or_default().iter().enumerate() {
                 let thumb = thumbs.iter().position(|thumb| thumb.name == on.state);
                 let Some(thumb) = thumb.filter(|_| on.dir == dir) else { continue };
-                let label = format!("→ {} · step {}", journey.row.name, step + 1);
+                let (name, number) = (&journey.row.name, step + 1);
+                let label = chrome!(lang, "→ {name} · step {number}", "→ {name} · 第 {number} 步");
                 let wide = f64::from(self.typesetter.text(&label, MARK, None).width) + 10.0;
                 thumbs[thumb].journeys.push(Pass { line, step, label, wide });
             }
@@ -1318,7 +1442,7 @@ impl Gallery {
         let Picture::Overview(overview) = &self.picture else {
             return Vec::new();
         };
-        let columns = Self::columns(self.size.0 - TREE);
+        let columns = Self::columns(self.pane());
         overview
             .thumbs
             .iter()
@@ -1470,7 +1594,7 @@ impl Gallery {
                 })
                 .collect(),
             Picture::Flow(flow) => {
-                let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.size.0 - TREE));
+                let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.pane()));
                 let window = |(x, y): (f64, f64)| (left + x * zoom, top + y * zoom);
                 flow_arrows(flow)
                     .into_iter()
@@ -1541,24 +1665,24 @@ impl Gallery {
             .collect();
         let map = flow::map(&under, &links::links(&self.root));
         let drawn = links::drawn(&self.root);
-        let cards = map
+        let tiles = map
             .places
             .iter()
             .map(|place| match &place.screen {
-                Screen::Drawn(dir) => self.card(dir, &drawn),
-                Screen::Undrawn(_) => Card::Undrawn,
+                Screen::Drawn(dir) => self.tile(dir, &drawn),
+                Screen::Undrawn(_) => Tile::Undrawn,
             })
             .collect();
-        Flow { map, cards }
+        Flow { map, tiles }
     }
 
     /// The box of the description in `dir`: its first state at the phone's
     /// width, or how many faults keep it from being drawn.
-    fn card(&self, dir: &Path, drawn: &std::collections::BTreeSet<String>) -> Card {
+    fn tile(&self, dir: &Path, drawn: &std::collections::BTreeSet<String>) -> Tile {
         let line = self.description_line(dir);
         let faults = line.map_or(0, |index| self.lines[index].row.faults.len());
         if faults > 0 {
-            return Card::Faulty(faults);
+            return Tile::Faulty(faults);
         }
         let first = line.and_then(|index| self.lines.get(index + 1)).and_then(|next| next.state.clone());
         let wanted = match first {
@@ -1571,9 +1695,9 @@ impl Gallery {
         {
             Ok(laid) => {
                 let drawing = laid.draw(1, u32::MAX);
-                Card::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
+                Tile::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
             }
-            Err(_) => Card::Faulty(1),
+            Err(_) => Tile::Faulty(1),
         }
     }
 
@@ -1584,7 +1708,7 @@ impl Gallery {
 
     /// `at`, a point in the window, in the flow's points.
     fn in_flow(&self, at: (f64, f64)) -> (f64, f64) {
-        let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.size.0 - TREE));
+        let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.pane()));
         ((at.0 - left) / zoom, (at.1 - top) / zoom)
     }
 
@@ -1593,8 +1717,8 @@ impl Gallery {
         let Picture::Pages(pages) = &self.picture else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.size.0 - TREE);
-        let mut x = TREE + MARGIN;
+        let zoom = self.zoom(self.pane());
+        let mut x = TREE + MARGIN - self.across;
         let top = MARGIN - self.scroll + CAPTION;
         pages
             .iter()
@@ -1620,7 +1744,7 @@ impl Gallery {
         let Picture::Pages(pages) = &self.picture else {
             return None;
         };
-        let zoom = self.zoom(self.size.0 - TREE);
+        let zoom = self.zoom(self.pane());
         pages.iter().zip(self.origins()).enumerate().find_map(|(index, (page, (left, top)))| {
             let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
             ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y)).then_some((
@@ -1663,18 +1787,20 @@ impl Gallery {
     /// says so; or says why nothing was.
     fn copy(&mut self) {
         let Some(reference) = self.reference() else {
-            return self.say(
-                "nothing to copy: pick a state, a node or region in it, or an arrow, first".to_string(),
-            );
+            return self.say(chrome!(
+                self.lang,
+                "nothing to copy: pick a state, a node or region in it, or an arrow, first",
+                "没有可复制的：先选中一个状态、其中的节点或区域，或一个箭头"
+            ));
         };
-        let line = reference.line();
+        let (line, lang) = (reference.line(), self.lang);
         let copied = match self.clipboard() {
             Some(clipboard) => clipboard.set_text(line.clone()).map_err(|e| e.to_string()),
-            None => Err("there is no clipboard to copy to".to_string()),
+            None => Err(chrome!(lang, "there is no clipboard to copy to", "没有剪贴板可复制到")),
         };
         match copied {
-            Ok(()) => self.say(format!("copied  {line}")),
-            Err(e) => self.say(format!("could not copy ({e}): {line}")),
+            Ok(()) => self.say(chrome!(lang, "copied  {line}", "已复制  {line}")),
+            Err(e) => self.say(chrome!(lang, "could not copy ({e}): {line}", "无法复制（{e}）：{line}")),
         }
     }
 
@@ -1708,12 +1834,41 @@ impl Gallery {
         changed
     }
 
-    /// The line of the panel at `y`, a height in the window; none off the
-    /// panel, or where there is no panel.
-    fn panel_line(&self, y: f64) -> Option<usize> {
-        let tall = self.panel_height();
-        let top = self.size.1 - tall;
-        (tall > 0.0 && y >= top).then(|| ((y - top - MARGIN / 2.0) / PANEL_LINE).floor().max(0.0) as usize)
+    /// What the button of the sidebar under `at`, a point in the window,
+    /// does; none off its buttons, or while it is hidden.
+    fn button_at(&mut self, at: (f64, f64)) -> Option<Do> {
+        if !self.sidebar {
+            return None;
+        }
+        let cards = self.cards();
+        let laid = sidebar::lay_out(&cards, self.pane_right(), -self.side_scroll, &mut self.typesetter);
+        laid.at(at).cloned()
+    }
+
+    /// The labels the nodes of each picture are tagged with, and the "?" of
+    /// each guess, in window points: where the picture puts them, scaled
+    /// with it, but each at its own size, so that it reads as well at
+    /// [`SMALLEST`] as at full size.
+    fn labels(&self) -> Vec<Draw> {
+        let Picture::Pages(pages) = &self.picture else {
+            return Vec::new();
+        };
+        let zoom = self.zoom(self.pane());
+        let mut labels = Vec::new();
+        for (page, (left, top)) in pages.iter().zip(self.origins()) {
+            for tag in &page.tags {
+                let Draw::Tag { rect: r, text, ink } = tag else { continue };
+                let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
+                let (x, y) = (left + middle.0 * zoom, top + middle.1 * zoom);
+                let (w, h) = (f64::from(r.width), f64::from(r.height));
+                labels.push(Draw::Tag {
+                    rect: rect(x - w / 2.0, y - h / 2.0, w, h),
+                    text: text.clone(),
+                    ink: *ink,
+                });
+            }
+        }
+        labels
     }
 
     /// The outline around the node picked, in window points, in each
@@ -1722,7 +1877,7 @@ impl Gallery {
         let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.size.0 - TREE);
+        let zoom = self.zoom(self.pane());
         pages
             .iter()
             .zip(self.origins())
@@ -1741,7 +1896,7 @@ impl Gallery {
     fn regions(&self) -> Vec<Rect> {
         let mut boxes = Vec::new();
         if let (Some(region), Picture::Pages(pages)) = (&self.region, &self.picture) {
-            let zoom = self.zoom(self.size.0 - TREE);
+            let zoom = self.zoom(self.pane());
             for (page, (left, top)) in pages.iter().zip(self.origins()) {
                 if let Some(r) = page.region(region) {
                     let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
@@ -1759,99 +1914,181 @@ impl Gallery {
         boxes
     }
 
-    /// What the panel says, one line each.
+    /// What the sidebar's cards say, one string each: a card's title, then
+    /// each of its blocks.
+    #[cfg(test)]
     fn panel(&self) -> Vec<String> {
-        self.panel_rows().into_iter().map(|(line, _)| line).collect()
+        self.cards()
+            .into_iter()
+            .flat_map(|card| {
+                let blocks = card.blocks.iter().map(|block| block.says().to_string()).collect::<Vec<_>>();
+                std::iter::once(card.title).chain(blocks)
+            })
+            .collect()
     }
 
-    /// What the panel says, one line each, with what a click on each line
-    /// does: the journey played, its step and the steps beside it; what the
-    /// last act on a node came to, and any outcomes to
-    /// choose from, each on a line of its own; then the note being written,
-    /// or how to start one; then the note picked; then, of the node picked,
-    /// its id, component, the operation it calls, what was assumed there, its
-    /// label and box at each width, or of the arrow picked, what it is; and
-    /// a line to write a note on it. Nothing when none of these is there.
-    fn panel_rows(&self) -> Vec<(String, Option<Do>)> {
-        let mut rows = self.playing_panel();
+    /// The sidebar's cards, top to bottom, with a button for each thing a
+    /// click does: the journey played, its step and the steps beside it;
+    /// what the last act on a node came to, and any outcomes to choose
+    /// from; then the note being written, or how to start one; then the
+    /// note picked; then the node picked (what it is, what it calls, what
+    /// was assumed there, and, folded into "details", its id and its label
+    /// and box at each width), the region or the arrow picked, with a button
+    /// to write a note on it; then a description's closed notes. None when
+    /// none of these is there.
+    fn cards(&self) -> Vec<Card<Do>> {
+        let lang = self.lang;
+        let mut cards: Vec<Card<Do>> = self.playing_card().into_iter().collect();
         if let Some(Acted { says, choices }) = &self.acted {
-            rows.push((says.clone(), None));
-            rows.extend(choices.iter().map(|(line, does)| (line.clone(), Some(does.clone()))));
+            let buttons =
+                choices.iter().map(|(said, does)| Block::Button(said.clone(), does.clone())).collect();
+            cards.push(Card::new(says.clone(), buttons));
         }
         if let Some(draft) = &self.draft {
-            let keys = "Enter saves, Shift+Enter breaks a line, Esc cancels";
-            rows.push((
-                match &draft.on {
-                    Writing::On(on) => format!("note {} · {keys}", on.on.said()),
-                    Writing::Reopening(_, id) => format!("reopening {id}: say what is still to do · {keys}"),
-                    Writing::Rejecting(on, _) => {
-                        format!("✗ wrong {}: say what is right, for the agent · {keys}", on.on.said())
-                    }
-                },
-                None,
-            ));
-            let lines: Vec<&str> = draft.text.split('\n').collect();
-            for (index, line) in lines.iter().enumerate() {
-                let caret = if index + 1 == lines.len() { "▏" } else { "" };
-                rows.push((format!("    {line}{caret}"), None));
-            }
+            let title = match &draft.on {
+                Writing::On(on) => chrome!(lang, "note {}", "便签：{}", on.on.said(lang)),
+                Writing::Reopening(_, id) => {
+                    chrome!(lang, "reopening {id}: say what is still to do", "重开 {id}：说说还有什么要做")
+                }
+                Writing::Rejecting(on, _) => chrome!(
+                    lang,
+                    "✗ wrong {}: say what is right, for the agent",
+                    "✗ 不对 {}：告诉代理什么是对的",
+                    on.on.said(lang)
+                ),
+            };
+            let keys = chrome!(
+                lang,
+                "Enter saves, Shift+Enter breaks a line, Esc cancels",
+                "回车保存，Shift+回车换行，Esc 放弃"
+            );
+            let blocks = vec![Block::Text(format!("{}▏", draft.text)), Block::Muted(keys)];
+            cards.push(Card { ink: Ink::Note, ..Card::new(title, blocks) });
         } else if self.noting {
-            let click = match self.picture {
-                Picture::Overview(_) => "a transition's arrow, or a state, it is on",
-                Picture::Flow(_) => "the navigate's arrow it is on",
-                Picture::Pages(_) | Picture::Faults(_) => {
-                    "the node it is on or a picture's caption, or drag over the region"
+            let click = match (&self.picture, lang) {
+                (Picture::Overview(_), Lang::En) => "click a transition's arrow, or a state, it is on",
+                (Picture::Overview(_), Lang::Zh) => "点它所在的过渡箭头，或某个状态",
+                (Picture::Flow(_), Lang::En) => "click the navigate's arrow it is on",
+                (Picture::Flow(_), Lang::Zh) => "点它所在的跳转箭头",
+                (Picture::Pages(_) | Picture::Faults(_), Lang::En) => {
+                    "click the node it is on or a picture's caption, or drag over the region"
+                }
+                (Picture::Pages(_) | Picture::Faults(_), Lang::Zh) => {
+                    "点它所在的节点或画面的标题，或拖出一块区域"
                 }
             };
-            rows.push((format!("write a note: click {click} · Esc cancels"), None));
+            let blocks =
+                vec![Block::Text(click.to_string()), Block::Muted(chrome!(lang, "Esc cancels", "Esc 放弃"))];
+            cards.push(Card {
+                ink: Ink::Note, ..Card::new(chrome!(lang, "write a note", "写便签"), blocks)
+            });
         }
-        rows.extend(self.note_panel());
-        let mut picked: Vec<String> = self.node_panel();
-        picked.extend(self.region_panel());
-        if let (Some(_), Some(arrow)) = (self.arrow, self.reference()) {
-            let said = arrow.on.said();
-            picked.push(said.strip_prefix("on ").unwrap_or(&said).to_string());
-        }
-        let writable = !picked.is_empty() && self.draft.is_none() && !self.noting;
-        rows.extend(picked.into_iter().map(|line| (line, None)));
-        if writable {
-            rows.extend(self.assumption_panel());
-            rows.push(("    write a note on it  (N)".to_string(), Some(Do::Write)));
+        cards.extend(self.note_card());
+        let picked = self.node_card().or_else(|| self.region_card()).or_else(|| self.arrow_card());
+        if let Some(mut card) = picked {
+            if self.draft.is_none() && !self.noting {
+                card.blocks.extend(self.assumption_blocks());
+                card.blocks.push(Block::Button(
+                    chrome!(lang, "write a note on it  (N)", "在这里写便签  (N)"),
+                    Do::Write,
+                ));
+            }
+            cards.push(card);
         }
         if self.note.is_none() && self.draft.is_none() && !self.noting {
-            rows.extend(self.closed_panel());
+            cards.extend(self.closed_card());
         }
-        rows
+        cards
     }
 
-    /// What the panel says of the assumption on the node picked, past what
-    /// was guessed and what else it could be (the node's lines say those):
-    /// the notes that already answer it, then ✓ and ✗, each saying what it
-    /// means. Nothing when the node picked has none.
-    fn assumption_panel(&self) -> Vec<(String, Option<Do>)> {
+    /// What the sidebar shows: its cards, or, while nothing is picked, what
+    /// a person can do in the window.
+    fn sidebar_cards(&self) -> Vec<Card<Do>> {
+        let cards = self.cards();
+        if !cards.is_empty() {
+            return cards;
+        }
+        let lang = self.lang;
+        let blocks = vec![
+            Block::Muted(chrome!(
+                lang,
+                "Click a node to see what it is; drag over a picture to pick a region.",
+                "点一个节点看它是什么；在画面上拖动可选中一块区域。"
+            )),
+            Block::Muted(chrome!(
+                lang,
+                "⌘-click a node to act on it, as a prototype.",
+                "按住 ⌘ 点节点，像原型一样操作它。"
+            )),
+            Block::Muted(chrome!(
+                lang,
+                "N writes a note · ⌘C copies a reference · ⌘\\ hides this sidebar",
+                "N 写便签 · ⌘C 复制引用 · ⌘\\ 隐藏侧栏"
+            )),
+        ];
+        vec![Card {
+            ink: Ink::Muted, ..Card::new(chrome!(lang, "Nothing picked", "未选中任何东西"), blocks)
+        }]
+    }
+
+    /// How tall the sidebar's cards are, unscrolled; nothing while it is
+    /// hidden.
+    fn sidebar_height(&mut self) -> f64 {
+        if !self.sidebar {
+            return 0.0;
+        }
+        let cards = self.sidebar_cards();
+        sidebar::lay_out(&cards, 0.0, 0.0, &mut self.typesetter).height
+    }
+
+    /// The card of the arrow picked: what it is.
+    fn arrow_card(&self) -> Option<Card<Do>> {
+        self.arrow?;
+        let said = self.reference()?.on.said(self.lang);
+        Some(Card::new(said.strip_prefix("on ").unwrap_or(&said).to_string(), Vec::new()))
+    }
+
+    /// What the node's card says of the assumption on the node picked, past
+    /// what was guessed and what else it could be (its own blocks say
+    /// those): the notes that already answer it, then ✓ and ✗, each saying
+    /// what it means. Nothing when the node picked has none.
+    fn assumption_blocks(&self) -> Vec<Block<Do>> {
         let Some((on, _)) = self.assumption() else {
             return Vec::new();
         };
-        let mut rows = Vec::new();
+        let lang = self.lang;
+        let mut blocks = Vec::new();
         if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
             for note in notes.iter().filter(|note| note.status != Status::Closed) {
                 let (Some(answers), On::Node { node: on, .. }) = (&note.answers, &note.on) else { continue };
                 if on.origin.written == node.origin.written {
-                    let (mark, status) = (answered(answers.answer), note_status(note));
-                    rows.push((format!("    {} answers it {mark} · {status}", note.id), None));
+                    let (id, mark, status) =
+                        (&note.id, answered(answers.answer, lang), note_status(note, lang));
+                    blocks.push(Block::Muted(chrome!(
+                        lang,
+                        "{id} answers it {mark} · {status}",
+                        "{id} 已回答 {mark} · {status}"
+                    )));
                 }
             }
         }
-        rows.push((
-            "    ✓ right, keep it: the agent takes the guess out, and the note closes itself".to_string(),
-            Some(Do::Judge(Answer::Right)),
+        blocks.push(Block::Button(
+            chrome!(
+                lang,
+                "✓ right, keep it: the agent takes the guess out, and the note closes itself",
+                "✓ 对，保留：代理去掉这个猜测，便签自动关闭"
+            ),
+            Do::Judge(Answer::Right),
         ));
-        rows.push((
-            "    ✗ wrong, tell the agent what is right: write it, for the agent to change and answer"
-                .to_string(),
-            Some(Do::Judge(Answer::Wrong)),
+        blocks.push(Block::Button(
+            chrome!(
+                lang,
+                "✗ wrong, tell the agent what is right: write it, for the agent to change and answer",
+                "✗ 不对，告诉代理什么是对的：写下来，由代理修改并回答"
+            ),
+            Do::Judge(Answer::Wrong),
         ));
-        rows
+        blocks
     }
 
     /// The node picked, as a note on it references it, and what was assumed
@@ -1871,7 +2108,11 @@ impl Gallery {
     /// note only, never the description.
     fn judge(&mut self, answer: Answer) {
         let Some((on, assumed)) = self.assumption() else {
-            return self.say("nothing is assumed there: pick a node with an orange \"?\" first".to_string());
+            return self.say(chrome!(
+                self.lang,
+                "nothing is assumed there: pick a node with an orange \"?\" first",
+                "那里没有假定：先选中一个带橙色「?」的节点"
+            ));
         };
         let (On::Node { node, .. }, Picture::Pages(pages)) = (&on.on, &self.picture) else {
             return;
@@ -1891,12 +2132,14 @@ impl Gallery {
             Answer::Right => match notes::judge(&on, answers, "") {
                 Ok(id) => {
                     self.notes = notes_of(&self.root, &self.lines);
-                    self.say(format!(
-                        "{id} saved ✓, for the agent to take the guess out: the note then closes itself"
+                    self.say(chrome!(
+                        self.lang,
+                        "{id} saved ✓, for the agent to take the guess out: the note then closes itself",
+                        "{id} 已保存 ✓，由代理去掉这个猜测：之后便签自动关闭"
                     ));
                     self.note = Some((on.description, id));
                 }
-                Err(e) => self.say(format!("not saved: {e:#}")),
+                Err(e) => self.say(chrome!(self.lang, "not saved: {e:#}", "没有保存：{e:#}")),
             },
             Answer::Wrong => {
                 self.acted = None;
@@ -1906,29 +2149,34 @@ impl Gallery {
         }
     }
 
-    /// The closed notes of the description whose overview is shown, each
-    /// with why it closed, a click on one picking it, to reopen; nothing
-    /// elsewhere, or when it has none.
-    fn closed_panel(&self) -> Vec<(String, Option<Do>)> {
+    /// The card of the closed notes of the description whose overview is
+    /// shown, each with why it closed, a click on one picking it, to reopen;
+    /// none elsewhere, or when it has none.
+    fn closed_card(&self) -> Option<Card<Do>> {
         let (Picture::Overview(_), Some(wanted)) = (&self.picture, &self.wanted) else {
-            return Vec::new();
+            return None;
         };
-        let Some(notes) = self.notes.get(&wanted.dir) else {
-            return Vec::new();
-        };
+        let lang = self.lang;
+        let notes = self.notes.get(&wanted.dir)?;
         let closed: Vec<&Note> = notes.iter().filter(|note| note.status == Status::Closed).collect();
         if closed.is_empty() {
-            return Vec::new();
+            return None;
         }
-        let mut rows = vec![("closed notes · click one to read or reopen it".to_string(), None)];
-        for note in closed {
-            let why = note.closed_because.as_deref().unwrap_or("closed by you");
-            rows.push((
-                format!("    {} · {why} · {}", note.id, note.on.said()),
-                Some(Do::Show(wanted.dir.clone(), note.id.clone())),
-            ));
-        }
-        rows
+        let blocks = closed
+            .into_iter()
+            .map(|note| {
+                let why =
+                    note.closed_because.clone().unwrap_or_else(|| chrome!(lang, "closed by you", "你关闭的"));
+                Block::Button(
+                    format!("{} · {why} · {}", note.id, note.on.said(lang)),
+                    Do::Show(wanted.dir.clone(), note.id.clone()),
+                )
+            })
+            .collect();
+        Some(Card::new(
+            chrome!(lang, "closed notes · click one to read or reopen it", "已关闭的便签 · 点一条查看或重开"),
+            blocks,
+        ))
     }
 
     /// The note picked, if the description it names has it.
@@ -1937,49 +2185,58 @@ impl Gallery {
         self.notes.get(dir)?.iter().find(|note| &note.id == id)
     }
 
-    /// What the panel says of the note picked: where it is, its thread,
-    /// and what the person can do with it. Nothing when none is.
-    fn note_panel(&self) -> Vec<(String, Option<Do>)> {
+    /// The card of the note picked: where it is, its thread, and what the
+    /// person can do with it. None when none is.
+    fn note_card(&self) -> Option<Card<Do>> {
         let (Some(note), Some((dir, _))) = (self.picked_note(), &self.note) else {
-            return Vec::new();
+            return None;
         };
-        let status = note_status(note);
+        let lang = self.lang;
+        let status = note_status(note, lang);
         let answers = match &note.answers {
-            Some(answers) => format!(" · answers the assumption {}", answered(answers.answer)),
+            Some(answers) => {
+                let mark = answered(answers.answer, lang);
+                chrome!(lang, " · answers the assumption {mark}", " · 回答假定 {mark}")
+            }
             None => String::new(),
         };
-        let mut rows = vec![(format!("{} · {status} · {}{answers}", note.id, note.on.said()), None)];
-        for said in &note.thread {
-            let who = match said.by {
-                By::Person => "you",
-                By::Agent => "agent",
-            };
-            for (index, line) in said.says.lines().enumerate() {
-                let who = if index == 0 { who } else { "" };
-                rows.push((format!("    {who:<6}{line}"), None));
-            }
-        }
+        let title = format!("{} · {status} · {}{answers}", note.id, note.on.said(lang));
+        let mut blocks: Vec<Block<Do>> = note
+            .thread
+            .iter()
+            .map(|said| {
+                let who = match (said.by, lang) {
+                    (By::Person, Lang::En) => "you",
+                    (By::Person, Lang::Zh) => "你",
+                    (By::Agent, Lang::En) => "agent",
+                    (By::Agent, Lang::Zh) => "代理",
+                };
+                Block::Text(format!("{who}: {}", said.says))
+            })
+            .collect();
         let (dir, id) = (dir.clone(), note.id.clone());
+        let reopen = chrome!(lang, "reopen it, saying what is still to do", "重开，说说还有什么要做");
         match note.status {
-            Status::Open => rows.push(("    close it".to_string(), Some(Do::Close(dir, id)))),
+            Status::Open => blocks.push(Block::Button(chrome!(lang, "close it", "关闭"), Do::Close(dir, id))),
             Status::Answered => {
-                rows.push((
-                    "    close it: the answer did it".to_string(),
-                    Some(Do::Close(dir.clone(), id.clone())),
+                blocks.push(Block::Button(
+                    chrome!(lang, "close it: the answer did it", "关闭：回答解决了"),
+                    Do::Close(dir.clone(), id.clone()),
                 ));
-                rows.push((
-                    "    reopen it, saying what is still to do".to_string(),
-                    Some(Do::Reopen(dir, id)),
-                ));
+                blocks.push(Block::Button(reopen, Do::Reopen(dir, id)));
             }
-            Status::Closed if note.closed_because.is_some() => rows.push((
-                "    reopen it on the whole state, saying what is still to do".to_string(),
-                Some(Do::Reopen(dir, id)),
+            Status::Closed if note.closed_because.is_some() => blocks.push(Block::Button(
+                chrome!(
+                    lang,
+                    "reopen it on the whole state, saying what is still to do",
+                    "在整个状态上重开，说说还有什么要做"
+                ),
+                Do::Reopen(dir, id),
             )),
-            Status::Closed => rows
-                .push(("    reopen it, saying what is still to do".to_string(), Some(Do::Reopen(dir, id)))),
+            Status::Closed => blocks.push(Block::Button(reopen, Do::Reopen(dir, id))),
         }
-        rows
+        let ink = if note.status == Status::Answered { Ink::Answered } else { Ink::Note };
+        Some(Card { ink, ..Card::new(title, blocks) })
     }
 
     /// The next click on a node, a state's caption or an arrow starts a note
@@ -1987,10 +2244,11 @@ impl Gallery {
     /// shown. Whether that changed what is shown.
     fn start_noting(&mut self) -> bool {
         if matches!(self.picture, Picture::Faults(_)) {
-            self.say(
-                "a note is written on a state, an overview or a flow: pick one in the tree, then press N"
-                    .to_string(),
-            );
+            self.say(chrome!(
+                self.lang,
+                "a note is written on a state, an overview or a flow: pick one in the tree, then press N",
+                "便签写在状态、总览或流程上：先在目录树里选中一个，再按 N"
+            ));
             return true;
         }
         self.noting = true;
@@ -2040,10 +2298,11 @@ impl Gallery {
         };
         match on {
             Some(on) => self.draft_on(on),
-            None => self.say(
-                "nothing a note can be on there: press N, then click a node, a picture's caption or an arrow"
-                    .to_string(),
-            ),
+            None => self.say(chrome!(
+                self.lang,
+                "nothing a note can be on there: press N, then click a node, a picture's caption or an arrow",
+                "那里没有可以写便签的东西：按 N，再点一个节点、画面的标题或一个箭头"
+            )),
         }
         true
     }
@@ -2053,7 +2312,7 @@ impl Gallery {
         let Picture::Pages(pages) = &self.picture else {
             return false;
         };
-        let zoom = self.zoom(self.size.0 - TREE);
+        let zoom = self.zoom(self.pane());
         pages.iter().zip(self.origins()).any(|(page, (left, top))| {
             (left..=left + page.width * zoom).contains(&at.0) && (top - CAPTION..top).contains(&at.1)
         })
@@ -2064,7 +2323,11 @@ impl Gallery {
     fn write(&mut self) {
         match self.reference() {
             Some(on) => self.draft_on(on),
-            None => self.say("a note is on a node, a state or an arrow: click one first".to_string()),
+            None => self.say(chrome!(
+                self.lang,
+                "a note is on a node, a state or an arrow: click one first",
+                "便签写在节点、状态或箭头上：先点一个"
+            )),
         }
     }
 
@@ -2081,22 +2344,27 @@ impl Gallery {
         let Some(draft) = self.draft.take() else {
             return;
         };
+        let lang = self.lang;
         let saved = match &draft.on {
-            Writing::On(on) => notes::add(on, &draft.text).map(|id| (on.description.clone(), id, "saved")),
-            Writing::Reopening(dir, id) => {
-                notes::reopen(dir, id, &draft.text).map(|()| (dir.clone(), id.clone(), "reopened"))
-            }
+            Writing::On(on) => notes::add(on, &draft.text)
+                .map(|id| (on.description.clone(), id, chrome!(lang, "saved", "已保存"))),
+            Writing::Reopening(dir, id) => notes::reopen(dir, id, &draft.text)
+                .map(|()| (dir.clone(), id.clone(), chrome!(lang, "reopened", "已重开"))),
             Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text)
-                .map(|id| (on.description.clone(), id, "saved ✗")),
+                .map(|id| (on.description.clone(), id, chrome!(lang, "saved ✗", "已保存 ✗"))),
         };
         match saved {
             Ok((dir, id, done)) => {
                 self.notes = notes_of(&self.root, &self.lines);
-                self.say(format!("{id} {done}, for the agent: `underdraw notes` lists it"));
+                self.say(chrome!(
+                    lang,
+                    "{id} {done}, for the agent: `underdraw notes` lists it",
+                    "{id} {done}，交给代理：`underdraw notes` 会列出它"
+                ));
                 self.note = Some((dir, id));
             }
             Err(e) => {
-                self.say(format!("not saved: {e:#}"));
+                self.say(chrome!(lang, "not saved: {e:#}", "没有保存：{e:#}"));
                 self.draft = Some(draft);
             }
         }
@@ -2108,9 +2376,9 @@ impl Gallery {
             Ok(()) => {
                 self.notes = notes_of(&self.root, &self.lines);
                 self.note = None;
-                self.say(format!("{id} closed"));
+                self.say(chrome!(self.lang, "{id} closed", "{id} 已关闭"));
             }
-            Err(e) => self.say(format!("not closed: {e:#}")),
+            Err(e) => self.say(chrome!(self.lang, "not closed: {e:#}", "没有关闭：{e:#}")),
         }
     }
 
@@ -2216,7 +2484,7 @@ impl Gallery {
         let Some(notes) = self.notes.get(&wanted.dir) else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.size.0 - TREE);
+        let zoom = self.zoom(self.pane());
         let mut pins: Vec<Pin> = Vec::new();
         for (index, (page, (left, top))) in pages.iter().zip(self.origins()).enumerate() {
             // How many pins and dots each node has had so far, to set the
@@ -2296,62 +2564,86 @@ impl Gallery {
         })
     }
 
-    /// What the panel says of the region picked: its box and width, then
-    /// each node it covers, as written. Nothing when none is.
-    fn region_panel(&self) -> Vec<String> {
-        let Some(region) = &self.region else {
-            return Vec::new();
-        };
-        let Frame { x, y, width, height } = region.area;
-        let mut lines = vec![format!("region  {x}, {y} · {width} × {height} at {}", region.width)];
+    /// The card of the region picked: its box and width, then each node it
+    /// covers, as written. None when none is.
+    fn region_card(&self) -> Option<Card<Do>> {
+        let region = self.region.as_ref()?;
+        let lang = self.lang;
+        let (Frame { x, y, width, height }, at) = (region.area, region.width);
+        let title = chrome!(
+            lang,
+            "region  {x}, {y} · {width} × {height} at {at}",
+            "区域  {x}, {y} · {width} × {height}，宽 {at}"
+        );
+        let mut blocks = Vec::new();
         if region.nodes.is_empty() {
-            lines.push("covers  no node".to_string());
+            blocks.push(Block::Muted(chrome!(lang, "covers  no node", "覆盖  没有节点")));
         }
         for origin in &region.nodes {
-            lines.push(format!("covers  {}{}", origin.written, reference::instance(&origin.instance)));
+            let node = format!("{}{}", origin.written, reference::instance(&origin.instance));
+            blocks.push(Block::Muted(chrome!(lang, "covers  {node}", "覆盖  {node}")));
         }
-        lines
+        Some(Card::new(title, blocks))
     }
 
-    /// What the panel says of the node picked: nothing when none is.
-    fn node_panel(&self) -> Vec<String> {
+    /// The card of the node picked: what it is (its component), the
+    /// operation it calls, what was assumed there, and a button that folds
+    /// out its details: its id, and its label and box at each width. None
+    /// when none is.
+    fn node_card(&self) -> Option<Card<Do>> {
         let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
-            return Vec::new();
+            return None;
         };
-        let found: Vec<(&Page, &Placed)> =
-            pages.iter().filter_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?))).collect();
-        let Some(&(page, node)) = found.first() else {
-            return Vec::new();
-        };
-        let calls = match page.calls.get(id) {
-            Some(operations) => operations.join(", "),
-            None => "nothing".to_string(),
-        };
-        let mut lines =
-            vec![format!("id  {id}"), format!("component  {}", node.component), format!("calls  {calls}")];
-        match node.assumed.as_deref() {
-            Some(assumed) => {
-                let (guessed, other) = parts(assumed);
-                lines.push(format!("assumed  {guessed}"));
-                lines.push(match other {
-                    Some(other) => format!("or else  {other}"),
-                    None => "or else  not said: ✗ says what it is".to_string(),
-                });
+        let lang = self.lang;
+        let (page, node) =
+            pages.iter().find_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?)))?;
+        let mut blocks = vec![Block::Text(match page.calls.get(id) {
+            Some(operations) => {
+                let operations = operations.join(", ");
+                chrome!(lang, "calls  {operations}", "调用  {operations}")
             }
-            None => lines.push("assumed  nothing".to_string()),
-        }
-        for page in pages {
-            let width = page.width;
-            lines.push(match page.nodes.iter().find(|n| &n.id == id) {
-                Some(node) => {
-                    let r = node.rect;
-                    let label = node.label.map_or_else(|| "no label".to_string(), |n| format!("label {n}"));
-                    format!("at {width}  {label} · box {}, {} · {} × {}", r.x, r.y, r.width, r.height)
+            None => chrome!(lang, "calls  nothing", "调用  无"),
+        })];
+        if let Some(assumed) = node.assumed.as_deref() {
+            let (guessed, other) = parts(assumed);
+            blocks.push(Block::Text(chrome!(lang, "assumed  {guessed}", "假定  {guessed}")));
+            blocks.push(Block::Muted(match other {
+                Some(other) => chrome!(lang, "or else  {other}", "也可能  {other}"),
+                None => {
+                    chrome!(lang, "or else  not said: ✗ says what it is", "也可能  没说：用 ✗ 说明是什么")
                 }
-                None => format!("at {width}  not in this state"),
-            });
+            }));
         }
-        lines
+        let (fold, details) = match lang {
+            Lang::En => (if self.details { "▾" } else { "▸" }, "details"),
+            Lang::Zh => (if self.details { "▾" } else { "▸" }, "详情"),
+        };
+        blocks.push(Block::Button(format!("{fold} {details}"), Do::Details));
+        if self.details {
+            blocks.push(Block::Muted(chrome!(lang, "id  {id}", "标识  {id}")));
+            for page in pages {
+                let width = page.width;
+                blocks.push(Block::Muted(match page.nodes.iter().find(|n| &n.id == id) {
+                    Some(node) => {
+                        let r = node.rect;
+                        let label = match (node.label, lang) {
+                            (Some(n), Lang::En) => format!("label {n}"),
+                            (Some(n), Lang::Zh) => format!("编号 {n}"),
+                            (None, Lang::En) => "no label".to_string(),
+                            (None, Lang::Zh) => "无编号".to_string(),
+                        };
+                        let (x, y, w, h) = (r.x, r.y, r.width, r.height);
+                        chrome!(
+                            lang,
+                            "at {width}  {label} · box {x}, {y} · {w} × {h}",
+                            "宽 {width}  {label} · 框 {x}, {y} · {w} × {h}"
+                        )
+                    }
+                    None => chrome!(lang, "at {width}  not in this state", "宽 {width}  这个状态里没有"),
+                }));
+            }
+        }
+        Some(Card::new(node.component.clone(), blocks))
     }
 
     /// How many notes are open on the tree's line of `row` and `state`: on
@@ -2424,7 +2716,7 @@ impl Gallery {
             .notes
             .get(&dir)
             .and_then(|notes| notes.iter().find(|note| note.id == id)?.reply())
-            .map(|reply| format!("{id} answered: {reply}"));
+            .map(|reply| chrome!(self.lang, "{id} answered: {reply}", "{id} 已回答：{reply}"));
         let Some(said) = reply else {
             return Vec::new();
         };
@@ -2448,22 +2740,15 @@ impl Gallery {
         ]
     }
 
-    /// How tall the panel is, at the foot of the pictures' pane.
-    fn panel_height(&self) -> f64 {
-        match self.panel().len() {
-            0 => 0.0,
-            lines => lines as f64 * PANEL_LINE + MARGIN,
-        }
-    }
-
     /// How much the pictures are scaled down to fit side by side in a pane
-    /// `pane` points wide; never up.
+    /// `pane` points wide; never up, and a state's never below
+    /// [`SMALLEST`]: past that they scroll across.
     fn zoom(&self, pane: f64) -> f64 {
         match &self.picture {
             Picture::Pages(pages) => {
                 let wide: f64 = pages.iter().map(|p| p.width).sum();
                 let gaps = MARGIN * (pages.len() + 1) as f64;
-                ((pane - gaps) / wide).clamp(0.1, 1.0)
+                ((pane - gaps) / wide).clamp(SMALLEST, 1.0)
             }
             Picture::Overview(_) | Picture::Faults(_) => 1.0,
             Picture::Flow(flow) => ((pane - 2.0 * MARGIN) / flow.map.width.max(1.0)).clamp(0.1, 1.0),
@@ -2475,15 +2760,26 @@ impl Gallery {
         match &self.picture {
             Picture::Pages(pages) => {
                 let tallest = pages.iter().map(|p| p.height).fold(0.0, f64::max);
-                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN + self.panel_height()
+                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN
             }
             Picture::Overview(overview) => {
                 let rows = overview.thumbs.len().div_ceil(Self::columns(pane)) as f64;
-                MARGIN + rows * (CAPTION + THUMB_TALL + SPACE) - SPACE + MARGIN + self.panel_height()
+                MARGIN + rows * (CAPTION + THUMB_TALL + SPACE) - SPACE + MARGIN
             }
             Picture::Faults(_) => self.faults(pane).1 + MARGIN,
-            Picture::Flow(flow) => MARGIN + flow.map.height * self.zoom(pane) + MARGIN + self.panel_height(),
+            Picture::Flow(flow) => MARGIN + flow.map.height * self.zoom(pane) + MARGIN,
         }
+    }
+
+    /// How wide a state's pictures are, side by side, in a pane `pane`
+    /// wide, the space around them included: wider than the pane only at
+    /// [`SMALLEST`]. Nothing else is shown wider than its pane.
+    fn pictures_width(&self, pane: f64) -> f64 {
+        let Picture::Pages(pages) = &self.picture else {
+            return 0.0;
+        };
+        let zoom = self.zoom(pane);
+        pages.iter().map(|page| page.width * zoom + MARGIN).sum::<f64>() + MARGIN
     }
 
     /// The picked description's faults listed in a pane `pane` wide, from
@@ -2497,11 +2793,28 @@ impl Gallery {
         let path = self.picked.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
         let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
         let journey = self.picked.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
+        let lang = self.lang;
         let heading = match (journey, faults.len()) {
-            (true, 1) => format!("{within} has a fault, so it is not played: `underdraw check` its root"),
-            (true, n) => format!("{within} has {n} faults, so it is not played: `underdraw check` its root"),
-            (false, 1) => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
-            (false, n) => format!("{within} has {n} faults, so it is not drawn: `underdraw check` it"),
+            (true, 1) => chrome!(
+                lang,
+                "{within} has a fault, so it is not played: `underdraw check` its root",
+                "{within} 有 1 个错误，所以不能播放：对它的根目录运行 `underdraw check`"
+            ),
+            (true, n) => chrome!(
+                lang,
+                "{within} has {n} faults, so it is not played: `underdraw check` its root",
+                "{within} 有 {n} 个错误，所以不能播放：对它的根目录运行 `underdraw check`"
+            ),
+            (false, 1) => chrome!(
+                lang,
+                "{within} has a fault, so it is not drawn: `underdraw check` it",
+                "{within} 有 1 个错误，所以画不出来：对它运行 `underdraw check`"
+            ),
+            (false, n) => chrome!(
+                lang,
+                "{within} has {n} faults, so it is not drawn: `underdraw check` it",
+                "{within} 有 {n} 个错误，所以画不出来：对它运行 `underdraw check`"
+            ),
         };
         let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, chrome::HEADING)];
         let mut y = MARGIN + CAPTION + GAP;
@@ -2522,9 +2835,13 @@ impl Gallery {
 
     /// The scrolls kept inside what there is to scroll.
     fn clamp(&mut self) {
-        let (width, height) = self.size;
-        let below = (self.pictures_height(width - TREE) - height).max(0.0);
+        let height = self.size.1;
+        let below = (self.pictures_height(self.pane()) - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
+        let beyond = (self.pictures_width(self.pane()) - self.pane()).max(0.0);
+        self.across = self.across.clamp(0.0, beyond);
+        let below = (self.sidebar_height() - height).max(0.0);
+        self.side_scroll = self.side_scroll.clamp(0.0, below);
         let below = (self.lines.len() as f64 * ROW + MARGIN - height).max(0.0);
         self.tree_scroll = self.tree_scroll.clamp(0.0, below);
     }
@@ -2558,15 +2875,15 @@ impl Gallery {
             let open = self.open_notes(row, state.as_ref());
             if open > 0 {
                 let said = match open {
-                    1 => "1 note".to_string(),
-                    n => format!("{n} notes"),
+                    1 => chrome!(self.lang, "1 note", "1 条便签"),
+                    n => chrome!(self.lang, "{n} notes", "{n} 条便签"),
                 };
                 right = mark(&mut list, &mut self.typesetter, (right, y), said, Ink::Note);
             }
             if state.is_none() && !row.faults.is_empty() {
                 let said = match row.faults.len() {
-                    1 => "1 fault".to_string(),
-                    n => format!("{n} faults"),
+                    1 => chrome!(self.lang, "1 fault", "1 个错误"),
+                    n => chrome!(self.lang, "{n} faults", "{n} 个错误"),
                 };
                 right = mark(&mut list, &mut self.typesetter, (right, y), said, Ink::Strong);
             }
@@ -2574,14 +2891,15 @@ impl Gallery {
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
         let left = TREE + MARGIN;
-        let (faults, _) = self.faults(width - TREE);
+        let (faults, _) = self.faults(self.pane());
         let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
-        let zoom = self.zoom(width - TREE);
+        let zoom = self.zoom(self.pane());
         let mut pages = Vec::new();
+        let labels = self.labels();
         let mut thumbs = Vec::new();
         // What the pictures are drawn on, each a sheet on the desk.
         let mut sheets = Vec::new();
-        let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
+        let (origins, outlines) = (self.origins(), self.outlines());
         let marks = self.marks();
         let regions = self.regions();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
@@ -2671,34 +2989,31 @@ impl Gallery {
             Picture::Faults(_) | Picture::Flow(_) => {}
         }
         pane.extend(pins);
-        if !panel.is_empty() {
-            let tall = self.panel_height();
-            let top = height - tall;
-            pane.push(Draw::Box {
-                rect: rect(TREE, top, width - TREE, tall),
-                radius: 0.0,
-                fill: Some(Ink::Paper),
-                stroke: None,
-                dashed: false,
-            });
-            pane.push(line((TREE, top), (width, top), Ink::Line));
-            for (index, line) in panel.into_iter().enumerate() {
-                let y = top + MARGIN / 2.0 + index as f64 * PANEL_LINE;
-                let weight = if index == 0 { chrome::HEADING } else { 400 };
-                pane.push(words(rect(left, y + 2.0, width - left - MARGIN, 16.0), line, Ink::Text, weight));
-            }
-        }
         pane.extend(reply);
+        let right = self.pane_right();
+        let side = if self.sidebar {
+            let cards = self.sidebar_cards();
+            let mut side = vec![Draw::Line {
+                from: [right as f32, 0.0],
+                to: [right as f32, height as f32],
+                ink: Ink::Line,
+            }];
+            side.extend(sidebar::lay_out(&cards, right, -self.side_scroll, &mut self.typesetter).draws);
+            side
+        } else {
+            Vec::new()
+        };
 
         let mut scene = Scene::new();
         let at = Affine::IDENTITY;
         scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, TREE, height));
-        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(TREE, 0.0, width, height));
-        scene.push_clip_layer(Fill::NonZero, at, &Area::new(TREE, 0.0, width, height));
+        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(TREE, 0.0, right, height));
+        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(right, 0.0, width, height));
+        scene.push_clip_layer(Fill::NonZero, at, &Area::new(TREE, 0.0, right, height));
         if let Picture::Flow(flow) = &self.picture {
             let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
-            for (place, card) in flow.map.places.iter().zip(&flow.cards) {
-                if !matches!(card, Card::Undrawn) {
+            for (place, tile) in flow.map.places.iter().zip(&flow.tiles) {
+                if !matches!(tile, Tile::Undrawn) {
                     sheet(
                         &mut scene,
                         at,
@@ -2722,8 +3037,8 @@ impl Gallery {
         }
         if let Picture::Flow(flow) = &self.picture {
             let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
-            for (place, card) in flow.map.places.iter().zip(&flow.cards) {
-                let Card::Picture { scene: picture, width } = card else { continue };
+            for (place, card) in flow.map.places.iter().zip(&flow.tiles) {
+                let Tile::Picture { scene: picture, width } = card else { continue };
                 let (x, y) = (place.x, place.y + flow::TITLE);
                 scene.push_clip_layer(
                     Fill::NonZero,
@@ -2734,10 +3049,21 @@ impl Gallery {
                 scene.append(picture, Some(at * small));
                 scene.pop_layer();
             }
-            paint::draws(&mut scene, at, &flow_draws(flow, self.arrow), chrome::colour, &mut self.typesetter);
+            paint::draws(
+                &mut scene,
+                at,
+                &flow_draws(flow, self.arrow, self.lang),
+                chrome::colour,
+                &mut self.typesetter,
+            );
         }
-        paint::draws(&mut scene, at, &pane, chrome::colour, &mut self.typesetter);
+        // The labels under what the window draws over the pictures: the
+        // outline, the pins.
+        let mut over = labels;
+        over.extend(pane);
+        paint::draws(&mut scene, at, &over, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
+        paint::draws(&mut scene, at, &side, chrome::colour, &mut self.typesetter);
         paint::draws(&mut scene, at, &list, chrome::colour, &mut self.typesetter);
         scene
     }
@@ -2794,7 +3120,7 @@ fn flow_arrows(flow: &Flow) -> Vec<(Vec<(f64, f64)>, Rect)> {
 /// each box with its name over it, and each navigate an arrow labelled with
 /// its node, in orange to a screen not drawn yet; the one at `picked` in the
 /// strong ink.
-fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
+fn flow_draws(flow: &Flow, picked: Option<usize>, lang: Lang) -> Vec<Draw> {
     let mut list = Vec::new();
     let (places, arrows) = (&flow.map.places, &flow.map.arrows);
     for (index, (arrow, (path, at))) in arrows.iter().zip(flow_arrows(flow)).enumerate() {
@@ -2818,7 +3144,7 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
         }
         list.push(label);
     }
-    for (place, card) in places.iter().zip(&flow.cards) {
+    for (place, card) in places.iter().zip(&flow.tiles) {
         let (x, y) = (place.x, place.y);
         let (name, ink) = match &place.screen {
             Screen::Drawn(dir) => {
@@ -2828,7 +3154,7 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
             }
             Screen::Undrawn(screen) => (screen.clone(), Ink::Assumed),
         };
-        let undrawn = matches!(card, Card::Undrawn);
+        let undrawn = matches!(card, Tile::Undrawn);
         list.push(Draw::Box {
             rect: rect(x, y, flow::WIDE, flow::TALL),
             radius: chrome::SHEET_RADIUS,
@@ -2840,11 +3166,11 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
         list.push(line((x, y + flow::TITLE), (x + flow::WIDE, y + flow::TITLE), Ink::Line));
         let middle = (x + flow::WIDE / 2.0, y + (flow::TITLE + flow::TALL) / 2.0);
         match card {
-            Card::Picture { .. } => {}
-            Card::Faulty(faults) => {
+            Tile::Picture { .. } => {}
+            Tile::Faulty(faults) => {
                 let mark = match faults {
-                    1 => "faulty: 1 fault, not drawn".to_string(),
-                    n => format!("faulty: {n} faults, not drawn"),
+                    1 => chrome!(lang, "faulty: 1 fault, not drawn", "有错：1 个错误，没有画"),
+                    n => chrome!(lang, "faulty: {n} faults, not drawn", "有错：{n} 个错误，没有画"),
                 };
                 let mut said = words(
                     rect(x + 8.0, middle.1 - 8.0, flow::WIDE - 16.0, 16.0),
@@ -2857,7 +3183,7 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
                 }
                 list.push(said);
             }
-            Card::Undrawn => list.push(Draw::Tag {
+            Tile::Undrawn => list.push(Draw::Tag {
                 rect: rect(middle.0 - 14.0, middle.1 - 14.0, 28.0, 28.0),
                 text: "?".to_string(),
                 ink: Ink::Assumed,
@@ -2882,23 +3208,23 @@ fn parts(assumed: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// An answer to an assumption, as the panel marks it.
-fn answered(answer: Answer) -> &'static str {
-    match answer {
-        Answer::Right => "✓ right",
-        Answer::Wrong => "✗ wrong",
+/// An answer to an assumption, as the sidebar marks it in `lang`.
+fn answered(answer: Answer, lang: Lang) -> &'static str {
+    match (answer, lang) {
+        (Answer::Right, Lang::En) => "✓ right",
+        (Answer::Right, Lang::Zh) => "✓ 对",
+        (Answer::Wrong, Lang::En) => "✗ wrong",
+        (Answer::Wrong, Lang::Zh) => "✗ 不对",
     }
 }
 
-/// Where `note` is in its life, as the panel says it.
-fn note_status(note: &Note) -> String {
-    match note.status {
-        Status::Open => "open, for the agent to answer".to_string(),
-        Status::Answered => "answered".to_string(),
-        Status::Closed => match &note.closed_because {
-            Some(why) => format!("closed: {why}"),
-            None => "closed".to_string(),
-        },
+/// Where `note` is in its life, as the sidebar says it in `lang`.
+fn note_status(note: &Note, lang: Lang) -> String {
+    match (&note.status, &note.closed_because) {
+        (Status::Open, _) => chrome!(lang, "open, for the agent to answer", "待代理回答"),
+        (Status::Answered, _) => chrome!(lang, "answered", "已回答"),
+        (Status::Closed, Some(why)) => chrome!(lang, "closed: {why}", "已关闭：{why}"),
+        (Status::Closed, None) => chrome!(lang, "closed", "已关闭"),
     }
 }
 
@@ -3032,7 +3358,12 @@ impl ApplicationHandler<Told> for Gallery {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title(format!("underdraw gallery — {}", self.root.display()))
+            .with_title(chrome!(
+                self.lang,
+                "underdraw gallery — {}",
+                "underdraw 画廊 — {}",
+                self.root.display()
+            ))
             .with_inner_size(LogicalSize::new(1440.0, 900.0));
         let opened = event_loop.create_window(attributes).map_err(anyhow::Error::from).and_then(|window| {
             let window = Arc::new(window);
@@ -3123,6 +3454,13 @@ impl ApplicationHandler<Told> for Gallery {
                     window.request_redraw();
                 }
             }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.acting && is_key(&event, "\\", KeyCode::Backslash) =>
+            {
+                let window = shown.window.clone();
+                self.toggle_sidebar();
+                window.request_redraw();
+            }
             WindowEvent::KeyboardInput { event, .. } if self.acting && copies(&event) => {
                 let window = shown.window.clone();
                 self.copy();
@@ -3143,12 +3481,17 @@ impl ApplicationHandler<Told> for Gallery {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let down = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -f64::from(y) * NOTCH,
-                    MouseScrollDelta::PixelDelta(moved) => -moved.to_logical::<f64>(scale).y,
+                let (right, down) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (-f64::from(x) * NOTCH, -f64::from(y) * NOTCH),
+                    MouseScrollDelta::PixelDelta(moved) => {
+                        let moved = moved.to_logical::<f64>(scale);
+                        (-moved.x, -moved.y)
+                    }
                 };
+                // A wheel with no sideways turn scrolls across with Shift.
+                let (right, down) = if self.shift && right == 0.0 { (down, 0.0) } else { (right, down) };
                 shown.window.request_redraw();
-                self.wheel(down);
+                self.wheel(right, down);
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
                 let window = shown.window.clone();
@@ -3361,19 +3704,19 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing + 1);
         gallery.press();
-        let end = gallery.pictures_height(1440.0 - TREE) - 900.0;
+        let end = gallery.pictures_height(gallery.pane()) - 900.0;
         assert!(end > 0.0, "the listing is taller than the window");
         gallery.cursor = (TREE + 100.0, 400.0);
-        gallery.wheel(120.0);
+        gallery.wheel(0.0, 120.0);
         assert_eq!(gallery.scroll, 120.0);
-        gallery.wheel(1e6);
+        gallery.wheel(0.0, 1e6);
         assert_eq!(gallery.scroll, end, "no further than the end");
-        gallery.wheel(-1e6);
+        gallery.wheel(0.0, -1e6);
         assert_eq!(gallery.scroll, 0.0, "no further than the top");
         over_row(&mut gallery, 0);
-        gallery.wheel(500.0);
+        gallery.wheel(0.0, 500.0);
         assert_eq!((gallery.scroll, gallery.tree_scroll), (0.0, 500.0), "over the tree, the tree scrolls");
-        gallery.wheel(1e6);
+        gallery.wheel(0.0, 1e6);
         let end = gallery.lines.len() as f64 * ROW + MARGIN - 900.0;
         assert_eq!(gallery.tree_scroll, end, "as far as its last line");
     }
@@ -3383,7 +3726,7 @@ mod tests {
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
         let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        let zoom = gallery.zoom(gallery.pane());
         let r = node.rect;
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         (left + middle.0 * zoom, top + middle.1 * zoom)
@@ -3410,20 +3753,28 @@ mod tests {
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         assert!(gallery.press(), "a node is picked");
         assert_eq!(gallery.node.as_deref(), Some("nav-save"), "the innermost, not the bar it sits in");
+        assert_eq!(
+            gallery.panel(),
+            ["IconButton", "calls  toggleSaved", "▸ details", "write a note on it  (N)"],
+            "what it is and what it calls; its id, label and boxes folded away"
+        );
+        assert!(!gallery.press(), "picking it again changes nothing");
+        assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
+        assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded");
         let panel = gallery.panel();
         assert_eq!(
             panel[..5],
             [
-                "id  nav-save",
-                "component  IconButton",
+                "IconButton",
                 "calls  toggleSaved",
-                "assumed  nothing",
-                "at 390  label 3 · box 334, 8 · 40 × 40",
+                "▾ details",
+                "id  nav-save",
+                "at 390  label 3 · box 334, 8 · 40 × 40"
             ]
         );
         assert!(panel[5].starts_with("at 1120  label "), "and where it is at the other width: {}", panel[5]);
-        assert!(!gallery.press(), "picking it again changes nothing");
-        assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
+        assert!(click_panel_line(&mut gallery, "▾ details"), "and folded again");
+        assert!(!gallery.panel().iter().any(|line| line.starts_with("id  ")));
     }
 
     #[test]
@@ -3545,6 +3896,94 @@ mod tests {
     }
 
     #[test]
+    fn the_sidebar_is_on_the_right_and_command_backslash_gives_its_width_to_the_pictures() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        assert_eq!(gallery.pane_right(), 1440.0 - sidebar::WIDTH, "the sidebar is shown by default");
+        let shown = gallery.sidebar_cards();
+        assert_eq!(shown[0].title, "Nothing picked", "with nothing picked, it says what can be done");
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        gallery.press();
+        let narrow = gallery.zoom(gallery.pane());
+        let (left, _) = gallery.origins()[1];
+        assert!(left + 1120.0 * narrow <= gallery.pane_right(), "the pictures end before the sidebar");
+        gallery.cursor = (1440.0 - sidebar::WIDTH / 2.0, 890.0);
+        assert!(!gallery.press(), "a press in the sidebar off its buttons does nothing");
+        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "and leaves the node picked");
+
+        gallery.toggle_sidebar();
+        assert_eq!(gallery.pane_right(), 1440.0, "hidden: the pictures take the width");
+        assert!(gallery.zoom(gallery.pane()) > narrow, "and are drawn larger");
+        gallery.cursor = on_node(&gallery, 1, "nav-save");
+        assert!(gallery.press(), "a node near the window's right edge is picked, no sidebar there");
+        assert_eq!(gallery.pointed, 1);
+        gallery.toggle_sidebar();
+        assert_eq!(gallery.pane_right(), 1440.0 - sidebar::WIDTH, "and shown again");
+    }
+
+    #[test]
+    fn in_a_narrow_window_the_pictures_stop_at_half_size_and_scroll_across() {
+        let mut gallery = gallery();
+        gallery.size = (1000.0, 900.0);
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        assert_eq!(gallery.zoom(gallery.pane()), SMALLEST, "no smaller than half");
+        let beyond = gallery.pictures_width(gallery.pane()) - gallery.pane();
+        assert!(beyond > 0.0, "wider than the pane");
+        gallery.cursor = (TREE + 100.0, 400.0);
+        gallery.wheel(1e6, 0.0);
+        assert_eq!(gallery.across, beyond, "scrolled across as far as the last picture's end");
+        gallery.cursor = on_node(&gallery, 1, "nav-save");
+        assert!(gallery.cursor.0 < gallery.pane_right(), "the desktop picture's save button in view");
+        assert!(gallery.press());
+        assert_eq!(
+            (gallery.node.as_deref(), gallery.pointed),
+            (Some("nav-save"), 1),
+            "the right node, scaled and scrolled"
+        );
+
+        let tag = |draw: &Draw| match draw {
+            Draw::Tag { rect, text, .. } => Some((rect.width, text.clone())),
+            _ => None,
+        };
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let tagged: Vec<(f32, String)> = pages.iter().flat_map(|page| &page.tags).filter_map(tag).collect();
+        assert!(!tagged.is_empty(), "the labels are kept apart from the scene");
+        let drawn: Vec<(f32, String)> = gallery.labels().iter().filter_map(tag).collect();
+        assert_eq!(drawn, tagged, "each drawn at its own size, at half size too");
+    }
+
+    #[test]
+    fn with_lang_zh_the_sidebar_says_nothing_in_english() {
+        let mut gallery = gallery();
+        gallery.lang = Lang::Zh;
+        assert_eq!(gallery.sidebar_cards()[0].title, "未选中任何东西");
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        gallery.press();
+        assert_eq!(gallery.panel(), ["IconButton", "调用  toggleSaved", "▸ 详情", "在这里写便签  (N)"]);
+        assert!(click_panel_line(&mut gallery, "▸ 详情"));
+        assert_eq!(gallery.panel()[3..5], ["标识  nav-save", "宽 390  编号 3 · 框 334, 8 · 40 × 40"]);
+        press_keys(&mut gallery, &["n"]);
+        assert_eq!(gallery.panel()[0], "写便签");
+        press_keys(&mut gallery, &["Esc"]);
+        gallery.copy();
+        assert!(gallery.panel()[0].starts_with("已复制  "), "{:?}", gallery.panel());
+        // Nothing the window says itself is in English: what is left is the
+        // description's own names.
+        let english = |line: &String| {
+            line.split(|c: char| !c.is_ascii_alphabetic())
+                .any(|word| ["the", "to", "on", "in", "at", "a", "of", "it"].contains(&word))
+        };
+        gallery.copy();
+        let said: Vec<String> =
+            gallery.panel().into_iter().filter(|line| !line.starts_with("已复制")).collect();
+        assert!(!said.iter().any(english), "{said:?}");
+    }
+
+    #[test]
     fn a_description_with_faults_shows_them() {
         let root = std::env::temp_dir().join(format!("underdraw-window-faults-{}", std::process::id()));
         std::fs::create_dir_all(root.join("broken")).unwrap();
@@ -3559,7 +3998,7 @@ mod tests {
             panic!("a description with faults is not drawn")
         };
         assert_eq!(shown, &found, "each finding as `check` names it");
-        let (list, _) = gallery.faults(1440.0 - TREE);
+        let (list, _) = gallery.faults(gallery.pane());
         let texts: Vec<&str> = list
             .iter()
             .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text.as_str()) } else { None })
@@ -3614,7 +4053,7 @@ mod tests {
         gallery.pick(typing);
         let before = heights(&gallery);
         gallery.cursor = (TREE + 100.0, 100.0);
-        gallery.wheel(40.0);
+        gallery.wheel(0.0, 40.0);
         assert_eq!(gallery.scroll, 40.0);
 
         let mut screen = todo_screen(&root);
@@ -3796,10 +4235,8 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · cancel-ready", "nothing is shown until an outcome is chosen");
         let panel = gallery.panel();
         assert_eq!(panel[0], "cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered");
-        assert_eq!(panel[1..3], ["    ok → default", "    shipped → cancel-ready"]);
-        let top = gallery.size.1 - gallery.panel_height();
-        gallery.cursor = (TREE + 100.0, top + MARGIN / 2.0 + 1.5 * PANEL_LINE);
-        assert!(gallery.press(), "the first outcome clicked");
+        assert_eq!(panel[1..3], ["ok → default", "shipped → cancel-ready"]);
+        assert!(click_panel_line(&mut gallery, "ok → default"), "the first outcome clicked");
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(gallery.panel()[0], "ok in cancel-ready → default");
     }
@@ -3846,7 +4283,7 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · cancel-unpaid", "nothing declared: it stays");
         let panel = gallery.panel();
         assert_eq!(panel[0], "no transition from cancel-unpaid on cd-keep.tap · should go to:");
-        let ids = panel.iter().position(|line| line == "id  cd-keep").expect("and the node is picked");
+        let ids = panel.iter().position(|line| line == "Button").expect("and the node is picked");
         let offered: Vec<&str> = panel[1..ids].iter().map(|line| line.trim()).collect();
         assert_eq!(offered[0], "default", "the description's states, as the tree lists them: {offered:?}");
         assert!(offered.contains(&"cancel-unpaid") && offered.contains(&"loading"), "{offered:?}");
@@ -3952,7 +4389,7 @@ mod tests {
 
     /// The texts drawn in the flow.
     fn flow_texts(flow: &Flow) -> Vec<String> {
-        flow_draws(flow, None)
+        flow_draws(flow, None, Lang::En)
             .into_iter()
             .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text) } else { None })
             .collect()
@@ -4011,15 +4448,15 @@ mod tests {
             Screen::Drawn(root.join("shop/checkout"))
         )));
         assert!(
-            matches!(flow.cards[..2], [Card::Picture { .. }, Card::Picture { .. }]),
+            matches!(flow.tiles[..2], [Tile::Picture { .. }, Tile::Picture { .. }]),
             "each with its first state"
         );
-        assert!(flow.cards[2..].iter().all(|card| matches!(card, Card::Undrawn)));
+        assert!(flow.tiles[2..].iter().all(|card| matches!(card, Tile::Undrawn)));
         let texts = flow_texts(flow);
         for name in ["checkout", "listing", "PhotoGallery", "reserve-button", "photos-show-all"] {
             assert!(texts.iter().any(|text| text == name), "{name} in {texts:?}");
         }
-        let draws = flow_draws(flow, None);
+        let draws = flow_draws(flow, None, Lang::En);
         let dashed = draws
             .iter()
             .filter(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(Ink::Assumed), .. }))
@@ -4039,7 +4476,7 @@ mod tests {
         let flow = flow_shown(&gallery);
         let place =
             flow.map.places.iter().find(|p| p.screen == Screen::Drawn(root.join("shop/listing"))).unwrap();
-        let ((left, top), zoom) = (gallery.flow_origin(), gallery.zoom(1440.0 - TREE));
+        let ((left, top), zoom) = (gallery.flow_origin(), gallery.zoom(gallery.pane()));
         let undrawn = flow.map.places.iter().find(|p| matches!(p.screen, Screen::Undrawn(_))).unwrap();
         let on = |p: &flow::Place| (left + (p.x + 20.0) * zoom, top + (p.y + 40.0) * zoom);
         let (on_listing, on_undrawn) = (on(place), on(undrawn));
@@ -4063,7 +4500,7 @@ mod tests {
         showing(&mut gallery, 0);
         let flow = flow_shown(&gallery);
         let faults = gallery.lines[line_of(&gallery, "broken")].row.faults.len();
-        assert!(matches!(flow.cards[..], [Card::Faulty(n), Card::Picture { .. }] if n == faults));
+        assert!(matches!(flow.tiles[..], [Tile::Faulty(n), Tile::Picture { .. }] if n == faults));
         let mark = if faults == 1 {
             "faulty: 1 fault, not drawn".to_string()
         } else {
@@ -4080,7 +4517,7 @@ mod tests {
         gallery.size = (1440.0, 900.0);
         showing(&mut gallery, 0);
         let undrawn = |gallery: &Gallery| {
-            flow_shown(gallery).cards.iter().filter(|c| matches!(c, Card::Undrawn)).count()
+            flow_shown(gallery).tiles.iter().filter(|c| matches!(c, Tile::Undrawn)).count()
         };
         assert_eq!(undrawn(&gallery), 2, "OrderDetail and ExportDocuments are not drawn yet");
         let export = root_of("flow-reload-export", &[("export", "export")]);
@@ -4143,12 +4580,20 @@ mod tests {
         (f64::from(pin.rect.x) + PIN / 2.0, f64::from(pin.rect.y) + PIN / 2.0)
     }
 
-    /// The panel line that reads `text`, clicked.
+    /// The sidebar's button that reads `text`, clicked in the middle of
+    /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
-        let panel = gallery.panel();
-        let line = panel.iter().position(|line| line.trim() == text).unwrap_or_else(|| panic!("{panel:?}"));
-        let top = gallery.size.1 - gallery.panel_height();
-        gallery.cursor = (TREE + 100.0, top + MARGIN / 2.0 + (line as f64 + 0.5) * PANEL_LINE);
+        let cards = gallery.cards();
+        let buttons =
+            cards.iter().flat_map(|card| &card.blocks).filter(|block| matches!(block, Block::Button(..)));
+        let index = buttons
+            .clone()
+            .position(|block| block.says() == text)
+            .unwrap_or_else(|| panic!("no button {text:?}: {:?}", gallery.panel()));
+        let laid =
+            sidebar::lay_out(&cards, gallery.pane_right(), -gallery.side_scroll, &mut gallery.typesetter);
+        let r = laid.buttons[index].0;
+        gallery.cursor = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         gallery.press()
     }
 
@@ -4160,21 +4605,22 @@ mod tests {
         show(&mut gallery, "orders", "default");
         press_keys(&mut gallery, &["n"]);
         assert_eq!(
-            gallery.panel()[0],
-            "write a note: click the node it is on or a picture's caption, or drag over the region · Esc cancels"
+            gallery.panel()[..3],
+            [
+                "write a note",
+                "click the node it is on or a picture's caption, or drag over the region",
+                "Esc cancels"
+            ]
         );
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
         let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
         gallery.cursor = on_node(&gallery, 1, &id);
         gallery.press();
         assert!(gallery.release(), "the node clicked is the one the note is on");
-        assert_eq!(
-            gallery.panel()[0],
-            "note on order-{index}-cancel in default at 1120 · Enter saves, Shift+Enter breaks a line, Esc cancels"
-        );
+        assert_eq!(gallery.panel()[0], "note on order-{index}-cancel in default at 1120");
         type_text(&mut gallery, "价格太长");
         press_keys(&mut gallery, &["⇧Enter", "a", "x", "Backspace", " ", "b"]);
-        assert_eq!(gallery.panel()[1..3], ["    价格太长", "    a b▏"], "Shift+Enter breaks a line");
+        assert_eq!(gallery.panel()[1], "价格太长\na b▏", "Shift+Enter breaks a line");
         assert!(!root.join("orders").join(notes::NOTES).exists(), "nothing is written while typing");
         press_keys(&mut gallery, &["Enter"]);
         assert!(gallery.draft.is_none(), "Enter saves");
@@ -4271,7 +4717,7 @@ mod tests {
         assert!(gallery.press(), "clicking a pin picks its note");
         let panel = gallery.panel();
         assert_eq!(panel[0], "N1 · answered · on nav-export in default at 390");
-        assert_eq!(panel[1..3], ["    you   rename it", "    agent renamed it Export"]);
+        assert_eq!(panel[1..3], ["you: rename it", "agent: renamed it Export"]);
         assert!(click_panel_line(&mut gallery, "reopen it, saying what is still to do"));
         type_text(&mut gallery, "and the icon");
         press_keys(&mut gallery, &["Enter"]);
@@ -4330,7 +4776,7 @@ mod tests {
             gallery.panel(),
             [
                 "closed notes · click one to read or reopen it",
-                "    N1 · nav-export is gone (removed or renamed) · on nav-export in default at 390",
+                "N1 · nav-export is gone (removed or renamed) · on nav-export in default at 390",
             ]
         );
         assert!(click_panel_line(
@@ -4358,7 +4804,7 @@ mod tests {
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
         let r = node.guess_tag().expect("it is guessed");
         let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        let zoom = gallery.zoom(gallery.pane());
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         (left + middle.0 * zoom, top + middle.1 * zoom)
     }
@@ -4383,8 +4829,8 @@ mod tests {
         for part in [
             "assumed  Card fields are drawn here",
             "or else  the real build may use the payment provider's hosted fields",
-            "    ✓ right, keep it: the agent takes the guess out, and the note closes itself",
-            "    ✗ wrong, tell the agent what is right: write it, for the agent to change and answer",
+            "✓ right, keep it: the agent takes the guess out, and the note closes itself",
+            "✗ wrong, tell the agent what is right: write it, for the agent to change and answer",
         ] {
             assert!(panel.iter().any(|line| line == part), "{part:?} in {panel:?}");
         }
@@ -4418,7 +4864,7 @@ mod tests {
             gallery
                 .panel()
                 .iter()
-                .any(|line| line == "    N1 answers it ✗ wrong · open, for the agent to answer")
+                .any(|line| line == "N1 answers it ✗ wrong · open, for the agent to answer")
         );
 
         notes::answer(&dir, "N1", "kept them drawn: hosted fields are for the build").unwrap();
@@ -4531,8 +4977,8 @@ mod tests {
         gallery.cursor = (left + 4.0, top - CAPTION / 2.0);
         assert!(gallery.press());
         assert_eq!(
-            gallery.panel()[0],
-            "note on the whole of default · Enter saves, Shift+Enter breaks a line, Esc cancels"
+            gallery.panel()[..3],
+            ["note on the whole of default", "▏", "Enter saves, Shift+Enter breaks a line, Esc cancels"]
         );
         type_text(&mut gallery, "too busy");
         press_keys(&mut gallery, &["Enter"]);
@@ -4645,7 +5091,7 @@ mod tests {
     /// `at`, a point in picture `page`'s points, in the window.
     fn on_page(gallery: &Gallery, page: usize, at: (f64, f64)) -> (f64, f64) {
         let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        let zoom = gallery.zoom(gallery.pane());
         (left + at.0 * zoom, top + at.1 * zoom)
     }
 
@@ -4996,7 +5442,7 @@ mod tests {
         assert_eq!(faults.len(), 1, "{faults:?}");
         assert_eq!(faults[0].at, "steps.1.on");
         assert!(faults[0].problem.contains("does not reach the next step"), "{faults:?}");
-        let (list, _) = gallery.faults(1440.0 - TREE);
+        let (list, _) = gallery.faults(gallery.pane());
         let Draw::Text { text, .. } = &list[0] else { panic!("a heading") };
         assert!(text.contains("has a fault, so it is not played"), "{text}");
 
