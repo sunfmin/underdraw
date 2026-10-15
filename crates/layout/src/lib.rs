@@ -127,12 +127,44 @@ pub struct Placed {
 pub struct Page {
     pub width: f32,
     pub height: f32,
+    /// The wireframe, then its marks ([`Page::marks`]).
     pub draws: Vec<Draw>,
     /// Every node with an id, in document order.
     pub nodes: Vec<Placed>,
     /// The ids of nodes floated over others (overlays) that run off the
     /// page, so the picture cuts them.
     pub cut: Vec<String>,
+    /// How many of `draws`, at their end, are the marks over the
+    /// wireframe: each label, and each guess's outline and "?".
+    #[serde(skip)]
+    marks: usize,
+}
+
+impl Page {
+    /// The wireframe: what is drawn, but for its marks.
+    pub fn wireframe(&self) -> &[Draw] {
+        self.parts().0
+    }
+
+    /// The marks over the wireframe: each label, and each guess's outline
+    /// and "?", drawn over the rest.
+    pub fn marks(&self) -> &[Draw] {
+        self.parts().1
+    }
+
+    /// The marks taken out of what is drawn, which is left the wireframe.
+    pub fn take_marks(&mut self) -> Vec<Draw> {
+        let marks = self.marks().to_vec();
+        self.draws.truncate(self.draws.len().saturating_sub(marks.len()));
+        self.marks = 0;
+        marks
+    }
+
+    /// What is drawn split where the marks start.
+    fn parts(&self) -> (&[Draw], &[Draw]) {
+        let at = self.draws.len().saturating_sub(self.marks);
+        self.draws.split_at_checked(at).unwrap_or((&self.draws, &[]))
+    }
 }
 
 /// Sets text, for layout: the size `text` takes in `font`, wrapped to
