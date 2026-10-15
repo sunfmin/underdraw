@@ -84,5 +84,5 @@ fn light(hex: &str) -> bool {
     let channels = [(rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF];
     let strongest = channels.iter().copied().max().unwrap_or(0);
     let weakest = channels.iter().copied().min().unwrap_or(0);
-    strongest + weakest >= 459
+    strongest.saturating_add(weakest) >= 459
 }
