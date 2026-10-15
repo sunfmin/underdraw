@@ -170,11 +170,12 @@ impl Stamp {
     }
 }
 
-/// `dir`, its files drawn from, and every directory in it, added to `stamp`.
+/// `dir`, its files drawn from and the journeys listed under it, and every
+/// directory in it, added to `stamp`.
 fn stamp_dir(dir: &Path, stamp: &mut Vec<(PathBuf, Option<(SystemTime, u64)>)>) {
     stamp.push((dir.to_path_buf(), None));
-    for file in DRAWN_FROM {
-        let path = dir.join(file);
+    let files = DRAWN_FROM.iter().map(|file| dir.join(file));
+    for path in files.chain(crate::journeys::listed(dir)) {
         if let Ok(meta) = std::fs::metadata(&path) {
             stamp.push((path, Some((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()))));
         }
@@ -502,6 +503,15 @@ mod tests {
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
         step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);
         step("the domain written", &|| std::fs::write(root.join(DOMAIN), "{}").unwrap(), true);
+        step(
+            "a journey written",
+            &|| {
+                std::fs::create_dir_all(root.join("journeys")).unwrap();
+                std::fs::write(root.join("journeys").join("go.json"), "{}").unwrap();
+            },
+            true,
+        );
+        step("a journey edited", &|| std::fs::write(root.join("journeys/go.json"), "{ }").unwrap(), true);
         step("a directory added", &|| std::fs::create_dir_all(root.join("a/b")).unwrap(), true);
         step("a directory removed", &|| std::fs::remove_dir_all(root.join("a")).unwrap(), true);
         step(

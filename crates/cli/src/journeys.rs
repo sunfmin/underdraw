@@ -1,11 +1,13 @@
 //! The journeys under a root (docs/adr/0022): each `journeys/<name>.json`
-//! read, the screens its steps name read from its project, and walked.
+//! read, the screens its steps name read from its project, and walked;
+//! and its steps read for the gallery to play.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde_json::{Value, json};
+use underdraw_format::Finding;
 
 use crate::gallery::{self, within};
 use crate::project::Project;
@@ -23,17 +25,23 @@ pub fn under(root: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// The journey files listed under `dir`, in its `journeys/`, in order of
+/// name.
+pub fn listed(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir.join(JOURNEYS)) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    files.sort();
+    files
+}
+
 fn collect(dir: &Path, found: &mut Vec<PathBuf>) {
-    let held = dir.join(JOURNEYS);
-    if let Ok(entries) = std::fs::read_dir(&held) {
-        let mut files: Vec<PathBuf> = entries
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
-            .collect();
-        files.sort();
-        found.extend(files);
-    }
+    found.extend(listed(dir));
     for (name, path) in gallery::children(dir) {
         if name != JOURNEYS {
             collect(&path, found);
@@ -42,28 +50,66 @@ fn collect(dir: &Path, found: &mut Vec<PathBuf>) {
 }
 
 /// What `check <root>` says of the journey in `file`: where it is, relative
-/// to `root`, its name, and every fault in walking it. One that cannot be
-/// read has that as its one finding.
+/// to `root`, its name, and every fault in walking it.
 pub fn checked(root: &Path, file: &Path) -> Value {
     let name = file.file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
-    let findings = match walked(file) {
-        Ok(findings) => serde_json::to_value(findings).unwrap_or_default(),
-        Err(e) => json!([{ "at": "", "problem": format!("{e:#}") }]),
-    };
-    let ok = findings.as_array().is_some_and(Vec::is_empty);
+    let findings = faults(file);
+    let ok = findings.is_empty();
     json!({ "journey": within(root, file), "name": name, "ok": ok, "findings": findings })
 }
 
-/// The faults in walking the journey in `file`, its screens named by their
-/// path from the project's root: the nearest directory at or above the one
-/// it is listed under that holds domain.json, or that directory itself.
-fn walked(file: &Path) -> anyhow::Result<Vec<underdraw_format::Finding>> {
+/// Every fault in walking the journey in `file`, its screens named by
+/// their path from its project's root; one that cannot be read has that as
+/// its one finding.
+pub fn faults(file: &Path) -> Vec<Finding> {
+    walked(file).unwrap_or_else(|e| vec![Finding { at: String::new(), problem: format!("{e:#}") }])
+}
+
+/// One step of a journey, as the gallery plays it: the description of its
+/// screen, its state's name, and the act on it as written, if any.
+pub struct Step {
+    pub dir: PathBuf,
+    pub state: String,
+    /// The node acted on, by its id as written, and its event.
+    pub on: Option<(String, String)>,
+    pub outcome: Option<String>,
+}
+
+/// The steps of the journey in `file`, in order, each screen's description
+/// found under its project's root. Read as written: whether it walks is
+/// [`faults`]'s to say.
+pub fn steps(file: &Path) -> anyhow::Result<Vec<Step>> {
+    let (journey, root) = read_journey(file)?;
+    let text = |step: &Value, key: &str| step.get(key).and_then(Value::as_str).map(str::to_string);
+    let steps = journey.get("steps").and_then(Value::as_array).into_iter().flatten();
+    Ok(steps
+        .map(|step| Step {
+            dir: root.join(text(step, "screen").unwrap_or_default()),
+            state: text(step, "state").unwrap_or_default(),
+            on: text(step, "on").and_then(|on| {
+                let (node, event) = on.rsplit_once('.')?;
+                Some((node.to_string(), event.to_string()))
+            }),
+            outcome: text(step, "outcome"),
+        })
+        .collect())
+}
+
+/// The journey in `file`, and the root of the project its screens are
+/// named from: the nearest directory at or above the one it is listed
+/// under that holds domain.json, or that directory itself.
+fn read_journey(file: &Path) -> anyhow::Result<(Value, PathBuf)> {
     let text = std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
     let journey: Value = serde_json::from_str(&text).with_context(|| {
         format!("{} is not JSON: fix the line and column named here, then check again", file.display())
     })?;
     let listed = file.parent().and_then(Path::parent).unwrap_or(Path::new("."));
-    let root = Project::of(listed)?.root;
+    Ok((journey, Project::of(listed)?.root))
+}
+
+/// The faults in walking the journey in `file`.
+fn walked(file: &Path) -> anyhow::Result<Vec<Finding>> {
+    let (journey, root) = read_journey(file)?;
     let mut screens = BTreeMap::new();
     for step in journey.get("steps").and_then(Value::as_array).into_iter().flatten() {
         if let Some(path) = step.get("screen").and_then(Value::as_str)
