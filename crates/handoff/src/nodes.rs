@@ -1,6 +1,8 @@
 //! Every node of the description as one platform builds it: how its component is
 //! realised there, its test id, and what each of its events does there.
 
+use std::collections::BTreeSet;
+
 use serde::Serialize;
 use serde_json::{Map, Value};
 use underdraw_format::{Finding, Instances, Met};
@@ -74,6 +76,8 @@ pub struct Walk<'a> {
     pub specs: Vec<Spec>,
     pub hidden: Vec<Hidden>,
     pub findings: Vec<Finding>,
+    /// Each entry the mapping lacks, by its group and name, once found.
+    pub missing: BTreeSet<(String, String)>,
 }
 
 impl Walk<'_> {
@@ -257,19 +261,12 @@ impl Walk<'_> {
         if let Some(implement) = mapping.get(group).and_then(|g| g.get(name)).and_then(Value::as_str) {
             return implement.to_string();
         }
-        let problem =
-            format!("platforms/{}.json has no entry for {what} {name} under \"{group}\"", self.platform);
-        self.find(at, &problem);
-        String::new()
-    }
-
-    fn find(&mut self, at: &str, problem: &str) {
         // One finding per missing entry, at the first node that needs it.
-        for finding in &self.findings {
-            if finding.problem == problem {
-                return;
-            }
+        if self.missing.insert((group.to_string(), name.to_string())) {
+            let problem =
+                format!("platforms/{}.json has no entry for {what} {name} under \"{group}\"", self.platform);
+            self.findings.push(Finding { at: at.to_string(), problem });
         }
-        self.findings.push(Finding { at: at.to_string(), problem: problem.to_string() });
+        String::new()
     }
 }

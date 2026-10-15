@@ -65,22 +65,13 @@ impl Screen {
         let components = Components::read(&description, shared.components.unwrap_or(&none), &mut findings);
         let schema = Schema::read(&description, &mut findings);
         let mut fixtures = fixture::read(&description, &schema, &mut findings);
-        if let Some(name) = showcase::shows(&description) {
-            // A showcase's view model is the component's params.
-            let unknown = "data has no field ";
-            for finding in &mut findings.0 {
-                if let Some(param) = finding.problem.strip_prefix(unknown) {
-                    finding.problem = format!(
-                        "{name} has no param {param}: a fixture gives each of its params, and nothing else"
-                    );
-                }
-            }
-            if fixtures.is_empty() {
-                findings.add(
-                    "fixtures",
-                    &format!("{name} is shared by the project, so it is shown on its own: give components/{name}.json \"fixtures\", each a value of its params, to draw it in"),
-                );
-            }
+        if let Some(name) = showcase::shows(&description)
+            && fixtures.is_empty()
+        {
+            findings.add(
+                "fixtures",
+                &format!("{name} is shared by the project, so it is shown on its own: give components/{name}.json \"fixtures\", each a value of its params, to draw it in"),
+            );
         }
         let params = params::read(&description, &schema, &mut findings);
         let conditions = Conditions::read(&description, &schema, &mut findings);
