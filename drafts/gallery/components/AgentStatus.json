@@ -1,0 +1,64 @@
+{
+  "doc": "Whether an agent waits on this root with `notes --wait`: a solid dot when one listens, a hollow one when none does. A status, not a control, so it is quiet text and not a pill. Green and gray on the platform.",
+  "params": [
+    "listening"
+  ],
+  "look": {
+    "box": "row",
+    "gap": 6,
+    "items": "center",
+    "children": [
+      {
+        "box": "row",
+        "size": 8,
+        "radius": 999,
+        "fill": {
+          "cases": [
+            {
+              "if": "listening",
+              "then": "strong"
+            },
+            {
+              "else": null
+            }
+          ]
+        },
+        "stroke": {
+          "cases": [
+            {
+              "if": "listening",
+              "then": null
+            },
+            {
+              "else": "muted"
+            }
+          ]
+        }
+      },
+      {
+        "text": {
+          "cases": [
+            {
+              "if": "listening",
+              "then": "Agent listening"
+            },
+            {
+              "else": "No agent listening"
+            }
+          ]
+        },
+        "font": "font.body",
+        "ink": "muted"
+      }
+    ],
+    "shrink": 0
+  },
+  "fixtures": {
+    "listening": {
+      "listening": true
+    },
+    "away": {
+      "listening": false
+    }
+  }
+}

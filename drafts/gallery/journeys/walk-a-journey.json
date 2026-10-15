@@ -1,0 +1,24 @@
+{
+  "$comment": "The person finds a journey in the tree, plays it and steps to its end.",
+  "steps": [
+    {
+      "screen": "Tree",
+      "state": "default",
+      "on": "journey-{index}.tap"
+    },
+    {
+      "screen": "Play",
+      "state": "first",
+      "on": "next.tap"
+    },
+    {
+      "screen": "Play",
+      "state": "middle",
+      "on": "next.tap"
+    },
+    {
+      "screen": "Play",
+      "state": "last"
+    }
+  ]
+}

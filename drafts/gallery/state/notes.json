@@ -1,0 +1,33 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "shown"
+      },
+      "node": {
+        "id": "toolbar-crumbs",
+        "at": "/$components/Toolbar/nodes/children/0",
+        "instance": [],
+        "label": null,
+        "width": 1120
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792069846,
+          "answers": {
+            "assumed": "工具栏中间放面包屑，一眼看出现在在哪个目录、哪个描述、哪个状态；也可以不放，只靠左边树里的高亮来表示位置。",
+            "guess": "author",
+            "answer": "right"
+          }
+        },
+        {
+          "by": "agent",
+          "says": "好，面包屑定下来了：橙色 ? 已去掉，工具栏中间一直显示当前所在的目录 › 描述 › 状态。"
+        }
+      ]
+    }
+  ]
+}
