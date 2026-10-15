@@ -54,7 +54,10 @@ ANSWERS
     "fixtures":   the fixtures' names, in the order written
     "phases":     the phases' names (trees rendered before data arrives)
     "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
-                  empty while any finding stands, except a condition that
+                  only those the description reads: each of its own over
+                  its data, and each on a type it reads through a value
+                  (or that one it reads uses); a domain condition it never
+                  reads is left out. Empty while any finding stands, except a condition that
                   never varies: then the table shows which fixtures to add
     "findings":   [{"at": where — a dotted path or a node id,
                     "problem": what is wrong, and what is allowed instead}, …]
@@ -94,7 +97,7 @@ ANSWERS
     "directories":  [{"directory": its path, relative to root ("." for root),
                       "notes": {"waiting", "answered"}}, …]: each directory
                     holding no description that keeps notes on the screens
-                    under it, in its own notes.json
+                    under it or on its journeys, in its own notes.json
     "notes":        {"waiting", "answered"}, over every description and
                     every such directory
   }
@@ -106,6 +109,14 @@ EXIT
   notes, waiting or answered.
 
 WHAT TRIPS YOU UP
+  - Only a node a person acts on or answers about needs an "id" written:
+    one with "on", "bind" or "assumed", or an instance of a component
+    holding one. Leave it out of a text, a divider, a row of layout: it is
+    given one from the node it is in, its component and the first words
+    of what it shows ("page-text-total"), as NODES below says, and a
+    finding, the picture and a note name it so. Changing what it shows
+    renames it, and a note on it then joins its state's note: write an id
+    to keep a node's name through such edits.
   - "assumed" says what was guessed and what else it could be, in a
     sentence in the language you speak with the person: a word or two is
     refused (ASSUMED below).

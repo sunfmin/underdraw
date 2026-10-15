@@ -112,6 +112,7 @@ sentences! {
     on_navigate,
     on_screen,
     on_screens,
+    on_journey,
     // The rest of the gallery's own words.
     acted_to_state,
     acted_calls,
@@ -151,6 +152,7 @@ sentences! {
     whole_state,
     whole_screen,
     these_screens,
+    whole_journey,
     talk_title,
     talk_none,
     talk_hint,

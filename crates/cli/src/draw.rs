@@ -125,10 +125,7 @@ pub struct Drawing {
 /// even when the description has findings, though none of them can be drawn
 /// until they are fixed.
 pub fn states(path: &Path) -> anyhow::Result<Vec<Shown>> {
-    let (screen, dir) = read(path)?;
-    let checked = checked(&screen, &dir)?;
-    let fixtures = checked.fixtures.into_iter().map(Shown::Fixture);
-    Ok(fixtures.chain(checked.phases.into_iter().map(Shown::Phase)).collect())
+    Ok(Description::read(path)?.states())
 }
 
 /// A description read and checked once, as its files stood then, to lay
@@ -157,6 +154,17 @@ impl Description {
     /// picture is drawn at: `underdraw_layout::widths`.
     pub fn widths(&self) -> Vec<u32> {
         underdraw_layout::widths(&self.tokens)
+    }
+
+    /// Every state it can be shown in, as [`states`] says.
+    pub fn states(&self) -> Vec<Shown> {
+        let fixtures = self.checked.fixtures.iter().cloned().map(Shown::Fixture);
+        fixtures.chain(self.checked.phases.iter().cloned().map(Shown::Phase)).collect()
+    }
+
+    /// The directory the description is in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     /// The screen's name, as its `screen` gives it.
@@ -266,6 +274,11 @@ fn handled(node: &Node, handlers: &mut BTreeMap<String, Handlers>) {
 }
 
 impl Laid {
+    /// The page painted at exactly `scale` pixels per point.
+    pub fn scene(&mut self, scale: f64) -> Scene {
+        paint::scene(&self.page, &mut self.typesetter, scale)
+    }
+
     /// The scene of the page at `scale` pixels per point, or less when that
     /// would make a side longer than `max_side` pixels: a long page is drawn
     /// at a lower scale rather than not at all.
@@ -275,7 +288,7 @@ impl Laid {
         let scale = f64::from(scale).min(tallest);
         let pixels_wide = (f64::from(page.width) * scale).ceil() as u32;
         let pixels_high = (f64::from(page.height) * scale).ceil() as u32;
-        let scene = paint::scene(page, &mut self.typesetter, scale);
+        let scene = self.scene(scale);
         Drawing {
             dir: self.dir,
             shown: self.shown,

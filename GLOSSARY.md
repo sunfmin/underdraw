@@ -21,7 +21,9 @@ _Avoid_: workspace, app
 
 **Node**:
 One element of the screen, with a stable **id** that becomes each platform's
-test id, and the **component** it is.
+test id, and the **component** it is. The id is written on a node a person
+acts on or answers about; any other may leave it out and is **given** one,
+from the node it is in, its component and what it shows.
 _Avoid_: element, view
 
 **Component**:
@@ -74,9 +76,10 @@ _Avoid_: guess, TODO
 A conversation between the person and the agent about a design, pinned
 where it is held: a node of a state, a whole state, an arrow (a transition
 or a navigate), the whole screen (its description picked, apart from any
-one state), or the screens under a directory as a group (its flow picked,
-kept in that directory's own `notes.json`), its messages kept in the order
-said. Each has at most one; one
+one state), the screens under a directory as a group (its flow picked,
+kept in that directory's own `notes.json`), or a whole **journey** (picked
+to play, kept by name in the `notes.json` of the directory holding its
+`journeys/`), its messages kept in the order said. Each has at most one; one
 whose node or arrow is gone joins its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, **taken** once `--wait` has handed that message to
