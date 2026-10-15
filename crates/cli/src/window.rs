@@ -3058,7 +3058,10 @@ mod tests {
         let written = notes::read(&dir).unwrap();
         let proposed: Vec<(&str, Option<&Proposal>, &str)> = written
             .iter()
-            .map(|note| (note.node.origin.written.as_str(), note.proposes.as_ref(), note.state.name()))
+            .map(|note| {
+                let On::Node { state, node } = &note.on else { panic!("not on a node: {note:?}") };
+                (node.origin.written.as_str(), note.proposes.as_ref(), state.name())
+            })
             .collect();
         let on = "cd-keep.tap".to_string();
         assert_eq!(
