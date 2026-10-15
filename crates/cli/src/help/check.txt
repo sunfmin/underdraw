@@ -20,6 +20,10 @@ READS
   is laid out at widths 390 and 1120, in the system's fonts as `render`
   does, and an overlay that runs off the page is a finding. Writes nothing.
 
+  <path> may be <project root>/components/<Name>, the description that
+  shows a shared component on its own: its fixtures, each held to its
+  params (COMPONENTS below), are its states.
+
   <path> may instead be a directory holding no screen.json, a root: then
   every description under it, at any depth, as the gallery finds them, is
   checked, and also the links between them. Each "navigate" names a screen,

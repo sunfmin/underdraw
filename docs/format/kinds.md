@@ -10,7 +10,10 @@ is nodes, and replace one of underdraw's by name. One the project shares is
 in `components/<Name>.json` at the project root, its file holding what
 `"components"` would hold under its name, either body; every screen of the
 project uses it as its own, and a screen's own of the same name is a
-finding. A component has a look or nodes, never both. There is no `kinds.json`. Why:
+finding. A shared one carries `fixtures` of its params, and is shown on its
+own: `components/<Name>` is the description of one instance of it, its
+fixtures the states, which `check` and the gallery take as they take a
+screen's directory. A component has a look or nodes, never both. There is no `kinds.json`. Why:
 [ADR 0021](../adr/0021-kinds-become-components-one-screens-or-the-projects.md),
 and [ADR 0007](../adr/0007-kinds-are-data.md) for the look vocabulary.
 

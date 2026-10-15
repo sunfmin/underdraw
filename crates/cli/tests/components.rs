@@ -161,6 +161,88 @@ fn check_names_a_cycle_a_missing_shared_component_and_a_screens_that_shadows_one
 }
 
 #[test]
+fn check_holds_each_shared_components_fixtures_to_its_params() {
+    let root = shop("fixtures");
+    for (name, fixtures) in [("OrderRow", ["pending", "shipped"]), ("OrderStatus", ["pending", "cancelled"])]
+    {
+        let (checked, code) = underdraw(&["check", root.join("components").join(name).to_str().unwrap()]);
+        assert_eq!(
+            (code, &checked["ok"], &checked["fixtures"]),
+            (0, &json!(true), &json!(fixtures)),
+            "{checked}"
+        );
+    }
+    let (checked, code) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{checked}");
+    let described: Vec<&str> = checked["descriptions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["description"].as_str().unwrap())
+        .collect();
+    assert_eq!(described, ["components/OrderRow", "components/OrderStatus", "order", "orders"], "{checked}");
+    assert!(
+        checked["links"].as_array().unwrap().iter().all(|link| link["to"] != "OrderRow"),
+        "no navigate reaches a component"
+    );
+
+    edit(&root.join("components/OrderRow.json"), r#""status": "shipped""#, r#""status": "lost""#);
+    edit(&root.join("components/OrderRow.json"), r#""customer": "Ana Ruiz", "#, "");
+    edit(
+        &root.join("components/OrderStatus.json"),
+        r#""cancelled": { "status""#,
+        r#""cancelled": { "colour""#,
+    );
+    let found = findings(&root.join("components"), "OrderRow");
+    assert!(
+        found.iter().any(|(at, p)| at == "fixtures.shipped.order.status"
+            && p.contains("\"lost\" is not one of OrderStatus's members")),
+        "{found:?}"
+    );
+    assert!(
+        found.iter().any(|(at, p)| at == "fixtures.pending.order" && p.starts_with("missing customer")),
+        "{found:?}"
+    );
+    let found = findings(&root.join("components"), "OrderStatus");
+    assert!(
+        found
+            .iter()
+            .any(|(at, p)| at == "fixtures.cancelled" && p.starts_with("OrderStatus has no param colour")),
+        "{found:?}"
+    );
+    assert!(
+        found.iter().any(|(at, p)| at == "fixtures.cancelled" && p.starts_with("missing status")),
+        "{found:?}"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+
+    let root = shop("no-fixtures");
+    let file = root.join("components/OrderStatus.json");
+    let mut status: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let fixtures = status.as_object_mut().unwrap().remove("fixtures").unwrap();
+    std::fs::write(&file, status.to_string()).unwrap();
+    let found = findings(&root.join("components"), "OrderStatus");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "fixtures");
+    assert!(found[0].1.contains("give components/OrderStatus.json \"fixtures\""), "{found:?}");
+    let (checked, code) = underdraw(&["check", root.join("order").to_str().unwrap()]);
+    assert_eq!((code, &checked["ok"]), (0, &json!(true)), "a screen using it is not held to them: {checked}");
+
+    let screen = root.join("order/screen.json");
+    let mut order: Value = serde_json::from_str(&std::fs::read_to_string(&screen).unwrap()).unwrap();
+    order["components"] =
+        json!({ "Pill": { "params": ["status"], "look": { "text": "{status}" }, "fixtures": fixtures } });
+    std::fs::write(&screen, order.to_string()).unwrap();
+    let found = findings(&root, "order");
+    assert!(
+        found.iter().any(|(at, p)| at == "components.Pill.fixtures"
+            && p.starts_with("only a component the project shares")),
+        "{found:?}"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn help_says_where_shared_components_live() {
     let help = |args: &[&str]| {
         let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();
@@ -169,4 +251,6 @@ fn help_says_where_shared_components_live() {
     assert!(help(&["--help"]).contains("components/<Name>.json"));
     let check = help(&["check", "--help"]);
     assert!(check.contains("components/<Name>.json") && check.contains("shadows the project's"), "{check}");
+    assert!(check.contains("\"fixtures\", each a value of its params"), "{check}");
+    assert!(help(&["gallery", "--help"]).contains("in a section of their own"));
 }

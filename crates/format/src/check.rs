@@ -17,6 +17,7 @@ use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::params::{self, ScreenParams};
 use crate::schema::{Schema, Scope, object};
+use crate::showcase;
 use crate::subtrees::{self, Subtrees};
 use crate::template::{self, Format};
 use crate::transitions;
@@ -96,6 +97,25 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
     known.check(screen, &mut findings);
     let schema = Schema::read(screen, &mut findings);
     let mut fixtures = fixture::read(screen, &schema, &mut findings);
+    if let Some(name) = showcase::shows(screen) {
+        // A showcase's view model is the component's params.
+        let unknown = "data has no field ";
+        for finding in &mut findings.0 {
+            if let Some(param) = finding.problem.strip_prefix(unknown) {
+                finding.problem = format!(
+                    "{name} has no param {param}: a fixture gives each of its params, and nothing else"
+                );
+            }
+        }
+    }
+    if let Some(name) = showcase::shows(screen)
+        && fixtures.is_empty()
+    {
+        findings.add(
+            "fixtures",
+            &format!("{name} is shared by the project, so it is shown on its own: give components/{name}.json \"fixtures\", each a value of its params, to draw it in"),
+        );
+    }
     params::read(screen, &schema, &mut findings);
     let conditions = Conditions::read(screen, &schema, &mut findings);
     conditions.fill(&schema, &mut fixtures);

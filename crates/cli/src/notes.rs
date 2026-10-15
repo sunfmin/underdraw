@@ -24,7 +24,8 @@ use crate::SCREEN;
 use crate::draw::{self, Shown};
 use crate::reference::{On, Reference};
 
-/// The file a description's notes are kept in, beside its screen.json.
+/// The file a description's notes are kept in, beside its screen.json; a
+/// shared component's, in `components/<Name>/notes.json`.
 pub const NOTES: &str = "notes.json";
 
 /// Where a note is in its life: written, answered by the agent, closed by
@@ -278,7 +279,10 @@ pub fn read(dir: &Path) -> anyhow::Result<Vec<Note>> {
 
 /// `notes` written whole as the notes of the description in `dir`: to a
 /// file beside it first, then put in place, so a reader never sees half.
+/// A shared component's are kept in `components/<Name>/`, which its first
+/// note makes.
 fn write(dir: &Path, notes: Vec<Note>) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     let file = dir.join(NOTES);
     let mut text = serde_json::to_string_pretty(&File { notes })?;
     text.push('\n');
@@ -575,9 +579,9 @@ pub fn notes(
                 "--answer answers one note: run it without --wait or --closed, which list notes, then answer what they list"
             );
         }
-        if !path.join(SCREEN).is_file() {
+        if !crate::describes(&path) {
             bail!(
-                "{} holds no {SCREEN}: --answer takes the directory of the description the note is in, as \"description\" names it under the root",
+                "{} holds no {SCREEN} and shows no shared component: --answer takes the directory of the description the note is in, as \"description\" names it under the root",
                 path.display()
             );
         }

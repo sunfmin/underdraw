@@ -556,6 +556,24 @@ COMPONENTS
   a node inside it is named as any instance's (summary-cancel), and the
   gallery's ⌘C names it "at /nodes/… in components/<Name>.json".
 
+  A shared component is shown on its own, so it can be discussed without
+  a screen: its file carries "fixtures", each a value of its params, as a
+  screen's carry values of its data ($patch included):
+    components/OrderRow.json     "fixtures": { "pending": { "order": { "id": "A12", … } },
+                                               "shipped": { "$patch": "pending", "order": { "status": "shipped" } } }
+    components/OrderStatus.json  "fixtures": { "pending": { "status": "pending" } }
+  Each fixture gives every param, of its type, and nothing else: a look's
+  params, untyped, take text, a number or true or false, the type the
+  first fixture to give one gives. The description that shows it is
+  components/<Name> (no file to write: the directory holds only its
+  notes.json): `underdraw check <root>/components/OrderRow` checks the
+  fixtures, a finding at "fixtures.<name>…", and `check <root>` and the
+  gallery list it among the descriptions. It is one instance, named as
+  the component is in kebab case (order-row, so its nodes are
+  order-row-cancel), drawn in each fixture; it declares no screen, so no
+  navigate reaches it. A shared component without fixtures is a finding
+  there, never on a screen using it; a screen's own component takes none.
+
 POPUPS
   underdraw has no dialog, sheet or menu component. A popup is a state like any
   other: a nullable field holds what it shows, a condition says it is open,

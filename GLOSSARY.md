@@ -98,6 +98,7 @@ _Avoid_: argument, route param
 
 **Fixture**:
 One sample value of the view model; each fixture puts the screen in one state.
+A component the project shares has its own, each a value of its params.
 _Avoid_: mock data, example
 
 **View state**:
@@ -200,7 +201,9 @@ Every screen description under one directory, arranged as its directories
 are, where a person picks one, to see its **overview**, and then one of its
 states, to see its wireframe drawn from the description as it now stands,
 and can act on its nodes to click through its transitions and navigates as
-a prototype; or picks a directory, to see the **flow** between the screens
+a prototype; or picks a component the project shares, listed in a section of
+their own, to see it drawn in each of its fixtures and note it as a
+screen; or picks a directory, to see the **flow** between the screens
 under it; or picks a **journey**, to play it step by step, the node acted
 on in each step marked.
 _Avoid_: mockup viewer, preview

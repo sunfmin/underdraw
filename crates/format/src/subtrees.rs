@@ -25,7 +25,8 @@ pub(crate) const KEY: &str = "components";
 const INSTANCE: [&str; 9] = ["id", "component", "with", "if", "only", "assumed", "$note", "$why", "$comment"];
 
 /// The keys a component's declaration holds.
-const DECLARATION: [&str; 6] = ["params", "nodes", "doc", "$note", "$why", "$comment"];
+/// `fixtures` only one the project shares may hold, which `Components::check` names.
+const DECLARATION: [&str; 7] = ["params", "nodes", "fixtures", "doc", "$note", "$why", "$comment"];
 
 /// One component the screen declares: the params it reads, and its nodes.
 pub struct Subtree<'a> {

@@ -308,7 +308,7 @@ impl Components {
 
     /// Every fault in the components `screen` declares, each at where
     /// [`declared`] says: one of the screen's own of a name the project
-    /// shares; one with both a look and nodes or neither; in a look, a key
+    /// shares, or with fixtures, which only a shared one is shown in; one with both a look and nodes or neither; in a look, a key
     /// no look reads, a filter or component that does not exist, and a
     /// name it reads that is not one of its declared params.
     pub(crate) fn check(&self, screen: &Value, findings: &mut Findings) {
@@ -334,7 +334,13 @@ impl Components {
                 );
             }
         }
-        for Declared { body: component, at, .. } in declared(screen) {
+        for Declared { body: component, at, shared, .. } in declared(screen) {
+            if !shared && component.get("fixtures").is_some() {
+                findings.add(
+                    &format!("{at}.fixtures"),
+                    "only a component the project shares is shown on its own, in its fixtures: move it to components/<Name>.json at the project's root, or take fixtures out",
+                );
+            }
             match (component.get("look"), component.get("nodes")) {
                 (Some(_), Some(_)) => findings.add(
                     &at,

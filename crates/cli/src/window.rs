@@ -4879,6 +4879,67 @@ mod tests {
     }
 
     #[test]
+    fn the_shared_components_are_listed_on_their_own_drawn_in_each_fixture_and_noted() {
+        let root = shop("components");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let components = line_of(&gallery, "components");
+        let depth = gallery.lines[components].row.depth;
+        let section: Vec<(&str, bool)> = gallery.lines[components + 1..]
+            .iter()
+            .take_while(|line| line.row.depth > depth)
+            .map(|line| (line.row.name.as_str(), line.state.is_some()))
+            .collect();
+        assert_eq!(
+            section,
+            [
+                ("OrderRow", false),
+                ("pending", true),
+                ("shipped", true),
+                ("OrderStatus", false),
+                ("pending", true),
+                ("cancelled", true)
+            ],
+            "a section of their own, each in its fixtures"
+        );
+        show(&mut gallery, "OrderRow", "shipped");
+        assert_eq!(captions(&gallery), ["shipped · 390", "shipped · 1120"]);
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        assert!(pages[0].has("order-row-status") && !pages[0].has("order-row-cancel"), "shipped: no cancel");
+        show(&mut gallery, "OrderStatus", "cancelled");
+        assert_eq!(captions(&gallery), ["cancelled · 390", "cancelled · 1120"]);
+
+        show(&mut gallery, "OrderRow", "pending");
+        press_keys(&mut gallery, &["n"]);
+        gallery.cursor = on_node(&gallery, 0, "order-row-cancel");
+        gallery.press();
+        gallery.release();
+        assert!(
+            gallery.panel()[0].starts_with("note on order-row-cancel in pending at 390"),
+            "{:?}",
+            gallery.panel()
+        );
+        type_text(&mut gallery, "say which order");
+        press_keys(&mut gallery, &["Enter"]);
+        let dir = root.join("components/OrderRow");
+        let note = notes::read(&dir).unwrap().remove(0);
+        let On::Node { node, .. } = &note.on else { panic!("not on a node: {note:?}") };
+        assert_eq!(node.origin.written, "order-row-cancel");
+        let listed = notes::notes(&root, None, None, false, false).unwrap();
+        assert_eq!(listed["notes"][0]["description"], "components/OrderRow", "{listed}");
+
+        let file = root.join("components/OrderRow.json");
+        let renamed = std::fs::read_to_string(&file).unwrap().replace(r#""id": "cancel""#, r#""id": "drop""#);
+        std::fs::write(&file, renamed).unwrap();
+        gallery.reload();
+        assert_eq!(
+            gallery.panel()[0],
+            "N1 closed: order-row-cancel is gone (removed or renamed) · its description's overview lists it, to reopen"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_broken_journey_shows_its_fault_and_is_played_once_fixed() {
         let root = shop("broken-journey");
         let order = root.join("order").join(crate::SCREEN);
