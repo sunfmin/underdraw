@@ -1,0 +1,14 @@
+WHEN
+  After installing underdraw, or when a command fails for a reason outside the
+  files it was given.
+
+WHO
+  Whoever installs underdraw, or the agent on their behalf.
+
+READS
+  What underdraw depends on. Checking depends on nothing outside its files;
+  rendering, once built, will need a GPU and fonts. Changes nothing.
+
+ANSWERS
+  {"ok": true when nothing is missing, "version": this build,
+   "findings": [{"problem", "fix"}, …]}
