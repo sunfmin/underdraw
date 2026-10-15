@@ -326,7 +326,11 @@ fn a_look_reads_only_the_params_its_component_declares() {
     }
     assert!(found(&checked, "components.Framed.look", "reads padding, which"), "{:#?}", checked.findings);
     assert!(!found(&checked, "components.Framed.look", "reads gap, which"), "{:#?}", checked.findings);
-    assert!(found(&checked, "components.Unlisted.params", "params lists the names"), "{:#?}", checked.findings);
+    assert!(
+        found(&checked, "components.Unlisted.params", "params lists the names"),
+        "{:#?}",
+        checked.findings
+    );
 }
 
 #[test]
