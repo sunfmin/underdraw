@@ -183,12 +183,14 @@ DOES
   Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
   and Windows) puts one line on the clipboard naming the node picked as
   the description writes it, or, with none picked (click a picture's caption, or where no node is), the state
-  shown, or the arrow picked; the sidebar says "copied" and the line. For a
+  shown, or the arrow picked, or, in an overview with no arrow picked, the
+  whole screen; the sidebar says "copied" and the line. For a
   node:
     <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
   e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
   /root/children/2/children/0/children/1/item/children in screen.json ·
   pointed at [2], label 7, width 390. For a state: `<description dir> · phase loading`.
+  For the whole screen: `<description dir> · the whole screen`.
   The id is the one written, a template inside a repeat (`order-{index}`),
   never the id one row was given; the JSON Pointer (RFC 6901) is where that
   node is written in <description dir>/screen.json, under /root, a phase
@@ -211,9 +213,13 @@ DOES
   - a whole state: with no node picked, the state shown (click a
     picture's caption, or where no node is, or a state in an overview);
   - a transition: click its arrow's label in an overview;
-  - a navigate: click its arrow's label in a flow.
+  - a navigate: click its arrow's label in a flow;
+  - the whole screen: pick a description in the tree, its overview shown
+    with no arrow picked, for what is about the screen as a whole, apart
+    from any one state ("this screen tries to do too much").
   The sidebar shows the thing's card at the top (a node's details folded
-  as they are; for a state, "<state> · the whole state"), then its note
+  as they are; for a state, "<state> · the whole state"; for a screen,
+  "<screen> · the whole screen"), then its note
   as a conversation, scrolling with the cards, newest at the bottom: its
   id and where it stands in its title (waiting on the agent while you
   spoke last, answered once the agent did), then what you wrote, in blue
@@ -257,8 +263,8 @@ DOES
   A note is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references
   it: the node as written, the state, and the instance pointed at; the
-  state; the transition; or the navigate. A pin numbered N1, N2… is
-  drawn on it, in where the note stands: blue while it waits on the
+  state; the transition; the navigate; or the whole screen. A pin
+  numbered N1, N2… is drawn on it, in where the note stands: blue while it waits on the
   agent, green while the agent's answer is unread, a faint gray once it
   is answered and read: at a node's top-right corner, in the state and at the width
   it was written in, every other state and width that holds that node

@@ -1476,8 +1476,9 @@ impl Gallery {
     /// What ⌘C copies, and what the conversation in the sidebar is on: the
     /// node picked, as the description writes it, and the instance of it
     /// pointed at (in the picture it was picked in, or the first that has
-    /// it); or, with none picked, the state shown; or the arrow picked in
-    /// an overview or a flow. None where nothing is.
+    /// it); or, with none picked, the state shown, or the whole screen whose
+    /// overview is shown; or the arrow picked in an overview or a flow.
+    /// None where nothing is.
     fn reference(&self) -> Option<Reference> {
         let picked = match &self.picked {
             Picked::Nothing => Target::Caption,
@@ -1570,7 +1571,12 @@ impl Gallery {
         }
         cards.extend(self.confirming_card(Instant::now()));
         cards.extend(self.assumption_card());
-        cards.extend(self.node_card().or_else(|| self.arrow_card()).or_else(|| self.state_card()));
+        cards.extend(
+            self.node_card()
+                .or_else(|| self.arrow_card())
+                .or_else(|| self.state_card())
+                .or_else(|| self.screen_card()),
+        );
         cards.extend(self.conversation_card());
         cards
     }
@@ -1753,8 +1759,9 @@ impl Gallery {
 
     /// What an item of the inbox, or a pin, is on shown: an assumption's
     /// state, its node picked; a note's state with its node picked, its
-    /// description's overview with its transition picked, or the flow its
-    /// navigate is drawn in with that picked; and so its conversation in
+    /// description's overview with its transition picked, or with nothing
+    /// picked for the whole screen, or the flow its navigate is drawn in
+    /// with that picked; and so its conversation in
     /// the sidebar. The state shown already is not drawn again. Whether
     /// there was anything to show.
     fn visit(&mut self, visit: Visit) -> bool {
@@ -1798,6 +1805,13 @@ impl Gallery {
                         Some(node.width),
                     );
                 }
+            }
+            On::Screen { .. } => {
+                let Some(index) = self.description_line(&dir) else {
+                    return false;
+                };
+                self.pick(index);
+                self.picked = Picked::Nothing;
             }
             On::Transition { .. } | On::Navigate { .. } => {
                 // A transition's arrow is in its description's overview; a
@@ -2276,6 +2290,20 @@ impl Gallery {
         };
         let state = self.state_shown()?;
         Some(Card::new(say!(self.lang, whole_state, state = state.name()), Vec::new()))
+    }
+
+    /// The card of the description picked, its overview shown with no
+    /// arrow picked: the screen's name, for the conversation under it on
+    /// the whole screen. None where no overview is.
+    fn screen_card(&self) -> Option<Card<Do>> {
+        let Picture::Overview(overview) = &self.picture else {
+            return None;
+        };
+        let named = self.description(&overview.dir).ok();
+        let screen = named.as_ref().map_or("", |description| description.name());
+        let screen =
+            if screen.is_empty() { gallery::within(&self.root, &overview.dir) } else { screen.to_string() };
+        Some(Card::new(say!(self.lang, whole_screen, screen), Vec::new()))
     }
 
     /// The card of the node picked: what it is (its component), the
@@ -2932,6 +2960,7 @@ mod tests {
     use super::*;
     use crate::chrome::{CAPTION, MARGIN};
     use crate::chrome::{SIDEBAR, SIDEBAR_LEAST, TREE, TREE_LEAST};
+    use crate::reference::Whole;
 
     /// The drafts as git has them committed at `HEAD`, not as they stand in
     /// the working tree: a draft added, edited or noted on and not committed
@@ -3453,7 +3482,7 @@ mod tests {
     fn with_no_node_picked_the_state_shown_is_referenced() {
         let mut gallery = gallery();
         let orders = line_of(&gallery, "orders");
-        assert!(gallery.reference().is_none(), "an overview is no state");
+        assert!(gallery.reference().is_none(), "a flow is no state");
         gallery.chord("c");
         assert_eq!(gallery.panel()[0], "nothing to copy: pick a state, a node in it, or an arrow, first");
         let loading = state_of_in(&gallery, orders, "loading");
@@ -3523,14 +3552,18 @@ mod tests {
     fn the_sidebar_is_on_the_right_and_command_backslash_gives_its_width_to_the_pictures() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing);
+        showing(&mut gallery, 0);
         assert_eq!(gallery.panes.pictures().x1, 1440.0 - SIDEBAR, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
         assert_eq!(
             shown.last().map(|card| card.title.as_str()),
             Some("Nothing picked"),
-            "with nothing picked to talk about, it says what can be done, under the inbox"
+            "with nothing picked to talk about, a flow, it says what can be done, under the inbox"
         );
+        showing(&mut gallery, listing);
+        let shown = gallery.sidebar_cards();
+        assert!(shown[0].title.ends_with(" · the whole screen"), "a description is talked about as a whole");
+        assert!(shown.iter().all(|card| card.title != "Nothing picked"));
         showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
@@ -4909,7 +4942,56 @@ mod tests {
         showing(&mut gallery, orders);
         let pins: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
         assert_eq!(pins, ["N1"], "pinned on its state in the overview too");
-        assert!(gallery.foot().is_none() && gallery.conversation_card().is_none(), "nothing to talk about");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the whole screen's, not the state's");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_picked_talks_about_the_whole_screen() {
+        let root = root_of("notes-screen", &[("orders", "orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        let orders = line_of(&gallery, "orders");
+        showing(&mut gallery, orders);
+        let Picture::Overview(_) = &gallery.picture else { panic!("not an overview") };
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "OrderList · the whole screen", "the card names the screen: {panel:?}");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet");
+        let dir = root.join("orders");
+        let line = format!("{} · the whole screen", dir.display());
+        assert_eq!(gallery.reference().unwrap().line(), line);
+        gallery.chord("c");
+        assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
+
+        gallery.acted = None;
+        type_text(&mut gallery, "this screen tries to do too much");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Screen { whole: Whole::Screen }));
+        let file: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(notes::NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"][0]["whole"], "screen", "kept in its notes.json");
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "this screen tries to do too much", "waiting for the agent"]
+        );
+        let Line { row, state, .. } = &gallery.lines[orders];
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its description");
+
+        assert!(gallery.press_at(on_arrow(&gallery, 0)), "an arrow picked");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the arrow's own conversation");
+        let at = on_arrow(&gallery, 0);
+        say_at(&mut gallery, at, "why here?");
+        assert_eq!(notes::read(&dir).unwrap()[1].id, "N2", "numbered with its other notes");
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(gallery.arrow(), None);
+        assert_eq!(talk_shown(&gallery)[1], "this screen tries to do too much", "back to the screen's");
+
+        let default = state_of_in(&gallery, orders, "default");
+        showing(&mut gallery, default);
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "a state's note is its own");
+        assert!(gallery.click(Do::Visit(Visit::Note(dir.clone(), "N1".into()))));
+        assert_eq!(gallery.line, Some(orders), "its inbox item shows the overview");
+        assert_eq!(talk_shown(&gallery)[1], "this screen tries to do too much");
         std::fs::remove_dir_all(root).unwrap();
     }
 
