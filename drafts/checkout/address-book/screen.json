@@ -199,7 +199,10 @@
                       "icon": "edit",
                       "on": {
                         "tap": {
-                          "navigate": "AddressForm"
+                          "navigate": "AddressForm",
+                          "with": {
+                            "addressId": "{item.address.id}"
+                          }
                         }
                       }
                     }
@@ -237,7 +240,10 @@
             "text": "新增收货地址",
             "on": {
               "tap": {
-                "navigate": "AddressForm"
+                "navigate": "AddressForm",
+                "with": {
+                  "addressId": null
+                }
               }
             }
           }

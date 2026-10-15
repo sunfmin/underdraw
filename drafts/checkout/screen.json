@@ -910,7 +910,10 @@
                     "trailingIcon": "chevron_right",
                     "on": {
                       "tap": {
-                        "navigate": "AddressForm"
+                        "navigate": "AddressForm",
+                        "with": {
+                          "addressId": null
+                        }
                       }
                     }
                   }

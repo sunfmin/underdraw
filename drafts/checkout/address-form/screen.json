@@ -1,0 +1,269 @@
+{
+  "$comment": "新增或修改一个收货地址：从地址簿的铅笔（改）或「新增收货地址」、确认订单的「添加收货地址」（新增）打开。",
+  "screen": "AddressForm",
+  "title": "收货地址",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "params": [
+    "addressId"
+  ],
+  "data": {
+    "addressId": {
+      "type": "string?",
+      "doc": "要改的地址；null 时是新增"
+    },
+    "form": {
+      "type": "AddressDraft",
+      "view": true,
+      "doc": "正在填的内容；改地址时先填上原来的"
+    }
+  },
+  "types": {
+    "AddressDraft": {
+      "name": "string ..20",
+      "phone": "string ..20",
+      "line": {
+        "type": "string ..120",
+        "doc": "省、市、区和街道"
+      },
+      "isDefault": "bool = false"
+    }
+  },
+  "conditions": {
+    "editing": {
+      "when": "addressId != null",
+      "label": "修改已有地址"
+    },
+    "canSave": {
+      "when": "form.name != \"\" && form.phone != \"\" && form.line != \"\"",
+      "label": "都填了"
+    }
+  },
+  "operations": {
+    "saveAddress": {
+      "command": "存下这个地址：给了 id 就改那一个，没给就新增一个",
+      "params": {
+        "id": "string?",
+        "name": "string 1..20",
+        "phone": "string 1..20",
+        "line": "string 1..120",
+        "isDefault": "bool = false"
+      },
+      "requires": "canSave",
+      "fails": {
+        "invalidPhone": "手机号格式不对"
+      }
+    }
+  },
+  "components": {
+    "TextField": {
+      "doc": "一行输入：上面是标签，没填时显示占位，出错时下面一行提示。",
+      "params": [
+        "label",
+        "value",
+        "placeholder",
+        "error"
+      ],
+      "look": {
+        "box": "column",
+        "gap": 6,
+        "grow": 1,
+        "children": [
+          {
+            "if": "label",
+            "text": "{label}",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "box": "row",
+            "padding": [
+              12,
+              12
+            ],
+            "radius": 8,
+            "stroke": "line",
+            "children": [
+              {
+                "cases": [
+                  {
+                    "if": "value && value != \"\"",
+                    "then": {
+                      "text": "{value}"
+                    }
+                  },
+                  {
+                    "else": {
+                      "text": "{placeholder}",
+                      "ink": "muted"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "if": "error",
+            "text": "{error}",
+            "font": "font.caption",
+            "ink": "strong"
+          }
+        ]
+      }
+    }
+  },
+  "fixtures": {
+    "new": {
+      "addressId": null,
+      "form": {
+        "name": "",
+        "phone": "",
+        "line": ""
+      }
+    },
+    "edit": {
+      "addressId": "a2",
+      "form": {
+        "name": "孙小明",
+        "phone": "138 0000 5678",
+        "line": "上海市 浦东新区 世纪大道 100 号 环球金融中心 32 楼",
+        "isDefault": false
+      }
+    }
+  },
+  "root": {
+    "id": "address-form",
+    "component": "Screen",
+    "children": [
+      {
+        "id": "nav",
+        "component": "NavBar",
+        "leading": [
+          {
+            "id": "back",
+            "component": "IconButton",
+            "icon": "arrow_back",
+            "on": {
+              "tap": {
+                "back": true
+              }
+            }
+          }
+        ],
+        "children": [
+          {
+            "id": "title",
+            "component": "Text",
+            "font": "font.subhead",
+            "text": {
+              "cases": [
+                {
+                  "if": "editing",
+                  "then": "修改收货地址"
+                },
+                {
+                  "else": "新增收货地址"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "content",
+        "component": "Scroll",
+        "padding": "space.4",
+        "gap": "space.4",
+        "children": [
+          {
+            "id": "field-name",
+            "component": "TextField",
+            "label": "收货人",
+            "placeholder": "姓名",
+            "bind": "form.name"
+          },
+          {
+            "id": "field-phone",
+            "component": "TextField",
+            "label": "手机号",
+            "placeholder": "11 位手机号",
+            "bind": "form.phone"
+          },
+          {
+            "id": "field-line",
+            "component": "TextField",
+            "label": "地址",
+            "placeholder": "省、市、区、街道、门牌号",
+            "bind": "form.line",
+            "assumed": "地址写成一整行；也可以拆成先选省市区、再填街道门牌，或者在地图上选点"
+          },
+          {
+            "id": "field-default",
+            "component": "ListItem",
+            "title": "设为默认地址",
+            "detail": "以后下单先用它",
+            "trailingIcon": {
+              "cases": [
+                {
+                  "if": "form.isDefault",
+                  "then": "toggle_on.fill"
+                },
+                {
+                  "else": "toggle_off"
+                }
+              ]
+            },
+            "on": {
+              "tap": {
+                "toggle": "form.isDefault"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "bar",
+        "component": "StickyBar",
+        "children": [
+          {
+            "id": "save",
+            "component": "Button",
+            "variant": "primary",
+            "text": "保存",
+            "disabled": "!canSave",
+            "on": {
+              "tap": {
+                "cases": [
+                  {
+                    "if": "editing",
+                    "then": {
+                      "call": "saveAddress",
+                      "with": {
+                        "id": "{addressId}",
+                        "name": "{form.name}",
+                        "phone": "{form.phone}",
+                        "line": "{form.line}",
+                        "isDefault": "{form.isDefault}"
+                      }
+                    }
+                  },
+                  {
+                    "else": {
+                      "call": "saveAddress",
+                      "with": {
+                        "name": "{form.name}",
+                        "phone": "{form.phone}",
+                        "line": "{form.line}",
+                        "isDefault": "{form.isDefault}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

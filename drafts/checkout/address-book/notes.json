@@ -1,0 +1,61 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "default"
+      },
+      "node": {
+        "id": "address-{index}-edit",
+        "at": "/root/children/1/children/0/item/children/0/trailing/0",
+        "instance": [
+          0
+        ],
+        "label": 3,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792064055,
+          "answers": {
+            "assumed": "这里跳转到 AddressForm，但根目录下没有任何描述声明它，所以猜测 AddressForm 是还没画的屏幕；也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。",
+            "guess": {
+              "undrawn": [
+                "AddressForm"
+              ]
+            },
+            "answer": "right"
+          }
+        },
+        {
+          "by": "agent",
+          "says": "已画好 AddressForm（drafts/checkout/address-form）：收货人、手机号、地址三个输入框，「设为默认地址」开关，底部「保存」（三项都填了才能点）。两个状态：new（新增，空表单）和 edit（改，填好原来的）。铅笔带上这个地址的 id 打开它，「新增收货地址」和确认订单的「添加收货地址」打开空表单。地址写成一整行还是拆成省市区 + 门牌，我标了橙色 ?。现在 checkout 下面没有没画的屏幕了。",
+          "unread": true
+        }
+      ]
+    },
+    {
+      "id": "N2",
+      "state": {
+        "fixture": "default"
+      },
+      "node": {
+        "id": "address-{index}-default",
+        "at": "/root/children/1/children/0/item/children/0/children/1",
+        "instance": [
+          0
+        ],
+        "label": null,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "没有对齐。"
+        }
+      ]
+    }
+  ]
+}
