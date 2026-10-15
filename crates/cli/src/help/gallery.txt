@@ -11,7 +11,8 @@ READS
   that holds screen.json. The tree leaves out renders/ and platforms/,
   hidden directories, and directories leading to no description. Nothing is
   read from renders/: the window draws from the descriptions themselves,
-  and from the notes.json beside each, the person's notes.
+  from the notes.json beside each, the person's notes, and from each
+  journey under <root> (<dir>/journeys/<name>.json).
 
 DOES
   Opens a window in a process of its own and exits at once; only the window
@@ -54,6 +55,23 @@ DOES
   faults stays in the tree, marked with how many it has; picking it, or any
   of its states, lists each finding as `underdraw check` names it (where,
   then what is wrong) instead of a picture. Fix them and check it again.
+
+  Play a journey: each <dir>/journeys/<name>.json is listed in the tree
+  under <dir>, after its states when <dir> is a description, as
+  "→ <name>" (`underdraw check --help`, FORMAT, says how one is written).
+  Picking one plays it from its first step: the step's state drawn at
+  both widths, as a state picked is, and the node the person acts on next
+  ringed twice in blue at each width that shows it (a repeat's first
+  instance). The panel says which step of how many, the step's
+  description and state, and the act ("acts on order-{index} (label 3) ·
+  tap, answered ok"; "the journey ends here" on the last). Step forward
+  with → (or "→ next step" in the panel) and back with ← (or "← previous
+  step"). The journey stays picked as it plays, and the step shown stays
+  as the files change. ⌘-click acts on a node from the step's state, as
+  the prototype does, leaving the journey; picking another line in the
+  tree stops it. A journey `underdraw check <root>` finds broken is marked
+  in the tree with how many faults it has; picking it lists each (the
+  step where it breaks, then what is wrong) instead of playing it.
 
   Click through a design as a prototype: a plain click inspects a node, as
   above; hold ⌘ (Ctrl on Linux and Windows) and click to act on it. Acting
@@ -177,7 +195,8 @@ DOES
   it was and with the node picked still picked while it is there, without
   the window coming forward; a description that gains faults shows them,
   and its picture again once they are fixed. A description directory added
-  under <root> comes into the tree, and one removed leaves it. When the
+  under <root> comes into the tree, and one removed leaves it; so does a
+  journey, and one edited is checked and played again. When the
   state shown goes, its description's overview is shown instead. The
   window opens on the first description's overview.
 
