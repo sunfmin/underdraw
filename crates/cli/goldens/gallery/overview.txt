@@ -5,7 +5,6 @@ picture
     journeys through open: → cancel-an-order · step 2
     journeys through cancelled: → cancel-an-order · step 3
 sidebar
-  Nothing picked
-    Click a node, a state or an arrow to see it and talk about it.
-    ⌘-click a node to act on it, as a prototype.
-    ⌘C copies a reference · ⌘\ hides this sidebar
+  ShopOrder · the whole screen
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.

@@ -2,7 +2,8 @@
 //! description writes it so that an agent can act on it without asking
 //! where: a node in a state, a whole state, a transition's arrow in a
 //! description's overview, or a navigate's arrow in a directory's flow.
-//! What ⌘C copies, as one line, and what a note is pinned to.
+//! A whole description, its overview picked, is a reference too: the
+//! whole screen. What ⌘C copies, as one line, and what a note is pinned to.
 
 use std::path::PathBuf;
 
@@ -23,7 +24,7 @@ pub struct Reference {
 
 /// What in a description a reference names. Written, in notes.json, as the
 /// fields of the one it is: `{"state", "node"}`, `{"state"}`,
-/// `{"transition"}` or `{"navigate"}`.
+/// `{"transition"}`, `{"navigate"}` or `{"whole": "screen"}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum On {
@@ -35,6 +36,15 @@ pub enum On {
     Transition { transition: Transition },
     /// A navigate written in the description, its arrow in a flow.
     Navigate { navigate: Navigate },
+    /// The whole screen, apart from any one state: its overview.
+    Screen { whole: Whole },
+}
+
+/// What a note on a whole description is on: written `"screen"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Whole {
+    Screen,
 }
 
 /// A node as the description writes it, and the one instance of it the
@@ -74,7 +84,7 @@ impl On {
     pub fn state(&self) -> Option<&Shown> {
         match self {
             On::Node { state, .. } | On::State { state } => Some(state),
-            On::Transition { .. } | On::Navigate { .. } => None,
+            On::Transition { .. } | On::Navigate { .. } | On::Screen { .. } => None,
         }
     }
 
@@ -94,7 +104,7 @@ impl On {
 
     /// What it is, as the gallery's sidebar says a note is on it, in
     /// `lang`: `on <id> in <state> at <width>`, `on the whole of <state>`,
-    /// `on transition …`, `on navigate …`.
+    /// `on transition …`, `on navigate …`, `on the whole screen`.
     pub fn said(&self, lang: Lang) -> String {
         match self {
             On::Node { state, node } => {
@@ -110,6 +120,7 @@ impl On {
                 say!(lang, on_transition, from = t.from, on = t.on, outcome, to = t.to)
             }
             On::Navigate { navigate: n } => say!(lang, on_navigate, from = n.from, node = n.node, to = n.to),
+            On::Screen { .. } => say!(lang, on_screen),
         }
     }
 }
@@ -134,7 +145,8 @@ impl Reference {
     /// then what in it. For a state, the state; for a node, the state, the
     /// node's id as written and where in screen.json, then the instance
     /// pointed at, as context; for an arrow, the transition or navigate
-    /// with the keys screen.json and `check` name it by.
+    /// with the keys screen.json and `check` name it by; for the whole
+    /// screen, that.
     pub fn line(&self) -> String {
         let state = |state: &Shown| match state {
             Shown::Fixture(name) => format!("fixture {name}"),
@@ -160,6 +172,7 @@ impl Reference {
             }
             On::Transition { transition } => format!("{description} · transition {}", transition.said()),
             On::Navigate { navigate } => format!("{description} · navigate {}", navigate.said()),
+            On::Screen { .. } => format!("{description} · the whole screen"),
         }
     }
 }
@@ -216,6 +229,8 @@ mod tests {
             on: On::State { state: Shown::Phase("loading".into()) },
         };
         assert_eq!(state.line(), "/d/todo · phase loading");
+        let screen = Reference { description: "/d/todo".into(), on: On::Screen { whole: Whole::Screen } };
+        assert_eq!(screen.line(), "/d/todo · the whole screen");
     }
 
     #[test]
@@ -313,6 +328,7 @@ mod tests {
                 "on navigate from Orders on nav-export to ExportDocuments",
                 "在跳转上：从 Orders 经 nav-export 到 ExportDocuments",
             ),
+            (On::Screen { whole: Whole::Screen }, "on the whole screen", "在整个屏幕"),
         ];
         for (on, en, zh) in cases {
             assert_eq!(on.said(Lang::En), en);
