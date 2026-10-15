@@ -2405,16 +2405,10 @@ impl Gallery {
         Seen { picked, marked: self.written_marked().map(str::to_string), lang: self.lang }
     }
 
-    /// The whole window, in points.
-    fn frame(&mut self) -> Scene {
-        let (width, height) = self.panes.window();
-        // The pictures' thumbs drawn under their labels so that none covers
-        // an orange "?", the tree's and the sidebar's over the rest in the
-        // space right of the tree's names and of the sidebar's cards.
-        let thumbs = self.panes.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?)));
-        let hot = self.panes.hot();
-        let (pictures_bars, side_bars): (Vec<_>, Vec<_>) =
-            thumbs.partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
+    /// The tree's lines, in window points, top to bottom: for each, the
+    /// fill behind it when it is picked, the marks at its right end (its
+    /// notes waiting, then its faults), then its name.
+    fn tree_draws(&mut self) -> Vec<Draw> {
         let tree = self.panes.pictures().x0;
         let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
@@ -2456,6 +2450,21 @@ impl Gallery {
             let top = y + (ROW - f64::from(chrome::BODY.line_height)) / 2.0;
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
+        list
+    }
+
+    /// The whole window, in points.
+    fn frame(&mut self) -> Scene {
+        let (width, height) = self.panes.window();
+        // The pictures' thumbs drawn under their labels so that none covers
+        // an orange "?", the tree's and the sidebar's over the rest in the
+        // space right of the tree's names and of the sidebar's cards.
+        let thumbs = self.panes.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?)));
+        let hot = self.panes.hot();
+        let (pictures_bars, side_bars): (Vec<_>, Vec<_>) =
+            thumbs.partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
+        let tree = self.panes.pictures().x0;
+        let list = self.tree_draws();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let seen = self.seen();
         let right = self.panes.pictures().x1;
