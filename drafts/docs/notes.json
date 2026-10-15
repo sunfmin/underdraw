@@ -1,0 +1,39 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "sort-open"
+      },
+      "node": {
+        "id": "doc-{item.doc.id}",
+        "at": "/root/children/2/item",
+        "instance": [
+          3
+        ],
+        "label": 4,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792063733,
+          "answers": {
+            "assumed": "这里跳转到 Document，但根目录下没有任何描述声明它，所以猜测 Document 是还没画的屏幕；也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。",
+            "guess": {
+              "undrawn": [
+                "Document"
+              ]
+            },
+            "answer": "right"
+          }
+        },
+        {
+          "by": "agent",
+          "says": "已画好 Document（drafts/docs/document，和文档列表共用 tokens）：顶栏返回、标题、分享，能编辑的人多一个「编辑」；正文是标题、作者 · 更新时间、已共享/只读标记，然后按小节排；宽屏左侧多一栏目录，点了跳到那一节。两个状态 default（能编辑）和 read-only（别人的文档，只读），加 loading / error。「编辑」按钮怎么进编辑我标了橙色 ?。"
+        }
+      ]
+    }
+  ]
+}
