@@ -17,10 +17,12 @@ DOES
   keeps running, until the person closes it. There is one window per root:
   while it is open, running this again brings it forward instead of opening
   a second, so run it after every round of edits. On the left, a tree of the
-  directories and descriptions as they are arranged on disk. Picking a
-  description draws its first fixture as a wireframe at 390 (a phone) and
-  1120 (a desktop) side by side, labelled as `render` labels them; scroll a
-  tall page with the mouse wheel or trackpad. A description with faults
+  directories and descriptions as they are arranged on disk, each
+  description opened into its states: its fixtures, then its phases (in
+  gray), each in the order written. Picking a state draws it as a wireframe
+  at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
+  labels them; picking a description picks its first state. Scroll a tall
+  page with the mouse wheel or trackpad. A description with faults
   shows them instead of a picture: `underdraw check` it.
 
 ANSWERS
