@@ -1562,6 +1562,12 @@ impl<'a> Walk<'a> {
     }
 
     fn template(&mut self, text: &str, scope: &Scope, guarded: &BTreeSet<String>, at: &str, key: &str) {
+        if !TEXT.contains(&key) && crate::length::arithmetic(text) {
+            return self.findings.add(
+                at,
+                &format!("{text} is arithmetic, and a node never computes: {}", crate::length::ONLY_A_LOOK),
+            );
+        }
         let placeholders = match template::placeholders(text) {
             Ok(placeholders) => placeholders,
             Err(problem) => return self.findings.add(at, &problem),

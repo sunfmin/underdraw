@@ -22,6 +22,7 @@ mod ids;
 mod instance;
 mod jobs;
 mod journeys;
+pub mod length;
 mod links;
 pub mod look;
 mod model;

@@ -7,6 +7,7 @@ FIND IT
     declare what a screen shows, and the shape of each      DATA AND TYPES
     give each state its data                                FIXTURES
     open a screen with an id, or navigate with one          PARAMS
+    what may compute: templates, conditions, a length       EXPRESSIONS
     name a decision, show or hide a node                    CONDITIONS
     put a value in a string, a date, money, a plural        TEMPLATES AND FORMATS
     choose a property's value per state                     CASES

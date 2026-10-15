@@ -7,6 +7,7 @@ extern crate flux_alloc;
 extern crate flux_core;
 
 mod check;
+mod length;
 mod look;
 mod place;
 mod tokens;

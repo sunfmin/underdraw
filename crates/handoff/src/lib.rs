@@ -37,6 +37,9 @@ pub struct Handoff {
     /// The queries and commands the screen calls, which its events name.
     pub operations: Vec<OperationSpec>,
     pub tokens: Vec<TokenName>,
+    /// Each length a look computes, for the platform to compute as written.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lengths: Vec<LengthSpec>,
     pub nodes: Vec<Spec>,
     pub hidden: Vec<Hidden>,
     pub states: Vec<Expected>,
@@ -95,6 +98,23 @@ pub struct OperationSpec {
 pub struct Code {
     pub file: String,
     pub text: String,
+}
+
+/// A length a component's look computes (`{depth} * space.4 + 12`): the
+/// platform builds the expression, from the instance's params and the
+/// tokens by their platform names, never a number per fixture.
+#[derive(Debug, Serialize)]
+pub struct LengthSpec {
+    pub component: String,
+    /// Where in the component it is: `components.TreeLine.look.padding[3]`.
+    pub at: String,
+    /// As written: whole points, tokens and the int params, joined by `*`
+    /// and `+`.
+    pub length: String,
+    /// The int params it reads, each with its bounds as typed.
+    pub params: Map<String, Value>,
+    /// The tokens it reads, by their dotted names, as under "tokens".
+    pub tokens: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -209,12 +229,40 @@ pub fn handoff(screen: &Screen, mapping: &Value, tokens: &Value) -> Result<Hando
         conditions: model.checked.conditions.clone(),
         operations: operations(&model),
         tokens: token_names(tokens, pattern.unwrap_or("{group}.{name}"), language),
+        lengths: lengths(screen),
         nodes: walk.specs,
         hidden: walk.hidden,
         states,
         fixtures: fixtures(&model),
         unconfirmed,
     })
+}
+
+/// Each length a look component of `screen` computes, as written, with the
+/// params and tokens it reads.
+fn lengths(screen: &Screen) -> Vec<LengthSpec> {
+    let mut specs = Vec::new();
+    for (component, at, computed) in screen.components.lengths() {
+        let typed = screen.components.typed(component).unwrap_or_default();
+        let mut params = Map::new();
+        for name in computed.params() {
+            if let Some((_, field)) = typed.iter().find(|(param, _)| param == name) {
+                let typed = match field.range() {
+                    Some(range) => format!("{} {range}", field.describe()),
+                    None => field.describe(),
+                };
+                params.insert(name.to_string(), Value::from(typed));
+            }
+        }
+        specs.push(LengthSpec {
+            component: component.to_string(),
+            at,
+            length: computed.written.clone(),
+            params,
+            tokens: computed.tokens().into_iter().map(String::from).collect(),
+        });
+    }
+    specs
 }
 
 /// Each fixture's data by name, `$patch` applied and every default filled:

@@ -34,6 +34,12 @@ ANSWERS
                   query's params include cursor and limit; a call with a
                   cursor appends the page's rows, one with null replaces them.
     "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
+    "lengths":    [{"component", "at", "length": "{depth} * space.4 + 12",
+                    "params": {"depth": "int 0..4"}, "tokens": ["space.4"]}, …]
+                  each length a component's look computes (left out when
+                  none does): build the expression from the instance's
+                  params and the tokens by their names above, never a
+                  number per state
     "nodes":      [{"id", "component", "parent", "slot",
                     "implement": how the platform builds this component,
                     "test_id": the test id as the platform writes it,

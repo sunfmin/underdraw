@@ -143,7 +143,7 @@ impl Catalog<'_> {
                 return made;
             }
             Parsed::Object(object) => object,
-            Parsed::Text { .. } | Parsed::Plain(_) => return Vec::new(),
+            Parsed::Text { .. } | Parsed::Length(_) | Parsed::Plain(_) => return Vec::new(),
         };
         if let Some(condition) = &object.when
             && !self.holds(condition, scope)
@@ -534,6 +534,14 @@ impl Catalog<'_> {
                     read.push(self.resolve(item, scope));
                 }
                 Value::Array(read)
+            }
+            Parsed::Length(computed) => {
+                let param = |name: &str| match scope.vars.get(name) {
+                    Some(value) => value.clone(),
+                    None => scope.prop(name).cloned().unwrap_or(Value::Null),
+                };
+                crate::length::points(computed, self.tokens, &param)
+                    .map_or(Value::Null, |points| Value::from(points.get()))
             }
             Parsed::Plain(value) => value.clone(),
         }

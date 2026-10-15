@@ -8,6 +8,7 @@
 use serde_json::{Map, Value};
 
 use crate::expr::{self, Atom, Expr};
+use crate::length::{self, Computed};
 
 /// A look, or any value inside one, parsed.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,23 +22,35 @@ pub enum Look {
     },
     List(Vec<Look>),
     Object(Object),
+    /// A length key's arithmetic, `{depth} * space.4`: the length it comes
+    /// to ([`crate::length`]).
+    Length(Computed),
     /// A number, true or false, or null: itself.
     Plain(Value),
 }
 
 impl Look {
     pub fn parse(value: &Value) -> Look {
+        Look::parse_as(value, false)
+    }
+
+    /// `value` parsed; as a `length`, a string that asks for arithmetic
+    /// is a computed length, in any side or branch of it.
+    fn parse_as(value: &Value, length: bool) -> Look {
         match value {
             Value::String(text) if text == "$children" => Look::Children,
-            Value::String(text) => Look::Text { written: text.clone(), template: Template::parse(text) },
+            Value::String(text) => match Computed::read(text).filter(|_| length) {
+                Some(computed) => Look::Length(computed),
+                None => Look::Text { written: text.clone(), template: Template::parse(text) },
+            },
             Value::Array(items) => {
                 let mut looks = Vec::new();
                 for item in items {
-                    looks.push(Look::parse(item));
+                    looks.push(Look::parse_as(item, length));
                 }
                 Look::List(looks)
             }
-            Value::Object(object) => Look::Object(Object::parse(object)),
+            Value::Object(object) => Look::Object(Object::parse(object, length)),
             other => Look::Plain(other.clone()),
         }
     }
@@ -59,7 +72,41 @@ impl Look {
                 }
             }
             Look::Object(object) => object.reads(bound, read),
+            Look::Length(computed) => {
+                for name in computed.params() {
+                    read_name(name, bound, read);
+                }
+            }
             Look::Children | Look::Plain(_) => {}
+        }
+    }
+
+    /// Each length it computes, at any depth, with where it is: `at`
+    /// joined to the keys, indexes and branches that reach it, as `check`
+    /// names them.
+    pub fn lengths<'l>(&'l self, at: &str, found: &mut Vec<(String, &'l Computed)>) {
+        match self {
+            Look::Length(computed) => found.push((at.to_string(), computed)),
+            Look::List(looks) => {
+                for (index, look) in looks.iter().enumerate() {
+                    look.lengths(&format!("{at}[{index}]"), found);
+                }
+            }
+            Look::Object(object) => {
+                for key in &object.keys {
+                    key.look.lengths(&format!("{at}.{}", key.name), found);
+                }
+                if let Some(cases) = &object.cases {
+                    for (index, branch) in cases.branches.iter().enumerate() {
+                        for (side, look) in [("then", &branch.then), ("else", &branch.otherwise)] {
+                            if let Some(look) = look {
+                                look.lengths(&format!("{at}.cases[{index}].{side}"), found);
+                            }
+                        }
+                    }
+                }
+            }
+            Look::Children | Look::Text { .. } | Look::Plain(_) => {}
         }
     }
 
@@ -77,7 +124,7 @@ impl Look {
                         })
                     })
             }
-            Look::Text { .. } | Look::Plain(_) => false,
+            Look::Text { .. } | Look::Length(_) | Look::Plain(_) => false,
         }
     }
 
@@ -156,16 +203,18 @@ pub enum Element<'l> {
 }
 
 impl Object {
-    fn parse(object: &Map<String, Value>) -> Object {
+    /// `object` parsed; `length` when it stands for a length key's value,
+    /// so each branch of its `cases` is one.
+    fn parse(object: &Map<String, Value>, length: bool) -> Object {
         let mut parsed = Object { when: None, cases: None, keys: Vec::new() };
         for (name, written) in object {
             match (name.as_str(), written) {
                 ("if", Value::String(condition)) => parsed.when = Some(Condition::parse(condition)),
-                ("cases", branches) => parsed.cases = Some(Cases::parse(branches)),
+                ("cases", branches) => parsed.cases = Some(Cases::parse(branches, length)),
                 _ => parsed.keys.push(Key {
                     name: name.clone(),
                     written: written.clone(),
-                    look: Look::parse(written),
+                    look: Look::parse_as(written, length::KEYS.contains(&name.as_str())),
                 }),
             }
         }
@@ -256,7 +305,7 @@ pub struct Cases {
 }
 
 impl Cases {
-    fn parse(written: &Value) -> Cases {
+    fn parse(written: &Value, length: bool) -> Cases {
         let Value::Array(branches) = written else {
             return Cases { branches: Vec::new(), listed: false };
         };
@@ -264,8 +313,8 @@ impl Cases {
         for branch in branches {
             parsed.push(Branch {
                 when: branch.get("if").map(Condition::written),
-                then: branch.get("then").map(Look::parse),
-                otherwise: branch.get("else").map(Look::parse),
+                then: branch.get("then").map(|then| Look::parse_as(then, length)),
+                otherwise: branch.get("else").map(|otherwise| Look::parse_as(otherwise, length)),
             });
         }
         Cases { branches: parsed, listed: true }
