@@ -1,0 +1,52 @@
+tree
+  ▸ root/
+    orders
+      default
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+    pay/
+      checkout
+        default
+        express-alipay
+        promo-applied
+        promo-invalid
+        no-address-new-card
+        out-of-stock
+        loading
+        error
+picture
+  flow
+    nav-export
+    order-{index}
+    address
+    address-add
+    orders
+    checkout
+    ExportDocuments
+    OrderDetail
+    AddressBook
+    AddressForm
+sidebar
+  root · these screens
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
+  waits on you · 6
+    orders
+    ? nav-export in default
+    This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet
+    ? order-{index} in default
+    This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet
+    N1 on the whole of default
+    agent: the title is a heading now
+    pay/checkout
+    ? address in default
+    This navigates to AddressBook, which no description under the root declares, so it is guessed that AddressBook is a screen not drawn yet
+    ? address-add in no-address-new-card
+    This navigates to AddressForm, which no description under the root declares, so it is guessed that AddressForm is a screen not drawn yet
+    ? card-number in no-address-new-card
+    Card fields are drawn here
