@@ -43,7 +43,7 @@ ANSWERS
 
 WHAT YOU SEE
   A wireframe, in grays: boxes, text in the system font, crossed boxes for
-  images. A dark numbered circle tags everything a person can act on, in
+  images. A red numbered circle tags everything a person can act on, in
   document order; the same number is "label" in nodes, so "3" in a
   conversation means one node. An orange dashed outline and "?" mark what
   was assumed, for the person to confirm, and a component underdraw does not
