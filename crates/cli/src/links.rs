@@ -52,7 +52,8 @@ pub fn params(root: &Path) -> ScreenParams {
 
 /// `underdraw check <root>`, for a directory holding no screen.json: every
 /// description under it checked, and the links between them, what is
-/// assumed of one to a screen not drawn yet said in `lang`.
+/// assumed of one to a screen not drawn yet said in `lang`, and every
+/// journey under it walked.
 pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
     if !root.is_dir() {
         bail!("cannot read {}: pass a screen's directory, or a directory of them", root.display());
@@ -110,7 +111,17 @@ pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
             })
         })
         .collect();
-    Ok(json!({ "root": root, "ok": ok, "descriptions": descriptions, "links": links, "notes": counts }))
+    let journeys: Vec<Value> =
+        crate::journeys::under(&root).iter().map(|file| crate::journeys::checked(&root, file)).collect();
+    ok &= journeys.iter().all(|journey| journey["ok"] == Value::Bool(true));
+    Ok(json!({
+        "root": root,
+        "ok": ok,
+        "descriptions": descriptions,
+        "links": links,
+        "journeys": journeys,
+        "notes": counts,
+    }))
 }
 
 /// One `navigate` from a description under a root to the screen it names.

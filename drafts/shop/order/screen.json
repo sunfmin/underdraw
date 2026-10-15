@@ -21,6 +21,10 @@
     "shipped": {
       "$patch": "open",
       "order": { "cancellable": false }
+    },
+    "cancelled": {
+      "$patch": "open",
+      "order": { "cancellable": false }
     }
   },
   "root": {
@@ -32,5 +36,9 @@
       { "id": "cancel", "kind": "Button", "if": "order.cancellable", "text": "Cancel order", "variant": "secondary",
         "on": { "tap": { "call": "cancelOrder", "with": { "id": "{order.id}" } } } }
     ]
-  }
+  },
+  "transitions": [
+    { "from": "open", "on": "cancel.tap", "outcome": "ok", "to": "cancelled" },
+    { "from": "open", "on": "cancel.tap", "outcome": "shipped", "to": "shipped" }
+  ]
 }

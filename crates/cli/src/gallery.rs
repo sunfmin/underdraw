@@ -139,7 +139,7 @@ fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
 
 /// The directories in `dir` the tree may list, with their names, in order
 /// of name: renders/, platforms/ and hidden directories left out.
-fn children(dir: &Path) -> Vec<(String, PathBuf)> {
+pub(crate) fn children(dir: &Path) -> Vec<(String, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
