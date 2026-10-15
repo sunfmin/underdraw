@@ -111,6 +111,60 @@ impl Conditions {
         found
     }
 
+    /// The range `field`, at `path`, is known to lie in wherever each of
+    /// `held` holds: its own, narrowed by each comparison of `path` with a
+    /// literal in a held condition's top-level `&&` chain. `!= ""` makes a
+    /// string at least one long; `== "…"` gives its length; `<`, `<=`, `>`,
+    /// `>=` and `==` bound a number.
+    pub fn narrowed(&self, held: &BTreeSet<String>, path: &str, field: &Field) -> (Option<f64>, Option<f64>) {
+        let (mut lo, mut hi) = (field.lo, field.hi);
+        let numeric = matches!(field.base, Base::Int | Base::Number);
+        let int = field.base == Base::Int;
+        for name in held {
+            let Some(condition) = self.get(name) else {
+                continue;
+            };
+            let mut chain = vec![&condition.when];
+            while let Some(expr) = chain.pop() {
+                let (op, literal) = match expr {
+                    Expr::And(items) => {
+                        chain.extend(items);
+                        continue;
+                    }
+                    Expr::Atom(Atom::Group(inner)) => {
+                        chain.push(inner);
+                        continue;
+                    }
+                    Expr::Compare(op, left, right) => {
+                        if is_name(left, path) {
+                            (*op, right)
+                        } else if is_name(right, path) {
+                            (op.flipped(), left)
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                };
+                let bound = match literal {
+                    Atom::Str(text) if !numeric => length_bound(op, text),
+                    Atom::Num(n) if numeric => number_bound(op, *n, int),
+                    _ => None,
+                };
+                let Some((at_least, at_most)) = bound else {
+                    continue;
+                };
+                if let Some(at_least) = at_least {
+                    lo = Some(lo.map_or(at_least, |lo| lo.max(at_least)));
+                }
+                if let Some(at_most) = at_most {
+                    hi = Some(hi.map_or(at_most, |hi| hi.min(at_most)));
+                }
+            }
+        }
+        (lo, hi)
+    }
+
     fn collect_implied(&self, name: &str, found: &mut BTreeSet<String>) {
         let Some(condition) = self.get(name) else {
             return;
@@ -398,5 +452,39 @@ impl<'a> UseSite<'a> {
             Some(name) => UseSite { negated: true, name },
             None => UseSite { negated: false, name: used },
         }
+    }
+}
+
+/// Whether `atom` is the path `path`.
+fn is_name(atom: &Atom, path: &str) -> bool {
+    match atom {
+        Atom::Name(name) => name == path,
+        _ => false,
+    }
+}
+
+/// What `length op text` says of a string's length: at least one long
+/// for `!= ""`, as long as `text` for `== text`.
+fn length_bound(op: Op, text: &str) -> Option<(Option<f64>, Option<f64>)> {
+    match op {
+        Op::Ne if text.is_empty() => Some((Some(1.0), None)),
+        Op::Eq => {
+            let length = text.chars().count() as f64;
+            Some((Some(length), Some(length)))
+        }
+        _ => None,
+    }
+}
+
+/// What `value op n` says of a number: its least and its most, each
+/// whole where it is an `int`.
+fn number_bound(op: Op, n: f64, int: bool) -> Option<(Option<f64>, Option<f64>)> {
+    match op {
+        Op::Eq => Some((Some(n), Some(n))),
+        Op::Ge => Some((Some(if int { n.ceil() } else { n }), None)),
+        Op::Gt => Some((Some(if int { n.floor() + 1.0 } else { n }), None)),
+        Op::Le => Some((None, Some(if int { n.floor() } else { n }))),
+        Op::Lt => Some((None, Some(if int { n.ceil() - 1.0 } else { n }))),
+        Op::Ne => None,
     }
 }

@@ -39,7 +39,7 @@ fn each_operation_is_a_command_with_its_arguments_and_failures() {
         json!([{ "param": "sort", "flag": "--sort", "type": "SortKey",
                  "choices": ["updated", "created", "title", "owner"], "default": "updated" },
                { "param": "cursor", "flag": "--cursor", "type": "string?" },
-               { "param": "limit", "flag": "--limit", "type": "int", "default": 50 }])
+               { "param": "limit", "flag": "--limit", "type": "int", "range": "1..50", "default": 50 }])
     );
     let help = commands[0]["help"].as_str().unwrap();
     assert!(help.contains("--cursor <cursor>  where the page starts"), "{help}");
@@ -147,7 +147,10 @@ fn a_bulk_form_takes_many_ids_and_answers_for_each() {
         (&json!("delete-docs"), &json!("deleteDocs"), &json!("deleteDoc"))
     );
     assert_eq!(bulk["destructive"], true, "deleting many needs --yes as deleting one does");
-    assert_eq!(bulk["args"], json!([{ "param": "ids", "type": "string[]", "repeated": true }]));
+    assert_eq!(
+        bulk["args"],
+        json!([{ "param": "ids", "type": "string[]", "range": "1..", "repeated": true }])
+    );
     let fails: Vec<(&Value, &Value)> =
         bulk["fails"].as_array().unwrap().iter().map(|f| (&f["error"], &f["exit"])).collect();
     assert_eq!(
@@ -233,6 +236,8 @@ fn arguments_are_read_as_the_command_takes_them() {
         Ok(json!({ "sort": "updated", "cursor": "p2", "limit": 3 }))
     );
     assert!(list.with_args(&args(&["--limit", "many"])).is_err());
+    assert_eq!(list.with_args(&args(&["--limit", "0"])), Err("--limit is 1..50, not 0".to_string()));
+    assert!(list.with_args(&args(&["--limit", "51"])).is_err(), "no more than a page holds");
     assert!(list.with_args(&args(&["--page", "2"])).is_err());
     let delete = &interface.commands[1];
     assert_eq!(delete.with_args(&args(&["b"])), Ok(json!({ "id": "b" })));
@@ -329,6 +334,28 @@ fn a_destructive_command_refused_by_its_precondition_is_refused_with_yes_too() {
     assert_eq!(
         deletes,
         [(&json!(["c"]), &json!(1), &refused), (&json!(["c", "--yes"]), &json!(1), &refused)]
+    );
+}
+
+/// A string argument's range is its length: the checkout draft's apply
+/// takes a code 1 to 20 long, and refuses "" as the screen never sends it.
+#[test]
+fn an_argument_outside_its_range_is_refused() {
+    let path = |file: &str| format!("{}/../../drafts/checkout/{file}", env!("CARGO_MANIFEST_DIR"));
+    let read = |file: &str| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(path(file)).unwrap()).unwrap()
+    };
+    let model = model(&read("screen.json"), Some(&read("kinds.json")))
+        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let interface = cli(&model);
+    let apply = interface.commands.iter().find(|c| c.name == "apply-promo").unwrap();
+    let args = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+    assert_eq!(apply.with_args(&args(&["SAVE50"])), Ok(json!({ "code": "SAVE50" })));
+    assert_eq!(apply.with_args(&args(&[""])), Err("<code> is 1..20 long, not \"\"".to_string()));
+    assert!(apply.with_args(&args(&["ABCDEFGHIJKLMNOPQRSTU"])).is_err(), "21 long");
+    assert!(
+        !interface.golden.iter().any(|g| g.command == "apply-promo" && g.args == Some(args(&[""]))),
+        "no golden output gives apply a code its parameter refuses"
     );
 }
 

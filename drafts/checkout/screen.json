@@ -81,6 +81,7 @@
     "hasUnavailable": { "when": "cart.unavailableCount > 0", "label": "Some items are out of stock" },
     "promoApplied": { "when": "promo.status == \"applied\" && promo.discount != null", "label": "Promo code applied" },
     "promoInvalid": { "when": "promo.status == \"invalid\" && promo.message != null", "label": "Promo code refused" },
+    "hasCode": { "when": "promoCode != \"\"", "label": "A promo code is typed" },
     "payByCard": { "when": "payment.method == \"card\"", "label": "Paying by card" },
     "cardSaved": { "when": "payByCard && payment.cardLast4 != null", "label": "Paying with a saved card" },
     "newCard": { "when": "payByCard && payment.cardLast4 == null", "label": "Paying with a new card" },
@@ -338,7 +339,7 @@
                           { "if": "promoInvalid", "then": "{promo.message}" },
                           { "else": null }
                         ] } },
-                      { "id": "promo-apply", "kind": "Button", "variant": "secondary", "text": "使用",
+                      { "id": "promo-apply", "kind": "Button", "variant": "secondary", "text": "使用", "disabled": "!hasCode",
                         "on": { "tap": { "call": "applyPromo", "with": { "code": "{promoCode}" } } } }
                     ] },
                   { "id": "promo-applied", "kind": "ListItem", "if": "promoApplied",

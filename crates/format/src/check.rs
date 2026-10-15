@@ -649,8 +649,12 @@ impl Walk<'_> {
         }
     }
 
-    /// `value`, given to the parameter `param`: a template whose type fits.
+    /// `value`, given to the parameter `param`: a template whose type fits,
+    /// and whose range lies inside the parameter's wherever the node can
+    /// call it.
     fn argument(&mut self, value: &Value, param: &Field, scope: &Scope, known: &Known, at: &str) {
+        // The path the value is, when it is one whole placeholder.
+        let mut path = None;
         let given = match value {
             Value::String(text) => {
                 let Ok(placeholders) = template::placeholders(text) else {
@@ -661,8 +665,9 @@ impl Walk<'_> {
                     Some(placeholder) if whole && placeholder.format.is_none() => {
                         self.template(text, scope, &known.not_null, at, "");
                         if placeholder.path == "index" {
-                            Some(Field::of(Base::Int))
+                            Some(Field { lo: Some(0.0), ..Field::of(Base::Int) })
                         } else {
+                            path = Some(placeholder.path.clone());
                             self.schema.resolve(scope, &placeholder.path).map(|resolved| resolved.field)
                         }
                     }
@@ -679,6 +684,10 @@ impl Walk<'_> {
                         }
                         return;
                     }
+                    None => {
+                        let length = Some(text.chars().count() as f64);
+                        Some(Field { lo: length, hi: length, ..Field::of(Base::String) })
+                    }
                     _ => {
                         self.template(text, scope, &known.not_null, at, "text");
                         Some(Field::of(Base::String))
@@ -687,15 +696,17 @@ impl Walk<'_> {
             }
             Value::Null => Some(Field { nullable: true, ..Field::of(param.base.clone()) }),
             Value::Bool(_) => Some(Field::of(Base::Bool)),
-            Value::Number(n) if n.is_i64() || n.is_u64() => Some(Field::of(Base::Int)),
-            Value::Number(_) => Some(Field::of(Base::Number)),
+            Value::Number(n) if n.is_i64() || n.is_u64() => {
+                Some(Field { lo: n.as_f64(), hi: n.as_f64(), ..Field::of(Base::Int) })
+            }
+            Value::Number(n) => Some(Field { lo: n.as_f64(), hi: n.as_f64(), ..Field::of(Base::Number) }),
             _ => {
                 return self
                     .findings
                     .add(at, "an argument is a template, such as \"{item.id}\", or a literal");
             }
         };
-        let Some(given) = given else {
+        let Some(mut given) = given else {
             // The template's own finding says the path is not one.
             return;
         };
@@ -704,8 +715,52 @@ impl Walk<'_> {
             && matches!(param.base, Base::Url | Base::Image | Base::Icon | Base::Date)
             && !value.as_str().is_some_and(|text| text.starts_with('{'));
         if !(base || text_into) || given.array != param.array || (given.nullable && !param.nullable) {
-            self.findings
+            return self
+                .findings
                 .add(at, &format!("is {}, and the parameter is {}", given.describe(), param.describe()));
+        }
+        if value.is_null() || (param.lo.is_none() && param.hi.is_none()) {
+            return;
+        }
+        if let Some(path) = &path {
+            (given.lo, given.hi) = self.conditions.narrowed(&known.holds, path, &given);
+        }
+        // A string's length and an array's count are never below 0; a
+        // number unbounded below may be any.
+        let floor = if matches!(given.base, Base::Int | Base::Number) && !given.array {
+            f64::NEG_INFINITY
+        } else {
+            0.0
+        };
+        let below = param.lo.is_some_and(|lo| given.lo.unwrap_or(floor) < lo);
+        let above = param.hi.is_some_and(|hi| given.hi.is_none_or(|given| given > hi));
+        if below || above {
+            // A condition reads only from data's roots: name one in the
+            // hint only for a path it can test.
+            let testable =
+                path.as_ref().filter(|path| self.schema.resolve(&self.schema.roots(), path).is_some());
+            let gate = match (testable, below) {
+                (Some(path), true) if floor == 0.0 && param.lo == Some(1.0) && !given.array => {
+                    format!(", such as one that tests {path} != \"\"")
+                }
+                (Some(path), true) if floor < 0.0 => {
+                    format!(", such as one that tests {path} >= {}", param.lo.unwrap_or_default())
+                }
+                (Some(path), false) if floor < 0.0 => {
+                    format!(", such as one that tests {path} <= {}", param.hi.unwrap_or_default())
+                }
+                _ => String::new(),
+            };
+            self.findings.add(
+                at,
+                &format!(
+                    "is {} {}, and the parameter is {} {}: gate this node by a condition that keeps it inside, \"disabled\": \"!<condition>\"{gate}",
+                    given.describe(),
+                    given.range().unwrap_or_else(|| "..".to_string()),
+                    param.describe(),
+                    param.range().unwrap_or_default()
+                ),
+            );
         }
     }
 
