@@ -69,8 +69,13 @@ DOES
   - `back` returns along the path taken by acting, across screens, one
     step each time. Picking a state in the tree starts a new path.
   - nothing declared: the screen stays, and the panel says so ("no
-    transition from <state> on <node id as written>.tap"); declare it in
-    the description's `transitions` (`underdraw check --help`, FORMAT).
+    transition from <state> on <node id as written>.tap · should go to:"),
+    then lists the description's states and, as "navigate to <screen>",
+    the screens the other descriptions under <root> declare. Click one to
+    propose it: the window writes a note on the node holding the proposal
+    (`underdraw notes --help`), and the agent declares it, in the
+    description's `transitions` (`underdraw check --help`, FORMAT) or as
+    a `navigate`. The window still never writes the description.
   The panel says what each act came to, above what it says of the node.
 
   Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
