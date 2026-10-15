@@ -40,8 +40,9 @@ impl Model {
         let mut findings = Findings::default();
         let screen = &domain::expand(screen, &mut findings);
         let schema = Schema::read(screen, &mut findings);
-        let fixtures = fixture::read(screen, &schema, &mut findings);
+        let mut fixtures = fixture::read(screen, &schema, &mut findings);
         let conditions = Conditions::read(screen, &schema, &mut findings);
+        conditions.fill(&schema, &mut fixtures);
         let operations = Operations::read(screen, &schema, &conditions, &mut findings);
         let transitions = transitions::read(screen);
         Ok(Model {

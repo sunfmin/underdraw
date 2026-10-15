@@ -143,7 +143,16 @@ DOES
   line of reply: its pin turns green, and the pointer over it shows the
   reply. Click a pin to read its note in the panel, then close it, or
   reopen it, saying what is still to do (Enter saves that line): it is open
-  again, for the agent. A closed note is drawn no more. The window writes
+  again, for the agent. A closed note is drawn no more.
+  A note closes itself, saying why, once what it is on is gone from the
+  description: its node removed or renamed (a region: every node it
+  covered), its state, its transition or its navigate. Once that
+  description checks clean again, the panel says so, once ("N3 closed:
+  order-{index} is gone (removed or renamed)"). A description's overview
+  lists its closed notes, each with why it closed; click one to read it,
+  and reopen it, saying what is still to do: one whose target went is
+  then on the whole state (the one it was in, or its transition was from,
+  while there is one; else the first). The window writes
   notes.json, and only the person's acts; it never writes a description:
   the agent makes every change. Commit notes.json with the description.
 

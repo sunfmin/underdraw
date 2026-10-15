@@ -19,15 +19,15 @@
   "fixtures": {
     "open": {
       "orderId": "A12",
-      "order": { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "cancellable": true }
+      "order": { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" }
     },
     "shipped": {
       "$patch": "open",
-      "order": { "cancellable": false }
+      "order": { "status": "shipped" }
     },
     "cancelled": {
       "$patch": "open",
-      "order": { "cancellable": false }
+      "order": { "status": "cancelled" }
     }
   },
   "root": {

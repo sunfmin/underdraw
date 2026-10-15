@@ -257,8 +257,8 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
     };
     let notes = json!({ "notes": [
         note("N1", json!({ "state": { "phase": "loading" } })),
-        note("N2", json!({ "transition": { "from": "default", "on": "retry.tap", "outcome": "ok", "to": "default" } })),
-        note("N3", json!({ "navigate": { "from": "Orders", "node": "nav-export", "to": "ExportDocuments" } })),
+        note("N2", json!({ "transition": { "from": "error", "on": "retry.tap", "outcome": "ok", "to": "default" } })),
+        note("N3", json!({ "navigate": { "from": "OrderList", "node": "nav-export", "to": "ExportDocuments" } })),
     ] });
     std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
@@ -270,12 +270,12 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
     assert_eq!(listed[1]["transition"]["on"], "retry.tap");
     assert_eq!(
         listed[1]["reference"],
-        format!("{} · transition from default on retry.tap outcome ok to default", dir.display())
+        format!("{} · transition from error on retry.tap outcome ok to default", dir.display())
     );
     assert_eq!(listed[2]["navigate"]["node"], "nav-export");
     assert_eq!(
         listed[2]["reference"],
-        format!("{} · navigate from Orders on nav-export to ExportDocuments", dir.display())
+        format!("{} · navigate from OrderList on nav-export to ExportDocuments", dir.display())
     );
     let (answered, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "it goes there"]);
@@ -283,6 +283,78 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
     let file: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
     assert_eq!(file["notes"][2]["navigate"], notes["notes"][2]["navigate"], "kept as written");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// The orders description under `root` with `from` written `to`
+/// everywhere, as the agent renames a node.
+fn rename(root: &Path, from: &str, to: &str) {
+    let file = root.join("orders").join("screen.json");
+    let screen = std::fs::read_to_string(&file).unwrap().replace(from, to);
+    std::fs::write(file, screen).unwrap();
+}
+
+#[test]
+fn a_note_whose_node_is_renamed_closes_itself_saying_why_and_is_listed_with_closed() {
+    let root = root("gone");
+    let dir = root.join("orders");
+    // Renamed in the tree only: the transition naming it is a fault, and a
+    // description half edited closes nothing.
+    let file = dir.join("screen.json");
+    let whole = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(
+        &file,
+        whole.replacen("\"id\": \"order-{index}-cancel\"", "\"id\": \"order-{index}-void\"", 1),
+    )
+    .unwrap();
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!((code, &answer["open"]), (0, &json!(2)), "{answer}");
+
+    rename(&root, "order-{index}-cancel", "order-{index}-void");
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{answer}");
+    assert_eq!((&answer["notes"], &answer["open"]), (&json!([]), &json!(0)), "closed ones are not listed");
+    let (closed, code) = underdraw(&["notes", root.to_str().unwrap(), "--closed"]);
+    assert_eq!(code, 0, "{closed}");
+    let listed = closed["notes"].as_array().unwrap();
+    assert_eq!(listed.len(), 2, "{closed}");
+    assert_eq!(listed[0]["status"], "closed");
+    assert_eq!(listed[0]["closed_because"], "order-{index}-cancel is gone (removed or renamed)");
+    let file: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+    assert_eq!(file["notes"][1]["closed_because"], listed[1]["closed_because"], "kept in notes.json");
+
+    let (refused, code) = underdraw(&["notes", root.to_str().unwrap(), "--closed", "--wait"]);
+    assert_eq!(code, 2);
+    assert!(refused["error"].as_str().unwrap().contains("--closed"), "{refused}");
+    let (refused, code) = underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "x"]);
+    assert_eq!(code, 2, "a note closed itself is not answered: {refused}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn check_closes_a_note_whose_state_is_gone_and_counts_it_no_more() {
+    let root = root("gone-check");
+    rename(&root, "\"error\"", "\"failed\"");
+    let notes = json!({ "notes": [{
+        "id": "N1", "status": "answered", "state": { "phase": "failed" },
+        "thread": [{ "by": "person", "says": "x" }, { "by": "agent", "says": "y" }],
+    }, {
+        "id": "N2", "status": "open",
+        "transition": { "from": "error", "on": "retry.tap", "outcome": "ok", "to": "default" },
+        "thread": [{ "by": "person", "says": "x" }],
+    }] });
+    let dir = root.join("orders");
+    std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
+    let (answer, _) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(answer["notes"], json!({ "open": 0, "answered": 1 }), "{answer}");
+    let file: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+    assert_eq!(file["notes"][0]["status"], "answered", "its phase is there");
+    assert_eq!(
+        file["notes"][1]["closed_because"],
+        "transition from error on retry.tap outcome ok to default is gone (removed or changed)"
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 

@@ -74,7 +74,7 @@ _Avoid_: guess, TODO
 What the person says to the agent about a design, pinned where they said it:
 a node, a region, a whole state, or an arrow. The agent answers it; the
 person closes it, or it closes itself, saying why, once what it is pinned to
-is gone. Confirming or rejecting an **Assumption** is a note on it.
+is gone; reopened, it is pinned to the whole state. Confirming or rejecting an **Assumption** is a note on it.
 _Avoid_: comment, feedback
 
 ### Data and decisions
@@ -118,7 +118,9 @@ _Avoid_: flow, navigation, edge
 
 **Condition**:
 A named yes/no decision the screen makes, such as `hasDates`, declared once and
-used by name.
+used by name; or one declared on a type (`Order.cancellable`) over its own
+fields, used through a value of it (`item.cancellable`), as the domain shares
+one.
 _Avoid_: flag, predicate
 
 **Domain**:

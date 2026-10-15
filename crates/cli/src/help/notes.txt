@@ -14,7 +14,8 @@ READS
   notes.json beside each screen.json under <path>: <path> itself, when it
   is a description's directory, or every description under it at any
   depth, as the gallery finds them. A description with no notes.json has no
-  notes. Writes nothing, but with --answer.
+  notes. Writes nothing, but with --answer, and to close a note whose
+  target is gone (GONE, below).
 
 DOES
   A note is what the person says of a design, pinned where they said it,
@@ -29,8 +30,10 @@ DOES
               for the agent to act on and answer
     answered  answered by the agent with one line of reply; the person
               reads it in the gallery and closes the note, or reopens it
-    closed    closed by the person; nothing more to do
-  `underdraw notes <path>` lists the open ones. Edit what it is on in that
+    closed    closed by the person, or by itself when what it is on is
+              gone (GONE, below); nothing more to do
+  `underdraw notes <path>` lists the open ones; `--closed` lists the
+  closed ones instead, each with why it closed. Edit what it is on in that
   description's screen.json: the node where "node.at" points (the id
   written there is "node.id", a template inside a repeat); for a region,
   the nodes each of "region.nodes" points at, or what belongs in the space
@@ -47,6 +50,19 @@ DOES
   window, showing the reply. Answering again with the same reply changes
   nothing more; with another, it takes the last reply's place. A closed note
   is not answered.
+
+GONE
+  A note closes itself when what it is on is gone from its description:
+  no tree writes its node's id any more (removed or renamed), nor any node
+  a region covered; its fixture or phase is gone; or no transition, or
+  navigate, is written with the same keys. It is judged only once the
+  description checks clean, so one half edited closes nothing; then
+  whatever reads the notes first, `underdraw notes`, `underdraw check` or
+  the gallery, closes it, writing why in notes.json ("closed_because":
+  "order-{index} is gone (removed or renamed)"). It is not listed among
+  the open, and not counted; `--closed` lists it. So renaming a node, a
+  state or a transition closes the notes on it: act on them first. The
+  person may reopen it in the gallery, on the whole state.
 
 WAITING
   `underdraw notes <root> --wait` blocks until a note is open under <root>,
@@ -114,7 +130,11 @@ ANSWERS
                                  transition to add to "transitions" from
                                  "state", or {"on", "navigate": <screen>},
                                  a navigate to give the node's handler
-                  "reference":   the same as one line, as ⌘C copies it}, …]
+                  "reference":   the same as one line, as ⌘C copies it,
+                  "closed_because": for a note that closed itself, why:
+                                 "<what> is gone (removed or renamed)",
+                                 or "(removed or changed)" for an arrow;
+                                 absent otherwise}, …]
     "open":     how many notes are open
     "answered": how many are answered, waiting for the person
   }
@@ -124,8 +144,9 @@ ANSWERS
     "changed": false when it already had that reply
   }
   With --wait: the same as without it, once a note is open.
-  Exits 2 with {"error"} when <path> is not a directory, --wait is given
-  with --answer, notes.json is
+  With --closed: the same, "notes" holding the closed notes instead.
+  Exits 2 with {"error"} when <path> is not a directory, --wait or
+  --closed is given with --answer, --wait with --closed, notes.json is
   not notes as the gallery writes them, --answer names no note there, or
   the note is closed.
 

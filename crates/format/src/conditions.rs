@@ -1,9 +1,12 @@
 //! The screen's named conditions (docs/format/expressions.md): each read,
-//! typed strictly, and evaluated against a fixture.
+//! typed strictly, and evaluated against a fixture. A condition named
+//! `Type.name` is declared on a type (ADR 0020): its paths start from the
+//! type's fields, and a value of the type reads it as a Bool field, which
+//! [`Conditions::fill`] writes into each fixture.
 
 use std::collections::BTreeSet;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::check::Findings;
 use crate::expr::{self, Atom, Expr, Op};
@@ -11,9 +14,23 @@ use crate::field::{Base, Field};
 use crate::schema::{Schema, Scope, object};
 
 pub struct Condition {
+    /// Its name: `hasDates`, or `Order.cancellable` for one on a type.
     pub name: String,
     pub label: String,
     pub when: Expr,
+    /// The type it is declared on, when it is.
+    pub on: Option<String>,
+}
+
+impl Condition {
+    /// Its name as a value of its type reads it (`cancellable`), or its
+    /// whole name for one over the screen's data.
+    pub fn short(&self) -> &str {
+        match (&self.on, self.name.split_once('.')) {
+            (Some(_), Some((_, short))) => short,
+            _ => &self.name,
+        }
+    }
 }
 
 pub struct Conditions(Vec<Condition>);
@@ -37,15 +54,57 @@ impl Conditions {
                 findings.add(&at, "a condition is {\"when\": …, \"label\": …}");
                 continue;
             };
+            let on = match name.split_once('.') {
+                None => None,
+                Some((type_name, short)) => {
+                    if schema.fields_of(type_name).is_none() {
+                        findings.add(
+                            &at,
+                            &format!("{type_name} is not an object type: a condition on a type is named <Type>.<name>, its type declared in types"),
+                        );
+                        continue;
+                    }
+                    if !crate::field::is_identifier(short) {
+                        findings
+                            .add(&at, &format!("{short:?}: a condition on a type is named <Type>.<name>"));
+                        continue;
+                    }
+                    Some(type_name.to_string())
+                }
+            };
             match expr::parse(when) {
-                Ok(when) => read.push(Condition { name: name.clone(), label, when }),
+                Ok(when) => read.push(Condition { name: name.clone(), label, when, on }),
                 Err(problem) => findings.add(&at, &problem),
             }
         }
+        // Inside a condition on a type, a name is first another of that
+        // type's: `cancellable` in one on Order is `Order.cancellable`.
+        let mut names = Vec::new();
+        for condition in &read {
+            names.push(condition.name.clone());
+        }
+        let mut read_qualified = Vec::new();
+        for condition in &read {
+            let when = match &condition.on {
+                Some(on) => qualified(&condition.when, on, &names),
+                None => condition.when.clone(),
+            };
+            read_qualified.push(Condition {
+                name: condition.name.clone(),
+                label: condition.label.clone(),
+                when,
+                on: condition.on.clone(),
+            });
+        }
+        let read = read_qualified;
         let conditions = Conditions(read);
-        let roots = schema.roots();
         for condition in &conditions.0 {
             let at = format!("conditions.{}", condition.name);
+            let roots = match &condition.on {
+                Some(on) => schema.fields_of(on).unwrap_or_default(),
+                None => schema.roots(),
+            };
+            conditions.misnamed(condition, schema, &at, findings);
             conditions.typecheck(&condition.when, schema, &roots, &at, findings);
             if let Some(cycle) = conditions.cycle(&condition.name, &mut Vec::new()) {
                 findings.add(&at, &format!("refers to itself: {}", cycle.join(" → ")));
@@ -56,6 +115,116 @@ impl Conditions {
 
     pub fn all(&self) -> &[Condition] {
         &self.0
+    }
+
+    /// A condition on a type that names a field of it, or uses a condition
+    /// it cannot: one over the screen's data has none to read, and one over
+    /// the data reaches one on a type only through a value of it.
+    fn misnamed(&self, condition: &Condition, schema: &Schema, at: &str, findings: &mut Findings) {
+        if let Some(on) = &condition.on
+            && schema.fields_of(on).unwrap_or_default().iter().any(|(field, _)| field == condition.short())
+        {
+            findings
+                .add(at, &format!("{on} has a field {}: name the condition otherwise", condition.short()));
+        }
+        let mut used = Vec::new();
+        uses(&condition.when, &mut used);
+        for name in &used {
+            let Some(other) = self.get(name) else {
+                continue;
+            };
+            match (&condition.on, &other.on) {
+                (Some(on), None) => findings.add(
+                    at,
+                    &format!("{name} is a condition over the screen's data, and one on {on} reads only an {on}'s fields"),
+                ),
+                (None, Some(other_on)) => findings.add(
+                    at,
+                    &format!(
+                        "{name} is a condition on {other_on}: use it through a value of {other_on}, as <value>.{}",
+                        other.short()
+                    ),
+                ),
+                _ => {}
+            }
+        }
+    }
+
+    /// Each fixture's data with every condition on a type written into each
+    /// value of that type, as a Bool field of its short name, so whatever
+    /// reads the data reads `item.cancellable` as it reads `item.id`.
+    pub fn fill(&self, schema: &Schema, fixtures: &mut [(String, Value)]) {
+        let roots = schema.roots();
+        for (_, data) in fixtures.iter_mut() {
+            let Some(fields) = data.as_object_mut() else {
+                continue;
+            };
+            self.fill_fields(schema, &roots, fields);
+        }
+    }
+
+    fn fill_fields(&self, schema: &Schema, scope: &Scope, fields: &mut Map<String, Value>) {
+        for (name, field) in scope {
+            if let Some(value) = fields.get_mut(name) {
+                self.fill_value(schema, field, value);
+            }
+        }
+    }
+
+    fn fill_value(&self, schema: &Schema, field: &Field, value: &mut Value) {
+        if field.array {
+            let element = field.element();
+            if let Value::Array(items) = value {
+                for item in items {
+                    self.fill_value(schema, &element, item);
+                }
+            }
+            return;
+        }
+        let type_name = field.base.name();
+        let Some(scope) = schema.fields_of(type_name) else {
+            return;
+        };
+        if !value.is_object() {
+            return;
+        }
+        if let Some(fields) = value.as_object_mut() {
+            self.fill_fields(schema, &scope, fields);
+        }
+        let mut held = Vec::new();
+        for condition in &self.0 {
+            if condition.on.as_deref() == Some(type_name) {
+                held.push((condition.short().to_string(), self.holds(&condition.name, value)));
+            }
+        }
+        if let Some(fields) = value.as_object_mut() {
+            for (short, holds) in held {
+                fields.insert(short, Value::Bool(holds));
+            }
+        }
+    }
+
+    /// For a condition on a type, whether it holds of some value of the
+    /// type in `data`, and whether it fails of some: `data` filled first.
+    pub fn of_values(&self, schema: &Schema, name: &str, data: &Value) -> (bool, bool) {
+        let mut seen = (false, false);
+        if let Some(condition) = self.get(name)
+            && let Some(on) = &condition.on
+        {
+            let mut values = Vec::new();
+            for (root, field) in schema.roots() {
+                if let Some(value) = data.get(&root) {
+                    schema.values_of(on, &field, value, &mut values);
+                }
+            }
+            for value in values {
+                match value.get(condition.short()) {
+                    Some(Value::Bool(true)) => seen.0 = true,
+                    _ => seen.1 = true,
+                }
+            }
+        }
+        seen
     }
 
     fn get(&self, name: &str) -> Option<&Condition> {
@@ -101,6 +270,21 @@ impl Conditions {
             self.collect_guards(&condition.when, &mut vec![name.to_string()], &mut found);
         }
         found
+    }
+
+    /// The same of the condition on a type `name`, read through the value
+    /// at `value`: each path it guarantees, from there (`item.note`).
+    pub fn guards_through(&self, name: &str, value: &str) -> BTreeSet<String> {
+        let mut found = BTreeSet::new();
+        for path in self.guards(name) {
+            found.insert(format!("{value}.{path}"));
+        }
+        found
+    }
+
+    /// Whether `name` is a condition declared on a type.
+    pub fn is_on_type(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|condition| condition.on.is_some())
     }
 
     /// The conditions that hold whenever `name` does: itself, and those its
@@ -312,7 +496,12 @@ impl Conditions {
             Atom::Name(path) => match schema.resolve(roots, path) {
                 Some(resolved) => Some(Side::Field(Box::new(resolved.field))),
                 None => {
-                    findings.add(at, &format!("{path} is neither a condition nor a path in data"));
+                    match schema.misused(roots, path) {
+                        Some(problem) => findings.add(at, &problem),
+                        None => {
+                            findings.add(at, &format!("{path} is neither a condition nor a path in data"))
+                        }
+                    }
                     None
                 }
             },
@@ -368,6 +557,39 @@ impl Conditions {
                 }
             },
         }
+    }
+}
+
+/// `expr` with each name that is a condition on the type `on`, written
+/// short (`cancellable`), given its whole name (`Order.cancellable`).
+fn qualified(expr: &Expr, on: &str, names: &[String]) -> Expr {
+    match expr {
+        Expr::Or(items) => Expr::Or(qualified_all(items, on, names)),
+        Expr::And(items) => Expr::And(qualified_all(items, on, names)),
+        Expr::Not(inner) => Expr::Not(Box::new(qualified(inner, on, names))),
+        Expr::Atom(atom) => Expr::Atom(qualified_atom(atom, on, names)),
+        Expr::Compare(op, l, r) => {
+            Expr::Compare(*op, qualified_atom(l, on, names), qualified_atom(r, on, names))
+        }
+    }
+}
+
+fn qualified_all(items: &[Expr], on: &str, names: &[String]) -> Vec<Expr> {
+    let mut out = Vec::new();
+    for item in items {
+        out.push(qualified(item, on, names));
+    }
+    out
+}
+
+fn qualified_atom(atom: &Atom, on: &str, names: &[String]) -> Atom {
+    match atom {
+        Atom::Name(name) => {
+            let whole = format!("{on}.{name}");
+            if names.contains(&whole) { Atom::Name(whole) } else { Atom::Name(name.clone()) }
+        }
+        Atom::Group(inner) => Atom::Group(Box::new(qualified(inner, on, names))),
+        other => other.clone(),
     }
 }
 
