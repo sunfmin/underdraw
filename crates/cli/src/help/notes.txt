@@ -16,7 +16,8 @@ READS
   is a description's directory, or every description under it at any
   depth, as the gallery finds them; and the notes.json of each directory
   under it, <path> itself included, that holds no description: its notes
-  on the screens under it, as a group. A description with no notes.json
+  on the screens under it, as a group, and on the journeys in its
+  journeys/. A description with no notes.json
   has no notes. A shared component shown on its own, the description
   components/<Name> under its project's root, keeps them in
   components/<Name>/notes.json; what they are on is edited in
@@ -34,7 +35,9 @@ DOES
   whole, apart from any one state ("this screen tries to do too much");
   or the screens under a directory, as a group, kept in that directory's
   own notes.json though it holds no screen.json ("these screens repeat
-  the same header"). Each is numbered N1, N2… within its
+  the same header"); or a whole journey, the path through all its steps,
+  kept by name in the notes.json of the directory holding its journeys/
+  ("cancelling takes four steps; too many"). Each is numbered N1, N2… within its
   description or directory, and holds its messages in the order said, each by the
   person or the agent, and some of the person's marked as more than talk
   (MARKS, below). Only the person starts one. It is never closed:
@@ -54,13 +57,15 @@ DOES
   `transitions` the "transition" names; or the navigate on the node
   "navigate.node"; for the whole screen, wherever in the description it
   takes; for the screens under a directory, in each description under it
-  that it takes; and do what each marked message asks (MARKS, below).
+  that it takes; for a journey, in <dir>/journeys/<"journey">.json or in
+  the screens its steps go through; and do what each marked message asks (MARKS, below).
   Then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
   <dir> is that description's directory, or, for a note on the screens
-  under a directory, that directory: <path>/<"description">. The reply
+  under a directory or on a journey, that directory:
+  <path>/<"description">. The reply
   is at any length, as many lines as it takes, kept as written but for
   blank space at its ends: say what was done, or why not, or ask back.
   It is added to the conversation as the agent's message, unread, and the
@@ -175,7 +180,9 @@ ANSWERS
                   "whole":       "screen": on the whole screen, apart from
                                  any one state; or "screens": on the
                                  screens under the directory
-                                 "description" names, as a group,
+                                 "description" names, as a group; or
+                  "journey":     its name: on the whole journey in
+                                 <"description">/journeys/<name>.json,
                   "messages":    [{"by": "person" or "agent", "says"}, …],
                                  the conversation, in the order said, the
                                  person's first; "says" as many lines as
@@ -208,7 +215,8 @@ WHAT TRIPS YOU UP
   - --answer takes the directory the note is in, as "description" names
     it: ids are numbered within each description and each directory, so
     two can each have an N1. The root is that directory only for a note
-    on the screens under it ("description": ".").
+    on the screens under it, or on a journey in its own journeys/
+    ("description": ".").
   - --wait answers at once while any note waits on you: answer every note
     it lists before you start it again, or it never waits.
   - Quote a reply of many lines as one argument; the shell keeps its line
