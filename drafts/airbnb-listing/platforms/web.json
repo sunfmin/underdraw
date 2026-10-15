@@ -1,0 +1,43 @@
+{
+  "platform": "web",
+  "language": "typescript",
+  "stack": "React + CSS（Tailwind 亦可）",
+  "testId": "data-testid=\"{id}\"",
+  "elementTree": "Playwright：遍历带 data-testid 的元素，读 getBoundingClientRect",
+  "tokenNaming": { "pattern": "var(--{group}-{kebab-name})", "example": "color.textSecondary → var(--color-text-secondary)" },
+  "breakpoints": "CSS media query：compact = max-width 743px",
+  "components": {
+    "Screen": "<main>",
+    "NavBar": "不渲染（站点顶栏负责），见 screen.json 的 platform.web.hidden",
+    "IconButton": "<button aria-label=\"{label}\">",
+    "Button": "<button>；variant primary/secondary → 两个 class",
+    "Link": "<button> 外观为下划线文字（不跳转 URL 的用 button，不用 <a>）",
+    "Text": "<p>/<span>；role heading → <h1>；maxLines → -webkit-line-clamp",
+    "Scroll": "页面自然滚动，不加内部滚动容器",
+    "Stack": "flex column", "Row": "flex row",
+    "Columns": "CSS grid，grid-template-columns 取 columns 对应断点的值",
+    "Grid": "CSS grid",
+    "ImageCarousel": "scroll-snap 横向滚动 + 计数器",
+    "ImageGrid": "CSS grid 5 格（左 1 大，右 2×2）",
+    "Carousel": "scroll-snap 横向滚动",
+    "Card": "<div> + 阴影；sticky → position: sticky",
+    "StickyBar": "position: fixed; bottom: 0",
+    "List": "<ul>", "ListItem": "<li>",
+    "Section": "<section> + <h2>",
+    "Badge": "<span>", "Rating": "★ + 数字", "Metric": "<div>", "Avatar": "<img> 圆形",
+    "Divider": "<hr>",
+    "Skeleton": "灰色块 + shimmer 动画",
+    "EmptyState": "居中图标 + 标题 + 说明 + 按钮",
+    "DateRangePicker": "自研或 react-day-picker range 模式",
+    "DateField": "<button> 打开日期弹层（不用原生 <input type=date>，样式不可控）",
+    "FieldGroup": "带边框的 grid 容器",
+    "Stepper": "− / 数字 / + 三个元素，aria-live 播报",
+    "PriceBreakdown": "<dl>",
+    "Map": "Mapbox GL / Google Maps JS，静态时用 Static Images API"
+  },
+  "actions": {
+    "navigate": "router.push", "back": "history.back", "open": "<dialog> 模态框（桌面居中，手机从底部弹出）",
+    "share": "navigator.share，不支持时复制链接并提示", "toggle": "本地状态取反",
+    "scrollTo": "element.scrollIntoView({behavior: 'smooth'})", "call": "数据层同名的 async 函数，请求 API；命令乐观更新", "set": "更新本地状态"
+  }
+}
