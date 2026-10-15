@@ -1,0 +1,355 @@
+{
+  "$comment": "房源照片：按房间分组的全部照片，点一张进入全屏大图。从房源详情的轮播或「显示所有照片」打开。",
+  "screen": "PhotoGallery",
+  "title": "房源照片",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "params": [
+    "listingId",
+    "start"
+  ],
+  "data": {
+    "listingId": "string",
+    "start": {
+      "type": "int 0..",
+      "doc": "打开时先看的那张照片，在全部照片里的序号"
+    },
+    "rooms": {
+      "type": "RoomRow[] 1..20",
+      "from": "getListingPhotos"
+    },
+    "photoCount": {
+      "type": "int 1..",
+      "derived": {
+        "app": "各房间照片数之和"
+      }
+    },
+    "viewer": {
+      "type": "Viewer?",
+      "view": true,
+      "doc": "全屏查看器；null 时没打开"
+    },
+    "photos": {
+      "type": "image[] 1..",
+      "derived": {
+        "app": "各房间的照片按房间顺序连成一串"
+      }
+    }
+  },
+  "types": {
+    "Room": {
+      "name": {
+        "type": "string 1..20",
+        "doc": "客厅、卧室 1、卫生间……，由房东分好"
+      },
+      "photos": "image[] 1..30"
+    },
+    "RoomRow": {
+      "room": "Room",
+      "firstAt": {
+        "type": "int 0..",
+        "derived": {
+          "app": "这个房间第一张照片在全部照片里的序号"
+        }
+      }
+    },
+    "Viewer": {
+      "at": {
+        "type": "int 0..",
+        "doc": "从全部照片里的第几张开始看"
+      }
+    }
+  },
+  "operations": {
+    "getListingPhotos": {
+      "query": "打开时给的 listingId 那个房源的全部照片，按房间分组",
+      "result": "Room[] 1..20",
+      "fails": {
+        "notFound": "房源已下架"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "listingId": "listing-1",
+      "start": 0,
+      "photoCount": 7,
+      "rooms": [
+        {
+          "room": {
+            "name": "客厅",
+            "photos": [
+              "photo-1.jpg",
+              "photo-2.jpg",
+              "photo-3.jpg"
+            ]
+          },
+          "firstAt": 0
+        },
+        {
+          "room": {
+            "name": "卧室",
+            "photos": [
+              "photo-4.jpg",
+              "photo-5.jpg"
+            ]
+          },
+          "firstAt": 3
+        },
+        {
+          "room": {
+            "name": "厨房",
+            "photos": [
+              "photo-6.jpg"
+            ]
+          },
+          "firstAt": 5
+        },
+        {
+          "room": {
+            "name": "卫生间",
+            "photos": [
+              "photo-7.jpg"
+            ]
+          },
+          "firstAt": 6
+        }
+      ],
+      "photos": [
+        "photo-1.jpg",
+        "photo-2.jpg",
+        "photo-3.jpg",
+        "photo-4.jpg",
+        "photo-5.jpg",
+        "photo-6.jpg",
+        "photo-7.jpg"
+      ]
+    },
+    "viewing": {
+      "$patch": "default",
+      "start": 3,
+      "viewer": {
+        "at": 3
+      }
+    }
+  },
+  "root": {
+    "id": "photo-gallery",
+    "component": "Screen",
+    "children": [
+      {
+        "id": "nav",
+        "component": "NavBar",
+        "leading": [
+          {
+            "id": "nav-back",
+            "component": "IconButton",
+            "icon": "arrow_back",
+            "on": {
+              "tap": {
+                "back": true
+              }
+            }
+          }
+        ],
+        "children": [
+          {
+            "id": "nav-title",
+            "component": "Text",
+            "font": "font.subhead",
+            "text": "全部 {photoCount} 张照片"
+          }
+        ],
+        "trailing": []
+      },
+      {
+        "id": "content",
+        "component": "Scroll",
+        "gap": "space.8",
+        "padding": "space.6",
+        "children": [
+          {
+            "id": "room-index",
+            "component": "Row",
+            "gap": "space.2",
+            "each": "rooms",
+            "item": {
+              "id": "room-jump-{index}",
+              "component": "Badge",
+              "text": "{item.room.name}",
+              "on": {
+                "tap": {
+                  "scrollTo": "room-{index}"
+                }
+              }
+            }
+          },
+          {
+            "id": "rooms",
+            "component": "Stack",
+            "gap": "space.8",
+            "each": "rooms",
+            "item": {
+              "id": "room-{index}",
+              "component": "Section",
+              "title": "{item.room.name}",
+              "subtitle": "{item.room.photos|count} 张",
+              "children": [
+                {
+                  "id": "room-{index}-photos",
+                  "component": "ImageGrid",
+                  "each": "item.room.photos",
+                  "radius": "radius.md",
+                  "on": {
+                    "tap": {
+                      "open": "viewer",
+                      "with": {
+                        "at": "{item.firstAt}"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "overlay": {
+      "id": "viewer",
+      "component": "PhotoViewer",
+      "if": "viewerOpen",
+      "anchor": "center",
+      "children": [
+        {
+          "id": "viewer-bar",
+          "component": "Row",
+          "leading": [
+            {
+              "id": "viewer-close",
+              "component": "IconButton",
+              "icon": "close",
+              "on": {
+                "tap": {
+                  "close": "viewer"
+                }
+              }
+            }
+          ],
+          "children": [
+            {
+              "id": "viewer-name",
+              "component": "Text",
+              "font": "font.subhead",
+              "color": "paper",
+              "text": "全部 {photos|count} 张"
+            }
+          ]
+        },
+        {
+          "id": "viewer-photos",
+          "component": "ImageCarousel",
+          "each": "photos",
+          "aspectRatio": "4:3",
+          "indicator": "counter",
+          "start": "{viewer.at}",
+          "loop": true
+        }
+      ]
+    }
+  },
+  "phases": {
+    "loading": {
+      "id": "loading",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "loading-sk",
+          "component": "Skeleton",
+          "shape": [
+            "line 60%",
+            "image 4:3",
+            "image 4:3"
+          ]
+        }
+      ]
+    },
+    "error": {
+      "id": "error",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "error-nav",
+          "component": "NavBar",
+          "leading": [
+            {
+              "id": "error-back",
+              "component": "IconButton",
+              "icon": "arrow_back",
+              "on": {
+                "tap": {
+                  "back": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-state",
+          "component": "EmptyState",
+          "icon": "warning",
+          "title": "照片加载失败",
+          "detail": "请检查网络后重试。",
+          "action": {
+            "id": "error-retry",
+            "component": "Button",
+            "variant": "secondary",
+            "text": "重试",
+            "on": {
+              "tap": {
+                "call": "getListingPhotos"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "transitions": [
+    {
+      "from": "default",
+      "on": "room-{index}-photos.tap",
+      "to": "viewing"
+    },
+    {
+      "from": "viewing",
+      "on": "viewer-close.tap",
+      "to": "default"
+    }
+  ],
+  "conditions": {
+    "viewerOpen": {
+      "when": "viewer != null",
+      "label": "全屏查看中"
+    }
+  },
+  "components": {
+    "PhotoViewer": {
+      "doc": "盖住整屏的黑底查看器：顶上一条关闭和标题，下面是照片",
+      "params": [],
+      "look": {
+        "box": "column",
+        "backdrop": true,
+        "width": "100%",
+        "height": "100%",
+        "padding": 16,
+        "gap": 16,
+        "fill": "strong",
+        "justify": "center",
+        "children": [
+          "$children"
+        ]
+      }
+    }
+  }
+}

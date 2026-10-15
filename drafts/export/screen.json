@@ -1,0 +1,296 @@
+{
+  "screen": "ExportDocuments",
+  "params": [],
+  "title": "导出文档",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "$comment": "Exports every document of a team into one archive. Exporting takes minutes, so exportDocs is long: it answers with a job, and the screen shows the job's progress, then the archive or why it failed.",
+  "data": {
+    "team": {
+      "type": "Team",
+      "from": "getTeam"
+    },
+    "job": {
+      "type": "ExportDocsJob?",
+      "doc": "The export started from this screen; null until one is started"
+    }
+  },
+  "types": {
+    "Team": {
+      "id": "string",
+      "name": "string 1..40",
+      "docCount": "int 0.."
+    },
+    "Archive": {
+      "url": "url",
+      "files": "int 0..",
+      "size": {
+        "type": "string 1..12",
+        "doc": "The archive's size as shown, such as 18.4 MB"
+      }
+    }
+  },
+  "conditions": {
+    "exporting": {
+      "when": "job != null && job.status == \"running\"",
+      "label": "Exporting"
+    },
+    "exported": {
+      "when": "job != null && job.status == \"done\" && job.result != null",
+      "label": "Exported"
+    },
+    "exportFailed": {
+      "when": "job != null && job.status == \"failed\"",
+      "label": "Export failed"
+    }
+  },
+  "operations": {
+    "getTeam": {
+      "query": "The team whose documents are exported",
+      "result": "Team",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "exportDocs": {
+      "command": "Exports every document of the team into one PDF archive, and answers with the archive",
+      "result": "Archive",
+      "long": true,
+      "fails": {
+        "offline": "the server cannot be reached",
+        "tooLarge": "the team's documents come to more than 2 GB"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "team": {
+        "id": "t1",
+        "name": "产品设计组",
+        "docCount": 128
+      },
+      "job": null
+    },
+    "running": {
+      "$patch": "default",
+      "job": {
+        "id": "j42",
+        "status": "running",
+        "progress": 40
+      }
+    },
+    "done": {
+      "$patch": "default",
+      "job": {
+        "id": "j42",
+        "status": "done",
+        "progress": 100,
+        "result": {
+          "url": "https://example.com/exports/j42.zip",
+          "files": 128,
+          "size": "18.4 MB"
+        }
+      }
+    },
+    "failed": {
+      "$patch": "default",
+      "job": {
+        "id": "j42",
+        "status": "failed",
+        "progress": 65,
+        "error": "tooLarge"
+      }
+    }
+  },
+  "components": {
+    "ProgressBar": {
+    "doc": "How far a job has got: a thin track, filled from the start by value percent.",
+    "params": ["value"],
+    "look": { "box": "row", "height": 8, "radius": 999, "fill": "line", "children": [
+      { "box": "row", "width": "{value}%", "height": 8, "radius": 999, "fill": "text" } ] } }
+  },
+  "root": {
+    "id": "export",
+    "component": "Screen",
+    "children": [
+      {
+        "id": "nav",
+        "component": "NavBar",
+        "leading": {
+          "id": "nav-back",
+          "component": "IconButton",
+          "icon": "arrow_back",
+          "on": {
+            "tap": {
+              "back": true
+            }
+          }
+        },
+        "children": {
+          "id": "nav-title",
+          "component": "Text",
+          "text": "导出文档",
+          "font": "font.heading"
+        }
+      },
+      {
+        "id": "body",
+        "component": "Stack",
+        "gap": 16,
+        "padding": 16,
+        "children": [
+          {
+            "id": "intro",
+            "component": "Text",
+            "text": "把「{team.name}」的 {team.docCount} 个文档导出为一个 PDF 压缩包。文档多时需要几分钟，可以离开这个页面，导出会继续。",
+            "color": "color.textSecondary"
+          },
+          {
+            "id": "export-start",
+            "component": "Button",
+            "variant": "primary",
+            "text": {
+              "cases": [
+                {
+                  "if": "exporting",
+                  "then": "导出中…"
+                },
+                {
+                  "else": "开始导出"
+                }
+              ]
+            },
+            "disabled": "exporting",
+            "$why": "one export at a time: while one runs, the button says so instead of starting another",
+            "on": {
+              "tap": {
+                "call": "exportDocs"
+              }
+            }
+          },
+          {
+            "id": "progress",
+            "component": "Card",
+            "if": "exporting",
+            "gap": 8,
+            "children": [
+              {
+                "id": "progress-label",
+                "component": "Text",
+                "text": "正在导出… {job.progress}%"
+              },
+              {
+                "id": "progress-bar",
+                "component": "ProgressBar",
+                "value": "{job.progress}"
+              }
+            ]
+          },
+          {
+            "id": "done",
+            "component": "Card",
+            "if": "exported",
+            "gap": 8,
+            "children": [
+              {
+                "id": "done-title",
+                "component": "Text",
+                "text": "导出完成",
+                "font": "font.subhead"
+              },
+              {
+                "id": "done-detail",
+                "component": "Text",
+                "text": "{job.result.files} 个文档 · {job.result.size}",
+                "color": "color.textSecondary"
+              },
+              {
+                "id": "done-download",
+                "component": "Button",
+                "variant": "secondary",
+                "text": "下载压缩包",
+                "on": {
+                  "tap": {
+                    "share": "{job.result.url}"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "failed",
+            "component": "Card",
+            "if": "exportFailed",
+            "gap": 8,
+            "children": [
+              {
+                "id": "failed-title",
+                "component": "Text",
+                "text": "导出失败",
+                "font": "font.subhead",
+                "color": "color.danger"
+              },
+              {
+                "id": "failed-detail",
+                "component": "Text",
+                "text": "停在 {job.progress}%。文档总量可能超过 2 GB，或者网络断开了。",
+                "color": "color.textSecondary"
+              },
+              {
+                "id": "failed-retry",
+                "component": "Button",
+                "variant": "secondary",
+                "text": "重新导出",
+                "on": {
+                  "tap": {
+                    "call": "exportDocs"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "phases": {
+    "loading": {
+      "id": "loading",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "loading-sk",
+          "component": "Skeleton",
+          "shape": [
+            "line 30%",
+            "line 90%",
+            "line 60%"
+          ]
+        }
+      ]
+    },
+    "error": {
+      "id": "error",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "err",
+          "component": "EmptyState",
+          "icon": "cloud_off",
+          "title": "团队信息加载失败",
+          "detail": "检查网络后重试",
+          "action": {
+            "id": "retry",
+            "component": "Button",
+            "text": "重试",
+            "on": {
+              "tap": {
+                "call": "getTeam"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
