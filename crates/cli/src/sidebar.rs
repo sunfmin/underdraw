@@ -8,6 +8,8 @@
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
 pub use crate::chrome::SIDEBAR as WIDTH;
+/// How wide the text of a card is: its width inside its padding.
+pub const TEXT_WIDTH: f64 = WIDTH - 2.0 * GUTTER - 2.0 * PADDING;
 use crate::chrome::{
     BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
     CARD_TEXT as BODY, CARD_TITLE as TITLE, GUTTER,
@@ -36,6 +38,21 @@ pub enum Block<A> {
     Muted(String),
     /// A button: what it says, and what a click on it does.
     Button(String, A),
+    /// Text being written, with its caret: at most one in the sidebar.
+    Field(Field),
+}
+
+/// Text being written, as it is drawn: what it says, an input method's
+/// preedit included, and where its selection, its caret and that preedit
+/// lie, each from the text's top-left, set in the cards' text font at
+/// [`TEXT_WIDTH`].
+pub struct Field {
+    pub text: String,
+    pub selection: Vec<Rect>,
+    pub caret: Option<Rect>,
+    /// Underlined, as it is not written yet.
+    pub preedit: Vec<Rect>,
+    pub height: f64,
 }
 
 impl<A> Block<A> {
@@ -44,6 +61,7 @@ impl<A> Block<A> {
     pub fn says(&self) -> &str {
         match self {
             Block::Text(text) | Block::Muted(text) | Block::Button(text, _) => text,
+            Block::Field(field) => &field.text,
         }
     }
 }
@@ -53,6 +71,8 @@ impl<A> Block<A> {
 pub struct Laid<'a, A> {
     pub draws: Vec<Draw>,
     pub buttons: Vec<(Rect, &'a A)>,
+    /// Where the text being written is, when it is.
+    pub field: Option<Rect>,
     /// How far down its last card ends, from its top, unscrolled.
     pub height: f64,
 }
@@ -67,9 +87,9 @@ impl<A> Laid<'_, A> {
 /// `cards` laid out one under another in a sidebar whose left edge is at
 /// `left` and whose top is `top` (scrolled), its text set by `measure`.
 pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, measure: &mut dyn Measure) -> Laid<'a, A> {
-    let inner = WIDTH - 2.0 * GUTTER - 2.0 * PADDING;
+    let inner = TEXT_WIDTH;
     let x = left + GUTTER + PADDING;
-    let (mut draws, mut buttons) = (Vec::new(), Vec::new());
+    let (mut draws, mut buttons, mut at) = (Vec::new(), Vec::new(), None);
     let mut y = top + GUTTER;
     for card in cards {
         let card_top = y;
@@ -103,6 +123,42 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, measure: &mut d
                     buttons.push((around, does));
                     y += tall;
                 }
+                Block::Field(field) => {
+                    let tall = field.height.max(f64::from(BODY.line_height));
+                    let moved = |r: &Rect| {
+                        rect(x + f64::from(r.x), y + f64::from(r.y), r.width.into(), r.height.into())
+                    };
+                    for r in &field.selection {
+                        inside.push(Draw::Box {
+                            rect: moved(r),
+                            radius: 0.0,
+                            fill: Some(Ink::Fill),
+                            stroke: None,
+                            dashed: false,
+                        });
+                    }
+                    inside.push(text(rect(x, y, inner, tall), field.text.clone(), BODY, Ink::Text));
+                    for r in &field.preedit {
+                        let r = moved(r);
+                        let under = r.y + r.height - 1.0;
+                        inside.push(Draw::Line {
+                            from: [r.x, under],
+                            to: [r.x + r.width, under],
+                            ink: Ink::Text,
+                        });
+                    }
+                    if let Some(caret) = &field.caret {
+                        inside.push(Draw::Box {
+                            rect: moved(caret),
+                            radius: 0.0,
+                            fill: Some(Ink::Text),
+                            stroke: None,
+                            dashed: false,
+                        });
+                    }
+                    at = Some(rect(x, y, inner, tall));
+                    y += tall;
+                }
             }
         }
         y += PADDING;
@@ -116,7 +172,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, measure: &mut d
         draws.extend(inside);
         y += GUTTER;
     }
-    Laid { draws, buttons, height: y - top }
+    Laid { draws, buttons, field: at, height: y - top }
 }
 
 /// How tall `said` is set in `font`, wrapped at `wide`.

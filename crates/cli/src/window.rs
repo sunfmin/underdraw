@@ -39,6 +39,7 @@ use crate::chrome::{
     THUMB, THUMB_TALL, TREE,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
+use crate::editor::Editor;
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::journeys::{self, Step};
@@ -185,6 +186,9 @@ struct Gallery {
     noting: bool,
     /// The note being written, while it is.
     draft: Option<Draft>,
+    /// Where the text of the note being written was, in window points,
+    /// while the left button, pressed on it, is held: dragging selects.
+    selecting: Option<(f64, f64)>,
     /// The arrow picked in the overview or the flow shown, by its place
     /// among their arrows.
     arrow: Option<usize>,
@@ -206,7 +210,7 @@ struct Gallery {
 /// A note being written: what it is for, and what has been typed.
 struct Draft {
     on: Writing,
-    text: String,
+    editor: Editor,
 }
 
 /// What a note being written is for.
@@ -569,6 +573,7 @@ impl Gallery {
             clipboard: None,
             noting: false,
             draft: None,
+            selecting: None,
             arrow: None,
             note: None,
             hovered: None,
@@ -630,6 +635,9 @@ impl Gallery {
     /// that changed what is shown.
     fn press(&mut self) -> bool {
         if self.cursor.0 >= self.pane_right() {
+            if self.press_field() {
+                return true;
+            }
             return match self.button_at(self.cursor) {
                 Some(does) => self.click(does),
                 None => false,
@@ -738,6 +746,7 @@ impl Gallery {
     /// click while N is pressed, a note started on the node clicked.
     /// Whether that changed what is shown.
     fn release(&mut self) -> bool {
+        self.selecting = None;
         let Some(from) = self.held.take() else {
             return false;
         };
@@ -989,7 +998,10 @@ impl Gallery {
                 true
             }
             Do::Reopen(dir, id) => {
-                self.draft = Some(Draft { on: Writing::Reopening(dir, id), text: String::new() });
+                self.draft = Some(Draft {
+                    on: Writing::Reopening(dir, id),
+                    editor: Editor::new(&mut self.typesetter),
+                });
                 true
             }
             Do::Show(dir, id) => {
@@ -1962,7 +1974,7 @@ impl Gallery {
                 "Enter saves, Shift+Enter breaks a line, Esc cancels",
                 "回车保存，Shift+回车换行，Esc 放弃"
             );
-            let blocks = vec![Block::Text(format!("{}▏", draft.text)), Block::Muted(keys)];
+            let blocks = vec![Block::Field(draft.editor.field()), Block::Muted(keys)];
             cards.push(Card { ink: Ink::Note, ..Card::new(title, blocks) });
         } else if self.noting {
             let click = match (&self.picture, lang) {
@@ -2144,7 +2156,10 @@ impl Gallery {
             Answer::Wrong => {
                 self.acted = None;
                 self.note = None;
-                self.draft = Some(Draft { on: Writing::Rejecting(on, answers), text: String::new() });
+                self.draft = Some(Draft {
+                    on: Writing::Rejecting(on, answers),
+                    editor: Editor::new(&mut self.typesetter),
+                });
             }
         }
     }
@@ -2335,7 +2350,7 @@ impl Gallery {
     fn draft_on(&mut self, on: Reference) {
         self.acted = None;
         self.note = None;
-        self.draft = Some(Draft { on: Writing::On(on), text: String::new() });
+        self.draft = Some(Draft { on: Writing::On(on), editor: Editor::new(&mut self.typesetter) });
     }
 
     /// The note being written saved to notes.json, and its pin drawn; or,
@@ -2344,13 +2359,14 @@ impl Gallery {
         let Some(draft) = self.draft.take() else {
             return;
         };
-        let lang = self.lang;
+        let (lang, text) = (self.lang, draft.editor.text());
         let saved = match &draft.on {
-            Writing::On(on) => notes::add(on, &draft.text)
-                .map(|id| (on.description.clone(), id, chrome!(lang, "saved", "已保存"))),
-            Writing::Reopening(dir, id) => notes::reopen(dir, id, &draft.text)
+            Writing::On(on) => {
+                notes::add(on, &text).map(|id| (on.description.clone(), id, chrome!(lang, "saved", "已保存")))
+            }
+            Writing::Reopening(dir, id) => notes::reopen(dir, id, &text)
                 .map(|()| (dir.clone(), id.clone(), chrome!(lang, "reopened", "已重开"))),
-            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text)
+            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &text)
                 .map(|id| (on.description.clone(), id, chrome!(lang, "saved ✗", "已保存 ✗"))),
         };
         match saved {
@@ -2383,22 +2399,18 @@ impl Gallery {
     }
 
     /// A key pressed, ⌘ not held, as `key` names it and with the `text` it
-    /// types: while a note is written, typed into it, Enter saving it,
-    /// Shift+Enter breaking a line and Esc dropping it; otherwise N starts
-    /// a note and Esc stops one. Whether that changed what is shown.
+    /// types: while a note is written, typed into it at the caret, the
+    /// arrows, Home and End moving it (with Shift, selecting), Enter saving
+    /// it, Shift+Enter breaking a line and Esc dropping it; otherwise N
+    /// starts a note, Esc stops one, and ← and → step the journey played.
+    /// Whether that changed what is shown.
     fn key(&mut self, key: &Key, text: Option<&str>) -> bool {
         if let Some(draft) = &mut self.draft {
             match key {
-                Key::Named(NamedKey::Enter) if self.shift => draft.text.push('\n'),
+                Key::Named(NamedKey::Enter) if self.shift => draft.editor.insert(&mut self.typesetter, "\n"),
                 Key::Named(NamedKey::Enter) => self.save(),
                 Key::Named(NamedKey::Escape) => self.draft = None,
-                Key::Named(NamedKey::Backspace) => {
-                    draft.text.pop();
-                }
-                _ => match text {
-                    Some(text) if !text.chars().any(char::is_control) => draft.text.push_str(text),
-                    _ => return false,
-                },
+                _ => return draft.editor.key(&mut self.typesetter, key, text, self.shift),
             }
             return true;
         }
@@ -2422,13 +2434,96 @@ impl Gallery {
         }
     }
 
-    /// `text` typed into the note being written: what the input method
-    /// composed, or what was pasted. Whether there was one.
+    /// `text` typed into the note being written, in place of what is
+    /// selected: what was pasted. Whether there was one.
     fn type_in(&mut self, text: &str) -> bool {
         let Some(draft) = &mut self.draft else {
             return false;
         };
-        draft.text.push_str(text);
+        draft.editor.insert(&mut self.typesetter, text);
+        true
+    }
+
+    /// What the input method did in the note being written: what it is
+    /// composing shown at the caret, or what it composed written there.
+    /// Whether there was a note.
+    fn ime(&mut self, ime: &Ime) -> bool {
+        let Some(draft) = &mut self.draft else {
+            return false;
+        };
+        let editor = &mut draft.editor;
+        match ime {
+            Ime::Preedit(text, cursor) => editor.compose(&mut self.typesetter, text, *cursor),
+            Ime::Commit(text) => editor.commit(&mut self.typesetter, text),
+            Ime::Disabled => editor.compose(&mut self.typesetter, "", None),
+            Ime::Enabled => return false,
+        }
+        true
+    }
+
+    /// ⌘A, ⌘C or ⌘X on the note being written, as `letter` names it:
+    /// everything selected; what is selected put on the clipboard; or taken
+    /// out, onto it. False when no note is being written, or, for ⌘C and
+    /// ⌘X, nothing is selected: ⌘C then copies the reference.
+    fn edit(&mut self, letter: char) -> bool {
+        let Some(draft) = &mut self.draft else {
+            return false;
+        };
+        let editor = &mut draft.editor;
+        let copied = match letter {
+            'a' => {
+                editor.select_all(&mut self.typesetter);
+                return true;
+            }
+            'c' => editor.selected().map(str::to_string),
+            _ => editor.cut(&mut self.typesetter),
+        };
+        let Some(copied) = copied else {
+            return false;
+        };
+        if let Some(clipboard) = self.clipboard() {
+            let _ = clipboard.set_text(copied);
+        }
+        true
+    }
+
+    /// Where the text of the note being written is, in window points,
+    /// while one is and the sidebar is shown.
+    fn field_rect(&mut self) -> Option<Rect> {
+        if !self.sidebar || self.draft.is_none() {
+            return None;
+        }
+        let cards = self.cards();
+        sidebar::lay_out(&cards, self.pane_right(), -self.side_scroll, &mut self.typesetter).field
+    }
+
+    /// The caret of the note being written put where the pointer is, in its
+    /// text (or, with Shift, the selection drawn to there), and held there
+    /// to drag a selection. Whether the pointer was on its text.
+    fn press_field(&mut self) -> bool {
+        let Some(field) = self.field_rect() else {
+            return false;
+        };
+        let (x, y) = (f64::from(field.x), f64::from(field.y));
+        let (width, height) = (f64::from(field.width), f64::from(field.height));
+        let (at, shift) = (self.cursor, self.shift);
+        if !(x..=x + width).contains(&at.0) || !(y..=y + height).contains(&at.1) {
+            return false;
+        }
+        if let Some(draft) = &mut self.draft {
+            draft.editor.point(&mut self.typesetter, (at.0 - x, at.1 - y), shift);
+        }
+        self.selecting = Some((x, y));
+        true
+    }
+
+    /// The selection of the note being written drawn to where the pointer
+    /// is, while it drags from a press on its text. Whether it is.
+    fn drag_field(&mut self) -> bool {
+        let (Some((x, y)), Some(draft)) = (self.selecting, &mut self.draft) else {
+            return false;
+        };
+        draft.editor.point(&mut self.typesetter, (self.cursor.0 - x, self.cursor.1 - y), true);
         true
     }
 
@@ -3072,9 +3167,20 @@ impl Gallery {
     fn redraw(&mut self) {
         self.clamp();
         let frame = self.frame();
+        // An input method's candidates open beside the caret.
+        let ime = self.field_rect().zip(self.draft.as_ref()).map(|(field, draft)| {
+            let area = draft.editor.ime_area();
+            (
+                winit::dpi::LogicalPosition::new(f64::from(field.x + area.x), f64::from(field.y + area.y)),
+                LogicalSize::new(f64::from(area.width), f64::from(area.height)),
+            )
+        });
         let Some(shown) = &mut self.shown else {
             return;
         };
+        if let Some((at, size)) = ime {
+            shown.window.set_ime_cursor_area(at, size);
+        }
         let scene = {
             let mut scene = Scene::new();
             scene.append(&frame, Some(Affine::scale(shown.window.scale_factor())));
@@ -3438,7 +3544,7 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
                 let window = shown.window.clone();
-                if self.hover() || self.held.is_some() {
+                if self.hover() || self.held.is_some() || self.drag_field() {
                     window.request_redraw();
                 }
             }
@@ -3461,6 +3567,16 @@ impl ApplicationHandler<Told> for Gallery {
                 self.toggle_sidebar();
                 window.request_redraw();
             }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.acting && self.draft.is_some() && edits(&event).is_some() =>
+            {
+                let window = shown.window.clone();
+                let edited = edits(&event).is_some_and(|letter| self.edit(letter));
+                if !edited && copies(&event) {
+                    self.copy();
+                }
+                window.request_redraw();
+            }
             WindowEvent::KeyboardInput { event, .. } if self.acting && copies(&event) => {
                 let window = shown.window.clone();
                 self.copy();
@@ -3474,9 +3590,9 @@ impl ApplicationHandler<Told> for Gallery {
                     window.request_redraw();
                 }
             }
-            WindowEvent::Ime(Ime::Commit(text)) => {
+            WindowEvent::Ime(ime) => {
                 let window = shown.window.clone();
-                if self.type_in(&text) {
+                if self.ime(&ime) {
                     window.request_redraw();
                 }
             }
@@ -3521,6 +3637,15 @@ fn within(inner: Rect, outer: Rect) -> bool {
         && inner.y >= outer.y
         && inner.x + inner.width <= outer.x + outer.width
         && inner.y + inner.height <= outer.y + outer.height
+}
+
+/// Which of ⌘A, ⌘C and ⌘X (Ctrl on Linux and Windows) `event` is, as its
+/// letter: what each does to the note being written.
+fn edits(event: &KeyEvent) -> Option<char> {
+    [('a', KeyCode::KeyA), ('c', KeyCode::KeyC), ('x', KeyCode::KeyX)]
+        .into_iter()
+        .find(|(letter, code)| is_key(event, &letter.to_string(), *code))
+        .map(|(letter, _)| letter)
 }
 
 /// Whether `event` is the C key pressed: ⌘C (Ctrl+C) copies, on any
@@ -4530,18 +4655,25 @@ mod tests {
     }
 
     /// Keys pressed in the window, ⌘ not held: each a letter, or one of
-    /// Enter, Shift+Enter (written "⇧Enter"), Backspace and Esc.
+    /// Enter, Backspace, Delete, Esc, Home, End and the arrows; with Shift
+    /// held, written after "⇧" ("⇧Enter", "⇧←").
     fn press_keys(gallery: &mut Gallery, keys: &[&str]) {
         for key in keys {
             let named = |named| Key::Named(named);
-            gallery.shift = *key == "⇧Enter";
-            let (pressed, text) = match *key {
-                "Enter" | "⇧Enter" => (named(NamedKey::Enter), Some("\r")),
+            let unshifted = key.strip_prefix('⇧').filter(|rest| !rest.is_empty());
+            gallery.shift = unshifted.is_some();
+            let (pressed, text) = match unshifted.unwrap_or(key) {
+                "Enter" => (named(NamedKey::Enter), Some("\r")),
                 "Backspace" => (named(NamedKey::Backspace), None),
+                "Delete" => (named(NamedKey::Delete), None),
                 "Esc" => (named(NamedKey::Escape), None),
+                "Home" => (named(NamedKey::Home), None),
+                "End" => (named(NamedKey::End), None),
                 " " => (named(NamedKey::Space), Some(" ")),
                 "→" => (named(NamedKey::ArrowRight), None),
                 "←" => (named(NamedKey::ArrowLeft), None),
+                "↑" => (named(NamedKey::ArrowUp), None),
+                "↓" => (named(NamedKey::ArrowDown), None),
                 letter => (Key::Character(letter.into()), Some(letter)),
             };
             gallery.key(&pressed, text);
@@ -4578,6 +4710,114 @@ mod tests {
     fn on_pin(gallery: &Gallery, id: &str) -> (f64, f64) {
         let pin = gallery.pins().into_iter().find(|pin| pin.id == id && !pin.faint).unwrap();
         (f64::from(pin.rect.x) + PIN / 2.0, f64::from(pin.rect.y) + PIN / 2.0)
+    }
+
+    /// The note being written, as the sidebar draws it.
+    fn written(gallery: &Gallery) -> sidebar::Field {
+        let Some(draft) = &gallery.draft else { panic!("no note is being written") };
+        draft.editor.field()
+    }
+
+    /// A note started on the whole of the orders' default state, in a root
+    /// of its own named `name`.
+    fn writing(name: &str) -> (PathBuf, Gallery) {
+        let root = root_of(name, &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        let on = On::State { state: State::Fixture("default".into()) };
+        gallery.draft_on(Reference { description: root.join("orders"), on });
+        (root, gallery)
+    }
+
+    /// What the only note of the orders in `root` says.
+    fn saved(root: &Path) -> String {
+        let mut written = notes::read(&root.join("orders")).unwrap();
+        assert_eq!(written.len(), 1);
+        written.remove(0).thread.remove(0).says
+    }
+
+    #[test]
+    fn a_note_is_edited_anywhere_in_it_not_only_at_its_end() {
+        let (root, mut gallery) = writing("notes-caret");
+        type_text(&mut gallery, "ac");
+        press_keys(&mut gallery, &["←", "b"]);
+        assert_eq!(written(&gallery).text, "abc", "typed where the caret is");
+        press_keys(&mut gallery, &["Home", "x", "End", "y", "←", "←", "Backspace", "Delete"]);
+        assert_eq!(written(&gallery).text, "xay", "Home, End, and deleting on either side of the caret");
+        press_keys(&mut gallery, &["⇧Enter", "z", "↑", "w"]);
+        assert_eq!(written(&gallery).text, "xwa\nzy", "a line broken at the caret, and ↑ goes up it");
+        let field = written(&gallery);
+        assert!(field.caret.is_some(), "the caret is drawn");
+        assert!(field.selection.is_empty(), "nothing is selected");
+        press_keys(&mut gallery, &["Enter"]);
+        assert_eq!(saved(&root), "xwa\nzy");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn typing_or_pasting_replaces_what_is_selected() {
+        let (root, mut gallery) = writing("notes-select");
+        type_text(&mut gallery, "too red");
+        press_keys(&mut gallery, &["⇧←", "⇧←", "⇧←"]);
+        assert_eq!(gallery.draft.as_ref().unwrap().editor.selected(), Some("red"));
+        assert_eq!(written(&gallery).selection.len(), 1, "the selection is drawn");
+        type_text(&mut gallery, "blue");
+        assert_eq!(written(&gallery).text, "too blue");
+        assert!(written(&gallery).selection.is_empty());
+        press_keys(&mut gallery, &["Home", "⇧→", "⇧→", "⇧→"]);
+        assert!(gallery.type_in("far too"), "⌘V pastes into the note");
+        assert_eq!(written(&gallery).text, "far too blue");
+        let editor = &mut gallery.draft.as_mut().unwrap().editor;
+        editor.select_all(&mut gallery.typesetter);
+        assert_eq!(editor.cut(&mut gallery.typesetter).as_deref(), Some("far too blue"), "⌘A then ⌘X");
+        assert_eq!(written(&gallery).text, "");
+        assert!(gallery.type_in("pasted\nback"));
+        press_keys(&mut gallery, &["Enter"]);
+        assert_eq!(saved(&root), "pasted\nback");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_drag_over_the_note_selects_and_a_click_moves_its_caret() {
+        let (root, mut gallery) = writing("notes-drag");
+        type_text(&mut gallery, "one two three");
+        let field = gallery.field_rect().expect("the note is drawn in the sidebar");
+        let middle = f64::from(field.y) + 9.0;
+        gallery.cursor = (f64::from(field.x) + 1.0, middle);
+        assert!(gallery.press(), "a press on the note's text puts its caret there");
+        gallery.cursor = (f64::from(field.x) + 300.0, middle);
+        assert!(gallery.drag_field());
+        gallery.release();
+        assert_eq!(gallery.draft.as_ref().unwrap().editor.selected(), Some("one two three"));
+        assert!(!gallery.drag_field(), "released, the pointer selects no more");
+        gallery.cursor = (f64::from(field.x) + 1.0, middle);
+        gallery.press();
+        gallery.release();
+        type_text(&mut gallery, ">");
+        assert_eq!(written(&gallery).text, ">one two three", "a click puts the caret there");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn what_an_input_method_composes_is_shown_at_the_caret_and_never_saved() {
+        let (root, mut gallery) = writing("notes-ime");
+        type_text(&mut gallery, "价太长");
+        press_keys(&mut gallery, &["←", "←"]);
+        assert!(gallery.ime(&Ime::Preedit("ge".into(), Some((2, 2)))));
+        let field = written(&gallery);
+        assert_eq!(field.text, "价ge太长", "the preedit is drawn at the caret");
+        assert_eq!(field.preedit.len(), 1, "and underlined");
+        assert_eq!(gallery.draft.as_ref().unwrap().editor.text(), "价太长", "but is not written");
+        gallery.ime(&Ime::Preedit("格".into(), Some((3, 3))));
+        gallery.ime(&Ime::Preedit(String::new(), None));
+        gallery.ime(&Ime::Commit("格".into()));
+        assert_eq!(written(&gallery).text, "价格太长", "what it commits is written at the caret");
+        assert!(written(&gallery).preedit.is_empty());
+        gallery.ime(&Ime::Preedit("le".into(), None));
+        press_keys(&mut gallery, &["Enter"]);
+        assert_eq!(saved(&root), "价格太长", "a preedit still composing is not saved");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// The sidebar's button that reads `text`, clicked in the middle of
@@ -4620,7 +4860,7 @@ mod tests {
         assert_eq!(gallery.panel()[0], "note on order-{index}-cancel in default at 1120");
         type_text(&mut gallery, "价格太长");
         press_keys(&mut gallery, &["⇧Enter", "a", "x", "Backspace", " ", "b"]);
-        assert_eq!(gallery.panel()[1], "价格太长\na b▏", "Shift+Enter breaks a line");
+        assert_eq!(gallery.panel()[1], "价格太长\na b", "Shift+Enter breaks a line");
         assert!(!root.join("orders").join(notes::NOTES).exists(), "nothing is written while typing");
         press_keys(&mut gallery, &["Enter"]);
         assert!(gallery.draft.is_none(), "Enter saves");
@@ -4978,7 +5218,7 @@ mod tests {
         assert!(gallery.press());
         assert_eq!(
             gallery.panel()[..3],
-            ["note on the whole of default", "▏", "Enter saves, Shift+Enter breaks a line, Esc cancels"]
+            ["note on the whole of default", "", "Enter saves, Shift+Enter breaks a line, Esc cancels"]
         );
         type_text(&mut gallery, "too busy");
         press_keys(&mut gallery, &["Enter"]);
@@ -5279,6 +5519,15 @@ mod tests {
 
         press_keys(&mut gallery, &["←", "←"]);
         assert_eq!(played(&gallery).0, 1, "back to the first step");
+        let orders = Path::new(DRAFTS).join("shop").join("orders");
+        gallery.draft_on(Reference {
+            description: orders,
+            on: On::State { state: State::Fixture("default".into()) },
+        });
+        press_keys(&mut gallery, &["a", "→", "←", "b"]);
+        assert_eq!(played(&gallery).0, 1, "while a note is written, → moves its caret, not the journey");
+        assert_eq!(written(&gallery).text, "ba");
+        press_keys(&mut gallery, &["Esc"]);
         assert!(click_panel_line(&mut gallery, "→ next step"));
         assert_eq!(played(&gallery).0, 2);
         assert!(click_panel_line(&mut gallery, "← previous step"));

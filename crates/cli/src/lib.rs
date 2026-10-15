@@ -7,6 +7,7 @@
 mod act;
 mod chrome;
 mod draw;
+mod editor;
 mod flow;
 mod gallery;
 mod gpu;

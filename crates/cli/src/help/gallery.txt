@@ -175,8 +175,17 @@ DOES
   - a transition: click its arrow's label in an overview;
   - a navigate: click its arrow's label in a flow.
   Or pick the node, region or arrow and click "write a note on it" in the
-  sidebar. Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V
-  pastes. It is kept in notes.json beside the description's screen.json (a
+  sidebar. The note is written in the sidebar as in any text field: a
+  caret, moved with ← → ↑ ↓, Home and End, typing and Backspace or
+  Delete where it is; Shift with those keys, or a drag over the text,
+  selects, and typing replaces what is selected; a click puts the caret
+  there. ⌘A selects all, ⌘C copies what is selected and ⌘X cuts it, ⌘V
+  pastes (Ctrl on Linux and Windows; ⌘C with nothing selected copies the
+  reference, as above). What an input method is still composing (pinyin,
+  kana) is shown underlined at the caret, its candidates beside it, and is
+  written only once it is committed. While a note is written, ← and → move
+  its caret, not a journey's step. Enter saves it, Shift+Enter breaks a
+  line, Esc drops it. It is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references it:
   the node as written, the state, and the instance pointed at; the region's
   box and the nodes it covered; the state; the transition; or the
