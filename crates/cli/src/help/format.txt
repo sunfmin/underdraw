@@ -524,7 +524,11 @@ JOURNEYS
   either breakpoint) and an event it handles there, and that act leads to
   the next step: on the same screen, by a transition from this state on
   that event (with that outcome, when given) to the next step's state; on
-  another screen, by a "navigate" to the screen the next step names. check
+  another screen, by a "navigate" to the screen the next step names. Data
+  carries across screens: the values that navigate's "with" computes in
+  its step's state are exactly the params the next step's fixture holds
+  (PARAMS); a param that differs is named with both values. Steps on one
+  screen are not held to each other. check
   <root> walks every journey under the root and names a broken one with
   the step that breaks ("steps.1.on"), so a change to a screen says which
   journeys it breaks. A journey is for the gallery and check only, as

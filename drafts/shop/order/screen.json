@@ -3,7 +3,9 @@
   "title": "Order",
   "tokens": "tokens.json",
   "$comment": "One order of the shop, read on its own page, where it can be cancelled until it ships.",
+  "params": ["orderId"],
   "data": {
+    "orderId": "string",
     "order": { "type": "Order", "from": "getOrder" }
   },
   "operations": {
@@ -16,7 +18,8 @@
   },
   "fixtures": {
     "open": {
-      "order": { "id": "o-1042", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "cancellable": true }
+      "orderId": "A12",
+      "order": { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "cancellable": true }
     },
     "shipped": {
       "$patch": "open",
