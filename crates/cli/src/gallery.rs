@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
-use underdraw_format::{Checked, Finding, Lang};
+use underdraw_format::{Checked, Finding, Lang, ScreenParams};
 
 use crate::notes::NOTES;
 use crate::{KINDS, SCREEN, TOKENS, check_at};
@@ -58,16 +58,18 @@ impl Row {
     }
 }
 
-/// What `check` finds wrong with the description in `dir`; where it cannot
-/// even be read, why, as one finding at its screen.json.
-pub fn faults(dir: &Path) -> Vec<Finding> {
-    checked(dir).findings
+/// What `check` finds wrong with the description in `dir`, among the
+/// screens whose params `others` holds; where it cannot even be read, why,
+/// as one finding at its screen.json.
+pub fn faults(dir: &Path, others: &ScreenParams) -> Vec<Finding> {
+    checked(dir, others).findings
 }
 
-/// What `check` makes of the description in `dir`; where it cannot even be
-/// read, why, as its one finding, at its screen.json.
-pub fn checked(dir: &Path) -> Checked {
-    check_at(dir).unwrap_or_else(|e| Checked {
+/// What `check` makes of the description in `dir`, among the screens whose
+/// params `others` holds; where it cannot even be read, why, as its one
+/// finding, at its screen.json.
+pub fn checked(dir: &Path, others: &ScreenParams) -> Checked {
+    check_at(dir, others).unwrap_or_else(|e| Checked {
         screen: String::new(),
         ok: false,
         fixtures: Vec::new(),
@@ -81,13 +83,16 @@ pub fn checked(dir: &Path) -> Checked {
 /// arranged, each directory before what it holds and in order of name:
 /// renders/, platforms/, hidden directories and directories leading to no
 /// description left out. `root` is a row of its own only when it is itself
-/// a description. Each description is checked, all at once.
+/// a description. Each description is checked, all at once, among the
+/// others: a navigate to one is held to its params.
 pub fn tree(root: &Path) -> Vec<Row> {
     let mut rows = descriptions(root);
+    let others = crate::links::params(root);
+    let others = &others;
     std::thread::scope(|scope| {
         for Row { dir, described, faults: found, .. } in &mut rows {
             if *described {
-                scope.spawn(move || *found = faults(dir));
+                scope.spawn(move || *found = faults(dir, others));
             }
         }
     });
@@ -438,7 +443,7 @@ mod tests {
         let rows = tree(&root);
         let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
         assert_eq!(names, ["empty", "not-json"], "both are listed");
-        let checked = check_at(&root.join("empty")).unwrap();
+        let checked = check_at(&root.join("empty"), &ScreenParams::new()).unwrap();
         assert!(!checked.findings.is_empty());
         let found =
             |faults: &[Finding]| faults.iter().map(|f| (f.at.clone(), f.problem.clone())).collect::<Vec<_>>();

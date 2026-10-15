@@ -219,3 +219,47 @@ fn a_screen_not_drawn_yet_is_assumed_in_a_sentence_in_the_language_asked() {
     let (answer, code) = underdraw(&["check", DRAFTS, "--lang", "fr"]);
     assert_eq!(code, 2, "{answer}");
 }
+
+#[test]
+fn a_root_holds_each_navigate_to_the_params_of_the_screen_it_opens() {
+    let root = std::env::temp_dir().join(format!("underdraw-{}-params", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    for draft in ["orders", "export"] {
+        std::fs::create_dir_all(root.join(draft)).unwrap();
+        for entry in std::fs::read_dir(Path::new(DRAFTS).join(draft)).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_file() {
+                std::fs::copy(entry.path(), root.join(draft).join(entry.file_name())).unwrap();
+            }
+        }
+    }
+    let (answer, code) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(
+        (code, &answer["ok"]),
+        (0, &json!(true)),
+        "ExportDocuments is opened with nothing: {answer:#}"
+    );
+
+    let orders = root.join("orders/screen.json");
+    let text = std::fs::read_to_string(&orders).unwrap();
+    let from = r#""navigate": "ExportDocuments""#;
+    assert_eq!(text.matches(from).count(), 1);
+    std::fs::write(
+        &orders,
+        text.replace(from, r#""navigate": "ExportDocuments", "with": { "format": "pdf" }"#),
+    )
+    .unwrap();
+    let (answer, code) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!((code, &answer["ok"]), (1, &json!(false)), "{answer:#}");
+    let described = answer["descriptions"].as_array().unwrap();
+    let orders = described.iter().find(|d| d["description"] == "orders").unwrap();
+    assert_eq!(orders["findings"][0]["at"], "nav-export.on.tap.with.format", "{orders:#}");
+    assert!(
+        orders["findings"][0]["problem"].as_str().unwrap().contains("declares no param format"),
+        "{orders:#}"
+    );
+
+    let (alone, code) = underdraw(&["check", root.join("orders").to_str().unwrap()]);
+    assert_eq!((code, &alone["ok"]), (0, &json!(true)), "alone, it cannot see ExportDocuments: {alone:#}");
+    std::fs::remove_dir_all(root).unwrap();
+}
