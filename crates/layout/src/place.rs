@@ -326,7 +326,16 @@ fn emit<'t, 'n>(
         && covers(rect, out.page)
     {
         let page = out.page;
-        let shown = out.draws.iter().skip(first).map(extent).filter(|r| !covers(*r, page)).reduce(union);
+        let mut shown: Option<Rect> = None;
+        for draw in out.draws.iter().skip(first) {
+            let drawn = extent(draw);
+            if !covers(drawn, page) {
+                shown = Some(match shown {
+                    Some(so_far) => union(so_far, drawn),
+                    None => drawn,
+                });
+            }
+        }
         if let (Some(shown), Some(marked)) = (shown, out.marked.get_mut(index)) {
             marked.guess = guess_tag(shown, page);
         }
