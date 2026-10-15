@@ -151,6 +151,12 @@ The screen drawn in grays (boxes, text and crossed-out images) so the
 discussion is about structure, not styling.
 _Avoid_: mockup, screenshot
 
+**Gallery**:
+Every screen description under one directory, arranged as its directories
+are, where a person picks one, and then one of its states, to see its
+wireframe drawn from the description as it now stands.
+_Avoid_: mockup viewer, preview
+
 **Label**:
 The number tagged in a wireframe on each node a person can act on, in document
 order, naming that node in conversation.
