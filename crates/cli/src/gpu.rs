@@ -21,6 +21,9 @@ pub struct Gpu {
     pub backend: String,
     /// The widest and tallest picture it renders, in pixels.
     pub max_side: u32,
+    /// vello, started on the first picture and kept for the next: starting
+    /// it builds its shaders, too slow to do for each frame of a window.
+    renderer: Option<Renderer>,
 }
 
 /// A window's surface, set up for the GPU that presents in it.
@@ -46,7 +49,6 @@ impl Gpu {
 
     /// The GPU that can draw in `window`, `width` × `height` pixels, and the
     /// window's surface set up for it; or why there is none.
-    #[expect(dead_code, reason = "the gallery's window is its first caller")]
     pub fn open_for_window<'w>(
         window: impl Into<wgpu::SurfaceTarget<'w>>,
         width: u32,
@@ -103,20 +105,24 @@ impl Gpu {
             name: info.name,
             backend: format!("{:?}", info.backend),
             max_side: limits.max_texture_dimension_2d,
+            renderer: None,
         })
     }
 
     /// `scene` drawn `width` × `height` pixels into a texture of its own,
     /// which `usage` says what else may be done with.
     fn draw(
-        &self,
+        &mut self,
         scene: &Scene,
         width: u32,
         height: u32,
         usage: wgpu::TextureUsages,
     ) -> anyhow::Result<wgpu::Texture> {
-        let mut renderer = Renderer::new(&self.device, RendererOptions::default())
-            .map_err(|e| anyhow!("vello could not start: {e}"))?;
+        let mut renderer = match self.renderer.take() {
+            Some(renderer) => renderer,
+            None => Renderer::new(&self.device, RendererOptions::default())
+                .map_err(|e| anyhow!("vello could not start: {e}"))?,
+        };
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("picture"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -137,13 +143,13 @@ impl Gpu {
         renderer
             .render_to_texture(&self.device, &self.queue, scene, &view, &params)
             .map_err(|e| anyhow!("vello could not render: {e}"))?;
+        self.renderer = Some(renderer);
         Ok(texture)
     }
 
     /// `scene` presented in `window`, filling it: the window's size is the
     /// one it was opened or last resized at.
-    #[expect(dead_code, reason = "the gallery's window is its first caller")]
-    pub fn present(&self, window: &Window<'_>, scene: &Scene) -> anyhow::Result<()> {
+    pub fn present(&mut self, window: &Window<'_>, scene: &Scene) -> anyhow::Result<()> {
         let frame = match window.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                 frame
@@ -168,7 +174,6 @@ impl Gpu {
 
     /// `window` set up again at `width` × `height` pixels, as when it is
     /// resized.
-    #[expect(dead_code, reason = "the gallery's window is its first caller")]
     pub fn resize(&self, window: &mut Window<'_>, width: u32, height: u32) {
         window.config.width = width;
         window.config.height = height;
@@ -177,7 +182,7 @@ impl Gpu {
 
     /// `scene` rendered `width` × `height` pixels and read back: RGBA, row
     /// after row.
-    pub fn render(&self, scene: &Scene, width: u32, height: u32) -> anyhow::Result<Vec<u8>> {
+    pub fn render(&mut self, scene: &Scene, width: u32, height: u32) -> anyhow::Result<Vec<u8>> {
         let texture = self.draw(scene, width, height, wgpu::TextureUsages::COPY_SRC)?;
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let row = width * 4;
