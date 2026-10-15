@@ -129,3 +129,71 @@ fn the_menu_draft_fits_its_sheet_in_every_state() {
     let (answer, code) = underdraw(&["check", menu.to_str().unwrap()]);
     assert_eq!((code, &answer["findings"]), (0, &json!([])), "{answer:#}");
 }
+
+const DRAFTS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts");
+
+/// The links `check <root>` answers from the description `description`, as
+/// (node, to, resolved).
+fn links_from<'a>(answer: &'a Value, description: &str) -> Vec<(&'a str, &'a str, bool)> {
+    answer["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|link| link["description"] == description)
+        .map(|link| {
+            (
+                link["node"].as_str().unwrap(),
+                link["to"].as_str().unwrap(),
+                link["resolved"].as_bool().unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_root_is_checked_whole_with_the_navigates_between_its_descriptions() {
+    let (answer, code) = underdraw(&["check", DRAFTS]);
+    assert_eq!((code, &answer["ok"]), (0, &json!(true)), "an unresolved navigate is no fault: {answer:#}");
+    let described: Vec<(&str, &str)> = answer["descriptions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| (d["description"].as_str().unwrap(), d["screen"].as_str().unwrap()))
+        .collect();
+    assert!(described.contains(&("orders", "OrderList")), "{described:?}");
+    assert!(described.contains(&("export", "ExportDocuments")), "{described:?}");
+    let orders = links_from(&answer, "orders");
+    assert!(orders.contains(&("nav-export", "ExportDocuments", true)), "{orders:?}");
+    let unresolved: Vec<&str> =
+        orders.iter().filter(|(_, _, resolved)| !resolved).map(|(_, to, _)| *to).collect();
+    assert_eq!(unresolved, ["OrderDetail"], "the one screen orders goes to that is not drawn yet");
+    assert!(answer["links"].as_array().unwrap().iter().all(|link| link["from"].is_string()));
+}
+
+#[test]
+fn a_root_with_a_faulty_description_exits_1_and_one_with_none_exits_2() {
+    let root = std::env::temp_dir().join(format!("underdraw-{}-root", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("broken")).unwrap();
+    let (answer, code) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(code, 2, "{answer}");
+    assert!(answer["error"].as_str().unwrap().contains("no screen description"), "{answer}");
+
+    std::fs::write(root.join("broken/screen.json"), "{").unwrap();
+    let (answer, code) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!((code, &answer["ok"]), (1, &json!(false)), "{answer}");
+    assert_eq!(answer["descriptions"][0]["description"], "broken");
+    assert_eq!(answer["descriptions"][0]["findings"][0]["at"], "screen.json");
+    assert_eq!(answer["links"], json!([]));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn one_description_says_nothing_of_where_it_navigates() {
+    let orders = Path::new(DRAFTS).join("orders");
+    let (answer, code) = underdraw(&["check", orders.to_str().unwrap()]);
+    assert_eq!((code, &answer["ok"]), (0, &json!(true)), "{answer:#}");
+    let mut keys: Vec<&str> = answer.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(keys, ["conditions", "findings", "fixtures", "ok", "phases", "screen"], "as before");
+}

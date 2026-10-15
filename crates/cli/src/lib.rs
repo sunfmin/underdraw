@@ -7,6 +7,7 @@
 mod draw;
 mod gallery;
 mod gpu;
+mod links;
 mod paint;
 mod text;
 mod window;
@@ -48,10 +49,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Check a screen description: every fault, and which fixtures each condition holds in
+    /// Check a screen description, or every one under a directory: every fault, and which fixtures each condition holds in
     #[command(after_long_help = concat!(include_str!("help/check.txt"), include_str!("help/format.txt")))]
     Check {
-        /// The screen's directory, which holds screen.json, or the screen.json itself
+        /// The screen's directory, which holds screen.json, or the screen.json itself; or a directory holding no screen.json, to check every description under it and the navigates between them
         path: PathBuf,
     },
     /// Draw a screen in one state as a wireframe PNG, and say where each node went
@@ -74,6 +75,9 @@ enum Command {
         /// Where to write the PNG; <dir>/renders/<fixture or phase>-<width>.png when not given
         #[arg(long)]
         out: Option<PathBuf>,
+        /// The directory the screen descriptions are under, as `check <root>` and the gallery take it: a node that navigates to a screen none of them declares is marked assumed. Not given, navigates are not resolved
+        #[arg(long)]
+        root: Option<PathBuf>,
     },
     /// A window for the person: every screen description under a directory, each drawn at a phone and a desktop width
     #[command(after_long_help = include_str!("help/gallery.txt"))]
@@ -156,8 +160,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         }
         Command::Gallery { root, window: false } => gallery::gallery(&root),
         Command::Check { path } => check(&path),
-        Command::Render { path, fixture, phase, width, scale, out } => {
-            render(&path, &Wanted { fixture, phase, width, scale }, out)
+        Command::Render { path, fixture, phase, width, scale, out, root } => {
+            render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref())
         }
         Command::Schema { path } => schema(&path),
         Command::Cli { path } => derive_cli(&path),
@@ -182,7 +186,11 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
     }
 }
 
+/// One description, or every one under a directory that is none.
 fn check(path: &Path) -> anyhow::Result<Value> {
+    if path.is_dir() && !path.join(SCREEN).is_file() {
+        return links::check_root(path);
+    }
     Ok(serde_json::to_value(check_at(path)?)?)
 }
 
@@ -364,8 +372,18 @@ fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
     }
 }
 
-fn render(path: &Path, wanted: &Wanted, out: Option<PathBuf>) -> anyhow::Result<Value> {
-    let laid = draw::lay_out(path, wanted)?;
+fn render(path: &Path, wanted: &Wanted, out: Option<PathBuf>, root: Option<&Path>) -> anyhow::Result<Value> {
+    let drawn = match root {
+        Some(root) if !root.is_dir() => {
+            bail!(
+                "{} is not a directory: pass the directory the screen descriptions are under",
+                root.display()
+            )
+        }
+        Some(root) => Some(links::drawn(root)),
+        None => None,
+    };
+    let laid = draw::lay_out(path, wanted, drawn.as_ref())?;
     let mut gpu = gpu::Gpu::open()?;
     let drawing = laid.draw(wanted.scale, gpu.max_side);
     let [pixels_wide, pixels_high] = drawing.pixels;
