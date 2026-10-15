@@ -659,14 +659,16 @@ JOURNEYS
     {
       "$comment": "The person opens an order and cancels it before it ships.",
       "steps": [
-        { "screen": "orders", "state": "default", "on": "order-{index}.tap" },
-        { "screen": "order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
-        { "screen": "order",  "state": "cancelled" }
+        { "screen": "Orders", "state": "default", "on": "order-{index}.tap" },
+        { "screen": "Order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
+        { "screen": "Order",  "state": "cancelled" }
       ]
     }
-    "screen"   the screen's directory, by its path from the project root
-               (the nearest directory at or above <dir> holding
-               domain.json; with none, <dir> itself): "orders/list"
+    "screen"   the screen's name, as a navigate names it: "Orders"; or its
+               directory, by its path from the project root (the nearest
+               directory at or above <dir> holding domain.json; with none,
+               <dir> itself): "orders/list". A name no description under
+               the root declares is a finding at the step
     "state"    a fixture or a phase of that screen
     "on"       on every step but the last: "<node id>.<event>", the node
                acted on, its id as written, as in TRANSITIONS

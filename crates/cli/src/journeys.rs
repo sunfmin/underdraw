@@ -2,7 +2,6 @@
 //! read, the screens its steps name read from its project, and walked;
 //! and its steps read for the gallery to play.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -11,7 +10,6 @@ use underdraw_format::Finding;
 
 use crate::gallery::{self, within};
 use crate::project::Project;
-use crate::read;
 
 /// The directory, in the directory a journey is listed under, that holds
 /// its journeys.
@@ -59,7 +57,7 @@ pub fn checked(root: &Path, file: &Path) -> Value {
 }
 
 /// Every fault in walking the journey in `file`, its screens named by
-/// their path from its project's root; one that cannot be read has that as
+/// their names or their paths from its project's root; one that cannot be read has that as
 /// its one finding.
 pub fn faults(file: &Path) -> Vec<Finding> {
     walked(file).unwrap_or_else(|e| vec![Finding { at: String::new(), problem: format!("{e:#}") }])
@@ -76,15 +74,20 @@ pub struct Step {
 }
 
 /// The steps of the journey in `file`, in order, each screen's description
-/// found under its project's root. Read as written: whether it walks is
+/// found under its project's root, by its name or its path. Read as written: whether it walks is
 /// [`faults`]'s to say.
 pub fn steps(file: &Path) -> anyhow::Result<Vec<Step>> {
     let (journey, root) = read_journey(file)?;
+    let screens = crate::links::described(&root);
+    let dir = |written: &str| match underdraw_format::journey_screen(written, &screens) {
+        Some((path, _)) => root.join(path),
+        None => root.join(written),
+    };
     let text = |step: &Value, key: &str| step.get(key).and_then(Value::as_str).map(str::to_string);
     let steps = journey.get("steps").and_then(Value::as_array).into_iter().flatten();
     Ok(steps
         .map(|step| Step {
-            dir: root.join(text(step, "screen").unwrap_or_default()),
+            dir: dir(&text(step, "screen").unwrap_or_default()),
             state: text(step, "state").unwrap_or_default(),
             on: text(step, "on").and_then(|on| {
                 let (node, event) = on.rsplit_once('.')?;
@@ -110,14 +113,5 @@ fn read_journey(file: &Path) -> anyhow::Result<(Value, PathBuf)> {
 /// The faults in walking the journey in `file`.
 fn walked(file: &Path) -> anyhow::Result<Vec<Finding>> {
     let (journey, root) = read_journey(file)?;
-    let mut screens = BTreeMap::new();
-    for step in journey.get("steps").and_then(Value::as_array).into_iter().flatten() {
-        if let Some(path) = step.get("screen").and_then(Value::as_str)
-            && !screens.contains_key(path)
-            && let Ok((screen, _)) = read(&root.join(path))
-        {
-            screens.insert(path.to_string(), screen);
-        }
-    }
-    Ok(underdraw_format::walk_journey(&journey, &screens))
+    Ok(underdraw_format::walk_journey(&journey, &crate::links::described(&root)))
 }
