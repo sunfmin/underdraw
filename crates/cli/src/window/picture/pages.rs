@@ -120,7 +120,7 @@ impl Pages {
     }
 
     /// The node `id` on each page that shows it, in window points.
-    fn picked(&self, id: &str, pane: &Desk) -> Vec<Area> {
+    pub fn picked(&self, id: &str, pane: &Desk) -> Vec<Area> {
         let zoom = self.zoom(pane.width);
         self.pages
             .iter()

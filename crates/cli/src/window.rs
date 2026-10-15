@@ -3371,7 +3371,7 @@ mod tests {
     }
 
     #[test]
-    fn a_node_picked_in_the_picture_is_outlined_and_says_what_it_is() {
+    fn a_node_picked_in_the_picture_is_marked_and_says_what_it_is() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
@@ -3389,13 +3389,11 @@ mod tests {
             "what it is and what it calls, its id, label and boxes folded away; then its conversation"
         );
         assert!(!gallery.press_here(), "picking it again changes nothing");
-        assert_eq!(
-            overlays(&mut gallery)
-                .iter()
-                .filter(|d| matches!(d, Draw::Box { stroke: Some(Ink::Strong), .. }))
-                .count(),
-            2,
-            "it is outlined at both widths"
+        let Picture::Pages(pages) = &gallery.picture else { panic!("a state is shown") };
+        assert_eq!(pages.picked("nav-save", &gallery.desk()).len(), 2, "it is marked at both widths");
+        assert!(
+            !overlays(&mut gallery).iter().any(|d| matches!(d, Draw::Box { stroke: Some(Ink::Strong), .. })),
+            "in the interaction ink, not the wireframe's strong one"
         );
         assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded");
         let panel = gallery.panel();
