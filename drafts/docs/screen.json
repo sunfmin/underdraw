@@ -1001,5 +1001,21 @@
         }
       ]
     }
-  }
+  },
+  "transitions": [
+    { "from": "default", "on": "sort-button.tap", "to": "sort-open" },
+    { "from": "sort-open", "on": "sort-{item.id}.tap", "outcome": "ok", "to": "default" },
+    { "from": "default", "on": "doc-{item.doc.id}-more.tap", "to": "row-menu-own" },
+    { "from": "row-menu-own", "on": "doc-{item.doc.id}-delete.tap", "to": "confirm-delete" },
+    { "from": "confirm-delete", "on": "confirm-delete-cancel.tap", "to": "default" },
+    { "from": "confirm-delete", "on": "confirm-delete-confirm.tap", "outcome": "ok", "to": "default" },
+    { "from": "confirm-delete", "on": "confirm-delete-confirm.tap", "outcome": "notFound", "to": "default" },
+    { "from": "default", "on": "doc-{item.doc.id}-select.tap", "to": "some-selected" },
+    { "from": "some-selected", "on": "delete-selected.tap", "to": "confirm-delete-selected" },
+    { "from": "confirm-delete-selected", "on": "confirm-delete-selected-cancel.tap", "to": "some-selected" },
+    { "from": "confirm-delete-selected", "on": "confirm-delete-selected-confirm.tap", "outcome": "ok", "to": "default" },
+    { "from": "more-to-come", "on": "load-more.tap", "outcome": "ok", "to": "default" },
+    { "from": "error", "on": "retry.tap", "outcome": "ok", "to": "default" },
+    { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" }
+  ]
 }

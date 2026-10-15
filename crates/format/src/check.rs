@@ -9,12 +9,14 @@ use crate::breakpoint::{self, Breakpoint};
 use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
+use crate::instance::{State, build};
 use crate::jobs;
 use crate::kinds::{Kinds, track_faults};
 use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
+use crate::transitions;
 
 /// What `check` makes of a screen description.
 #[derive(Debug, Serialize)]
@@ -110,6 +112,34 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
         walk.node(tree, &Vec::new(), &Known::default(), &format!("phases.{name}"), "");
         phases.push(name.clone());
     }
+    let fixture_names: Vec<String> = fixtures.iter().map(|(name, _)| name.clone()).collect();
+    let states: Vec<String> = fixture_names.iter().chain(&phases).cloned().collect();
+    transitions::check(screen, &states, &operations, &mut findings);
+    // Which nodes a state shows is known only by building it, and only a
+    // description with no other fault can be built.
+    if findings.0.is_empty() {
+        for (index, transition) in transitions::read(screen).iter().enumerate() {
+            let from = transition.from.as_str();
+            let state = if fixture_names.iter().any(|name| name == from) {
+                State::Fixture(from)
+            } else {
+                State::Phase(from)
+            };
+            let shown = Breakpoint::ALL.into_iter().any(|breakpoint| {
+                build(screen, &conditions, &fixtures, state, breakpoint)
+                    .is_ok_and(|tree| transitions::holds(&tree, &transition.node))
+            });
+            if !shown {
+                findings.add(
+                    &format!("transitions.{index}.on"),
+                    &format!(
+                        "{} is not shown in {from}, so a person cannot act on it there: name a state that shows it",
+                        transition.node
+                    ),
+                );
+            }
+        }
+    }
 
     let mut table = Vec::new();
     if findings.0.is_empty() {
@@ -133,7 +163,7 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     Checked {
         screen: screen.get("screen").and_then(Value::as_str).unwrap_or_default().to_string(),
         ok: findings.0.is_empty(),
-        fixtures: fixtures.into_iter().map(|(name, _)| name).collect(),
+        fixtures: fixture_names,
         phases,
         conditions: table,
         findings: findings.0,

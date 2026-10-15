@@ -13,6 +13,7 @@ use crate::instance::{Node, State, build};
 use crate::jobs;
 use crate::operations::Operations;
 use crate::schema::Schema;
+use crate::transitions::{self, Transition};
 
 pub struct Model {
     /// What `check` said of it: its name, fixtures and phases, and which
@@ -23,6 +24,8 @@ pub struct Model {
     pub operations: Operations,
     /// Every fixture by name, in the order written, merged and defaulted.
     pub fixtures: Vec<(String, Value)>,
+    /// The transitions between its states, in the order written.
+    pub transitions: Vec<Transition>,
     description: Value,
 }
 
@@ -40,7 +43,16 @@ impl Model {
         let fixtures = fixture::read(screen, &schema, &mut findings);
         let conditions = Conditions::read(screen, &schema, &mut findings);
         let operations = Operations::read(screen, &schema, &conditions, &mut findings);
-        Ok(Model { checked, schema, conditions, operations, fixtures, description: screen.clone() })
+        let transitions = transitions::read(screen);
+        Ok(Model {
+            checked,
+            schema,
+            conditions,
+            operations,
+            fixtures,
+            transitions,
+            description: screen.clone(),
+        })
     }
 
     /// The screen's name.
