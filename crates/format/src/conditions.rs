@@ -517,20 +517,7 @@ impl Conditions {
             Expr::Not(inner) => !self.eval(inner, data, stack),
             Expr::Atom(atom) => self.value(atom, data, stack) == Value::Bool(true),
             Expr::Compare(op, left, right) => {
-                let (l, r) = (self.value(left, data, stack), self.value(right, data, stack));
-                match op {
-                    Op::Eq => same(&l, &r),
-                    Op::Ne => !same(&l, &r),
-                    _ => match order(&l, &r) {
-                        Some(ordering) => match op {
-                            Op::Lt => ordering.is_lt(),
-                            Op::Le => ordering.is_le(),
-                            Op::Gt => ordering.is_gt(),
-                            _ => ordering.is_ge(),
-                        },
-                        None => false,
-                    },
-                }
+                op.holds(&self.value(left, data, stack), &self.value(right, data, stack))
             }
         }
     }
@@ -648,21 +635,6 @@ fn show(atom: &Atom) -> String {
 }
 
 /// Equal as the format means it: numbers by value, whether written 5 or 5.0.
-fn same(l: &Value, r: &Value) -> bool {
-    match (l.as_f64(), r.as_f64()) {
-        (Some(a), Some(b)) => a == b,
-        _ => l == r,
-    }
-}
-
-fn order(l: &Value, r: &Value) -> Option<std::cmp::Ordering> {
-    match (l, r) {
-        (Value::Number(_), Value::Number(_)) => l.as_f64()?.partial_cmp(&r.as_f64()?),
-        (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
-        _ => None,
-    }
-}
-
 /// Where a node or a branch asks a yes/no (`if`, `disabled`): `!` to turn
 /// it round, then a condition's name or a Bool path.
 pub(crate) struct UseSite<'a> {

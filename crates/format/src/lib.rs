@@ -22,6 +22,7 @@ mod instance;
 mod jobs;
 mod journeys;
 mod links;
+pub mod look;
 mod model;
 mod operations;
 mod overlay;
@@ -41,7 +42,7 @@ mod rejected;
 
 pub use breakpoint::Breakpoint;
 pub use check::{Checked, Condition, Finding, check, check_among};
-pub use components::{Body, Components, FILTERS, LOOK, Takes, Track, in_shared, takes};
+pub use components::{Body, Components, Track, in_shared};
 pub use conditions::{Condition as Definition, Conditions};
 pub use expand::{Frame, Instances, Met, join as join_id};
 pub use expr::{Atom, Expr, Op};

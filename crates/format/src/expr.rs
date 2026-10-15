@@ -1,6 +1,7 @@
-//! The grammar of a condition's `when` (docs/format/expressions.md). Syntax
+//! The grammar of a condition's `when` (docs/format/expressions.md), and of
+//! a look's condition, whose names are placeholders (`value|first`). Syntax
 //! only: what a name refers to, and whether the types fit, is decided by
-//! `conditions`.
+//! `conditions` for a screen and by `look` for a component.
 //!
 //! ```text
 //! expr    = and ("||" and)*
@@ -11,6 +12,7 @@
 //! ```
 
 use flux_rs::attrs::*;
+use serde_json::Value;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
@@ -77,30 +79,117 @@ impl Op {
     pub fn orders(self) -> bool {
         matches!(self, Op::Lt | Op::Le | Op::Gt | Op::Ge)
     }
+
+    /// Whether `left` and `right` stand in this relation: numbers by value,
+    /// strings by their characters; what has no order is neither less nor
+    /// greater.
+    pub fn holds(self, left: &Value, right: &Value) -> bool {
+        match self {
+            Op::Eq => same(left, right),
+            Op::Ne => !same(left, right),
+            _ => match order(left, right) {
+                Some(ordering) => match self {
+                    Op::Lt => ordering.is_lt(),
+                    Op::Le => ordering.is_le(),
+                    Op::Gt => ordering.is_gt(),
+                    _ => ordering.is_ge(),
+                },
+                None => false,
+            },
+        }
+    }
+}
+
+fn same(l: &Value, r: &Value) -> bool {
+    match (l.as_f64(), r.as_f64()) {
+        (Some(a), Some(b)) => a == b,
+        _ => l == r,
+    }
+}
+
+fn order(l: &Value, r: &Value) -> Option<std::cmp::Ordering> {
+    match (l, r) {
+        (Value::Number(_), Value::Number(_)) => l.as_f64()?.partial_cmp(&r.as_f64()?),
+        (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
+        _ => None,
+    }
+}
+
+/// A condition, its names each an `N`: a path into the data or another
+/// condition's name for a screen, a placeholder for a look.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Expr<N = String> {
+    Or(Vec<Expr<N>>),
+    And(Vec<Expr<N>>),
+    Not(Box<Expr<N>>),
+    Compare(Op, Atom<N>, Atom<N>),
+    Atom(Atom<N>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Expr {
-    Or(Vec<Expr>),
-    And(Vec<Expr>),
-    Not(Box<Expr>),
-    Compare(Op, Atom, Atom),
-    Atom(Atom),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Atom {
+pub enum Atom<N = String> {
     /// A path into the data, or the name of another condition.
-    Name(String),
+    Name(N),
     Str(String),
     Num(f64),
     Bool(bool),
     Null,
-    Group(Box<Expr>),
+    Group(Box<Expr<N>>),
 }
 
+impl Expr<String> {
+    /// The same condition with each name read by `read`.
+    pub(crate) fn named<N>(self, read: &impl Fn(String) -> N) -> Expr<N> {
+        match self {
+            Expr::Or(items) => Expr::Or(named_all(items, read)),
+            Expr::And(items) => Expr::And(named_all(items, read)),
+            Expr::Not(inner) => Expr::Not(Box::new(inner.named(read))),
+            Expr::Compare(op, left, right) => Expr::Compare(op, left.named(read), right.named(read)),
+            Expr::Atom(atom) => Expr::Atom(atom.named(read)),
+        }
+    }
+}
+
+fn named_all<N>(items: Vec<Expr>, read: &impl Fn(String) -> N) -> Vec<Expr<N>> {
+    let mut all = Vec::new();
+    for item in items {
+        all.push(item.named(read));
+    }
+    all
+}
+
+impl Atom<String> {
+    fn named<N>(self, read: &impl Fn(String) -> N) -> Atom<N> {
+        match self {
+            Atom::Name(name) => Atom::Name(read(name)),
+            Atom::Str(s) => Atom::Str(s),
+            Atom::Num(n) => Atom::Num(n),
+            Atom::Bool(b) => Atom::Bool(b),
+            Atom::Null => Atom::Null,
+            Atom::Group(inner) => Atom::Group(Box::new(inner.named(read))),
+        }
+    }
+}
+
+/// What a name may be written as.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Names {
+    /// A screen's: a path, `order.total`.
+    Paths,
+    /// A look's: a placeholder, a path then its filters, `value|first`,
+    /// `price|or:0`; `||` is still "or".
+    Placeholders,
+}
+
+/// A screen condition.
 pub fn parse(text: &str) -> Result<Expr, String> {
-    let mut cursor = Cursor::new(lex(text)?);
+    parse_names(text, Names::Paths)
+}
+
+/// A condition whose names are written as `names` says, each name as it
+/// was written.
+pub(crate) fn parse_names(text: &str, names: Names) -> Result<Expr, String> {
+    let mut cursor = Cursor::new(lex(text, names)?);
     let expr = or(&mut cursor)?;
     match cursor.peek() {
         None => Ok(expr),
@@ -212,7 +301,7 @@ fn atom(cursor: &mut Cursor) -> Result<Atom, String> {
     }
 }
 
-fn lex(text: &str) -> Result<Vec<Token>, String> {
+fn lex(text: &str, names: Names) -> Result<Vec<Token>, String> {
     let mut tokens = Vec::new();
     let mut chars = text.chars().peekable();
     while let Some(&c) = chars.peek() {
@@ -273,10 +362,23 @@ fn lex(text: &str) -> Result<Vec<Token>, String> {
                 }
                 Token::Num(s.parse().map_err(|_| format!("{s} is not a number"))?)
             }
-            _ if c.is_ascii_alphabetic() || c == '_' => {
+            _ if names == Names::Paths && (c.is_ascii_alphabetic() || c == '_') => {
                 let mut s = c.to_string();
                 while let Some(&d) = chars.peek() {
                     if !(d.is_ascii_alphanumeric() || d == '_' || d == '.') {
+                        break;
+                    }
+                    s.push(d);
+                    chars.next();
+                }
+                Token::Name(s)
+            }
+            _ if names == Names::Placeholders && (c.is_alphabetic() || c == '_' || c == '$') => {
+                let mut s = c.to_string();
+                while let Some(&d) = chars.peek() {
+                    // A single `|` begins a filter; `||` is "or".
+                    let filter = d == '|' && chars.clone().nth(1) != Some('|');
+                    if !(d.is_alphanumeric() || "_.:%$".contains(d) || filter) {
                         break;
                     }
                     s.push(d);
