@@ -177,7 +177,6 @@ impl<'a> Step<'a> {
         let Some(handler) = shown.props.get("on").and_then(|on| on.get(event)) else {
             return findings.add(&at, &format!("{node} has no {event} event in {path} {state}"));
         };
-        let to = (next.path, next.state);
         if next.path == self.path {
             let reaches = transitions::read(self.screen).into_iter().any(|t| {
                 t.from == state
@@ -196,14 +195,16 @@ impl<'a> Step<'a> {
             return;
         }
         let outcome = self.outcome.map(|outcome| format!(" ({outcome})")).unwrap_or_default();
+        let fix = if next.path == self.path {
+            format!("declare a transition from {state} on it to {}", next.state)
+        } else {
+            format!("navigate it to {}", names.unwrap_or(next.path))
+        };
         findings.add(
             &at,
             &format!(
-                "{node}.{event}{outcome} in {path} {state} does not reach the next step, {} {}: declare a transition from {state} on it to {} on {path}, or navigate it to {}",
-                to.0,
-                to.1,
-                to.1,
-                names.unwrap_or(to.0),
+                "{node}.{event}{outcome} in {path} {state} does not reach the next step, {} {}: {fix}",
+                next.path, next.state
             ),
         );
     }

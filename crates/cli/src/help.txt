@@ -31,7 +31,8 @@ START HERE
   underdraw check <root>     every description under <root>, and where each
                              navigate goes: one to a screen none of them
                              declares is an assumption, a screen not drawn
-                             yet, not a fault
+                             yet, not a fault; and every journey under it
+                             (<dir>/journeys/<name>.json) walked
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
   underdraw notes <root>     what the person said there: each open note, pinned
