@@ -1,0 +1,30 @@
+tree
+  root/
+    checkout
+      ▸ default
+      express-alipay
+      promo-applied
+      promo-invalid
+      no-address-new-card
+      out-of-stock
+      loading
+      error
+picture
+  page default · 390
+    picked address: 16, 106 · 358 × 66
+  page default · 1120
+    picked address: 16, 106 · 675 × 66
+sidebar
+  推測、あなたの回答待ち
+    ここは AddressBook に遷移しますが、ルート以下のどの記述も AddressBook を宣言していないため、AddressBook はまだ描かれていない画面だと推測しています。描かれている画面の名前の書き間違いかもしれませんし、この遷移自体が要らないのかもしれません：描くか、名前を直してください。
+    または  書かれていません：✗ で何なのかを伝えてください
+    ✓ 正しい、このまま
+    ✗ 違う…
+    ✓：エージェントが推測を外します · ✗：何が正しいかを伝えてください
+  ListItem
+    呼び出し  なし
+    ↗ AddressBook · まだ描かれていません
+    ⌘（Ctrl）を押しながらノードをクリックしても同じです。
+    ▸ 詳細
+  メモ · まだ何も話していません
+    変えてほしいことを下に書いてください：Enter で送信、Shift+Enter で改行。

@@ -1,0 +1,33 @@
+tree
+  root/
+    orders
+      ▸ default
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+picture
+  page default · 390
+    picked nav-export: 334, 8 · 40 × 40
+  page default · 1120
+    picked nav-export: 1064, 8 · 40 × 40
+  pin N1 on page 0: Line
+  pin N1 on page 1: Line, faint
+sidebar
+  assumed, for you to answer
+    This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet
+    or else  it could instead be a misspelt name of a screen that is drawn, or the navigate may not be wanted at all: draw it, or correct the name.
+    ✓ right, keep it
+    ✗ wrong…
+    ✓: the agent takes the guess out · ✗: say what is right
+  IconButton
+    calls  nothing
+    ↗ ExportDocuments · not drawn yet
+    Holding ⌘ (Ctrl) and clicking the node does the same.
+    ▸ details
+  note N1 · answered
+    rename it, and say what it exports
+    renamed it Export orders
