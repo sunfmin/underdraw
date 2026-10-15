@@ -135,9 +135,35 @@ pub fn within(root: &Path, dir: &Path) -> String {
     }
 }
 
-/// The rows of what `dir` holds, `depth` in, added to `rows`.
+/// The rows of what `dir` holds, `depth` in, added to `rows`: the
+/// components it shares, when it is a project's root, in a section of
+/// their own, its components/, each a description of its own
+/// (`components/<Name>`) that shows it in each of its fixtures.
 fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
+    let shown = crate::project::showcases(dir);
     for (name, path) in children(dir) {
+        if name == COMPONENTS && !shown.is_empty() {
+            rows.push(Row {
+                depth,
+                name,
+                dir: path,
+                described: false,
+                faults: Vec::new(),
+                states: Vec::new(),
+            });
+            for (name, dir) in &shown {
+                let (name, dir) = (name.clone(), dir.clone());
+                rows.push(Row {
+                    depth: depth + 1,
+                    name,
+                    dir,
+                    described: true,
+                    faults: Vec::new(),
+                    states: Vec::new(),
+                });
+            }
+            continue;
+        }
         let at = rows.len();
         let described = path.join(SCREEN).is_file();
         rows.push(Row { depth, name, dir: path.clone(), described, faults: Vec::new(), states: Vec::new() });

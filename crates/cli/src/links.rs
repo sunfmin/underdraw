@@ -190,7 +190,11 @@ fn screens(dirs: &[PathBuf]) -> Vec<Option<Value>> {
     dirs.iter().map(|dir| read(dir).ok().map(|(screen, _)| screen)).collect()
 }
 
-/// The screen a description declares, by its "screen".
+/// The screen a description declares, by its "screen": none for one that
+/// shows a shared component, which no navigate reaches.
 fn declares(screen: &Value) -> Option<String> {
+    if underdraw_format::shows(screen).is_some() {
+        return None;
+    }
     screen.get("screen").and_then(Value::as_str).map(str::to_string)
 }

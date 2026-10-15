@@ -70,6 +70,35 @@ impl Project {
     }
 }
 
+/// The shared component the description at `dir` shows on its own, when
+/// `dir` is `<root>/components/<Name>` beside the project's
+/// `components/<Name>.json` and holds no screen.json: its name and that
+/// file. Only notes.json is ever kept in `dir`, so it need not exist.
+pub fn showcased(dir: &Path) -> Option<(String, PathBuf)> {
+    let dir = std::path::absolute(dir).ok()?;
+    let components =
+        dir.parent().filter(|parent| parent.file_name().is_some_and(|name| name == COMPONENTS))?;
+    let root = components.parent()?;
+    let name = dir.file_name()?.to_str()?;
+    let file = components.join(format!("{name}.json"));
+    // The components of a directory under another project's root are not shared.
+    let shared = nearest(root, DOMAIN).is_none_or(|at| at == root);
+    (shared && file.is_file() && !dir.join(crate::SCREEN).is_file()).then(|| (name.to_string(), file))
+}
+
+/// Each component `root` shares, when it is a project's root: the
+/// directory of the description that shows it on its own ([`showcased`]),
+/// by its name, in name order.
+pub fn showcases(root: &Path) -> Vec<(String, PathBuf)> {
+    if nearest(root, DOMAIN).is_some_and(|at| at != root) {
+        return Vec::new();
+    }
+    let Ok(components) = shared(&root.join(COMPONENTS)) else {
+        return Vec::new();
+    };
+    components.keys().map(|name| (name.clone(), root.join(COMPONENTS).join(name))).collect()
+}
+
 /// Each `<Name>.json` in `dir`, by its name, in name order; none when
 /// there is no `dir`. Refused when one is not JSON.
 fn shared(dir: &Path) -> anyhow::Result<Map<String, Value>> {
@@ -92,7 +121,7 @@ fn shared(dir: &Path) -> anyhow::Result<Map<String, Value>> {
     Ok(components)
 }
 
-fn read_json(file: &Path) -> anyhow::Result<Value> {
+pub fn read_json(file: &Path) -> anyhow::Result<Value> {
     let text = std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
     serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
 }

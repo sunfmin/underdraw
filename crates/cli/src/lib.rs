@@ -238,13 +238,19 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
 
 /// One description, or every one under a directory that is none.
 fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
-    if path.is_dir() && !path.join(SCREEN).is_file() {
+    if path.is_dir() && !describes(path) {
         return links::check_root(path, lang);
     }
     let mut answer = serde_json::to_value(check_at(path, &ScreenParams::new())?)?;
-    let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
+    let dir = if describes(path) { path } else { path.parent().unwrap_or(Path::new(".")) };
     answer["notes"] = notes::counted(dir, dir);
     Ok(answer)
+}
+
+/// Whether `dir` is a description's directory: it holds screen.json, or
+/// it shows a component the project shares on its own.
+fn describes(dir: &Path) -> bool {
+    dir.join(SCREEN).is_file() || project::showcased(dir).is_some()
 }
 
 /// What `check` says of the description at `path` (a directory or its
@@ -285,8 +291,14 @@ fn checked_among(
 }
 
 /// The screen at `path` (a directory or its screen.json), with the domain
-/// its project shares, and the directory.
+/// and components its project shares, and the directory; or, at
+/// `components/<Name>` under the project's root, the description showing
+/// that shared component on its own.
 fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
+    if let Some((name, file)) = project::showcased(path) {
+        let shown = underdraw_format::showcase(&name, &project::read_json(&file)?);
+        return Ok((Project::of(path)?.describe(shown), path.to_path_buf()));
+    }
     let file = if path.is_dir() { path.join(SCREEN) } else { path.to_path_buf() };
     let text = std::fs::read_to_string(&file).with_context(|| {
         format!(
