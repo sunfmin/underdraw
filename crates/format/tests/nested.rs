@@ -71,7 +71,11 @@ fn an_id_two_nodes_of_a_state_share_is_refused() {
     assert_eq!(checked.findings.len(), 1, "{:#?}", checked.findings);
     let finding = &checked.findings[0];
     assert_eq!(finding.at, "cell-{index}");
-    assert!(finding.problem.starts_with("names more than one node in default, cell-0 among them"), "{}", finding.problem);
+    assert!(
+        finding.problem.starts_with("names more than one node in default, cell-0 among them"),
+        "{}",
+        finding.problem
+    );
     assert!(finding.problem.contains("\"index\": \"row\""), "{}", finding.problem);
 }
 
@@ -85,7 +89,10 @@ fn a_transition_names_the_inner_node_as_written() {
     screen["transitions"] = json!([{ "from": "default", "on": "cell-{index}.tap", "to": "picked" }]);
     let checked = check(&screen);
     assert!(
-        checked.findings.iter().any(|f| f.at == "transitions.0.on" && f.problem.contains("no node has the id cell-{index}")),
+        checked
+            .findings
+            .iter()
+            .any(|f| f.at == "transitions.0.on" && f.problem.contains("no node has the id cell-{index}")),
         "{:#?}",
         checked.findings
     );
@@ -108,7 +115,10 @@ fn an_index_is_named_by_a_word_no_other_name_takes() {
         screen["root"]["children"][0]["index"] = name.clone();
         let checked = check(&screen);
         assert!(
-            checked.findings.iter().any(|f| f.at == "rows.index" && f.problem.contains("cannot name this repeat's index")),
+            checked
+                .findings
+                .iter()
+                .any(|f| f.at == "rows.index" && f.problem.contains("cannot name this repeat's index")),
             "{name}: {:#?}",
             checked.findings
         );

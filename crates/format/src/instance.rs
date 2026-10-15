@@ -87,8 +87,20 @@ impl Node {
 pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
 
 /// Keys that only steer how the tree is built.
-const STRUCTURE: [&str; 12] =
-    ["id", "component", "with", "if", "only", "each", "index", "limit", "assumed", "platform", "$note", "$why"];
+const STRUCTURE: [&str; 12] = [
+    "id",
+    "component",
+    "with",
+    "if",
+    "only",
+    "each",
+    "index",
+    "limit",
+    "assumed",
+    "platform",
+    "$note",
+    "$why",
+];
 
 /// The screen `screen` in `state`, at `breakpoint`, each node that
 /// navigates to a screen `undrawn` says is not drawn yet marked assumed.

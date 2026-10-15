@@ -254,7 +254,10 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
 
 /// The first node in `node`, in document order, whose id one before it in
 /// `seen` already has.
-fn twice<'n>(node: &'n crate::instance::Node, seen: &mut BTreeSet<&'n str>) -> Option<&'n crate::instance::Node> {
+fn twice<'n>(
+    node: &'n crate::instance::Node,
+    seen: &mut BTreeSet<&'n str>,
+) -> Option<&'n crate::instance::Node> {
     if !seen.insert(&node.id) {
         return Some(node);
     }
@@ -524,7 +527,7 @@ impl<'a> Walk<'a> {
                         None => {}
                         Some(Value::String(name))
                             if crate::field::is_identifier(name)
-                                && !["item", "index", "n"].contains(&name.as_str())
+                                && !crate::look::REPEATED.contains(&name.as_str())
                                 && !scope.iter().any(|(taken, _)| taken == name) =>
                         {
                             let index = Field { lo: Some(0.0), ..Field::of(Base::Int) };
