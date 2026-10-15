@@ -27,6 +27,11 @@ READS
   that navigates, at "<node>.on.<event>.with" or ".with.<param>"
   (PARAMS below). One description checked alone cannot see the others, so
   it says nothing of where it navigates, nor of what it gives.
+  Every journey under the root, <any dir>/journeys/<name>.json, is walked
+  too: each step's screen and state are there, each act's node is shown
+  in its step's state, and the act leads to the next step, by a transition
+  or a navigate (JOURNEYS below). A journey that does not walk is a
+  finding on the journey, at the step that breaks.
 
 ANSWERS
   {
@@ -50,8 +55,8 @@ ANSWERS
   Given a root:
   {
     "root":         the directory checked
-    "ok":           true when no description has a finding; an unresolved
-                    navigate does not count
+    "ok":           true when no description and no journey has a
+                    finding; an unresolved navigate does not count
     "descriptions": [{"description": its directory, relative to root,
                       then everything above: "screen", "ok", "fixtures",
                       "phases", "conditions", "findings", "notes"}, …]
@@ -65,6 +70,11 @@ ANSWERS
                       "assumed": when not resolved, that assumption said
                         in a whole sentence, in --lang (en or zh; en by
                         default), or null}, …]
+    "journeys":     [{"journey": its file, relative to root,
+                      "name": its file's name without .json,
+                      "ok": true when it walks,
+                      "findings": [{"at": "steps.<n>.<key>", "problem"}, …]
+                      }, …]
     "notes":        {"open", "answered"}, over every description
   }
 

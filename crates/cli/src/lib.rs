@@ -9,6 +9,7 @@ mod draw;
 mod flow;
 mod gallery;
 mod gpu;
+mod journeys;
 mod links;
 mod notes;
 mod paint;
