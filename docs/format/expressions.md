@@ -117,8 +117,10 @@ type's fields, and a value of the type reads it as a Bool field.
   a condition over the screen's data cannot be named there.
 - The type has no field of its name, and fixtures never give it: each value
   of the type in a fixture is given it, worked out from its own fields.
-- It must be true of one value of the type and false of another, wherever
-  the fixtures hold one.
+- On a screen that reads it through a value (a use site, a template, or a
+  condition over the data), it must be true of one value of the type and
+  false of another in the fixtures; a screen that never reads it is not
+  held to it.
 - An operation may `require` one; a node calling it is gated through the value
   it acts on (`"disabled": "!item.cancellable"`).
 - The domain shares conditions this way, since it has no screen's data to
