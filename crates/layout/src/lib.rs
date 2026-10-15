@@ -143,20 +143,27 @@ pub struct Page {
 impl Page {
     /// The wireframe: what is drawn, but for its marks.
     pub fn wireframe(&self) -> &[Draw] {
-        &self.draws[..self.draws.len() - self.marks]
+        self.parts().0
     }
 
     /// The marks over the wireframe: each label, and each guess's outline
     /// and "?", drawn over the rest.
     pub fn marks(&self) -> &[Draw] {
-        &self.draws[self.draws.len() - self.marks..]
+        self.parts().1
     }
 
     /// The marks taken out of what is drawn, which is left the wireframe.
     pub fn take_marks(&mut self) -> Vec<Draw> {
-        let marks = self.draws.split_off(self.draws.len() - self.marks);
+        let marks = self.marks().to_vec();
+        self.draws.truncate(self.draws.len().saturating_sub(marks.len()));
         self.marks = 0;
         marks
+    }
+
+    /// What is drawn split where the marks start.
+    fn parts(&self) -> (&[Draw], &[Draw]) {
+        let at = self.draws.len().saturating_sub(self.marks);
+        self.draws.split_at_checked(at).unwrap_or((&self.draws, &[]))
     }
 }
 
