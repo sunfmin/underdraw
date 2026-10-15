@@ -1,0 +1,126 @@
+{
+  "doc": "A line of the tree: indented by its depth, a directory or description in bold, a phase in gray.",
+  "params": [
+    "name",
+    "depth",
+    "heading",
+    "phase",
+    "meta",
+    "picked"
+  ],
+  "look": {
+    "box": "row",
+    "gap": 6,
+    "items": "center",
+    "height": 26,
+    "padding": {
+      "cases": [
+        {
+          "if": "depth == 0",
+          "then": [
+            0,
+            12
+          ]
+        },
+        {
+          "if": "depth == 1",
+          "then": [
+            0,
+            12,
+            0,
+            24
+          ]
+        },
+        {
+          "if": "depth == 2",
+          "then": [
+            0,
+            12,
+            0,
+            36
+          ]
+        },
+        {
+          "else": [
+            0,
+            12,
+            0,
+            48
+          ]
+        }
+      ]
+    },
+    "children": [
+      {
+        "text": "{name}",
+        "grow": 1,
+        "maxLines": 1,
+        "weight": {
+          "cases": [
+            {
+              "if": "heading",
+              "then": 600
+            },
+            {
+              "else": 400
+            }
+          ]
+        },
+        "ink": {
+          "cases": [
+            {
+              "if": "phase",
+              "then": "muted"
+            },
+            {
+              "else": "text"
+            }
+          ]
+        }
+      },
+      {
+        "text": "{meta}",
+        "if": "meta != \"\"",
+        "font": "font.caption",
+        "ink": "muted"
+      }
+    ],
+    "fill": {
+      "cases": [
+        {
+          "if": "picked",
+          "then": "fill"
+        },
+        {
+          "else": null
+        }
+      ]
+    }
+  },
+  "fixtures": {
+    "directory": {
+      "name": "shop/",
+      "depth": 1,
+      "heading": true,
+      "phase": false,
+      "meta": "",
+      "picked": false
+    },
+    "description": {
+      "name": "order",
+      "depth": 2,
+      "heading": true,
+      "phase": false,
+      "meta": "3 states",
+      "picked": true
+    },
+    "phase": {
+      "name": "loading",
+      "depth": 3,
+      "heading": false,
+      "phase": true,
+      "meta": "",
+      "picked": false
+    }
+  }
+}
