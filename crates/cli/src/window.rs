@@ -184,7 +184,7 @@ struct Flow {
 /// What one box of the flow shows under its name.
 enum Card {
     /// The description's first state, drawn at the phone's width.
-    Picture { scene: Scene, width: f64 },
+    Picture { scene: Box<Scene>, width: f64 },
     /// A description that cannot be drawn: how many faults it has.
     Faulty(usize),
     /// A screen not drawn yet: a dashed box marked "?".
@@ -435,7 +435,7 @@ impl Gallery {
         match draw::lay_out(dir, &wanted, Some(drawn)) {
             Ok(laid) => {
                 let drawing = laid.draw(1, u32::MAX);
-                Card::Picture { scene: drawing.scene, width: f64::from(drawing.page.width) }
+                Card::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
             }
             Err(_) => Card::Faulty(1),
         }
