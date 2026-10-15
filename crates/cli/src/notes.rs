@@ -1,9 +1,10 @@
 //! What the person and the agent say of a description, pinned where it is
 //! said (ADR 0019, ADR 0023): kept in notes.json beside its screen.json,
 //! meant to be committed. A note is a conversation on a node, a whole
-//! state, a transition's arrow, a navigate's arrow, a whole screen, or the
+//! state, a transition's arrow, a navigate's arrow, a whole screen, the
 //! screens under a directory (kept in that directory's notes.json, though
-//! it holds no screen.json): the person's
+//! it holds no screen.json), or a whole journey (kept in the notes.json of
+//! the directory its `journeys/` is in): the person's
 //! messages and the agent's, in the order said, one for each. Only the
 //! person starts one, in the gallery, and says more in it there; the agent answers in it, at any length, and may
 //! ask back. It is never closed: while the person spoke last it waits on
@@ -34,7 +35,8 @@ use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json; a
 /// shared component's, in `components/<Name>/notes.json`; a directory's,
-/// on the screens under it, in the directory itself.
+/// on the screens under it, in the directory itself; a journey's, in the
+/// directory its `journeys/` is in.
 pub const NOTES: &str = "notes.json";
 
 /// Where a conversation stands, read from who spoke last and what was
@@ -640,7 +642,8 @@ pub fn counted(dir: &Path) -> Value {
 /// state is, or every node it covered; a whole state once the description
 /// has no state by its name; a transition or a navigate once none is
 /// written with the same keys. The whole screen is there while its
-/// description is, and the screens under a directory while it is.
+/// description is, the screens under a directory while it is, and a
+/// journey while its directory is: it has no state to join.
 fn gone(screen: &Screen, on: &On) -> Option<String> {
     let now_gone = |was: String| Some(format!("on {was}, now gone"));
     let state_gone = on.state().filter(|state| {
@@ -683,7 +686,7 @@ fn gone(screen: &Screen, on: &On) -> Option<String> {
                 .any(|written| written.node == navigate.node && written.to == navigate.to);
             if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
         }
-        On::Node { .. } | On::State { .. } | On::Whole { .. } => None,
+        On::Node { .. } | On::State { .. } | On::Whole { .. } | On::Journey { .. } => None,
     }
 }
 

@@ -106,3 +106,37 @@ fn given_its_root_a_navigate_to_a_screen_not_drawn_yet_is_assumed() {
     assert_eq!(code, 0, "{answer}");
     assert_eq!(assumed(&answer, "order-0"), None, "without its root, navigates are not resolved");
 }
+
+#[test]
+fn renders_every_state_at_both_widths_on_one_sheet() {
+    let path = out("all.png");
+    let (answer, code) = underdraw(&["render", DRAFT, "--all", "--out", &path]);
+    assert_eq!(code, 0, "{answer}");
+    let pixels = (answer["pixels"][0].as_u64().unwrap() as u32, answer["pixels"][1].as_u64().unwrap() as u32);
+    assert_eq!(png_size(&path), pixels);
+    let states = answer["states"].as_array().unwrap();
+    let shown: Vec<(String, f64)> =
+        states.iter().map(|s| (s["state"].to_string(), s["width"].as_f64().unwrap())).collect();
+    let mut expected = Vec::new();
+    for state in [
+        r#"{"fixture":"default"}"#,
+        r#"{"fixture":"no-dates"}"#,
+        r#"{"fixture":"unavailable"}"#,
+        r#"{"fixture":"new-listing"}"#,
+        r#"{"phase":"loading"}"#,
+        r#"{"phase":"error"}"#,
+    ] {
+        expected.push((state.to_string(), 390.0));
+        expected.push((state.to_string(), 1120.0));
+    }
+    assert_eq!(shown, expected, "every state, each at a phone and a desktop width");
+    assert_eq!(states[1]["breakpoint"], "regular");
+
+    // Each page's nodes are the ones a render of that state alone answers.
+    let (one, _) =
+        underdraw(&["render", DRAFT, "--phase", "loading", "--width", "1120", "--out", &out("one.png")]);
+    assert_eq!(states[9]["nodes"], one["nodes"]);
+
+    let (answer, code) = underdraw(&["render", DRAFT, "--all", "--fixture", "default"]);
+    assert_eq!(code, 2, "{answer}");
+}
