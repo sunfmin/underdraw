@@ -1,0 +1,78 @@
+WHEN
+  After writing or changing a screen description, and before rendering it or
+  handing it off. Run it until it answers "ok": true.
+
+WHO
+  The agent that writes the description.
+
+READS
+  <path>/screen.json, or <path> when it is a file, and kinds.json beside it
+  when there is one: every node's kind must be defined there or by
+  underdraw, and its looks are checked too (KINDS.JSON below). Once the
+  description has no other fault, tokens.json too: every fixture and phase
+  is laid out at widths 390 and 1120, in the system's fonts as `render`
+  does, and an overlay that runs off the page is a finding. Writes nothing.
+
+ANSWERS
+  {
+    "screen":     the screen's name, from "screen"
+    "ok":         true when there is no finding
+    "fixtures":   the fixtures' names, in the order written
+    "phases":     the phases' names (trees rendered before data arrives)
+    "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
+                  empty while any finding stands, except a condition that
+                  never varies: then the table shows which fixtures to add
+    "findings":   [{"at": where — a dotted path or a node id,
+                    "problem": what is wrong, and what is allowed instead}, …]
+  }
+
+EXIT
+  0 when "ok" is true, 1 when there are findings (the answer above is still
+  printed in full), 2 when the description could not be read or parsed.
+
+WHAT TRIPS YOU UP
+  - A text property (text, title, subtitle, label, detail) always shows text:
+    "{booking.total}" there needs |money. Elsewhere a lone placeholder passes
+    the value itself.
+  - A nullable value may be shown only under a condition that tests it
+    != null in its top-level && chain. A negated condition guarantees nothing.
+  - A fixture may leave out only fields with a default; T? defaults to null.
+  - "$patch" starts a fixture from one written above it.
+  - An operation's result holds no view state: a type with a "view" field
+    (or one reaching such a type) cannot be returned. Wrap the domain type.
+    Nor can one reaching a field "derived": {"app": …}: the app adds those
+    in the wrapper, beside view state.
+  - "derived" says who: {"app": how} or {"server": how}; a bare string is
+    refused.
+  - A field with "from" is of its query's result type, or wraps it in a
+    type whose one other-than-view, other-than-app-derived field is it.
+  - A parameter whose type is an enum takes only its members: its default,
+    and every "with" for it, a path of that enum or a member literal.
+  - An action that changes domain data is a "call": set and toggle write
+    only view state (a field marked "view": true, or inside one), and
+    every other action is UI-only (navigate, back, open, close, scrollTo,
+    share, copy). submit, reload, remove and the like are operations.
+  - A "call" to an operation with "requires" needs the node gated by that
+    condition: "disabled": "!<condition>", or "if": "<condition>".
+  - A "call" gives each parameter a value whose range lies inside the
+    parameter's: "{code}" of "string ..20" passes "string 1..20" only
+    under a condition testing code != "" ("disabled": "!hasCode").
+  - A query with "pages": "cursor" answers with a page type holding one
+    list (with its most, "Doc[] ..50") and "next": "string?". Every call to
+    it gives "cursor": null for the first page, or "{next}" — the field
+    filled "from": "<query>.next" — under a condition that tests it != null.
+    Do not write cursor or limit in its params: paging adds them.
+  - A "call" to a "destructive" operation is made only inside its
+    confirmation: an overlay whose kind has a backdrop and that a node
+    opens with {"open": "<its id>"}. The menu item or button a person first
+    acts on opens it instead (OPERATIONS below).
+  - A "call" to a bulk form (an operation's "bulk": its name) gives its
+    list, "ids", the selection: one path to a list in view state at least
+    one long ("string[] 1..") inside a nullable field, and the node is
+    gated by a condition testing that field != null ("disabled":
+    "!hasSelection"; or an "if" around it). Not its operation's "requires".
+  - A "long" command's job type (ExportDocsJob) and the query that reads
+    it (exportDocsJob) are derived: write neither. A field of "data" holds
+    the job, and fixtures hold it with each "status": running, done, failed.
+  - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
+    solid form), in a node, a fixture or a look: fonts.google.com/icons.
