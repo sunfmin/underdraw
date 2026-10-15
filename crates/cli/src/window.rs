@@ -38,7 +38,7 @@ use winit::window::{CursorIcon, Window, WindowId};
 use crate::act::{self, Act};
 use crate::chrome::{
     ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SIDEBAR,
-    SIDEBAR_LEAST, SPACE, THUMB, THUMB_TALL, TREE, TREE_LEAST,
+    SPACE, THUMB, THUMB_TALL,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::field::{Edit, Field, Motion};
@@ -48,10 +48,12 @@ use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Stands};
 use crate::reference::{self, Navigate, On, Pointed, Reference};
-use crate::scrollbar::{Axis, Bar, Part};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card, Foot};
 use crate::{chrome, gpu, links, paint, text};
+use panes::{Content, Pane, Panes, Scrolls, Took};
+
+mod panes;
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
@@ -233,31 +235,11 @@ struct Gallery {
     picture: Picture,
     /// What the person picked in what is shown: one thing at a time.
     picked: Picked,
-    /// How far the pictures, the tree and the sidebar are scrolled down,
-    /// and the pictures across, in points.
-    scroll: f64,
-    tree_scroll: f64,
-    side_scroll: f64,
-    across: f64,
-    /// Whether the sidebar is shown: ⌘\ hides and shows it.
-    sidebar: bool,
+    /// The panes' widths and scrolls, and the line or thumb held.
+    panes: Panes,
     /// Whether the card of the node picked is unfolded to its details: its
     /// id, and its label and box at each width.
     details: bool,
-    /// The tree's width, in points: where the line between it and the
-    /// pictures is, and the pictures' pane starts. Dragging the line moves
-    /// it, held to [`Gallery::bounds`].
-    tree: f64,
-    /// The sidebar's width, in points, kept while it is hidden: where the
-    /// line between the pictures and it is, from the window's right edge.
-    /// Dragging the line moves it, held to [`Gallery::bounds`].
-    side: f64,
-    /// The line between two panes held, being dragged; none while no line is.
-    resizing: Option<Edge>,
-    /// The scrollbar's thumb held, being dragged; none while none is.
-    grabbed: Option<Grab>,
-    /// The scrollbar whose thumb the pointer is over, drawn darker.
-    hot: Option<Scrolls>,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
@@ -268,8 +250,6 @@ struct Gallery {
     history: Vec<Named>,
     /// What the last act on a node came to, while nothing else is done.
     acted: Option<Acted>,
-    /// The window's width and height, in points.
-    size: (f64, f64),
     /// Sets the tree's and the captions' text.
     typesetter: text::Typesetter,
     /// Every description's notes, by its directory, as notes.json now
@@ -503,35 +483,6 @@ struct Shown {
     surface: gpu::Window<'static>,
 }
 
-/// A line between two panes, dragged to widen or narrow the pane beside
-/// the pictures it bounds.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Edge {
-    /// Between the tree and the pictures.
-    Tree,
-    /// Between the pictures and the sidebar.
-    Side,
-}
-
-/// A pane's scrollbar, by the scroll it moves: the tree's, the pictures'
-/// down and across, the sidebar's.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Scrolls {
-    Tree,
-    Down,
-    Across,
-    Side,
-}
-
-/// A scrollbar's thumb taken hold of, being dragged: whose, how far along
-/// its track the pointer was then, and how far its pane was scrolled.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Grab {
-    scrolls: Scrolls,
-    from: f64,
-    scrolled: f64,
-}
-
 /// What the picked description shows.
 enum Picture {
     /// One state at each of `WIDTHS`.
@@ -684,22 +635,12 @@ impl Gallery {
             wanted: None,
             picture: Picture::Faults(Vec::new()),
             picked: Picked::Nothing,
-            scroll: 0.0,
-            tree_scroll: 0.0,
-            side_scroll: 0.0,
-            across: 0.0,
-            sidebar: true,
+            panes: Panes::new(),
             details: false,
-            tree: TREE,
-            side: SIDEBAR,
-            resizing: None,
-            grabbed: None,
-            hot: None,
             cursor: (0.0, 0.0),
             acting: false,
             history: Vec::new(),
             acted: None,
-            size: (0.0, 0.0),
             typesetter,
             talk,
             draft: None,
@@ -720,17 +661,24 @@ impl Gallery {
     /// window does after.
     fn handle(&mut self, input: Input, clipboard: &mut dyn Clipboard) -> Effects {
         let mut effects = Effects::default();
+        if let Input::Resized(size) = input {
+            self.panes.resize(size);
+        }
+        // The panes fitted to the window and to what they hold as it now
+        // stands, for the input to find their scrollbars where they are
+        // drawn.
+        self.clamp();
         match input {
-            Input::Resized(size) => {
-                self.size = size;
-                effects.redraw = true;
-            }
+            Input::Resized(_) => effects.redraw = true,
             Input::Moved(at) => {
                 self.cursor = at;
-                let grip = self.resizing.is_some() || self.edge_at().is_some();
+                let grip = self.panes.grip(at);
                 effects.cursor = Some(if grip { CursorIcon::EwResize } else { CursorIcon::Default });
-                let resized = self.resize() || self.drag_thumb();
-                effects.redraw = resized || self.hover() || self.drag_field();
+                let dragged = self.panes.drag(at);
+                if dragged {
+                    self.clamp();
+                }
+                effects.redraw = dragged || self.hover() || self.drag_field();
             }
             Input::Pressed => effects.redraw = self.press(),
             Input::Released => effects.redraw = self.release(),
@@ -836,112 +784,13 @@ impl Gallery {
     /// Scrolled `right` and `down` points, the pane under the pointer: the
     /// tree, the sidebar, or the pictures, which alone scroll across.
     fn wheel(&mut self, right: f64, down: f64) {
-        if self.cursor.0 < self.tree {
-            self.tree_scroll += down;
-        } else if self.cursor.0 >= self.pane_right() {
-            self.side_scroll += down;
-        } else {
-            self.scroll += down;
-            self.across += right;
-        }
+        self.panes.wheel(self.cursor, right, down);
         self.clamp();
-    }
-
-    /// Where the pictures' pane ends on the right, in window points: where
-    /// the sidebar starts while it is shown, else the window's edge.
-    fn pane_right(&self) -> f64 {
-        if self.sidebar { self.size.0 - self.side } else { self.size.0 }
-    }
-
-    /// How wide the pictures' pane is, between the tree and the sidebar.
-    fn pane(&self) -> f64 {
-        self.pane_right() - self.tree
-    }
-
-    /// The least and the most the width of the pane `edge` bounds can be:
-    /// [`TREE_LEAST`] or [`SIDEBAR_LEAST`], and what leaves the pictures'
-    /// pane, beside the other pane, room for the phone's picture at
-    /// [`SMALLEST`], with the space around it. In a window too narrow for
-    /// both, the least.
-    fn bounds(&self, edge: Edge) -> (f64, f64) {
-        let picture = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
-        let (least, beside) = match edge {
-            Edge::Tree => (TREE_LEAST, self.size.0 - self.pane_right()),
-            Edge::Side => (SIDEBAR_LEAST, self.tree),
-        };
-        (least, (self.size.0 - beside - picture).max(least))
-    }
-
-    /// Where `edge`'s line is, in window points; none for the sidebar's
-    /// while it is hidden.
-    fn edge_x(&self, edge: Edge) -> Option<f64> {
-        match edge {
-            Edge::Tree => Some(self.tree),
-            Edge::Side => self.sidebar.then(|| self.pane_right()),
-        }
-    }
-
-    /// The width of the pane `edge` bounds: the tree's, or the sidebar's.
-    fn width_mut(&mut self, edge: Edge) -> &mut f64 {
-        match edge {
-            Edge::Tree => &mut self.tree,
-            Edge::Side => &mut self.side,
-        }
-    }
-
-    /// The line between two panes the pointer is on, near enough to take
-    /// hold of it.
-    fn edge_at(&self) -> Option<Edge> {
-        [Edge::Tree, Edge::Side]
-            .into_iter()
-            .find(|&edge| self.edge_x(edge).is_some_and(|x| (self.cursor.0 - x).abs() <= chrome::GRIP))
-    }
-
-    /// The pointer moved, a line held: the pane it bounds as wide as
-    /// reaches where the pointer is, within its bounds, and the pictures
-    /// fitted to what is left; the other pane keeps its width. Whether a
-    /// line is held.
-    fn resize(&mut self) -> bool {
-        let Some(edge) = self.resizing else {
-            return false;
-        };
-        let (least, most) = self.bounds(edge);
-        let reach = match edge {
-            Edge::Tree => self.cursor.0,
-            Edge::Side => self.size.0 - self.cursor.0,
-        };
-        *self.width_mut(edge) = reach.clamp(least, most);
-        self.clamp();
-        true
-    }
-
-    /// The pointer moved, a scrollbar's thumb held: its pane scrolled as
-    /// far as the thumb has moved with the pointer along its track, held
-    /// within what there is to scroll. Whether a thumb is held.
-    fn drag_thumb(&mut self) -> bool {
-        let Some(grab) = self.grabbed else {
-            return false;
-        };
-        if let Some((_, bar)) = self.bars().into_iter().find(|(scrolls, _)| *scrolls == grab.scrolls) {
-            *self.scrolled_mut(grab.scrolls) = bar.dragged(grab.scrolled, bar.along(self.cursor) - grab.from);
-            self.clamp();
-        }
-        true
-    }
-
-    /// How far the pane `scrolls` scrolls is scrolled.
-    fn scrolled_mut(&mut self, scrolls: Scrolls) -> &mut f64 {
-        match scrolls {
-            Scrolls::Tree => &mut self.tree_scroll,
-            Scrolls::Down => &mut self.scroll,
-            Scrolls::Across => &mut self.across,
-            Scrolls::Side => &mut self.side_scroll,
-        }
     }
 
     /// The sidebar shown, or hidden, its width given to the pictures.
     fn toggle_sidebar(&mut self) {
-        self.sidebar = !self.sidebar;
+        self.panes.toggle_side();
         self.clamp();
     }
 
@@ -954,28 +803,15 @@ impl Gallery {
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
-        // On a line between two panes, only taking hold of it: no line of
-        // the tree, nor node, is picked, nor button pressed.
-        if let Some(edge) = self.edge_at() {
-            self.resizing = Some(edge);
-            return false;
-        }
-        // On a scrollbar, only scrolling its pane: its thumb taken hold
-        // of, or a page toward the press on its track.
-        if let Some((scrolls, bar, part)) = self.bar_at(self.cursor) {
-            let page = bar.page();
-            match part {
-                Part::Thumb => {
-                    let (from, scrolled) = (bar.along(self.cursor), bar.scrolled);
-                    self.grabbed = Some(Grab { scrolls, from, scrolled });
-                }
-                Part::Before => *self.scrolled_mut(scrolls) -= page,
-                Part::After => *self.scrolled_mut(scrolls) += page,
-            }
+        // On a line between two panes, only taking hold of it; on a
+        // scrollbar, only scrolling its pane: no line of the tree, nor
+        // region, is picked, nor button pressed.
+        if let Some(took) = self.panes.press(self.cursor) {
             self.clamp();
-            return true;
+            return took == Took::Bar;
         }
-        if self.cursor.0 >= self.pane_right() {
+        let pane = self.panes.pane_at(self.cursor);
+        if pane == Pane::Side {
             if self.press_field() {
                 return true;
             }
@@ -984,7 +820,7 @@ impl Gallery {
                 None => false,
             };
         }
-        if self.cursor.0 >= self.tree {
+        if pane == Pane::Pictures {
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
             }
@@ -1030,11 +866,10 @@ impl Gallery {
                 }
             };
         }
-        let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
-        if line < 0.0 {
+        let Some(line) = self.panes.row_at(self.cursor) else {
             return false;
-        }
-        match self.shows(line as usize) {
+        };
+        match self.shows(line) {
             Some(index) if Some(index) != self.line => {
                 self.history.clear();
                 self.acted = None;
@@ -1093,8 +928,7 @@ impl Gallery {
     /// shown.
     fn release(&mut self) -> bool {
         self.selecting = None;
-        self.resizing = None;
-        self.grabbed.take().is_some()
+        self.panes.release()
     }
 
     /// The line picking line `index` shows: its own, a directory's (its
@@ -1110,7 +944,8 @@ impl Gallery {
     /// description went too, the first description's. A journey picked is
     /// played again at the step shown, while it is listed.
     fn reload(&mut self) {
-        let (wanted, scroll, acted) = (self.wanted.take(), self.scroll, self.acted.take());
+        let (wanted, acted) = (self.wanted.take(), self.acted.take());
+        let scroll = self.panes.scrolled(Scrolls::Down);
         let arrow = self.arrow().and_then(|_| self.reference());
         let journey = self.line.and_then(|index| self.lines.get(index)).filter(|line| line.journey);
         let journey = journey.map(|line| (line.row.dir.clone(), self.playing.as_ref().map_or(0, |p| p.at)));
@@ -1125,8 +960,8 @@ impl Gallery {
         });
         if let Some((index, at)) = playing {
             self.play(index, at);
-            self.scroll = scroll;
             self.clamp();
+            self.panes.scroll_to(Scrolls::Down, scroll);
             return;
         }
         let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
@@ -1140,7 +975,8 @@ impl Gallery {
         if again.is_some() {
             // What the panel said stands while the same state is shown: the
             // window's own note, written, comes back as a change.
-            self.scroll = scroll;
+            self.clamp();
+            self.panes.scroll_to(Scrolls::Down, scroll);
             self.acted = acted;
             if let Some(at) = arrow.and_then(|arrow| self.arrow_references().iter().position(|r| *r == arrow))
             {
@@ -1364,7 +1200,8 @@ impl Gallery {
         self.line = Some(index);
         let name = state.as_ref().map(|state| state.name().to_string());
         self.wanted = Some(Named { dir: dir.clone(), state: name });
-        (self.scroll, self.across) = (0.0, 0.0);
+        self.panes.scroll_to(Scrolls::Down, 0.0);
+        self.panes.scroll_to(Scrolls::Across, 0.0);
         self.picture = if !described {
             Picture::Flow(self.flow(&dir))
         } else if !faults.is_empty() {
@@ -1452,7 +1289,8 @@ impl Gallery {
         self.line = Some(index);
         self.playing = None;
         self.picked = Picked::Nothing;
-        (self.scroll, self.across) = (0.0, 0.0);
+        self.panes.scroll_to(Scrolls::Down, 0.0);
+        self.panes.scroll_to(Scrolls::Across, 0.0);
         if !faults.is_empty() {
             self.wanted = None;
             self.picture = Picture::Faults(faults);
@@ -1521,7 +1359,7 @@ impl Gallery {
     /// The marks around the node the journey played acts on next, in
     /// window points, in each picture that shows it.
     fn marks(&self) -> Vec<Rect> {
-        let zoom = self.zoom(self.pane());
+        let zoom = self.zoom(self.panes.pictures().width());
         self.marked()
             .into_iter()
             .zip(self.origins())
@@ -1670,15 +1508,17 @@ impl Gallery {
         let Picture::Overview(overview) = &self.picture else {
             return Vec::new();
         };
-        let columns = Self::columns(self.pane());
+        let columns = Self::columns(self.panes.pictures().width());
         overview
             .thumbs
             .iter()
             .enumerate()
             .map(|(index, thumb)| {
                 let (column, row) = ((index % columns) as f64, (index / columns) as f64);
-                let x = self.tree + MARGIN + column * (THUMB + SPACE);
-                let y = MARGIN - self.scroll + CAPTION + row * (CAPTION + THUMB_TALL + SPACE);
+                let x = self.panes.pictures().x0 + MARGIN + column * (THUMB + SPACE);
+                let y = MARGIN - self.panes.scrolled(Scrolls::Down)
+                    + CAPTION
+                    + row * (CAPTION + THUMB_TALL + SPACE);
                 (x, y, THUMB, (thumb.height * THUMB / thumb.width).min(THUMB_TALL))
             })
             .collect()
@@ -1822,7 +1662,7 @@ impl Gallery {
                 })
                 .collect(),
             Picture::Flow(flow) => {
-                let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.pane()));
+                let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.panes.pictures().width()));
                 let window = |(x, y): (f64, f64)| (left + x * zoom, top + y * zoom);
                 flow_arrows(flow)
                     .into_iter()
@@ -1931,12 +1771,12 @@ impl Gallery {
 
     /// Where the flow's top-left corner is in the window, in points.
     fn flow_origin(&self) -> (f64, f64) {
-        (self.tree + MARGIN, MARGIN - self.scroll)
+        (self.panes.pictures().x0 + MARGIN, MARGIN - self.panes.scrolled(Scrolls::Down))
     }
 
     /// `at`, a point in the window, in the flow's points.
     fn in_flow(&self, at: (f64, f64)) -> (f64, f64) {
-        let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.pane()));
+        let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.panes.pictures().width()));
         ((at.0 - left) / zoom, (at.1 - top) / zoom)
     }
 
@@ -1945,9 +1785,9 @@ impl Gallery {
         let Picture::Pages(pages) = &self.picture else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.pane());
-        let mut x = self.tree + MARGIN - self.across;
-        let top = MARGIN - self.scroll + CAPTION;
+        let zoom = self.zoom(self.panes.pictures().width());
+        let mut x = self.panes.pictures().x0 + MARGIN - self.panes.scrolled(Scrolls::Across);
+        let top = MARGIN - self.panes.scrolled(Scrolls::Down) + CAPTION;
         pages
             .iter()
             .map(|page| {
@@ -1972,7 +1812,7 @@ impl Gallery {
         let Picture::Pages(pages) = &self.picture else {
             return None;
         };
-        let zoom = self.zoom(self.pane());
+        let zoom = self.zoom(self.panes.pictures().width());
         pages.iter().zip(self.origins()).enumerate().find_map(|(index, (page, (left, top)))| {
             let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
             ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y)).then_some((
@@ -2037,10 +1877,7 @@ impl Gallery {
     /// its reply, and the scrollbar whose thumb it is over, drawn darker.
     /// Whether either changed.
     fn hover(&mut self) -> bool {
-        let hot =
-            self.bar_at(self.cursor).and_then(|(scrolls, _, part)| (part == Part::Thumb).then_some(scrolls));
-        let warmed = hot != self.hot;
-        self.hot = hot;
+        let warmed = self.panes.hover(self.cursor);
         let over = self.pin_at(self.cursor).filter(|(dir, id)| {
             self.notes.get(dir).is_some_and(|notes| notes.iter().any(|note| &note.id == id && !note.waits()))
         });
@@ -2052,14 +1889,16 @@ impl Gallery {
     /// What the button of the sidebar under `at`, a point in the window,
     /// does; none off its buttons, or while it is hidden.
     fn button_at(&mut self, at: (f64, f64)) -> Option<Do> {
-        if !self.sidebar {
-            return None;
-        }
+        let side = self.panes.side()?;
         let (cards, foot) = (self.sidebar_cards(), self.foot());
-        let (right, bottom) = (self.pane_right(), self.size.1);
-        let top = -self.side_scroll;
-        let laid =
-            sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), (top, bottom), &mut self.typesetter);
+        let top = -self.panes.scrolled(Scrolls::Side);
+        let laid = sidebar::lay_out(
+            &cards,
+            foot.as_ref(),
+            (side.x0, side.width()),
+            (top, side.y1),
+            &mut self.typesetter,
+        );
         laid.at(at).cloned()
     }
 
@@ -2071,7 +1910,7 @@ impl Gallery {
         let Picture::Pages(pages) = &self.picture else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.pane());
+        let zoom = self.zoom(self.panes.pictures().width());
         let mut labels = Vec::new();
         for (page, (left, top)) in pages.iter().zip(self.origins()) {
             for tag in &page.tags {
@@ -2095,7 +1934,7 @@ impl Gallery {
         let (Some((id, _)), Picture::Pages(pages)) = (self.node(), &self.picture) else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.pane());
+        let zoom = self.zoom(self.panes.pictures().width());
         pages
             .iter()
             .zip(self.origins())
@@ -2416,11 +2255,18 @@ impl Gallery {
     /// How tall the sidebar's cards are, unscrolled; nothing while it is
     /// hidden.
     fn sidebar_height(&mut self) -> f64 {
-        if !self.sidebar {
+        if self.panes.side().is_none() {
             return 0.0;
         }
         let cards = self.sidebar_cards();
-        sidebar::lay_out(&cards, None, (0.0, self.side), (0.0, self.size.1), &mut self.typesetter).height
+        sidebar::lay_out(
+            &cards,
+            None,
+            (0.0, self.panes.side_width()),
+            (0.0, self.panes.window().1),
+            &mut self.typesetter,
+        )
+        .height
     }
 
     /// Where the box at the sidebar's foot starts, from the window's top:
@@ -2428,11 +2274,18 @@ impl Gallery {
     /// bottom while there is no box, or no sidebar.
     fn sidebar_foot(&mut self) -> f64 {
         let foot = self.foot();
-        if !self.sidebar || foot.is_none() {
-            return self.size.1;
+        if self.panes.side().is_none() || foot.is_none() {
+            return self.panes.window().1;
         }
-        let (right, bottom) = (self.pane_right(), self.size.1);
-        sidebar::lay_out(&[], foot.as_ref(), (right, self.side), (0.0, bottom), &mut self.typesetter).foot
+        let (right, bottom) = (self.panes.pictures().x1, self.panes.window().1);
+        sidebar::lay_out(
+            &[],
+            foot.as_ref(),
+            (right, self.panes.side_width()),
+            (0.0, bottom),
+            &mut self.typesetter,
+        )
+        .foot
     }
 
     /// The card of the arrow picked: what it is.
@@ -2530,7 +2383,7 @@ impl Gallery {
                 self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
             Answer::Wrong => {
-                let text = Field::new(&self.typesetter, sidebar::field_width(self.side));
+                let text = Field::new(&self.typesetter, sidebar::field_width(self.panes.side_width()));
                 self.draft = Some(Draft { on, answers, text });
             }
         }
@@ -2650,7 +2503,7 @@ impl Gallery {
 
     /// Whether there is a field keys type into: see [`Gallery::field_mut`].
     fn typing(&self) -> bool {
-        self.draft.is_some() || (self.sidebar && self.reference().is_some())
+        self.draft.is_some() || (self.panes.side().is_some() && self.reference().is_some())
     }
 
     /// What the box at the sidebar's foot holds said in the conversation on
@@ -2665,9 +2518,9 @@ impl Gallery {
         match notes::say(&on, &self.talk.text()) {
             Ok(_) => {
                 self.notes = notes_of(&self.lines);
-                self.talk = Field::new(&self.typesetter, sidebar::field_width(self.side));
-                self.side_scroll = f64::MAX;
+                self.talk = Field::new(&self.typesetter, sidebar::field_width(self.panes.side_width()));
                 self.clamp();
+                self.panes.scroll_to(Scrolls::Side, f64::MAX);
             }
             Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
         }
@@ -2821,13 +2674,11 @@ impl Gallery {
     /// Where the text of the field written in is, in window points, while
     /// one is and the sidebar is shown.
     fn field_rect(&mut self) -> Option<Rect> {
-        if !self.sidebar {
-            return None;
-        }
+        let side = self.panes.side()?;
         let (cards, foot) = (self.sidebar_cards(), self.foot());
-        let (right, bottom) = (self.pane_right(), self.size.1);
-        let top = -self.side_scroll;
-        sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), (top, bottom), &mut self.typesetter).field
+        let top = -self.panes.scrolled(Scrolls::Side);
+        sidebar::lay_out(&cards, foot.as_ref(), (side.x0, side.width()), (top, side.y1), &mut self.typesetter)
+            .field
     }
 
     /// The caret of the field written in put where the pointer is on its
@@ -2912,7 +2763,7 @@ impl Gallery {
         let Some(notes) = self.notes.get(&wanted.dir) else {
             return Vec::new();
         };
-        let zoom = self.zoom(self.pane());
+        let zoom = self.zoom(self.panes.pictures().width());
         let mut pins: Vec<Pin> = Vec::new();
         for (index, (page, (left, top))) in pages.iter().zip(self.origins()).enumerate() {
             // How many pins and dots each node has had so far, to set the
@@ -3201,89 +3052,37 @@ impl Gallery {
         (list, y)
     }
 
-    /// The tree's width, then the sidebar's, kept within their bounds: a
-    /// window narrowed, or the sidebar shown, narrows the tree first. And
-    /// the scrolls inside what there is to scroll.
+    /// The panes fitted to how large what each holds is at their widths:
+    /// each width, and each scroll, held within its bounds. And the note
+    /// being written fitted to the sidebar's width.
     fn clamp(&mut self) {
-        for edge in [Edge::Tree, Edge::Side] {
-            let (least, most) = self.bounds(edge);
-            let width = self.width_mut(edge);
-            *width = width.clamp(least, most);
-        }
+        let field = sidebar::field_width(self.panes.side_width());
         if let Some(draft) = &mut self.draft {
-            draft.text.fit(sidebar::field_width(self.side));
+            draft.text.fit(field);
         }
-        self.talk.fit(sidebar::field_width(self.side));
-        let height = self.size.1;
-        let below = (self.pictures_height(self.pane()) - height).max(0.0);
-        self.scroll = self.scroll.clamp(0.0, below);
-        let beyond = (self.pictures_width(self.pane()) - self.pane()).max(0.0);
-        self.across = self.across.clamp(0.0, beyond);
-        let below = (self.sidebar_height() - self.sidebar_foot()).max(0.0);
-        self.side_scroll = self.side_scroll.clamp(0.0, below);
-        let below = (self.tree_height() - height).max(0.0);
-        self.tree_scroll = self.tree_scroll.clamp(0.0, below);
-    }
-
-    /// How tall the tree's lines are, all of them, unscrolled.
-    fn tree_height(&self) -> f64 {
-        self.lines.len() as f64 * ROW + MARGIN
-    }
-
-    /// Each pane's scrollbar ([`scrollbar`](crate::scrollbar)): the
-    /// pictures', down then across, and the tree's, then the sidebar's
-    /// while it is shown. Where the pictures scroll both ways, the bar
-    /// across stops short of the one down.
-    fn bars(&mut self) -> Vec<(Scrolls, Bar)> {
-        let (width, height) = self.size;
-        let (tree, right) = (self.tree, self.pane_right());
-        let pictures = Area::new(tree, 0.0, right, height);
-        let content = self.pictures_height(self.pane());
-        let down = Bar { pane: pictures, axis: Axis::Down, content, scrolled: self.scroll, corner: 0.0 };
-        let corner =
-            if down.thumb().is_some() { chrome::SCROLLBAR_WIDE + chrome::SCROLLBAR_INSET } else { 0.0 };
-        let content = self.pictures_width(self.pane());
-        let across = Bar { pane: pictures, axis: Axis::Across, content, scrolled: self.across, corner };
-        let lines = Area::new(0.0, 0.0, tree, height);
-        let content = self.tree_height();
-        let lines = Bar { pane: lines, axis: Axis::Down, content, scrolled: self.tree_scroll, corner: 0.0 };
-        let mut bars = vec![(Scrolls::Down, down), (Scrolls::Across, across), (Scrolls::Tree, lines)];
-        if self.sidebar {
-            let side = Area::new(right, 0.0, width, self.sidebar_foot());
-            let content = self.sidebar_height();
-            let side = Bar { pane: side, axis: Axis::Down, content, scrolled: self.side_scroll, corner: 0.0 };
-            bars.push((Scrolls::Side, side));
-        }
-        bars
-    }
-
-    /// The thumb of each pane's scrollbar, in window points, where what
-    /// it holds is larger than it, in the order of [`Gallery::bars`]: the
-    /// pictures' drawn under their labels so that none covers an orange
-    /// "?", the tree's and the sidebar's over the rest in the space right
-    /// of the tree's names and of the sidebar's cards.
-    fn thumbs(&mut self) -> Vec<(Scrolls, Area)> {
-        self.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?))).collect()
-    }
-
-    /// The scrollbar under `at`, a point in the window, and the part of it
-    /// there; none off every scrollbar.
-    fn bar_at(&mut self, at: (f64, f64)) -> Option<(Scrolls, Bar, Part)> {
-        self.bars().into_iter().find_map(|(scrolls, bar)| Some((scrolls, bar, bar.at(at)?)))
+        self.talk.fit(field);
+        let pane = self.panes.pictures().width();
+        let pictures = (self.pictures_width(pane), self.pictures_height(pane));
+        let (side, foot) = (self.sidebar_height(), self.panes.window().1 - self.sidebar_foot());
+        let content = Content { rows: self.lines.len(), pictures, side, foot };
+        self.panes.fit(content);
     }
 
     /// The whole window, in points.
     fn frame(&mut self) -> Scene {
-        let (width, height) = self.size;
-        let thumbs = self.thumbs();
-        let hot = self.grabbed.map(|grab| grab.scrolls).or(self.hot);
+        let (width, height) = self.panes.window();
+        // The pictures' thumbs drawn under their labels so that none covers
+        // an orange "?", the tree's and the sidebar's over the rest in the
+        // space right of the tree's names and of the sidebar's cards.
+        let thumbs = self.panes.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?)));
+        let hot = self.panes.hot();
         let (pictures_bars, side_bars): (Vec<_>, Vec<_>) =
-            thumbs.into_iter().partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
-        let tree = self.tree;
+            thumbs.partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
+        let tree = self.panes.pictures().x0;
         let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
             let Line { row, state, .. } = line;
-            let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
+            let y = self.panes.row_top(index);
             if self.line == Some(index) {
                 list.push(Draw::Box {
                     rect: rect(6.0, y + 1.0, tree - 12.0, ROW - 2.0),
@@ -3321,9 +3120,10 @@ impl Gallery {
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
         let left = tree + MARGIN;
-        let (faults, _) = self.faults(self.pane());
-        let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
-        let zoom = self.zoom(self.pane());
+        let (faults, _) = self.faults(self.panes.pictures().width());
+        let mut pane: Vec<Draw> =
+            faults.into_iter().map(|draw| moved(draw, left, -self.panes.scrolled(Scrolls::Down))).collect();
+        let zoom = self.zoom(self.panes.pictures().width());
         let mut pages = Vec::new();
         let labels = self.labels();
         let mut thumbs = Vec::new();
@@ -3410,16 +3210,22 @@ impl Gallery {
         }
         pane.extend(pins);
         pane.extend(reply);
-        let right = self.pane_right();
-        let (side, foot, cut_at) = if self.sidebar {
+        let right = self.panes.pictures().x1;
+        let (side, foot, cut_at) = if self.panes.side().is_some() {
             let (cards, foot) = (self.sidebar_cards(), self.foot());
             let mut side = vec![Draw::Line {
                 from: [right as f32, 0.0],
                 to: [right as f32, height as f32],
                 ink: Ink::Line,
             }];
-            let at = (-self.side_scroll, height);
-            let laid = sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), at, &mut self.typesetter);
+            let at = (-self.panes.scrolled(Scrolls::Side), height);
+            let laid = sidebar::lay_out(
+                &cards,
+                foot.as_ref(),
+                (right, self.panes.side_width()),
+                at,
+                &mut self.typesetter,
+            );
             self.caret = laid.caret;
             side.extend(laid.draws);
             (side, laid.foot_draws, laid.foot)
@@ -3963,6 +3769,7 @@ impl ApplicationHandler<Told> for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome::{SIDEBAR, SIDEBAR_LEAST, TREE, TREE_LEAST};
 
     /// The drafts as git has them committed at `HEAD`, not as they stand in
     /// the working tree: a draft added, edited or noted on and not committed
@@ -4129,7 +3936,7 @@ mod tests {
 
     /// The pointer moved over row `index` of the tree.
     fn over_row(gallery: &mut Gallery, index: usize) {
-        gallery.move_to((40.0, MARGIN / 2.0 + (index as f64 + 0.5) * ROW));
+        gallery.move_to((40.0, gallery.panes.row_top(index) + ROW / 2.0));
     }
 
     /// The line of the description named `name`.
@@ -4192,7 +3999,7 @@ mod tests {
         assert_eq!(widths, vec![390.0, 1120.0]);
         assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
         assert!(!gallery.press_here(), "picking it again changes nothing");
-        gallery.press_at((gallery.tree + 100.0, 100.0));
+        gallery.press_at((gallery.panes.pictures().x0 + 100.0, 100.0));
         assert_eq!(gallery.line, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
 
@@ -4275,228 +4082,44 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing + 1);
         gallery.press_here();
-        let end = gallery.pictures_height(gallery.pane()) - 900.0;
+        let end = gallery.pictures_height(gallery.panes.pictures().width()) - 900.0;
         assert!(end > 0.0, "the listing is taller than the window");
-        gallery.move_to((gallery.tree + 100.0, 400.0));
-        gallery.wheel_by(0.0, 120.0);
-        assert_eq!(gallery.scroll, 120.0);
+        gallery.move_to((gallery.panes.pictures().x0 + 100.0, 400.0));
         gallery.wheel_by(0.0, 1e6);
-        assert_eq!(gallery.scroll, end, "no further than the end");
+        assert_eq!(gallery.panes.scrolled(Scrolls::Down), end, "as far as its end");
+        let bar = gallery.panes.bar(Scrolls::Down).unwrap();
+        assert_eq!(bar.content, end + 900.0, "its scrollbar over all of it");
         gallery.wheel_by(0.0, -1e6);
-        assert_eq!(gallery.scroll, 0.0, "no further than the top");
-        over_row(&mut gallery, 0);
-        gallery.wheel_by(0.0, 500.0);
-        assert_eq!((gallery.scroll, gallery.tree_scroll), (0.0, 500.0), "over the tree, the tree scrolls");
-        gallery.wheel_by(0.0, 1e6);
-        let end = gallery.lines.len() as f64 * ROW + MARGIN - 900.0;
-        assert_eq!(gallery.tree_scroll, end, "as far as its last line");
-    }
-
-    /// The thumbs of the pictures' scrollbars, down then across, and of
-    /// the tree's then the sidebar's.
-    fn scrollbars(gallery: &mut Gallery) -> (Vec<Area>, Vec<Area>) {
-        let (pictures, others): (Vec<_>, Vec<_>) = gallery
-            .thumbs()
-            .into_iter()
-            .partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
-        (pictures.into_iter().map(|(_, bar)| bar).collect(), others.into_iter().map(|(_, bar)| bar).collect())
-    }
-
-    /// The scrollbar `scrolls` of the gallery as it is now.
-    fn bar_of(gallery: &mut Gallery, scrolls: Scrolls) -> Bar {
-        gallery.bars().into_iter().find(|(s, _)| *s == scrolls).unwrap().1
+        assert_eq!(gallery.panes.scrolled(Scrolls::Down), 0.0, "no further than the top");
     }
 
     #[test]
-    fn a_pane_shows_a_scrollbar_while_it_overflows_and_follows_its_scroll() {
-        let mut gallery = gallery();
-        let listing = line_of(&gallery, "airbnb-listing");
-        over_row(&mut gallery, listing + 1);
-        gallery.press_here();
-        let (pictures, _) = scrollbars(&mut gallery);
-        assert_eq!(pictures.len(), 2, "the listing overflows down, and at half size across: {pictures:?}");
-        let (top, across) = (pictures[0], pictures[1]);
-        assert!(across.x1 < top.x0, "the bar across stops short of the one down");
-        assert_eq!(across.x0, gallery.tree + chrome::SCROLLBAR_INSET, "unscrolled across, at its start");
-        assert_eq!(top.y0, chrome::SCROLLBAR_INSET, "unscrolled, at the very top");
-        let share = 900.0 / gallery.pictures_height(gallery.pane());
-        assert!((top.height() - (900.0 - 2.0 * chrome::SCROLLBAR_INSET) * share).abs() < 1e-9);
-        gallery.move_to((gallery.tree + 100.0, 400.0));
-        gallery.wheel_by(0.0, 1e6);
-        let (pictures, _) = scrollbars(&mut gallery);
-        assert_eq!(
-            pictures[0].y1,
-            900.0 - chrome::SCROLLBAR_INSET,
-            "scrolled to the end, at the very bottom"
-        );
-        assert_eq!(pictures[0].height(), top.height());
-
-        let (_, others) = scrollbars(&mut gallery);
-        let tree = gallery.tree_height() > 900.0;
-        assert_eq!(others.iter().any(|bar| bar.x1 <= gallery.tree), tree, "the tree's while it overflows");
-        for bar in &others {
-            assert!(bar.x0 >= gallery.tree - 14.0 || bar.x0 >= gallery.pane_right(), "clear of the names");
-        }
-
-        gallery.feed([Input::Resized((4000.0, 1e5))]);
-        gallery.clamp();
-        let (pictures, others) = scrollbars(&mut gallery);
-        assert!(pictures.is_empty() && others.is_empty(), "a window large enough for all of it has none");
-    }
-
-    #[test]
-    fn dragging_a_thumb_scrolls_its_pane_in_step_held_within_its_bounds() {
-        let mut gallery = gallery();
-        let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing + 1);
-        let (picked, node) = (gallery.line, gallery.picked.clone());
-        let bar = bar_of(&mut gallery, Scrolls::Down);
-        let thumb = bar.thumb().unwrap();
-
-        assert!(gallery.move_to((thumb.center().x, thumb.center().y)), "the pointer over a thumb warms it");
-        assert_eq!(gallery.hot, Some(Scrolls::Down));
-        gallery.press_here();
-        assert_eq!(gallery.grabbed.map(|grab| grab.scrolls), Some(Scrolls::Down), "the thumb taken hold of");
-        assert_eq!(gallery.scroll, 0.0, "a press on the thumb scrolls nothing yet");
-        assert!(gallery.move_by((0.0, 30.0)), "the drag moves the thumb");
-        assert!((gallery.scroll - bar.dragged(0.0, 30.0)).abs() < 1e-9, "scrolled as far as the thumb moved");
-        let moved = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
-        assert!((moved.y0 - (thumb.y0 + 30.0)).abs() < 1e-9, "the thumb under the pointer still: {moved:?}");
-        gallery.move_by((0.0, 1e5));
-        let below = gallery.pictures_height(gallery.pane()) - 900.0;
-        assert_eq!(gallery.scroll, below, "no further than the end");
-        gallery.move_to((gallery.cursor.0, -1e5));
-        assert_eq!(gallery.scroll, 0.0, "no further than the start");
-        assert!(gallery.let_go(), "letting go cools the thumb");
-        assert!(gallery.grabbed.is_none());
-        gallery.move_to((gallery.cursor.0, 500.0));
-        assert_eq!(gallery.scroll, 0.0);
-        assert_eq!((gallery.line, &gallery.picked), (picked, &node), "nothing picked by any of it");
-
-        let across = bar_of(&mut gallery, Scrolls::Across).thumb().unwrap();
-        gallery.press_at((across.center().x, across.center().y));
-        gallery.move_by((40.0, 0.0));
-        assert!(gallery.across > 0.0, "the thumb across scrolls across");
-        gallery.let_go();
-    }
-
-    #[test]
-    fn a_press_on_the_track_scrolls_a_page_toward_it() {
-        let mut gallery = gallery();
-        let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing + 1);
-        // The window short, so that a page is less than what is out of view.
-        gallery.feed([Input::Resized((1440.0, 300.0))]);
-        gallery.clamp();
-        let thumb = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
-        assert!(gallery.press_at((thumb.center().x, thumb.y1 + 10.0)), "a press below the thumb scrolls");
-        assert_eq!(gallery.scroll, 300.0, "one page down: as tall as the pane");
-        assert!(gallery.grabbed.is_none(), "takes hold of nothing");
-        gallery.let_go();
-        let thumb = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
-        gallery.press_at((thumb.center().x, thumb.y0 - 1.0));
-        assert_eq!(gallery.scroll, 0.0, "one page back up");
-        gallery.let_go();
-        gallery.move_to((thumb.center().x, 300.0 - chrome::SCROLLBAR_INSET - 1.0));
-        for _ in 0..20 {
-            gallery.press_here();
-            gallery.let_go();
-        }
-        let below = gallery.pictures_height(gallery.pane()) - 300.0;
-        assert_eq!(gallery.scroll, below, "never past the end");
-    }
-
-    #[test]
-    fn a_press_on_a_scrollbar_picks_nothing_and_presses_nothing() {
+    fn a_press_on_a_scrollbar_or_a_line_between_panes_picks_nothing_and_presses_nothing() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
         gallery.feed([Input::Resized((1440.0, 300.0))]);
-        gallery.clamp();
-        let (picked, node) = (gallery.line, gallery.picked.clone());
+        let (line, picked) = (gallery.line, gallery.picked.clone());
+        let mut presses = Vec::new();
         for scrolls in [Scrolls::Tree, Scrolls::Down, Scrolls::Across, Scrolls::Side] {
-            let bar = bar_of(&mut gallery, scrolls);
+            let bar = gallery.panes.bar(scrolls).unwrap();
             let thumb = bar.thumb().unwrap_or_else(|| panic!("{scrolls:?} overflows a short window"));
-            for at in [(thumb.center().x, thumb.center().y), bar.lane().unwrap().center().into()] {
-                gallery.move_to(at);
-                assert_eq!(gallery.edge_at(), None, "{scrolls:?}: a scrollbar is never a line's");
-                gallery.press_here();
-                assert_eq!(gallery.line, picked, "{scrolls:?}: no line of the tree picked");
-                assert_eq!(gallery.picked, node, "{scrolls:?}: no node picked");
-                assert!(gallery.resizing.is_none(), "{scrolls:?}: no line");
-                assert!(gallery.draft.is_none() && gallery.acted.is_none(), "{scrolls:?}: no button pressed");
-                gallery.cursor.1 += 5.0;
-                gallery.release();
-                assert!(gallery.selecting.is_none(), "{scrolls:?}: no text selected");
-            }
+            presses.push((format!("{scrolls:?}"), (thumb.center().x, thumb.center().y)));
+            presses.push((format!("{scrolls:?}'s track"), bar.lane().unwrap().center().into()));
         }
-    }
-
-    #[test]
-    fn a_line_between_panes_and_the_scrollbar_beside_it_never_share_a_point() {
-        let mut gallery = gallery();
-        let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing + 1);
-        gallery.feed([Input::Resized((1440.0, 300.0))]);
-        gallery.clamp();
-        let (tree, right) = (gallery.tree, gallery.pane_right());
-        let lanes: Vec<_> =
-            gallery.bars().into_iter().filter_map(|(s, bar)| Some((s, bar.lane()?))).collect();
-        assert_eq!(lanes.len(), 4, "every pane overflows: {lanes:?}");
-        for (scrolls, lane) in lanes {
-            for line in [tree, right] {
-                let clear = lane.x1 <= line - chrome::GRIP || lane.x0 >= line + chrome::GRIP;
-                assert!(clear, "{scrolls:?}'s scrollbar {lane:?} clear of the line at {line}");
-            }
+        let pictures = gallery.panes.pictures();
+        presses.push(("the tree's line".into(), (pictures.x0, 150.0)));
+        presses.push(("the sidebar's line".into(), (pictures.x1, 150.0)));
+        for (what, at) in presses {
+            gallery.move_to(at);
+            gallery.press_here();
+            assert_eq!(gallery.line, line, "{what}: no line of the tree picked");
+            assert_eq!(gallery.picked, picked, "{what}: no node picked");
+            assert!(gallery.draft.is_none() && gallery.acted.is_none(), "{what}: no button pressed");
+            gallery.move_by((0.0, 5.0));
+            gallery.let_go();
+            assert!(gallery.selecting.is_none(), "{what}: no text selected");
         }
-    }
-
-    #[test]
-    fn one_thing_is_picked_at_a_time_and_a_pin_picks_what_its_note_is_on() {
-        let root = root_of("one-picked", &[("orders", "orders")]);
-        let mut gallery = opened(&root, (1440.0, 900.0));
-        let orders = line_of(&gallery, "orders");
-        showing(&mut gallery, orders);
-        let last = gallery.arrow_spots().len() - 1;
-        let at = on_arrow(&gallery, last);
-        say_at(&mut gallery, at, "should it say why?");
-        assert_eq!(gallery.picked, Picked::Arrow(last), "the arrow talked about stays picked");
-
-        assert!(gallery.press_at(on_arrow(&gallery, 0)));
-        assert_eq!(gallery.picked, Picked::Arrow(0), "another arrow picked in its place");
-        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "and its own conversation");
-        assert!(gallery.press_at(on_pin(&gallery, "N1")));
-        assert_eq!(gallery.picked, Picked::Arrow(last), "its pin picks the arrow its note is on");
-
-        // A point of the overview on no state, arrow, mark, pin or scrollbar.
-        let nowhere = (0..40)
-            .flat_map(|x| (0..40).map(move |y| (x, y)))
-            .map(|(x, y)| (gallery.tree + 20.0 + f64::from(x) * 20.0, 10.0 + f64::from(y) * 20.0))
-            .find(|&at| {
-                gallery.state_at(at).is_none()
-                    && gallery.arrow_at(at).is_none()
-                    && gallery.pass_at(at).is_none()
-                    && gallery.pin_at(at).is_none()
-                    && at.0 < gallery.pane_right() - 20.0
-            })
-            .unwrap();
-        assert!(gallery.press_at(nowhere), "a press on nothing unpicks the arrow");
-        assert_eq!(gallery.picked, Picked::Nothing);
-
-        show(&mut gallery, "orders", "default");
-        say_on(&mut gallery, 0, "nav-export", "rename it");
-        assert!(gallery.press_at(on_node(&gallery, 0, "order-0-cancel")));
-        assert_eq!(gallery.picked, Picked::Node { id: "order-0-cancel".into(), pointed: 0 });
-        assert!(gallery.press_at(on_pin(&gallery, "N2")));
-        assert_eq!(
-            gallery.picked,
-            Picked::Node { id: "nav-export".into(), pointed: 0 },
-            "the note's node, not the one picked before"
-        );
-        assert!(gallery.panel().iter().any(|line| line == "IconButton"), "whose card is shown");
-        press_keys(&mut gallery, &["Esc"]);
-        assert_eq!(gallery.picked, Picked::Nothing, "Esc lets it go");
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// The id of the node `gallery` holds picked, as [`Picked`] says it.
@@ -4509,7 +4132,7 @@ mod tests {
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
         let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.pane());
+        let zoom = gallery.zoom(gallery.panes.pictures().width());
         let r = node.rect;
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         (left + middle.0 * zoom, top + middle.1 * zoom)
@@ -4677,7 +4300,7 @@ mod tests {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing);
-        assert_eq!(gallery.pane_right(), 1440.0 - SIDEBAR, "the sidebar is shown by default");
+        assert_eq!(gallery.panes.pictures().x1, 1440.0 - SIDEBAR, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
         assert_eq!(
             shown.last().map(|card| card.title.as_str()),
@@ -4687,9 +4310,9 @@ mod tests {
         showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
-        let narrow = gallery.zoom(gallery.pane());
+        let narrow = gallery.zoom(gallery.panes.pictures().width());
         let (left, _) = gallery.origins()[1];
-        assert!(left + 1120.0 * narrow <= gallery.pane_right(), "the pictures end before the sidebar");
+        assert!(left + 1120.0 * narrow <= gallery.panes.pictures().x1, "the pictures end before the sidebar");
         assert!(
             !gallery.press_at((1440.0 - SIDEBAR / 2.0, 890.0)),
             "a press in the sidebar off its buttons does nothing"
@@ -4697,15 +4320,15 @@ mod tests {
         assert_eq!(picked_node(&gallery), Some("nav-save"), "and leaves the node picked");
 
         gallery.chord("\\");
-        assert_eq!(gallery.pane_right(), 1440.0, "hidden: the pictures take the width");
-        assert!(gallery.zoom(gallery.pane()) > narrow, "and are drawn larger");
+        assert_eq!(gallery.panes.pictures().x1, 1440.0, "hidden: the pictures take the width");
+        assert!(gallery.zoom(gallery.panes.pictures().width()) > narrow, "and are drawn larger");
         assert!(
             gallery.press_at(on_node(&gallery, 1, "nav-save")),
             "a node near the window's right edge is picked, no sidebar there"
         );
         assert_eq!(gallery.node().map(|(_, pointed)| pointed), Some(1));
         gallery.chord("\\");
-        assert_eq!(gallery.pane_right(), 1440.0 - SIDEBAR, "and shown again");
+        assert_eq!(gallery.panes.pictures().x1, 1440.0 - SIDEBAR, "and shown again");
     }
 
     #[test]
@@ -4714,14 +4337,19 @@ mod tests {
         gallery.feed([Input::Resized((1000.0, 900.0))]);
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
-        assert_eq!(gallery.zoom(gallery.pane()), SMALLEST, "no smaller than half");
-        let beyond = gallery.pictures_width(gallery.pane()) - gallery.pane();
+        assert_eq!(gallery.zoom(gallery.panes.pictures().width()), SMALLEST, "no smaller than half");
+        let beyond =
+            gallery.pictures_width(gallery.panes.pictures().width()) - gallery.panes.pictures().width();
         assert!(beyond > 0.0, "wider than the pane");
-        gallery.move_to((gallery.tree + 100.0, 400.0));
+        gallery.move_to((gallery.panes.pictures().x0 + 100.0, 400.0));
         gallery.wheel_by(1e6, 0.0);
-        assert_eq!(gallery.across, beyond, "scrolled across as far as the last picture's end");
+        assert_eq!(
+            gallery.panes.scrolled(Scrolls::Across),
+            beyond,
+            "scrolled across as far as the last picture's end"
+        );
         gallery.move_to(on_node(&gallery, 1, "nav-save"));
-        assert!(gallery.cursor.0 < gallery.pane_right(), "the desktop picture's save button in view");
+        assert!(gallery.cursor.0 < gallery.panes.pictures().x1, "the desktop picture's save button in view");
         assert!(gallery.press_here());
         assert_eq!(gallery.node(), Some(("nav-save", 1)), "the right node, scaled and scrolled");
 
@@ -4737,107 +4365,35 @@ mod tests {
     }
 
     #[test]
-    fn dragging_the_line_between_the_tree_and_the_pictures_resizes_the_tree_within_its_bounds() {
+    fn dragging_a_line_between_panes_fits_the_pictures_to_the_width_left() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
-        assert_eq!(gallery.tree, TREE, "the window opens with the tree at 260pt");
         // The sidebar hidden, the pictures are above half size, to shrink.
         gallery.chord("\\");
-        let (picked, wide) = (gallery.line, gallery.zoom(gallery.pane()));
-
+        let wide = gallery.zoom(gallery.panes.pictures().width());
         assert!(!gallery.press_at((TREE + 2.0, 300.0)), "a press on the line changes nothing shown");
-        assert_eq!(gallery.line, picked, "and picks no line of the tree");
-        gallery.cursor = (400.0, 320.0);
-        assert!(gallery.resize(), "the drag moves the line");
-        assert_eq!(gallery.tree, 400.0, "to where the pointer is");
+        assert!(gallery.move_to((400.0, 320.0)), "the drag moves the line");
         assert_eq!(gallery.origins()[0].0, 400.0 + MARGIN, "the pictures start after it");
-        assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
+        assert!(gallery.zoom(gallery.panes.pictures().width()) < wide, "and fit the width left");
         assert!(!gallery.let_go(), "letting go picks nothing");
-        assert_eq!(gallery.line, picked);
-        gallery.cursor = (500.0, 320.0);
-        assert!(!gallery.resize(), "let go, the line stays");
-        assert_eq!(gallery.tree, 400.0);
         gallery.chord("\\");
 
-        gallery.press_at((402.0, 300.0));
-        gallery.move_to((20.0, 300.0));
-        assert_eq!(gallery.tree, TREE_LEAST, "no narrower than 160pt");
-        gallery.move_to((1400.0, 300.0));
-        let room = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
-        assert_eq!(gallery.tree, gallery.pane_right() - room, "the pictures keep room for a half-size phone");
-        gallery.let_go();
-
-        gallery.feed([Input::Resized((900.0, 900.0))]);
-        gallery.clamp();
-        assert_eq!(gallery.tree, 900.0 - SIDEBAR - room, "a narrower window narrows the tree too");
-        gallery.feed([Input::Resized((500.0, 900.0))]);
-        gallery.clamp();
-        assert_eq!(gallery.tree, TREE_LEAST, "never below its least");
-    }
-
-    #[test]
-    fn dragging_the_line_between_the_pictures_and_the_sidebar_resizes_the_sidebar_within_its_bounds() {
-        let mut gallery = gallery();
-        let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing + 1);
         gallery.press_at(on_node(&gallery, 0, "nav-save"));
         gallery.let_go();
-        assert_eq!(gallery.side, SIDEBAR, "the window opens with the sidebar at 360pt");
-        // A window wide enough for the pictures above half size, to shrink.
-        let width = 2400.0;
-        gallery.feed([Input::Resized((width, 900.0))]);
-        gallery.clamp();
-        let wide = gallery.zoom(gallery.pane());
-        let line = width - SIDEBAR;
-
-        gallery.move_to((line - 3.0, 300.0));
-        assert_eq!(gallery.edge_at(), Some(Edge::Side), "the pointer takes hold of the line");
-        assert!(!gallery.press_here(), "a press on the line changes nothing shown");
-        assert_eq!(picked_node(&gallery), Some("nav-save"), "and leaves the node picked");
-        assert!(!gallery.details, "nor presses a button");
-        assert!(gallery.move_to((line - 400.0, 320.0)), "the drag moves the line");
-        assert_eq!(gallery.side, SIDEBAR + 400.0, "to where the pointer is");
-        assert_eq!(gallery.tree, TREE, "the tree keeps its width");
-        assert!(gallery.zoom(gallery.pane()) < wide, "the pictures fit the width left");
-        assert!(!gallery.let_go(), "letting go picks nothing");
-        assert_eq!(picked_node(&gallery), Some("nav-save"));
-        assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded, wide");
-
-        gallery.press_at((line - 400.0, 300.0));
-        gallery.move_to((width - 40.0, 300.0));
+        let line = gallery.panes.pictures().x1;
+        gallery.press_at((line, 300.0));
+        gallery.move_to((line + 40.0, 300.0));
         gallery.let_go();
-        assert_eq!(gallery.side, SIDEBAR_LEAST, "no narrower than 280pt");
+        assert_eq!(picked_node(&gallery), Some("nav-save"), "the node still picked");
+        assert!(!gallery.details, "no button pressed");
         let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
-        let (at, bottom) = ((gallery.pane_right(), gallery.side), gallery.size.1);
-        let laid = sidebar::lay_out(&cards, foot.as_ref(), at, (0.0, bottom), &mut gallery.typesetter);
-        let inside = |r: &Rect| f64::from(r.x) > gallery.pane_right() && f64::from(r.x + r.width) < width;
-        assert!(laid.buttons.iter().all(|(r, _, _)| inside(r)), "its buttons inside it");
-        assert!(click_panel_line(&mut gallery, "▾ details"), "each still clicked by its own box");
-        assert!(!gallery.details);
-
-        gallery.chord("\\");
-        gallery.move_to((width - SIDEBAR_LEAST, 300.0));
-        assert_eq!(gallery.edge_at(), None, "hidden, there is no line");
-        gallery.chord("\\");
-        assert_eq!(gallery.side, SIDEBAR_LEAST, "shown again, at the width it was dragged to");
-        assert_eq!(gallery.pane_right(), width - SIDEBAR_LEAST);
-
-        gallery.press_at((gallery.pane_right(), 300.0));
-        gallery.move_to((0.0, 300.0));
-        gallery.let_go();
-        let room = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
-        assert_eq!(gallery.side, width - TREE - room, "the pictures keep room for a half-size phone");
-        gallery.press_at((TREE, 300.0));
-        gallery.move_to((600.0, 300.0));
-        gallery.let_go();
-        assert_eq!(gallery.tree, TREE, "the tree widens no further than leaves that room");
-        gallery.feed([Input::Resized((1200.0, 900.0))]);
-        gallery.clamp();
-        assert_eq!(gallery.side + gallery.tree, 1200.0 - room, "a narrower window narrows them too");
-        gallery.feed([Input::Resized((600.0, 900.0))]);
-        gallery.clamp();
-        assert_eq!((gallery.tree, gallery.side), (TREE_LEAST, SIDEBAR_LEAST), "never below their least");
+        let (right, width) = (gallery.panes.pictures().x1, gallery.panes.side_width());
+        let at = (0.0, gallery.panes.window().1);
+        let laid = sidebar::lay_out(&cards, foot.as_ref(), (right, width), at, &mut gallery.typesetter);
+        let inside = |r: &Rect| f64::from(r.x) > right && f64::from(r.x + r.width) < 1440.0;
+        assert!(laid.buttons.iter().all(|(r, _, _)| inside(r)), "the sidebar's buttons inside it");
+        assert!(click_panel_line(&mut gallery, "▸ details"), "each still clicked by its own box");
     }
 
     #[test]
@@ -4922,7 +4478,7 @@ mod tests {
             panic!("a description with faults is not drawn")
         };
         assert_eq!(shown, &found, "each finding as `check` names it");
-        let (list, _) = gallery.faults(gallery.pane());
+        let (list, _) = gallery.faults(gallery.panes.pictures().width());
         let texts: Vec<&str> = list
             .iter()
             .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text.as_str()) } else { None })
@@ -4975,9 +4531,9 @@ mod tests {
         let typing = state_of(&gallery, "typing");
         gallery.pick(typing);
         let before = heights(&gallery);
-        gallery.move_to((gallery.tree + 100.0, 100.0));
+        gallery.move_to((gallery.panes.pictures().x0 + 100.0, 100.0));
         gallery.wheel_by(0.0, 40.0);
-        assert_eq!(gallery.scroll, 40.0);
+        assert_eq!(gallery.panes.scrolled(Scrolls::Down), 40.0);
 
         let mut screen = todo_screen(&root);
         let todos = screen["fixtures"]["default"]["todos"].as_array_mut().unwrap();
@@ -5000,7 +4556,7 @@ mod tests {
             after[0] > before[0] && after[1] > before[1],
             "drawn again with more todos: {before:?} {after:?}"
         );
-        assert_eq!(gallery.scroll, 40.0, "scrolled as it was");
+        assert_eq!(gallery.panes.scrolled(Scrolls::Down), 40.0, "scrolled as it was");
 
         let mut screen = todo_screen(&root);
         let fixtures = screen["fixtures"].as_object_mut().unwrap();
@@ -5011,7 +4567,7 @@ mod tests {
         let todo = line_of(&gallery, "todo");
         assert_eq!(gallery.line, Some(todo), "a state gone: its description's overview");
         assert!(matches!(gallery.picture, Picture::Overview(_)));
-        assert_eq!(gallery.scroll, 0.0, "from its top");
+        assert_eq!(gallery.panes.scrolled(Scrolls::Down), 0.0, "from its top");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5393,7 +4949,7 @@ mod tests {
         let flow = flow_shown(&gallery);
         let place =
             flow.map.places.iter().find(|p| p.screen == Screen::Drawn(root.join("shop/listing"))).unwrap();
-        let ((left, top), zoom) = (gallery.flow_origin(), gallery.zoom(gallery.pane()));
+        let ((left, top), zoom) = (gallery.flow_origin(), gallery.zoom(gallery.panes.pictures().width()));
         let undrawn = flow.map.places.iter().find(|p| matches!(p.screen, Screen::Undrawn(_))).unwrap();
         let on = |p: &flow::Place| (left + (p.x + 20.0) * zoom, top + (p.y + 40.0) * zoom);
         let (on_listing, on_undrawn) = (on(place), on(undrawn));
@@ -5504,7 +5060,10 @@ mod tests {
     /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
         let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
-        let (at, scrolled) = ((gallery.pane_right(), gallery.side), (-gallery.side_scroll, gallery.size.1));
+        let (at, scrolled) = (
+            (gallery.panes.pictures().x1, gallery.panes.side_width()),
+            (-gallery.panes.scrolled(Scrolls::Side), gallery.panes.window().1),
+        );
         let laid = sidebar::lay_out(&cards, foot.as_ref(), at, scrolled, &mut gallery.typesetter);
         let Some(r) = laid.buttons.iter().find(|(_, says, _)| *says == text).map(|(r, _, _)| *r) else {
             panic!("no button {text:?}: {:?}", gallery.panel())
@@ -5603,7 +5162,7 @@ mod tests {
     fn no_key_needs_holding_to_speak_and_no_drag_picks_a_region() {
         let root = root_of("notes-no-mode", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
-        gallery.size = (1440.0, 900.0);
+        gallery.panes.resize((1440.0, 900.0));
         show(&mut gallery, "orders", "default");
         press_keys(&mut gallery, &["n"]);
         assert_eq!(gallery.talk.text(), "n", "N is a letter typed in the box, no mode");
@@ -5712,7 +5271,7 @@ mod tests {
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
         let r = node.guess_tag().expect("it is guessed");
         let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.pane());
+        let zoom = gallery.zoom(gallery.panes.pictures().width());
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         (left + middle.0 * zoom, top + middle.1 * zoom)
     }
@@ -5845,7 +5404,8 @@ mod tests {
         assert_eq!(shown.text, "ani haob", "composed at the caret");
         assert_eq!(&shown.text[shown.composing.clone()], "ni hao", "drawn underlined");
         let foot = gallery.foot();
-        let (at, bottom) = ((gallery.pane_right(), gallery.side), gallery.size.1);
+        let (at, bottom) =
+            ((gallery.panes.pictures().x1, gallery.panes.side_width()), gallery.panes.window().1);
         let laid = sidebar::lay_out(&[], foot.as_ref(), at, (0.0, bottom), &mut gallery.typesetter);
         let underlined =
             laid.foot_draws.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
@@ -6289,7 +5849,7 @@ mod tests {
         assert_eq!(faults.len(), 1, "{faults:?}");
         assert_eq!(faults[0].at, "steps.1.on");
         assert!(faults[0].problem.contains("does not reach the next step"), "{faults:?}");
-        let (list, _) = gallery.faults(gallery.pane());
+        let (list, _) = gallery.faults(gallery.panes.pictures().width());
         let Draw::Text { text, .. } = &list[0] else { panic!("a heading") };
         assert!(text.contains("has a fault, so it is not played"), "{text}");
 
@@ -6426,12 +5986,12 @@ mod tests {
         let mut gallery = gallery();
         show(&mut gallery, "airbnb-listing", "default");
         assert!(gallery.chord("\\"), "⌘\\ hides the sidebar");
-        assert!(!gallery.sidebar);
+        assert!(gallery.panes.side().is_none());
         let backslash = key_on("\\", KeyCode::Backslash, false);
         assert!(!gallery.feed([backslash.clone()]).redraw, "\\ alone is no shortcut");
-        assert!(!gallery.sidebar);
+        assert!(gallery.panes.side().is_none());
         gallery.feed([Input::Modifiers(ModifiersState::CONTROL), backslash]);
-        assert!(gallery.sidebar, "Ctrl+\\ shows it again, as ⌘\\ does");
+        assert!(gallery.panes.side().is_some(), "Ctrl+\\ shows it again, as ⌘\\ does");
         gallery.feed([Input::Modifiers(ModifiersState::empty())]);
 
         assert!(gallery.chord("c"), "⌘C with nothing written copies the reference");
@@ -6470,32 +6030,40 @@ mod tests {
         let mut gallery = opened(drafts(), (1000.0, 900.0));
         show(&mut gallery, "airbnb-listing", "default");
         let notch = |y: f64| Input::Wheel { x: 0.0, y, unit: Unit::Lines };
-        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
         assert!(gallery.feed([notch(-2.0)]).redraw);
-        assert_eq!(gallery.scroll, 2.0 * NOTCH, "two notches toward the person scroll down");
+        assert_eq!(
+            gallery.panes.scrolled(Scrolls::Down),
+            2.0 * NOTCH,
+            "two notches toward the person scroll down"
+        );
         gallery.feed([Input::Wheel { x: 0.0, y: 15.0, unit: Unit::Points }]);
-        assert_eq!(gallery.scroll, 2.0 * NOTCH - 15.0, "a trackpad scrolls by points");
+        assert_eq!(gallery.panes.scrolled(Scrolls::Down), 2.0 * NOTCH - 15.0, "a trackpad scrolls by points");
         gallery.feed([Input::Wheel { x: -10.0, y: 0.0, unit: Unit::Points }]);
-        assert_eq!(gallery.across, 10.0, "and across");
+        assert_eq!(gallery.panes.scrolled(Scrolls::Across), 10.0, "and across");
 
         gallery.feed([Input::Modifiers(ModifiersState::SHIFT), notch(-1.0)]);
         assert_eq!(
-            (gallery.scroll, gallery.across),
+            (gallery.panes.scrolled(Scrolls::Down), gallery.panes.scrolled(Scrolls::Across)),
             (2.0 * NOTCH - 15.0, 10.0 + NOTCH),
             "Shift turns it across"
         );
         gallery.feed([Input::Wheel { x: -5.0, y: -5.0, unit: Unit::Points }]);
         assert_eq!(
-            (gallery.scroll, gallery.across),
+            (gallery.panes.scrolled(Scrolls::Down), gallery.panes.scrolled(Scrolls::Across)),
             (2.0 * NOTCH - 10.0, 15.0 + NOTCH),
             "a wheel already turning across scrolls as it turns, Shift held or not"
         );
         gallery.feed([Input::Modifiers(ModifiersState::empty())]);
 
-        let at = gallery.scroll;
+        let at = gallery.panes.scrolled(Scrolls::Down);
         gallery.move_to((40.0, MARGIN));
         gallery.feed([notch(-1.0)]);
-        assert_eq!(gallery.scroll, at, "over the tree, the tree scrolls, not the pictures");
+        assert_eq!(
+            gallery.panes.scrolled(Scrolls::Down),
+            at,
+            "over the tree, the tree scrolls, not the pictures"
+        );
     }
 
     #[test]
@@ -6503,11 +6071,11 @@ mod tests {
         let mut gallery = gallery();
         show(&mut gallery, "orders", "default");
         let moved = |gallery: &mut Gallery, at| gallery.feed([Input::Moved(at)]).cursor;
-        let (tree, side) = (gallery.tree, gallery.pane_right());
+        let (tree, side) = (gallery.panes.pictures().x0, gallery.panes.pictures().x1);
         assert_eq!(moved(&mut gallery, (tree + 1.0, 300.0)), Some(CursorIcon::EwResize));
         assert_eq!(moved(&mut gallery, (side - 1.0, 300.0)), Some(CursorIcon::EwResize));
         assert_eq!(moved(&mut gallery, (tree + 40.0, 300.0)), Some(CursorIcon::Default));
-        gallery.press_at((gallery.tree, 300.0));
+        gallery.press_at((gallery.panes.pictures().x0, 300.0));
         assert_eq!(
             moved(&mut gallery, (600.0, 300.0)),
             Some(CursorIcon::EwResize),
@@ -6525,7 +6093,7 @@ mod tests {
         assert!(gallery.feed([Input::Released]).ime, "a node picked: its box too");
         gallery.drawn();
         let caret = gallery.feed([Input::Moved((0.0, 0.0))]).caret.expect("drawn, its caret is known");
-        assert!(caret.x as f64 >= gallery.pane_right(), "in the sidebar, in the box at its foot");
+        assert!(caret.x as f64 >= gallery.panes.pictures().x1, "in the sidebar, in the box at its foot");
         assert!(gallery.compose(Ime::Preedit("ni".into(), None)));
         assert!(gallery.talk.is_composing());
         assert!(gallery.compose(Ime::Disabled), "the input method turned off");
