@@ -33,7 +33,7 @@ pub use check::{Checked, Condition, Finding, check};
 pub use conditions::{Condition as Definition, Conditions};
 pub use expr::{Atom, Expr, Op};
 pub use field::{Base, By, Derived, Field};
-pub use instance::{Node, State, instantiate};
+pub use instance::{Call, Node, State, instantiate};
 pub use jobs::{STATES as JOB_STATES, STATUS as JOB_STATUS};
 pub use kinds::{FILTERS, Kinds, LOOK, Takes, Track, takes};
 pub use model::{Model, model};

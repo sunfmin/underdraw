@@ -342,21 +342,16 @@ fn collect(node: &Node, hidden: &[String], into: &mut Expected) {
 
 /// Each operation `node` calls, by the event that calls it, given what.
 fn calls(node: &Node) -> Vec<Value> {
-    let mut calls = Vec::new();
-    let Some(Value::Object(events)) = node.props.get("on") else {
-        return calls;
-    };
-    for (on, action) in events {
-        if let Some(Value::String(operation)) = action.get("call") {
-            let with = action.get("with").cloned().unwrap_or_else(|| Value::Object(Map::new()));
-            calls.push(object([
-                ("on", Value::from(on.as_str())),
-                ("operation", Value::from(operation.as_str())),
-                ("with", with),
-            ]));
-        }
-    }
-    calls
+    node.calls()
+        .into_iter()
+        .map(|call| {
+            object([
+                ("on", Value::from(call.on)),
+                ("operation", Value::from(call.operation)),
+                ("with", call.with.cloned().unwrap_or_else(|| Value::Object(Map::new()))),
+            ])
+        })
+        .collect()
 }
 
 /// Every design token by its platform name, `pattern` filled with its
