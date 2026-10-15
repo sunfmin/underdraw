@@ -54,7 +54,7 @@ impl Page {
     /// A press on a node's orange "?" is on that node, whatever is under
     /// it.
     pub fn node_at(&self, at: (f64, f64)) -> Option<&Placed> {
-        let guessed = self.nodes.iter().rev().find(|node| node.guess_tag().is_some_and(|r| over(r, at)));
+        let guessed = self.nodes.iter().rev().find(|node| node.guess_tag.is_some_and(|r| over(r, at)));
         guessed.or_else(|| self.nodes.iter().rev().find(|node| over(node.rect, at)))
     }
 
@@ -309,6 +309,7 @@ mod tests {
             rect: Rect { x, y, width, height },
             label: None,
             assumed: None,
+            guess_tag: None,
         }
     }
 

@@ -110,14 +110,10 @@ pub struct Placed {
     /// The number tagged on it in the picture, when a person can act on it.
     pub label: Option<u32>,
     pub assumed: Option<String>,
-}
-
-impl Placed {
-    /// Where its orange "?" is drawn, when it was guessed: a click there is
-    /// on its assumption.
-    pub fn guess_tag(&self) -> Option<Rect> {
-        self.assumed.as_ref().map(|_| place::guess_tag(self.rect))
-    }
+    /// Where its orange "?" is drawn, when it was guessed and is seen: a
+    /// click there is on its assumption.
+    #[serde(skip)]
+    pub guess_tag: Option<Rect>,
 }
 
 /// A screen laid out: its size and what to draw.

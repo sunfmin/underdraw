@@ -8,6 +8,7 @@
 //! or of drawing.
 
 use std::ops::Range;
+use std::time::Duration;
 
 use parley::{PlainEditor, PlainEditorDriver};
 
@@ -20,6 +21,23 @@ pub struct Field {
     editor: PlainEditor<()>,
     /// Sets its text as the sidebar sets it.
     typesetter: Typesetter,
+}
+
+/// How long the caret of a field written in shows, then hides, as it
+/// blinks.
+pub const BLINK: Duration = Duration::from_millis(500);
+
+/// Whether the caret shows `since` the field was last edited, or its caret
+/// moved: at once, for [`BLINK`], then hidden for as long, and so on.
+pub fn caret_shows(since: Duration) -> bool {
+    (since.as_nanos() / BLINK.as_nanos()).is_multiple_of(2)
+}
+
+/// How long from `since` the field was last edited until its caret next
+/// shows or hides.
+pub fn caret_turns(since: Duration) -> Duration {
+    let into = since.as_nanos() % BLINK.as_nanos();
+    Duration::from_nanos((BLINK.as_nanos() - into) as u64)
 }
 
 /// One edit a key makes.
@@ -295,6 +313,19 @@ mod tests {
         field.compose("x", None);
         field.compose("", None);
         assert_eq!(field.text(), "a你好b", "composing dropped types nothing");
+    }
+
+    #[test]
+    fn the_caret_shows_at_once_then_blinks_by_halves_of_a_second() {
+        let at = |ms| Duration::from_millis(ms);
+        assert!(caret_shows(at(0)), "shown as soon as it is edited");
+        assert!(caret_shows(at(499)));
+        assert!(!caret_shows(at(500)), "hidden half a second on");
+        assert!(!caret_shows(at(999)));
+        assert!(caret_shows(at(1000)), "and shown again");
+        assert_eq!(caret_turns(at(0)), at(500));
+        assert_eq!(caret_turns(at(200)), at(300));
+        assert_eq!(caret_turns(at(500)), at(500), "hidden for as long");
     }
 
     #[test]

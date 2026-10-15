@@ -47,10 +47,13 @@ WHAT YOU SEE
   document order; the same number is "label" in nodes, so "3" in a
   conversation means one node. An orange dashed outline and "?" mark what
   was assumed, for the person to confirm, and a component underdraw does not
-  know, drawn as a box with its name. What a dialog (an opaque box pinned
-  over the page) or its backdrop covers gets no number and no "?": its
-  "label" is null, and its "assumed" still says why it was guessed. Icons
-  are Material Symbols, drawn outlined, or solid for a name ending in .fill.
+  know, drawn as a box with its name. The "?" sits at the node's top-right
+  corner, always wholly on the page; on a node as big as the page (a
+  full-screen overlay) it sits at the top right of what the node shows.
+  What a dialog (an opaque box pinned over the page) or its backdrop covers
+  gets no number and no "?": its "label" is null, and its "assumed" still
+  says why it was guessed. Icons are Material Symbols, drawn outlined, or
+  solid for a name ending in .fill.
 
 WHAT TRIPS YOU UP
   - Needs a GPU (Metal on macOS); `underdraw doctor` says whether there is one.

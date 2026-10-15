@@ -351,6 +351,64 @@ fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
     );
 }
 
+/// Every "?" drawn on `page`.
+fn guess_marks(page: &Page) -> Vec<underdraw_layout::Rect> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Tag { rect, text, .. } if text == "?" => Some(*rect),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_guess_as_big_as_the_page_has_its_mark_on_what_it_shows() {
+    let own = serde_json::json!({ "components": { "Viewer": { "look": {
+        "box": "column", "backdrop": true, "width": "100%", "height": "100%", "fill": "ink",
+        "justify": "center", "padding": 16, "children": ["$children"] } } } });
+    let page = tiny_with(
+        serde_json::json!([{ "id": "body", "component": "Stack", "children": [
+            { "id": "a", "component": "Text", "text": "a" }, { "id": "b", "component": "Text", "text": "b" },
+            { "id": "c", "component": "Text", "text": "c" }, { "id": "d", "component": "Text", "text": "d" },
+            { "id": "e", "component": "Text", "text": "e" }, { "id": "f", "component": "Text", "text": "f" } ],
+          "overlay": { "id": "viewer", "component": "Viewer", "anchor": "center",
+            "assumed": "a viewer over the whole page", "children": [
+            { "id": "shown", "component": "Text", "text": "shown" } ] } }]),
+        Some(&own),
+    );
+    let viewer = placed(&page, "viewer");
+    assert_eq!((viewer.rect.width, viewer.rect.height), (page.width, page.height), "as big as the page");
+    let shown = placed(&page, "shown").rect;
+    let marks = guess_marks(&page);
+    assert_eq!(marks.len(), 1, "{marks:?}");
+    let mark = marks[0];
+    assert!(
+        mark.x >= 0.0
+            && mark.y >= 0.0
+            && mark.x + mark.width <= page.width
+            && mark.y + mark.height <= page.height,
+        "never cut by the page's edge: {mark:?}"
+    );
+    assert!(
+        (mark.y - (shown.y - 6.0)).abs() < 1.0 && mark.x + mark.width > shown.x + shown.width - 1.0,
+        "on the top-right of what it shows, {shown:?}: {mark:?}"
+    );
+    assert_eq!(viewer.guess_tag, Some(mark), "a click on the mark drawn is on its assumption");
+}
+
+#[test]
+fn a_guess_at_the_page_edge_has_its_mark_wholly_on_the_page() {
+    let page = tiny(serde_json::json!([
+        { "id": "wide", "component": "Text", "text": "wide", "assumed": "a line as wide as the page" } ]));
+    let wide = placed(&page, "wide");
+    assert!(wide.rect.x + wide.rect.width >= page.width - 0.5, "it reaches the edge: {:?}", wide.rect);
+    let marks = guess_marks(&page);
+    assert_eq!(marks.len(), 1, "{marks:?}");
+    assert!(marks[0].x + marks[0].width <= page.width && marks[0].x >= 0.0, "not cut: {:?}", marks[0]);
+    assert_eq!(wide.guess_tag, Some(marks[0]));
+}
+
 #[test]
 fn an_overlay_anchored_at_the_bottom_spans_it_edge_to_edge() {
     let page = tiny(serde_json::json!([

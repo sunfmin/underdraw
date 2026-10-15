@@ -30,7 +30,7 @@ use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
-use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
@@ -39,7 +39,7 @@ use crate::act::{self, Act};
 use crate::area::{over, rect};
 use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW};
 use crate::draw::{self, Shown as State, Wanted};
-use crate::field::{Edit, Field, Motion};
+use crate::field::{self, Edit, Field, Motion};
 use crate::flow::{self, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
@@ -101,6 +101,8 @@ enum Input {
     Key { key: Key, code: PhysicalKey, text: Option<String>, repeat: bool },
     /// What an input method says.
     Ime(Ime),
+    /// The window became, or stopped being, the one keys go to.
+    Focused(bool),
     /// The person closes the window.
     Close,
 }
@@ -288,6 +290,12 @@ struct Gallery {
     /// The time the window counts how long ago a message was taken from,
     /// in seconds since 1970: the system's, unless a test holds it still.
     time: Option<u64>,
+    /// Whether the window is the one keys go to: the caret of the field
+    /// written in blinks only then, and holds still, shown, otherwise.
+    focused: bool,
+    /// When the field written in was last edited, its caret moved, or it
+    /// opened: its caret blinks from then ([`field::caret_shows`]).
+    edited: Instant,
 }
 
 /// What the person picked in what is shown, to read what it is, copy it
@@ -517,6 +525,8 @@ impl Gallery {
             guessed: RefCell::new(HashMap::new()),
             waiting: false,
             time: None,
+            focused: false,
+            edited: Instant::now(),
         }
     }
 
@@ -532,6 +542,7 @@ impl Gallery {
         // stands, for the input to find their scrollbars where they are
         // drawn.
         self.clamp();
+        let was = self.typing().then(|| self.sidebar.talk().shown());
         match input {
             Input::Resized(_) => effects.redraw = true,
             Input::Moved(at) => {
@@ -564,14 +575,38 @@ impl Gallery {
                 effects.redraw = self.key_pressed(&key, code, text.as_deref(), repeat, clipboard);
             }
             Input::Ime(ime) => effects.redraw = self.ime(ime),
+            Input::Focused(focused) => {
+                self.focused = focused;
+                self.edited = Instant::now();
+                effects.redraw = self.typing();
+            }
             Input::Close => {
                 self.leave();
                 effects.exit = true;
             }
         }
         effects.redraw |= self.see();
+        // Edited, its caret moved, or opened: the caret shown at once and
+        // blinking again from now.
+        if self.typing().then(|| self.sidebar.talk().shown()) != was {
+            self.edited = Instant::now();
+        }
         (effects.ime, effects.caret) = self.composing();
         effects
+    }
+
+    /// Whether the caret of the field written in shows at `now`: always,
+    /// held still, while the window is not the one keys go to.
+    fn caret_shows(&self, now: Instant) -> bool {
+        !self.focused || field::caret_shows(now.saturating_duration_since(self.edited))
+    }
+
+    /// When the caret of the field written in next shows or hides, from
+    /// `now`, for the window to wake then and draw it: none while there is
+    /// no such field, or the window is not the one keys go to.
+    fn blinks(&self, now: Instant) -> Option<Instant> {
+        (self.focused && self.typing())
+            .then(|| now + field::caret_turns(now.saturating_duration_since(self.edited)))
     }
 
     /// The conversation shown in the sidebar seen by the person: each
@@ -2468,6 +2503,7 @@ impl Gallery {
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let seen = self.seen();
         let right = self.panes.pictures().x1;
+        let caret = self.caret_shows(Instant::now());
         let (side, foot, cut_at) = match self.placed() {
             Some(placed) => {
                 let edge = Draw::Line {
@@ -2475,7 +2511,7 @@ impl Gallery {
                     to: [right as f32, height as f32],
                     ink: Ink::Line,
                 };
-                let ((cards, foot), cut_at) = (placed.draws(), placed.foot());
+                let ((cards, foot), cut_at) = (placed.draws(caret), placed.foot());
                 (std::iter::once(edge).chain(cards).collect(), foot, cut_at)
             }
             None => (Vec::new(), Vec::new(), height),
@@ -2785,10 +2821,19 @@ impl ApplicationHandler<Told> for App {
         }
     }
 
+    /// Woken at the time [`App::about_to_wait`] set: drawn again, for the
+    /// caret to blink.
+    fn new_events(&mut self, _: &ActiveEventLoop, cause: StartCause) {
+        if let (StartCause::ResumeTimeReached { .. }, Some(shown)) = (cause, &self.shown) {
+            shown.window.request_redraw();
+        }
+    }
+
     /// While a ✓ waits to be written: written once its time comes, the
     /// window woken each second until then to count down. While the
     /// conversation shown counts how long ago the agent took it, woken
-    /// each second too.
+    /// each second too. While the field written in is the one keys go to,
+    /// woken as its caret shows or hides, and only then.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let written = self.gallery.confirm(now);
@@ -2804,6 +2849,7 @@ impl ApplicationHandler<Told> for App {
         {
             shown.window.request_redraw();
         }
+        let wake = wake.into_iter().chain(self.gallery.blinks(now)).min();
         event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
     }
 
@@ -2854,6 +2900,7 @@ impl ApplicationHandler<Told> for App {
                 repeat: event.repeat,
             },
             WindowEvent::Ime(ime) => Input::Ime(ime),
+            WindowEvent::Focused(focused) => Input::Focused(focused),
             WindowEvent::MouseWheel { delta, .. } => match delta {
                 MouseScrollDelta::LineDelta(x, y) => {
                     Input::Wheel { x: x.into(), y: y.into(), unit: Unit::Lines }
@@ -4510,7 +4557,7 @@ mod tests {
             panic!("no picture: it has faults")
         };
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
-        let r = node.guess_tag().expect("it is guessed");
+        let r = node.guess_tag.expect("it is guessed");
         let (left, top) = origins(gallery)[page];
         let zoom = zoom(gallery);
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
@@ -4680,6 +4727,36 @@ mod tests {
     }
 
     #[test]
+    fn the_caret_blinks_from_each_edit_and_only_in_the_window_keys_go_to() {
+        let root = root_of("notes-blink", &[("orders", "orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        show(&mut gallery, "orders", "default");
+        let half = field::BLINK;
+        gallery.focused = true;
+        gallery.chord("\\");
+        assert_eq!(gallery.blinks(Instant::now()), None, "the sidebar hidden: nothing wakes the window");
+        gallery.chord("\\");
+        assert!(gallery.blinks(Instant::now()).is_some(), "shown: its box blinks");
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        gallery.press();
+        type_text(&mut gallery, "ab");
+        let typed = gallery.edited;
+        assert!(gallery.caret_shows(typed), "shown just after an edit");
+        assert!(!gallery.caret_shows(typed + half), "hidden half a second on");
+        assert_eq!(gallery.blinks(typed + half / 2), Some(typed + half), "woken as it hides");
+        press_keys(&mut gallery, &["←"]);
+        let moved = gallery.edited;
+        assert!(moved > typed, "the caret moved: the blink starts again");
+        assert!(gallery.caret_shows(moved), "shown at once");
+        assert!(!gallery.caret_shows(moved + half));
+        gallery.feed([Input::Focused(false)]);
+        assert!(gallery.caret_shows(moved + half), "another window has the keys: held still, shown");
+        assert_eq!(gallery.blinks(moved + half), None, "and nothing wakes the window");
+        let frame = gallery.feed([Input::Focused(true)]);
+        assert!(frame.redraw && gallery.caret_shows(gallery.edited), "back: shown at once");
+    }
+
+    #[test]
     fn a_note_typed_with_an_input_method_shows_what_it_composes_and_saves_what_it_committed() {
         let root = root_of("notes-ime", &[("orders", "orders")]);
         let mut gallery = opened(&root, (1440.0, 900.0));
@@ -4693,8 +4770,12 @@ mod tests {
         assert_eq!(shown.text, "ani haob", "composed at the caret");
         assert_eq!(&shown.text[shown.composing.clone()], "ni hao", "drawn underlined");
         let laid = gallery.placed().expect("the sidebar is shown");
-        let underlined =
-            laid.draws().1.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
+        let underlined = laid
+            .draws(true)
+            .1
+            .iter()
+            .filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. }))
+            .count();
         assert_eq!(underlined, 1, "one line under what is composed");
         assert!(laid.caret().is_some(), "the input method is shown where the caret is");
         press_keys(&mut gallery, &["Enter", "Backspace"]);
