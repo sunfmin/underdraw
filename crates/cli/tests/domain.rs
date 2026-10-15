@@ -116,7 +116,9 @@ fn what_is_derived_is_the_same_as_when_each_screen_declares_the_domain() {
             }
             screen[key] = Value::Object(merged);
         }
-        for (name, component) in shared_components() {
+        for (name, mut component) in shared_components() {
+            // A screen's own component is never shown on its own.
+            component.as_object_mut().unwrap().remove("fixtures");
             screen["components"][name] = component;
         }
         screen
