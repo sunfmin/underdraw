@@ -11,7 +11,7 @@ use crate::breakpoint::{self, Breakpoint};
 use crate::components::{self, Components};
 use crate::conditions::{Conditions, UseSite};
 use crate::expand::{Instances, Met};
-use crate::field::{Base, Field};
+use crate::field::Field;
 use crate::links::Undrawn;
 use crate::schema::object;
 use crate::screen::Screen;
@@ -311,10 +311,7 @@ impl Fill<'_> {
     /// read as [`Fill::argument`] reads it.
     fn typed(&self, given: &Value, param: Option<&Field>, scope: &Value) -> Result<Value, String> {
         match given {
-            Value::String(used)
-                if !used.starts_with('{')
-                    && param.is_some_and(|field| field.base == Base::Bool && !field.array) =>
-            {
+            Value::String(used) if !used.starts_with('{') && param.is_some_and(Field::is_bool) => {
                 Ok(Value::Bool(self.holds(used, scope)))
             }
             _ => self.argument(given, scope),

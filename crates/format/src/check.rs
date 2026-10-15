@@ -1307,8 +1307,7 @@ impl<'a> Walk<'a> {
     /// call it.
     fn argument(&mut self, value: &Value, param: &Field, scope: &Scope, known: &Known, at: &str) {
         // A bool position takes an expression: a use site, `"!canBack"`.
-        if param.base == Base::Bool
-            && !param.array
+        if param.is_bool()
             && let Value::String(text) = value
             && !text.starts_with('{')
         {
