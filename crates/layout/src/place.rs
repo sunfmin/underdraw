@@ -415,7 +415,7 @@ fn mark(out: &mut Out) {
             out.tags.push(Draw::Tag {
                 rect: number_tag(marked.rect, out.page),
                 text: next.to_string(),
-                ink: Ink::Strong,
+                ink: Ink::Label,
             });
             next = next.saturating_add(1);
         }

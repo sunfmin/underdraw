@@ -34,6 +34,7 @@ pub fn colour(ink: Ink) -> Color {
         Ink::Assumed => [0xF0, 0x8C, 0x00],
         Ink::Note => [0x2B, 0x58, 0xD6],
         Ink::Answered => [0x15, 0x86, 0x58],
+        Ink::Label => [0xD6, 0x1F, 0x4F],
         Ink::Scrim => return Color::from_rgba8(0x0B, 0x0E, 0x14, 0x59),
     };
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])
