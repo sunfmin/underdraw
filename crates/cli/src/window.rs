@@ -215,6 +215,8 @@ enum Do {
     Close(PathBuf, String),
     /// Starts writing the line that reopens the note picked, named so.
     Reopen(PathBuf, String),
+    /// Picks the note named so: one of a description's closed notes.
+    Show(PathBuf, String),
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
@@ -233,15 +235,39 @@ struct Pin {
     region: Option<Rect>,
 }
 
-/// Every description's notes on the lines of the tree, by its directory;
-/// one whose notes.json cannot be read has none (`check` says why).
+/// Every description's notes on the lines of the tree, by its directory,
+/// each whose target is gone closed first; one whose notes.json cannot be
+/// read has none (`check` says why).
 fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
     lines
         .iter()
         .filter(|line| line.state.is_none())
         .filter_map(|line| line.row.description())
-        .map(|dir| (dir.to_path_buf(), notes::read(dir).unwrap_or_default()))
+        .map(|dir| {
+            let _ = notes::settle(dir);
+            (dir.to_path_buf(), notes::read(dir).unwrap_or_default())
+        })
         .collect()
+}
+
+/// What closed itself between the notes `before` and `after`, each with
+/// why, as the panel says it once: `N3 closed: order-{index} is gone
+/// (removed or renamed)`.
+fn closed_itself(before: &BTreeMap<PathBuf, Vec<Note>>, after: &BTreeMap<PathBuf, Vec<Note>>) -> Vec<String> {
+    let mut said = Vec::new();
+    for (dir, notes) in after {
+        for note in notes {
+            let Some(why) = &note.closed_because else { continue };
+            let was_closed = before
+                .get(dir)
+                .and_then(|was| was.iter().find(|was| was.id == note.id))
+                .is_none_or(|was| was.status == Status::Closed);
+            if !was_closed {
+                said.push(format!("{} closed: {why}", note.id));
+            }
+        }
+    }
+    said
 }
 
 /// One line of the tree: a directory, a description, or one of a
@@ -646,7 +672,9 @@ impl Gallery {
         let (wanted, scroll, acted) = (self.wanted.take(), self.scroll, self.acted.take());
         let arrow = self.arrow.and_then(|_| self.reference());
         self.lines = lines(&self.root);
-        self.notes = notes_of(&self.lines);
+        let notes = notes_of(&self.lines);
+        let closed = closed_itself(&self.notes, &notes);
+        self.notes = notes;
         self.picked = None;
         self.picture = Picture::Faults(Vec::new());
         let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
@@ -665,6 +693,9 @@ impl Gallery {
             self.arrow = arrow.and_then(|arrow| self.arrow_references().iter().position(|r| *r == arrow));
         } else if description.is_some() {
             self.wanted = wanted;
+        }
+        if !closed.is_empty() {
+            self.say(format!("{} · its description's overview lists it, to reopen", closed.join(" · ")));
         }
         self.clamp();
     }
@@ -787,6 +818,11 @@ impl Gallery {
             }
             Some(Do::Reopen(dir, id)) => {
                 self.draft = Some(Draft { on: Writing::Reopening(dir, id), text: String::new() });
+                true
+            }
+            Some(Do::Show(dir, id)) => {
+                self.note = Some((dir, id));
+                self.acted = None;
                 true
             }
             None => false,
@@ -1476,6 +1512,34 @@ impl Gallery {
         if writable {
             rows.push(("    write a note on it  (N)".to_string(), Some(Do::Write)));
         }
+        if self.note.is_none() && self.draft.is_none() && !self.noting {
+            rows.extend(self.closed_panel());
+        }
+        rows
+    }
+
+    /// The closed notes of the description whose overview is shown, each
+    /// with why it closed, a click on one picking it, to reopen; nothing
+    /// elsewhere, or when it has none.
+    fn closed_panel(&self) -> Vec<(String, Option<Do>)> {
+        let (Picture::Overview(_), Some(wanted)) = (&self.picture, &self.wanted) else {
+            return Vec::new();
+        };
+        let Some(notes) = self.notes.get(&wanted.dir) else {
+            return Vec::new();
+        };
+        let closed: Vec<&Note> = notes.iter().filter(|note| note.status == Status::Closed).collect();
+        if closed.is_empty() {
+            return Vec::new();
+        }
+        let mut rows = vec![("closed notes · click one to read or reopen it".to_string(), None)];
+        for note in closed {
+            let why = note.closed_because.as_deref().unwrap_or("closed by you");
+            rows.push((
+                format!("    {} · {why} · {}", note.id, note.on.said()),
+                Some(Do::Show(wanted.dir.clone(), note.id.clone())),
+            ));
+        }
         rows
     }
 
@@ -1494,7 +1558,10 @@ impl Gallery {
         let status = match note.status {
             Status::Open => "open, for the agent to answer",
             Status::Answered => "answered",
-            Status::Closed => "closed",
+            Status::Closed => match &note.closed_because {
+                Some(why) => &format!("closed: {why}"),
+                None => "closed",
+            },
         };
         let mut rows = vec![(format!("{} · {status} · {}", note.id, note.on.said()), None)];
         for said in &note.thread {
@@ -1520,7 +1587,14 @@ impl Gallery {
                     Some(Do::Reopen(dir, id)),
                 ));
             }
-            Status::Closed => {}
+            Status::Closed if note.closed_because.is_some() => rows.push((
+                "    reopen it on the whole state, saying what is still to do".to_string(),
+                Some(Do::Reopen(dir, id)),
+            )),
+            Status::Closed => rows.push((
+                "    reopen it, saying what is still to do".to_string(),
+                Some(Do::Reopen(dir, id)),
+            )),
         }
         rows
     }
@@ -3292,7 +3366,7 @@ mod tests {
             written[0].thread[0].says,
             "cd-keep.tap in cancel-unpaid should go to default: declare the transition"
         );
-        let listed = notes::notes(&root, None, None, false).unwrap();
+        let listed = notes::notes(&root, None, None, false, false).unwrap();
         assert_eq!(
             listed["notes"][1]["proposes"],
             json!({ "on": "cd-keep.tap", "navigate": "ExportDocuments" })
