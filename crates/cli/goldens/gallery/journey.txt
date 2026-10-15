@@ -5,10 +5,10 @@ picture
     → summary-cancel
   journey step 2, marked [Some("summary-cancel"), Some("summary-cancel")]
 sidebar
+  → cancel-an-order · the whole journey
   journey cancel-an-order · step 2 of 3 · shop/order · open
     acts on summary-cancel (label 1) · tap, answered ok (marked)
     ← previous step
     → next step
-  open · the whole state
   note · nothing said yet
     Say below what should change: Enter sends, Shift+Enter breaks the line.

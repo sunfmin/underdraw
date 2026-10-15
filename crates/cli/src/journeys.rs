@@ -12,6 +12,7 @@ use underdraw_format::Finding;
 use crate::gallery::{self, within};
 use crate::project::Project;
 use crate::read;
+use crate::reference::{On, Reference};
 
 /// The directory, in the directory a journey is listed under, that holds
 /// its journeys.
@@ -23,6 +24,15 @@ pub fn under(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect(root, &mut found);
     found
+}
+
+/// The note on the journey in `file`, as a reference: kept in the
+/// notes.json of the directory its `journeys/` is in, pinned to its name.
+/// None for a file not in a `journeys/`.
+pub fn noted(file: &Path) -> Option<Reference> {
+    let journeys = file.parent().filter(|dir| dir.file_name().is_some_and(|name| name == JOURNEYS))?;
+    let journey = file.file_stem()?.to_string_lossy().to_string();
+    Some(Reference { description: journeys.parent()?.to_path_buf(), on: On::Journey { journey } })
 }
 
 /// The journey files listed under `dir`, in its `journeys/`, in order of
