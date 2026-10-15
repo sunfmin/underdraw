@@ -417,7 +417,7 @@
         "icon": "download",
         "on": {
           "tap": {
-            "navigate": "OrderExport"
+            "navigate": "ExportDocuments"
           }
         }
       }

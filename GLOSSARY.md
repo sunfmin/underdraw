@@ -53,7 +53,9 @@ A value written once per breakpoint (`{"compact": 1, "regular": 2}`), in
 place of one value for every width.
 
 **Assumption**:
-Something the agent guessed and the person has not confirmed.
+Something the agent guessed and the person has not confirmed, such as a
+screen a `navigate` names that no description under the root declares (a
+screen not drawn yet).
 _Avoid_: guess, TODO
 
 ### Data and decisions

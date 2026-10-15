@@ -2,7 +2,7 @@
 //! width and built into a scene with its nodes, apart from what is done with
 //! the pixels: `render` writes them to a PNG.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
@@ -96,8 +96,9 @@ pub fn states(path: &Path) -> anyhow::Result<Vec<Shown>> {
 
 /// The state `wanted` names of the description at `path` (a directory or its
 /// screen.json), laid out; refused when the description has findings, since
-/// a picture of it would mislead.
-pub fn lay_out(path: &Path, wanted: &Wanted) -> anyhow::Result<Laid> {
+/// a picture of it would mislead. Given the screens `drawn` under its root,
+/// a node that navigates to any other is marked assumed.
+pub fn lay_out(path: &Path, wanted: &Wanted, drawn: Option<&BTreeSet<String>>) -> anyhow::Result<Laid> {
     let (screen, dir) = read(path)?;
     let tokens = read_tokens(&dir)?;
     let kinds = read_kinds(&dir)?;
@@ -115,7 +116,9 @@ pub fn lay_out(path: &Path, wanted: &Wanted) -> anyhow::Result<Laid> {
         State::Phase(_) => Shown::Phase(name),
     };
     let breakpoint = Breakpoint::for_width(&tokens, wanted.width);
-    let root = underdraw_format::instantiate(&screen, state, breakpoint).map_err(anyhow::Error::msg)?;
+    let marked = drawn.map(|drawn| underdraw_format::assume_undrawn(&screen, drawn));
+    let shows = marked.as_ref().unwrap_or(&screen);
+    let root = underdraw_format::instantiate(shows, state, breakpoint).map_err(anyhow::Error::msg)?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     let page = underdraw_layout::layout(&root, &tokens, kinds.as_ref(), wanted.width as f32, &mut typesetter)
@@ -172,7 +175,7 @@ mod tests {
 
     #[test]
     fn draws_a_state_without_a_gpu_or_a_file() {
-        let drawing = lay_out(Path::new(DRAFT), &wanted(390)).unwrap().draw(2, 16384);
+        let drawing = lay_out(Path::new(DRAFT), &wanted(390), None).unwrap().draw(2, 16384);
         assert_eq!(drawing.shown.name(), "default");
         assert!(matches!(drawing.shown, Shown::Fixture(_)));
         assert_eq!(drawing.breakpoint, Breakpoint::Compact);
@@ -185,7 +188,7 @@ mod tests {
 
     #[test]
     fn a_page_taller_than_the_gpu_draws_is_drawn_smaller() {
-        let laid = lay_out(Path::new(DRAFT), &wanted(390)).unwrap();
+        let laid = lay_out(Path::new(DRAFT), &wanted(390), None).unwrap();
         let side = laid.page.height.max(laid.page.width);
         let drawing = laid.draw(2, side as u32);
         assert_eq!(drawing.scale, 1.0, "one pixel per point fits");
@@ -203,13 +206,13 @@ mod tests {
     #[test]
     fn a_phase_is_shown_by_name() {
         let wanted = Wanted { phase: Some("loading".into()), ..wanted(390) };
-        let laid = lay_out(Path::new(DRAFT), &wanted).unwrap();
+        let laid = lay_out(Path::new(DRAFT), &wanted, None).unwrap();
         assert!(matches!(laid.shown, Shown::Phase(ref name) if name == "loading"));
     }
 
     #[test]
     fn says_which_operation_each_node_calls() {
-        let laid = lay_out(Path::new(DRAFT), &wanted(390)).unwrap();
+        let laid = lay_out(Path::new(DRAFT), &wanted(390), None).unwrap();
         assert!(!laid.calls.is_empty(), "the listing calls operations");
         for (id, operations) in &laid.calls {
             assert!(laid.page.nodes.iter().any(|n| &n.id == id), "{id} is a node placed");

@@ -10,7 +10,11 @@ WHO
 READS
   <path>/screen.json and, beside it, tokens.json (spaces, radii, fonts,
   breakpoints) and kinds.json when there is one (what the project's own
-  kinds look like). Refuses a description `check` finds faults in.
+  kinds look like). Refuses a description `check` finds faults in. With
+  --root, also the "screen" of every description under that directory, as
+  `check <root>` reads them: a node that navigates to a screen none of them
+  declares is assumed, a screen not drawn yet. Without it, navigates are
+  not resolved.
 
 WRITES
   One PNG: --out, or <dir>/renders/<fixture or phase>-<width>.png. Running
@@ -27,7 +31,8 @@ ANSWERS
     "nodes":      [{"id", "kind", "box": {"x", "y", "width", "height"} in points,
                     "label": the number tagged on it in the picture, or null,
                     "assumed": what the agent guessed there, or that its kind is
-                      not one underdraw knows, or null}, …]
+                      not one underdraw knows, or (given --root) that it
+                      navigates to a screen not drawn yet, or null}, …]
   }
 
 WHAT YOU SEE

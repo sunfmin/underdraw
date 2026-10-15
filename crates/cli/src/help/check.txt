@@ -13,6 +13,16 @@ READS
   is laid out at widths 390 and 1120, in the system's fonts as `render`
   does, and an overlay that runs off the page is a finding. Writes nothing.
 
+  <path> may instead be a directory holding no screen.json, a root: then
+  every description under it, at any depth, as the gallery finds them, is
+  checked, and also the links between them. Each "navigate" names a screen,
+  and resolves to the description under the root whose "screen" is that
+  name. A navigate to a screen no description declares is not a fault: it
+  is an assumption, a screen not drawn yet, for the person to confirm;
+  `render --root` and the gallery draw its node with the orange "?". One
+  description checked alone cannot see the others, so it says nothing of
+  where it navigates.
+
 ANSWERS
   {
     "screen":     the screen's name, from "screen"
@@ -25,10 +35,27 @@ ANSWERS
     "findings":   [{"at": where — a dotted path or a node id,
                     "problem": what is wrong, and what is allowed instead}, …]
   }
+  Given a root:
+  {
+    "root":         the directory checked
+    "ok":           true when no description has a finding; an unresolved
+                    navigate does not count
+    "descriptions": [{"description": its directory, relative to root,
+                      then everything above: "screen", "ok", "fixtures",
+                      "phases", "conditions", "findings"}, …]
+                    one that cannot be read has its one finding at screen.json
+    "links":        [{"description": the directory it is in,
+                      "from": the screen it is on, "node": the node's id,
+                      "to": the screen it names,
+                      "resolved": true when a description under root
+                        declares it; false: an assumption, a screen not
+                        drawn yet}, …]
+  }
 
 EXIT
   0 when "ok" is true, 1 when there are findings (the answer above is still
-  printed in full), 2 when the description could not be read or parsed.
+  printed in full), 2 when the description could not be read or parsed, or
+  a root holds no description. Unresolved navigates alone exit 0.
 
 WHAT TRIPS YOU UP
   - A text property (text, title, subtitle, label, detail) always shows text:
