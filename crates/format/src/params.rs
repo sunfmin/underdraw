@@ -88,11 +88,18 @@ fn given(screen: &Value) -> Vec<(String, BTreeSet<String>)> {
         let Some(written) = written.as_object() else {
             continue;
         };
-        let mut keys: BTreeSet<String> = written.keys().filter(|key| *key != "$patch").cloned().collect();
+        let mut keys = BTreeSet::new();
+        for key in written.keys() {
+            if key != "$patch" {
+                keys.insert(key.clone());
+            }
+        }
         if let Some(Value::String(base)) = written.get("$patch")
             && let Some((_, from)) = given.iter().find(|(fixture, _)| fixture == base)
         {
-            keys.extend(from.iter().cloned());
+            for key in from {
+                keys.insert(key.clone());
+            }
         }
         given.push((name.clone(), keys));
     }
