@@ -108,4 +108,10 @@ pub(super) const WORDS: Words = Words {
     node_no_label: "番号なし",
     answer_right: "✓ 正しい",
     answer_wrong: "✗ 違う",
+    way_state: "→ {to}",
+    way_outcome: "→ {to} · {outcome}",
+    way_navigate: "↗ {screen} へ",
+    way_undrawn: "↗ {screen} · まだ描かれていません",
+    way_back: "← 戻る",
+    way_hint: "⌘（Ctrl）を押しながらノードをクリックしても同じです。",
 };

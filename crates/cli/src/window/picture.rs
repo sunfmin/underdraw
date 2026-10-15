@@ -20,7 +20,7 @@ use vello::Scene;
 pub(crate) use self::faults::Faults;
 pub(crate) use self::flow::{Flow, Tile};
 pub(crate) use self::overview::{Arrow, Overview, Pass, Thumb};
-pub(crate) use self::pages::{Page, Pages};
+pub(crate) use self::pages::{Page, Pages, offer_widths};
 use crate::area::rect;
 use crate::chrome::PIN;
 use crate::notes::{Note, Stands};
@@ -117,7 +117,19 @@ pub(crate) struct Seen {
     pub picked: Option<Target>,
     /// The id, as written, of the node the journey played acts on next.
     pub marked: Option<String>,
+    /// Where acting on the node picked goes, each a button floating
+    /// beside it: none while it goes nowhere.
+    pub offers: Vec<Offer>,
     pub lang: Lang,
+}
+
+/// A button floating beside the node picked, offering one place acting on
+/// it goes: what it says, and whether it goes there, in the interaction
+/// ink, or only says where it would, grayed (a screen not drawn yet).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Offer {
+    pub says: String,
+    pub live: bool,
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
@@ -180,7 +192,7 @@ mod tests {
 
     /// What the window marks with `picked` picked, in English.
     pub(super) fn seen(picked: Option<Target>) -> Seen {
-        Seen { picked, marked: None, lang: Lang::En }
+        Seen { picked, marked: None, offers: Vec::new(), lang: Lang::En }
     }
 
     /// The middle of `r`.
