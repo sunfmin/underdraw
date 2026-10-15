@@ -14,6 +14,9 @@ FILES
   <dir>/kinds.json    optional: the project's own kinds (KINDS.JSON below)
   <dir>/platforms/<name>.json
                       how one platform builds it: `underdraw handoff --help`
+  <dir>/journeys/<name>.json
+                      optional: one path a person takes across screens,
+                      walked by `check <root>` (JOURNEYS below)
 
 SCREEN.JSON
   {
@@ -516,6 +519,36 @@ TRANSITIONS
   Opening and closing a popup are transitions like any other. An event
   that navigates or goes back leaves the screen: it is not a transition.
   check names a transition whose state, node, event or outcome is not one.
+
+JOURNEYS
+  One named, linear path a person takes across screens, told as steps,
+  each a state of one screen; a branch is another journey. One file each,
+  <dir>/journeys/<name>.json, under any directory of the project:
+    {
+      "$comment": "The person opens an order and cancels it before it ships.",
+      "steps": [
+        { "screen": "orders", "state": "default", "on": "order-{index}.tap" },
+        { "screen": "order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
+        { "screen": "order",  "state": "cancelled" }
+      ]
+    }
+    "screen"   the screen's directory, by its path from the project root
+               (the nearest directory at or above <dir> holding
+               domain.json; with none, <dir> itself): "orders/list"
+    "state"    a fixture or a phase of that screen
+    "on"       on every step but the last: "<node id>.<event>", the node
+               acted on, its id as written, as in TRANSITIONS
+    "outcome"  for an event that calls an operation: "ok", or one of its
+               "fails"; which transition it takes
+  It must be walkable: each "on" names a node its step's state shows (at
+  either breakpoint) and an event it handles there, and that act leads to
+  the next step: on the same screen, by a transition from this state on
+  that event (with that outcome, when given) to the next step's state; on
+  another screen, by a "navigate" to the screen the next step names. check
+  <root> walks every journey under the root and names a broken one with
+  the step that breaks ("steps.1.on"), so a change to a screen says which
+  journeys it breaks. A journey is for the gallery and check only, as
+  transitions are: never handed off.
 
 RESPONSIVE
   tokens.json "breakpoint" splits widths into compact and regular; `render
