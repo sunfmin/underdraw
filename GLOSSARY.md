@@ -199,7 +199,8 @@ are, where a person picks one, to see its **overview**, and then one of its
 states, to see its wireframe drawn from the description as it now stands,
 and can act on its nodes to click through its transitions and navigates as
 a prototype; or picks a directory, to see the **flow** between the screens
-under it.
+under it; or picks a **journey**, to play it step by step, the node acted
+on in each step marked.
 _Avoid_: mockup viewer, preview
 
 **Overview**:

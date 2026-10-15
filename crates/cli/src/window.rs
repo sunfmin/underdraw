@@ -3,7 +3,8 @@
 //! picture drawn at a phone and a desktop width side by side, where a node
 //! can be picked to read what it is, or acted on to follow what the
 //! description says happens, as a prototype; for a directory picked, the
-//! flow between the screens under it. The person writes notes (ADR 0019)
+//! flow between the screens under it; for a journey picked (ADR 0022), its
+//! steps played one by one. The person writes notes (ADR 0019)
 //! on its nodes, on regions dragged over it, on a whole state, and on the
 //! arrows of an overview or a flow, each drawn as a numbered pin where it
 //! was written; the window writes nothing else. The tree and panels are drawn by hand, in
@@ -33,6 +34,7 @@ use crate::act::{self, Act};
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
+use crate::journeys::{self, Step};
 use crate::notes::{self, By, Goes, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
 use crate::{gpu, links, paint, text};
@@ -183,6 +185,8 @@ struct Gallery {
     hovered: Option<(PathBuf, String)>,
     /// Whether Shift is held: Enter then breaks a line of a note.
     shift: bool,
+    /// The journey picked, while one is played.
+    playing: Option<Playing>,
 }
 
 /// A note being written: what it is for, and what has been typed.
@@ -217,6 +221,8 @@ enum Do {
     Reopen(PathBuf, String),
     /// Picks the note named so: one of a description's closed notes.
     Show(PathBuf, String),
+    /// Shows the step of this place in the journey played.
+    Step(usize),
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
@@ -270,30 +276,60 @@ fn closed_itself(before: &BTreeMap<PathBuf, Vec<Note>>, after: &BTreeMap<PathBuf
     said
 }
 
-/// One line of the tree: a directory, a description, or one of a
-/// description's states, listed under it.
+/// One line of the tree: a directory, a description, one of a
+/// description's states, listed under it, or a journey, listed under the
+/// directory it is in.
 struct Line {
     /// The directory or description; for a state, the description it is of,
-    /// one level further in and named as the state is.
+    /// one level further in and named as the state is; for a journey, its
+    /// file, named as the file is, with what `check` finds wrong in walking
+    /// it.
     row: Row,
     state: Option<State>,
+    journey: bool,
 }
 
 /// The lines of the tree over `root`: each description followed by its
-/// states, as `check` finds them. A description that cannot be read has none.
+/// states, as `check` finds them, and each directory by the journeys under
+/// it, after its states when it is a description. A description that
+/// cannot be read has no states.
 fn lines(root: &Path) -> Vec<Line> {
     let mut lines = Vec::new();
-    for row in gallery::tree(root) {
+    let rows = gallery::tree(root);
+    if rows.first().is_none_or(|row| row.dir != root) {
+        journey_lines(root, 0, &mut lines);
+    }
+    for row in rows {
         let states = row.description().map(draw::states).and_then(Result::ok).unwrap_or_default();
         let (depth, dir, faults) = (row.depth + 1, row.dir.clone(), row.faults.clone());
-        lines.push(Line { row, state: None });
+        lines.push(Line { row, state: None, journey: false });
         for state in states {
             let name = state.name().to_string();
             let row = Row { depth, name, dir: dir.clone(), described: true, faults: faults.clone() };
-            lines.push(Line { row, state: Some(state) });
+            lines.push(Line { row, state: Some(state), journey: false });
         }
+        journey_lines(&dir, depth, &mut lines);
     }
     lines
+}
+
+/// The journeys listed under `dir`, each a line `depth` in, added to
+/// `lines`.
+fn journey_lines(dir: &Path, depth: usize, lines: &mut Vec<Line>) {
+    for file in journeys::listed(dir) {
+        let name = file.file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+        let faults = journeys::faults(&file);
+        let row = Row { depth, name, dir: file, described: false, faults };
+        lines.push(Line { row, state: None, journey: true });
+    }
+}
+
+/// A journey being played: its steps, and the one shown.
+struct Playing {
+    steps: Vec<Step>,
+    at: usize,
+    /// The state of the step shown, as its description lists it.
+    state: State,
 }
 
 /// What an act on a node came to, as the panel says it at its top.
@@ -488,6 +524,7 @@ impl Gallery {
             note: None,
             hovered: None,
             shift: false,
+            playing: None,
         }
     }
 
@@ -667,16 +704,31 @@ impl Gallery {
     /// The tree read again from the files as they now stand, and the state
     /// or overview shown drawn again from them, scrolled as it was. Where
     /// that state went, its description's overview is shown; where its
-    /// description went too, the first description's.
+    /// description went too, the first description's. A journey picked is
+    /// played again at the step shown, while it is listed.
     fn reload(&mut self) {
         let (wanted, scroll, acted) = (self.wanted.take(), self.scroll, self.acted.take());
         let arrow = self.arrow.and_then(|_| self.reference());
+        let journey = self.picked.and_then(|index| self.lines.get(index)).filter(|line| line.journey);
+        let journey = journey.map(|line| (line.row.dir.clone(), self.playing.as_ref().map_or(0, |p| p.at)));
         self.lines = lines(&self.root);
         let notes = notes_of(&self.lines);
         let closed = closed_itself(&self.notes, &notes);
         self.notes = notes;
         self.picked = None;
         self.picture = Picture::Faults(Vec::new());
+        let playing = journey.and_then(|(file, at)| {
+            Some((self.lines.iter().position(|line| line.journey && line.row.dir == file)?, at))
+        });
+        if let Some((index, at)) = playing {
+            self.play(index, at);
+            self.scroll = scroll;
+            if !closed.is_empty() {
+                self.say(format!("{} · its description's overview lists it, to reopen", closed.join(" · ")));
+            }
+            self.clamp();
+            return;
+        }
         let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
         let description = wanted.as_ref().and_then(|wanted| {
             self.lines.iter().position(|line| line.state.is_none() && line.row.dir == wanted.dir)
@@ -825,6 +877,7 @@ impl Gallery {
                 self.acted = None;
                 true
             }
+            Some(Do::Step(at)) => self.step(at),
             None => false,
         }
     }
@@ -894,11 +947,16 @@ impl Gallery {
     }
 
     /// What picking line `index` shows: a state drawn at each of `WIDTHS`,
-    /// a description's overview, or a directory's flow.
+    /// a description's overview, a directory's flow, or a journey's first
+    /// step.
     fn pick(&mut self, index: usize) {
         let Some(index) = self.shows(index) else {
             return;
         };
+        if self.lines[index].journey {
+            return self.play(index, 0);
+        }
+        self.playing = None;
         let line = &self.lines[index];
         let (dir, described) = (line.row.dir.clone(), line.row.description().is_some());
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
@@ -941,14 +999,21 @@ impl Gallery {
             };
             return;
         }
+        self.show_pages(&dir, state.as_ref(), &drawn);
+    }
+
+    /// The state `state` of the description in `dir` drawn at each of
+    /// `WIDTHS`, given the screens `drawn` under the root, and shown; or
+    /// why it cannot be. The node picked stays picked while it is there.
+    fn show_pages(&mut self, dir: &Path, state: Option<&State>, drawn: &std::collections::BTreeSet<String>) {
         let mut pages = Vec::new();
         for width in WIDTHS {
-            let wanted = match &state {
+            let wanted = match state {
                 Some(state) => state.wanted(width, 1),
                 // A description with no state: lay_out says why.
                 None => Wanted { fixture: None, phase: None, width, scale: 1 },
             };
-            match draw::lay_out(&dir, &wanted, Some(&drawn), self.lang) {
+            match draw::lay_out(dir, &wanted, Some(drawn), self.lang) {
                 Ok(laid) => {
                     let drawing = laid.draw(1, u32::MAX);
                     pages.push(Page {
@@ -974,6 +1039,138 @@ impl Gallery {
             self.node = None;
         }
         self.picture = Picture::Pages(pages);
+    }
+
+    /// The journey on line `index` played from its step `at` (its last, past
+    /// the end): that step's state drawn at each of `WIDTHS`, the node it
+    /// acts on marked. One `check` finds broken shows its faults instead,
+    /// and is not played.
+    fn play(&mut self, index: usize, at: usize) {
+        let line = &self.lines[index];
+        let (file, faults) = (line.row.dir.clone(), line.row.faults.clone());
+        self.picked = Some(index);
+        self.playing = None;
+        (self.arrow, self.note, self.region, self.node) = (None, None, None, None);
+        self.scroll = 0.0;
+        if !faults.is_empty() {
+            self.wanted = None;
+            self.picture = Picture::Faults(faults);
+            return;
+        }
+        let steps = match journeys::steps(&file) {
+            Ok(steps) => steps,
+            Err(e) => {
+                self.picture =
+                    Picture::Faults(vec![Finding { at: String::new(), problem: format!("{e:#}") }]);
+                return;
+            }
+        };
+        let at = at.min(steps.len().saturating_sub(1));
+        let Some(step) = steps.get(at) else {
+            self.picture = Picture::Faults(Vec::new());
+            return;
+        };
+        let state = draw::states(&step.dir)
+            .ok()
+            .and_then(|states| states.into_iter().find(|state| state.name() == step.state));
+        let Some(state) = state else {
+            let problem = format!("{} has no state {}", gallery::within(&self.root, &step.dir), step.state);
+            self.picture = Picture::Faults(vec![Finding { at: format!("steps.{at}"), problem }]);
+            return;
+        };
+        // Acting on a node from here goes on as the prototype does, from
+        // the step's state.
+        self.wanted = Some(Picked { dir: step.dir.clone(), state: Some(step.state.clone()) });
+        let dir = step.dir.clone();
+        self.show_pages(&dir, Some(&state), &links::drawn(&self.root));
+        self.playing = Some(Playing { steps, at, state });
+    }
+
+    /// The step `at` of the journey played shown. Whether one is played.
+    fn step(&mut self, at: usize) -> bool {
+        let (Some(index), Some(_)) = (self.picked, &self.playing) else {
+            return false;
+        };
+        self.acted = None;
+        self.play(index, at);
+        true
+    }
+
+    /// The node the journey played acts on in the step shown, as placed in
+    /// each picture: the first instance of its id as written; none in a
+    /// picture that does not show it, or in the last step.
+    fn marked(&self) -> Vec<Option<&Placed>> {
+        let (Some(playing), Picture::Pages(pages)) = (&self.playing, &self.picture) else {
+            return Vec::new();
+        };
+        let Some((written, _)) = &playing.steps[playing.at].on else {
+            return Vec::new();
+        };
+        pages
+            .iter()
+            .map(|page| {
+                page.nodes
+                    .iter()
+                    .find(|node| page.origins.get(&node.id).is_some_and(|o| &o.written == written))
+            })
+            .collect()
+    }
+
+    /// The marks around the node the journey played acts on next, in
+    /// window points, in each picture that shows it.
+    fn marks(&self) -> Vec<Rect> {
+        let zoom = self.zoom(self.size.0 - TREE);
+        self.marked()
+            .into_iter()
+            .zip(self.origins())
+            .filter_map(|(node, (left, top))| {
+                let r = node?.rect;
+                let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
+                let (w, h) = (f64::from(r.width) * zoom, f64::from(r.height) * zoom);
+                Some(rect(x - 4.0, y - 4.0, w + 8.0, h + 8.0))
+            })
+            .collect()
+    }
+
+    /// What the panel says of the journey played: which step is shown, of
+    /// how many, and its state; the act that leads on from it; and a line
+    /// to each step beside it.
+    fn playing_panel(&self) -> Vec<(String, Option<Do>)> {
+        let (Some(playing), Some(index)) = (&self.playing, self.picked) else {
+            return Vec::new();
+        };
+        let (at, step) = (playing.at, &playing.steps[playing.at]);
+        let mut rows = vec![(
+            format!(
+                "journey {} · step {} of {} · {} · {}",
+                self.lines[index].row.name,
+                at + 1,
+                playing.steps.len(),
+                gallery::within(&self.root, &step.dir),
+                step.state
+            ),
+            None,
+        )];
+        rows.push((
+            match &step.on {
+                Some((node, event)) => {
+                    let label = self.marked().into_iter().flatten().next().and_then(|node| node.label);
+                    let label = label.map(|label| format!(" (label {label})")).unwrap_or_default();
+                    let outcome =
+                        step.outcome.as_ref().map(|o| format!(", answered {o}")).unwrap_or_default();
+                    format!("    acts on {node}{label} · {event}{outcome} (marked)")
+                }
+                None => "    the journey ends here".to_string(),
+            },
+            None,
+        ));
+        if at > 0 {
+            rows.push(("    ← previous step".to_string(), Some(Do::Step(at - 1))));
+        }
+        if at + 1 < playing.steps.len() {
+            rows.push(("    → next step".to_string(), Some(Do::Step(at + 1))));
+        }
+        rows
     }
 
     /// The overview of the description on line `index`, in `dir`: its states
@@ -1351,7 +1548,7 @@ impl Gallery {
         let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
             return None;
         };
-        let state = self.picked.and_then(|index| self.lines.get(index)?.state.clone())?;
+        let state = self.state_shown()?;
         let node = self.node.as_ref().and_then(|id| {
             let has = |page: &&Page| page.has(id);
             let page = pages.get(self.pointed).filter(has).or_else(|| pages.iter().find(has))?;
@@ -1384,6 +1581,15 @@ impl Gallery {
             Ok(()) => self.say(format!("copied  {line}")),
             Err(e) => self.say(format!("could not copy ({e}): {line}")),
         }
+    }
+
+    /// The state whose pictures are shown: the one picked, or the step's of
+    /// the journey played.
+    fn state_shown(&self) -> Option<State> {
+        if let Some(playing) = &self.playing {
+            return Some(playing.state.clone());
+        }
+        self.picked.and_then(|index| self.lines.get(index)?.state.clone())
     }
 
     /// The clipboard, opened the first time it is asked for.
@@ -1464,14 +1670,15 @@ impl Gallery {
     }
 
     /// What the panel says, one line each, with what a click on each line
-    /// does: what the last act on a node came to, and any outcomes to
+    /// does: the journey played, its step and the steps beside it; what the
+    /// last act on a node came to, and any outcomes to
     /// choose from, each on a line of its own; then the note being written,
     /// or how to start one; then the note picked; then, of the node picked,
     /// its id, kind, the operation it calls, what was assumed there, its
     /// label and box at each width, or of the arrow picked, what it is; and
     /// a line to write a note on it. Nothing when none of these is there.
     fn panel_rows(&self) -> Vec<(String, Option<Do>)> {
-        let mut rows = Vec::new();
+        let mut rows = self.playing_panel();
         if let Some(Acted { says, choices }) = &self.acted {
             rows.push((says.clone(), None));
             rows.extend(choices.iter().map(|(line, does)| (line.clone(), Some(does.clone()))));
@@ -1755,6 +1962,14 @@ impl Gallery {
                 true
             }
             Key::Character(c) if c.eq_ignore_ascii_case("n") => self.start_noting(),
+            Key::Named(NamedKey::ArrowRight | NamedKey::ArrowLeft) => {
+                let Some(playing) = &self.playing else { return false };
+                let at = match key {
+                    Key::Named(NamedKey::ArrowRight) => playing.at + 1,
+                    _ => playing.at.wrapping_sub(1),
+                };
+                at < playing.steps.len() && self.step(at)
+            }
             _ => false,
         }
     }
@@ -1815,7 +2030,7 @@ impl Gallery {
         let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
             return Vec::new();
         };
-        let Some(state) = self.picked.and_then(|index| self.lines.get(index)?.state.clone()) else {
+        let Some(state) = self.state_shown() else {
             return Vec::new();
         };
         let Some(notes) = self.notes.get(&wanted.dir) else {
@@ -2094,9 +2309,12 @@ impl Gallery {
         let wide = pane - 2.0 * MARGIN;
         let path = self.picked.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
         let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
-        let heading = match faults.len() {
-            1 => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
-            n => format!("{within} has {n} faults, so it is not drawn: `underdraw check` it"),
+        let journey = self.picked.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
+        let heading = match (journey, faults.len()) {
+            (true, 1) => format!("{within} has a fault, so it is not played: `underdraw check` its root"),
+            (true, n) => format!("{within} has {n} faults, so it is not played: `underdraw check` its root"),
+            (false, 1) => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
+            (false, n) => format!("{within} has {n} faults, so it is not drawn: `underdraw check` it"),
         };
         let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, 600)];
         let mut y = MARGIN + CAPTION + GAP;
@@ -2129,7 +2347,8 @@ impl Gallery {
         let (width, height) = self.size;
         let mut list =
             vec![Draw::Line { from: [TREE as f32, 0.0], to: [TREE as f32, height as f32], ink: Ink::Line }];
-        for (index, Line { row, state }) in self.lines.iter().enumerate() {
+        for (index, line) in self.lines.iter().enumerate() {
+            let Line { row, state, .. } = line;
             let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
             if self.picked == Some(index) {
                 list.push(Draw::Box {
@@ -2142,6 +2361,7 @@ impl Gallery {
             }
             let x = 12.0 + row.depth as f64 * INDENT;
             let (name, ink, weight) = match (row.description(), state) {
+                _ if line.journey => (format!("→ {}", row.name), Ink::Text, 400),
                 (None, _) => (format!("{}/", row.name), Ink::Muted, 600),
                 (Some(_), None) => (row.name.clone(), Ink::Text, 600),
                 (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
@@ -2182,6 +2402,7 @@ impl Gallery {
         let mut pages = Vec::new();
         let mut thumbs = Vec::new();
         let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
+        let marks = self.marks();
         let regions = self.regions();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let (cells, arrows) = (self.cells(), self.arrows());
@@ -2202,6 +2423,24 @@ impl Gallery {
                         dashed: false,
                     });
                     pages.push((at, &shot.scene));
+                }
+                // The node a journey acts on next, ringed twice in the
+                // notes' ink: no wireframe draws in it.
+                for around in marks {
+                    for inset in [0.0, 1.5] {
+                        pane.push(Draw::Box {
+                            rect: rect(
+                                f64::from(around.x) + inset,
+                                f64::from(around.y) + inset,
+                                f64::from(around.width) - 2.0 * inset,
+                                f64::from(around.height) - 2.0 * inset,
+                            ),
+                            radius: 5.0,
+                            fill: None,
+                            stroke: Some(Ink::Note),
+                            dashed: false,
+                        });
+                    }
                 }
                 for around in outlines {
                     pane.push(Draw::Box {
@@ -3555,6 +3794,8 @@ mod tests {
                 "Backspace" => (named(NamedKey::Backspace), None),
                 "Esc" => (named(NamedKey::Escape), None),
                 " " => (named(NamedKey::Space), Some(" ")),
+                "→" => (named(NamedKey::ArrowRight), None),
+                "←" => (named(NamedKey::ArrowLeft), None),
                 letter => (Key::Character(letter.into()), Some(letter)),
             };
             gallery.key(&pressed, text);
@@ -3651,7 +3892,7 @@ mod tests {
         let default = state_of_in(&gallery, orders, "default");
         let loading = state_of_in(&gallery, orders, "loading");
         let count = |gallery: &Gallery, line: usize| {
-            let Line { row, state } = &gallery.lines[line];
+            let Line { row, state, .. } = &gallery.lines[line];
             gallery.open_notes(row, state.as_ref())
         };
         assert_eq!((count(&gallery, orders), count(&gallery, default), count(&gallery, loading)), (1, 1, 0));
@@ -3818,7 +4059,7 @@ mod tests {
         assert!(!shown.is_empty() && shown.iter().all(|(_, _, _, faint)| *faint), "{shown:?}");
         let orders = line_of(&gallery, "orders");
         let dialog = state_of_in(&gallery, orders, "cancel-dialog");
-        let Line { row, state } = &gallery.lines[dialog];
+        let Line { row, state, .. } = &gallery.lines[dialog];
         assert_eq!(gallery.open_notes(row, state.as_ref()), 0, "a state counts the notes written in it");
         show(&mut gallery, "orders", "loading");
         assert!(pins_shown(&gallery).is_empty(), "loading has no rows");
@@ -3868,7 +4109,7 @@ mod tests {
         assert_eq!(gallery.panel()[0], "N1 · open, for the agent to answer · on the whole of default");
         let orders = line_of(&gallery, "orders");
         let default = state_of_in(&gallery, orders, "default");
-        let Line { row, state } = &gallery.lines[default];
+        let Line { row, state, .. } = &gallery.lines[default];
         assert_eq!(gallery.open_notes(row, state.as_ref()), 1, "counted on its state");
 
         showing(&mut gallery, orders);
@@ -3958,7 +4199,7 @@ mod tests {
                 link.from, link.node, link.to
             )
         );
-        let Line { row, state } = &gallery.lines[line_of(&gallery, "orders")];
+        let Line { row, state, .. } = &gallery.lines[line_of(&gallery, "orders")];
         assert_eq!(gallery.open_notes(row, state.as_ref()), 1, "counted on its description");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -4098,6 +4339,120 @@ mod tests {
         assert!(gallery.panel()[0].starts_with("note on region 0, 0 · 390 × 56 covering 1 node"));
         press_keys(&mut gallery, &["Esc", "Esc"]);
         assert!(gallery.region.is_none() && gallery.regions().is_empty(), "Esc lets it go");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The line of the journey named `name`.
+    fn journey_of(gallery: &Gallery, name: &str) -> usize {
+        gallery.lines.iter().position(|line| line.journey && line.row.name == name).unwrap()
+    }
+
+    /// The step of the journey played, from 1, and the id as written of the
+    /// node marked in each picture.
+    fn played(gallery: &Gallery) -> (usize, Vec<Option<String>>) {
+        let at = gallery.playing.as_ref().expect("a journey is played").at;
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no pictures") };
+        let marked = gallery
+            .marked()
+            .into_iter()
+            .zip(pages)
+            .map(|(node, page)| node.map(|node| page.origins[&node.id].written.clone()))
+            .collect();
+        (at + 1, marked)
+    }
+
+    #[test]
+    fn the_shops_journey_is_listed_under_its_directory_and_played_step_by_step() {
+        let mut gallery = gallery();
+        let journey = journey_of(&gallery, "cancel-an-order");
+        let shop = &gallery.lines[journey - 1];
+        assert_eq!((shop.row.name.as_str(), shop.row.depth + 1), ("shop", gallery.lines[journey].row.depth));
+        assert!(shop.row.description().is_none(), "listed under the directory it is in");
+        over_row(&mut gallery, journey);
+        assert!(gallery.press(), "the journey is picked");
+        assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
+        let marked = Some("order-{index}".to_string());
+        assert_eq!(played(&gallery), (1, vec![marked.clone(), marked]));
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "journey cancel-an-order · step 1 of 3 · shop/orders · default");
+        assert!(panel[1].trim().starts_with("acts on order-{index} (label "), "{panel:?}");
+        assert!(panel[1].ends_with("· tap (marked)"), "{panel:?}");
+        assert!(!panel.iter().any(|line| line.trim() == "← previous step"), "no step before the first");
+
+        press_keys(&mut gallery, &["→"]);
+        assert_eq!(captions(&gallery), ["open · 390", "open · 1120"]);
+        let marked = Some("cancel".to_string());
+        assert_eq!(played(&gallery), (2, vec![marked.clone(), marked]));
+        assert!(gallery.panel()[1].contains("· tap, answered ok (marked)"), "{:?}", gallery.panel());
+
+        assert!(click_panel_line(&mut gallery, "→ next step"));
+        assert_eq!(captions(&gallery), ["cancelled · 390", "cancelled · 1120"]);
+        assert_eq!(played(&gallery), (3, Vec::new()), "the last step acts on nothing");
+        let panel = gallery.panel();
+        assert_eq!(panel[1].trim(), "the journey ends here");
+        assert!(!panel.iter().any(|line| line.trim() == "→ next step"), "no step after the last");
+        assert!(!gallery.key(&Key::Named(NamedKey::ArrowRight), None), "nothing past the last");
+
+        press_keys(&mut gallery, &["←", "←"]);
+        assert_eq!(played(&gallery).0, 1, "back to the first step");
+        assert!(click_panel_line(&mut gallery, "→ next step"));
+        assert_eq!(played(&gallery).0, 2);
+        assert!(click_panel_line(&mut gallery, "← previous step"));
+        assert_eq!(played(&gallery).0, 1);
+        assert_eq!(gallery.picked, Some(journey), "the journey stays picked as it plays");
+
+        let orders = line_of(&gallery, "orders");
+        over_row(&mut gallery, orders);
+        gallery.press();
+        assert!(gallery.playing.is_none(), "picking another line stops playing");
+    }
+
+    /// A copy of the shop draft in a directory of its own, named `name`.
+    fn shop(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let shop = Path::new(DRAFTS).join("shop");
+        for file in [
+            "domain.json",
+            "tokens.json",
+            "orders/screen.json",
+            "order/screen.json",
+            "journeys/cancel-an-order.json",
+        ] {
+            std::fs::create_dir_all(root.join(file).parent().unwrap()).unwrap();
+            std::fs::copy(shop.join(file), root.join(file)).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn a_broken_journey_shows_its_fault_and_is_played_once_fixed() {
+        let root = shop("broken-journey");
+        let order = root.join("order").join(crate::SCREEN);
+        let walks = std::fs::read_to_string(&order).unwrap();
+        std::fs::write(&order, walks.replacen(r#""to": "cancelled""#, r#""to": "shipped""#, 1)).unwrap();
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let journey = journey_of(&gallery, "cancel-an-order");
+        assert_eq!(gallery.lines[journey].row.depth, 0, "listed under the root");
+        over_row(&mut gallery, journey);
+        assert!(gallery.press());
+        assert!(gallery.playing.is_none(), "not played");
+        let Picture::Faults(faults) = &gallery.picture else { panic!("its faults are shown") };
+        assert_eq!(faults.len(), 1, "{faults:?}");
+        assert_eq!(faults[0].at, "steps.1.on");
+        assert!(faults[0].problem.contains("does not reach the next step"), "{faults:?}");
+        let (list, _) = gallery.faults(1440.0 - TREE);
+        let Draw::Text { text, .. } = &list[0] else { panic!("a heading") };
+        assert!(text.contains("has a fault, so it is not played"), "{text}");
+
+        std::fs::write(&order, walks).unwrap();
+        gallery.reload();
+        assert_eq!(gallery.picked, Some(journey), "the journey stays picked");
+        assert_eq!(played(&gallery).0, 1, "fixed, it is played");
+        press_keys(&mut gallery, &["→"]);
+        gallery.reload();
+        assert_eq!(played(&gallery).0, 2, "a change keeps the step shown");
         std::fs::remove_dir_all(root).unwrap();
     }
 }

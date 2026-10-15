@@ -62,7 +62,8 @@ COMMANDS
                              and each navigate resolved to the screen it names
     underdraw gallery <root> a window for the person: every description under
                              <root>, each drawn at a phone and a desktop width,
-                             where they write notes on its nodes, states and arrows
+                             where they write notes on its nodes, states and arrows,
+                             and play each journey under it step by step
     underdraw notes <root>   the person's open notes, each with where it is pinned;
                              with --answer <id> --reply "…", one answered;
                              with --wait, once one is open
