@@ -212,6 +212,13 @@ A string with placeholders that show data.
 **Cases**:
 An ordered choice of one value, ending in an `else`.
 
+**Tree**:
+A list whose rows each hold a list of rows of their own type, drawn
+each after the row it is in, one indent further in, the indent written
+once on the list. A row **folded** (view state) is drawn without its
+rows, which a fixture still lists.
+_Avoid_: depth, outline, flat list with levels
+
 ### Outputs
 
 **Inbox**:
