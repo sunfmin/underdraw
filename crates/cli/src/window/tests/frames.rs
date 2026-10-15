@@ -257,7 +257,7 @@ fn an_arrow_picked_in_the_overview() {
         showing(gallery, orders);
         gallery.press_at(on_arrow(gallery, 0));
     });
-    assert_eq!(gallery.arrow, Some(0));
+    assert_eq!(gallery.picked, Picked::Arrow(0));
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn an_assumption_picked_by_its_question_mark() {
         gallery.press_at(on_guess(gallery, 0, "card-number"));
     });
     fits(&mut gallery);
-    assert_eq!(gallery.node.as_deref(), Some("card-number"));
+    assert_eq!(picked_node(&gallery), Some("card-number"));
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -387,7 +387,7 @@ fn a_narrow_window_at_half_size_scrolled_across() {
         gallery.press_at(on_node(gallery, 1, "nav-save"));
     });
     assert_eq!(gallery.zoom(gallery.pane()), SMALLEST);
-    assert_eq!(gallery.node.as_deref(), Some("nav-save"), "picked, scaled and scrolled");
+    assert_eq!(picked_node(&gallery), Some("nav-save"), "picked, scaled and scrolled");
 }
 
 #[test]

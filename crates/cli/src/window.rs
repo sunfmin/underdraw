@@ -225,18 +225,14 @@ struct Gallery {
     lines: Vec<Line>,
     /// The line of the state shown, of the description when it has none, or
     /// of the directory whose flow is shown.
-    picked: Option<usize>,
+    line: Option<usize>,
     /// The description and state the person last picked, by name, so that
     /// the files changing keeps showing them, or shows them again once
     /// they are back: a description gone unreadable lists no states.
-    wanted: Option<Picked>,
+    wanted: Option<Named>,
     picture: Picture,
-    /// The id of the node picked in the picture, kept from state to state
-    /// while the state shown has it.
-    node: Option<String>,
-    /// The picture, of those at each of `WIDTHS`, the node was picked in:
-    /// the instance the person pointed at.
-    pointed: usize,
+    /// What the person picked in what is shown: one thing at a time.
+    picked: Picked,
     /// How far the pictures, the tree and the sidebar are scrolled down,
     /// and the pictures across, in points.
     scroll: f64,
@@ -269,7 +265,7 @@ struct Gallery {
     acting: bool,
     /// The states acting has come from, the last one last: where `back`
     /// returns to. Picking a state in the tree starts a new path.
-    history: Vec<Picked>,
+    history: Vec<Named>,
     /// What the last act on a node came to, while nothing else is done.
     acted: Option<Acted>,
     /// The window's width and height, in points.
@@ -294,9 +290,6 @@ struct Gallery {
     /// Where the text of the field written in was, in window points,
     /// while the left button, pressed on it, is held: a drag selects.
     selecting: Option<(f64, f64)>,
-    /// The arrow picked in the overview or the flow shown, by its place
-    /// among their arrows.
-    arrow: Option<usize>,
     /// The answered note whose pin the pointer is over, as `note` names it:
     /// its reply is shown.
     hovered: Option<(PathBuf, String)>,
@@ -314,6 +307,21 @@ struct Gallery {
     /// Whether the inbox lists the notes waiting on the agent, or only how
     /// many there are.
     waiting: bool,
+}
+
+/// What the person picked in what is shown, to read what it is, copy it
+/// or talk about it: one thing, or nothing, at a time.
+#[derive(Clone, Debug, PartialEq)]
+enum Picked {
+    /// Nothing: the state, description or directory shown, as a whole.
+    Nothing,
+    /// A node of the state shown, by its id, kept from state to state while
+    /// the state shown has it; and the picture, of those at each of
+    /// `WIDTHS`, it was picked in: the instance the person pointed at.
+    Node { id: String, pointed: usize },
+    /// An arrow of the overview or the flow shown, by its place among their
+    /// arrows.
+    Arrow(usize),
 }
 
 /// A ✗ on the assumption of the node `on` references being written: what
@@ -483,7 +491,7 @@ struct Acted {
 /// A line of the tree by name: its directory, a description's or not, and
 /// its state's name.
 #[derive(Clone)]
-struct Picked {
+struct Named {
     dir: PathBuf,
     state: Option<String>,
 }
@@ -672,11 +680,10 @@ impl Gallery {
             lang: Lang::default(),
             notes: notes_of(&lines),
             lines,
-            picked: None,
+            line: None,
             wanted: None,
             picture: Picture::Faults(Vec::new()),
-            node: None,
-            pointed: 0,
+            picked: Picked::Nothing,
             scroll: 0.0,
             tree_scroll: 0.0,
             side_scroll: 0.0,
@@ -699,7 +706,6 @@ impl Gallery {
             confirming: None,
             caret: None,
             selecting: None,
-            arrow: None,
             hovered: None,
             shift: false,
             playing: None,
@@ -986,16 +992,13 @@ impl Gallery {
                 return self.visit(Visit::Note(dir, id));
             }
             if let Some(arrow) = self.arrow_at(self.cursor) {
-                let changed = Some(arrow) != self.arrow || self.acted.is_some();
-                self.arrow = Some(arrow);
-                self.acted = None;
-                return changed;
+                return self.pick_thing(Picked::Arrow(arrow));
             }
             return match &self.picture {
                 Picture::Flow(flow) => {
                     let at = self.in_flow(self.cursor);
                     let Some(Screen::Drawn(dir)) = flow.map.place_at(at).map(|place| &place.screen) else {
-                        return self.unpick_arrow();
+                        return self.pick_thing(Picked::Nothing);
                     };
                     let Some(index) = self.description_line(dir) else {
                         return false;
@@ -1011,7 +1014,7 @@ impl Gallery {
                         return true;
                     }
                     let Some(line) = self.state_at(self.cursor) else {
-                        return self.unpick_arrow();
+                        return self.pick_thing(Picked::Nothing);
                     };
                     self.history.clear();
                     self.acted = None;
@@ -1019,15 +1022,11 @@ impl Gallery {
                     true
                 }
                 Picture::Pages(_) | Picture::Faults(_) => {
-                    let (node, pointed) = match self.hit(self.cursor) {
-                        Some((pointed, _, node)) => (Some(node.id.clone()), pointed),
-                        None => (None, 0),
+                    let picked = match self.hit(self.cursor) {
+                        Some((pointed, _, node)) => Picked::Node { id: node.id.clone(), pointed },
+                        None => Picked::Nothing,
                     };
-                    let changed = node != self.node || pointed != self.pointed || self.acted.is_some();
-                    self.node = node;
-                    self.pointed = pointed;
-                    self.acted = None;
-                    changed
+                    self.pick_thing(picked)
                 }
             };
         }
@@ -1036,7 +1035,7 @@ impl Gallery {
             return false;
         }
         match self.shows(line as usize) {
-            Some(index) if Some(index) != self.picked => {
+            Some(index) if Some(index) != self.line => {
                 self.history.clear();
                 self.acted = None;
                 self.pick(index);
@@ -1046,13 +1045,47 @@ impl Gallery {
         }
     }
 
-    /// No arrow picked, nor what was said: a press where none is. Whether
-    /// that changed what is shown.
-    fn unpick_arrow(&mut self) -> bool {
-        let changed = self.arrow.is_some() || self.acted.is_some();
-        self.arrow = None;
+    /// `picked` picked by the person, in place of what was, and what the
+    /// last act on a node came to no longer said: the one way what the
+    /// person does changes what is picked. Whether that changed what is
+    /// shown.
+    fn pick_thing(&mut self, picked: Picked) -> bool {
+        let changed = picked != self.picked || self.acted.is_some();
+        self.picked = picked;
         self.acted = None;
         changed
+    }
+
+    /// What is still picked once the line `dir` is on is shown, `described`
+    /// when it is a description's: a node while the state shown has it, or
+    /// kept through an overview or faults for the next state; never an
+    /// arrow, which is of the picture before.
+    fn still_picked(&self, described: bool) -> Picked {
+        let kept = match &self.picked {
+            Picked::Nothing | Picked::Arrow(_) => false,
+            Picked::Node { id, .. } => match &self.picture {
+                Picture::Pages(pages) => pages.iter().any(|page| page.has(id)),
+                Picture::Overview(_) | Picture::Faults(_) => described,
+                Picture::Flow(_) => false,
+            },
+        };
+        if kept { self.picked.clone() } else { Picked::Nothing }
+    }
+
+    /// The node picked: its id, and the picture it was picked in.
+    fn node(&self) -> Option<(&str, usize)> {
+        match &self.picked {
+            Picked::Node { id, pointed } => Some((id, *pointed)),
+            _ => None,
+        }
+    }
+
+    /// The arrow picked.
+    fn arrow(&self) -> Option<usize> {
+        match self.picked {
+            Picked::Arrow(arrow) => Some(arrow),
+            _ => None,
+        }
     }
 
     /// The left button let go: a line between panes, a scrollbar's thumb
@@ -1078,14 +1111,14 @@ impl Gallery {
     /// played again at the step shown, while it is listed.
     fn reload(&mut self) {
         let (wanted, scroll, acted) = (self.wanted.take(), self.scroll, self.acted.take());
-        let arrow = self.arrow.and_then(|_| self.reference());
-        let journey = self.picked.and_then(|index| self.lines.get(index)).filter(|line| line.journey);
+        let arrow = self.arrow().and_then(|_| self.reference());
+        let journey = self.line.and_then(|index| self.lines.get(index)).filter(|line| line.journey);
         let journey = journey.map(|line| (line.row.dir.clone(), self.playing.as_ref().map_or(0, |p| p.at)));
         self.lines = lines(&self.root);
         self.descriptions.borrow_mut().clear();
         self.guessed.borrow_mut().clear();
         self.notes = notes_of(&self.lines);
-        self.picked = None;
+        self.line = None;
         self.picture = Picture::Faults(Vec::new());
         let playing = journey.and_then(|(file, at)| {
             Some((self.lines.iter().position(|line| line.journey && line.row.dir == file)?, at))
@@ -1109,7 +1142,10 @@ impl Gallery {
             // window's own note, written, comes back as a change.
             self.scroll = scroll;
             self.acted = acted;
-            self.arrow = arrow.and_then(|arrow| self.arrow_references().iter().position(|r| *r == arrow));
+            if let Some(at) = arrow.and_then(|arrow| self.arrow_references().iter().position(|r| *r == arrow))
+            {
+                self.picked = Picked::Arrow(at);
+            }
         } else if description.is_some() {
             self.wanted = wanted;
         }
@@ -1118,7 +1154,7 @@ impl Gallery {
 
     /// The line of the state `named` names, or of its directory when it
     /// names no state.
-    fn line_named(&self, named: &Picked) -> Option<usize> {
+    fn line_named(&self, named: &Named) -> Option<usize> {
         self.lines.iter().position(|line| {
             line.row.dir == named.dir
                 && line.state.as_ref().map(|state| state.name()) == named.state.as_deref()
@@ -1136,13 +1172,9 @@ impl Gallery {
             let handlers = page.handlers.get(&node.id).cloned().unwrap_or_default();
             (pointed, node.id.clone(), handlers, page.calls.get(&node.id).cloned().unwrap_or_default())
         }) else {
-            let changed = self.node.is_some() || self.acted.is_some();
-            self.node = None;
-            self.acted = None;
-            return changed;
+            return self.pick_thing(Picked::Nothing);
         };
-        self.node = Some(id);
-        self.pointed = pointed;
+        self.pick_thing(Picked::Node { id, pointed });
         let Some(here) = self.wanted.clone() else {
             return true;
         };
@@ -1153,7 +1185,7 @@ impl Gallery {
         match act::act(&screen, &state, &handlers.written, &handlers.events) {
             Act::Go { to } => {
                 let says = say!(lang, acted_to_state, on, state, to);
-                self.go(Picked { dir: here.dir, state: Some(to) }, says);
+                self.go(Named { dir: here.dir, state: Some(to) }, says);
             }
             Act::Choose(choices) => {
                 let calls = calls.join(", ");
@@ -1167,7 +1199,7 @@ impl Gallery {
             Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
                 Some(description) => {
                     let says = say!(lang, acted_navigates, on, screen);
-                    self.go(Picked { dir: description, state: None }, says);
+                    self.go(Named { dir: description, state: None }, says);
                 }
                 None => {
                     self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], self.lang)))
@@ -1259,7 +1291,7 @@ impl Gallery {
         };
         let state = here.state.clone().unwrap_or_default();
         let says = say!(self.lang, acted_outcome, outcome, state, to);
-        self.go(Picked { dir: here.dir, state: Some(to.clone()) }, says);
+        self.go(Named { dir: here.dir, state: Some(to.clone()) }, says);
         true
     }
 
@@ -1283,7 +1315,7 @@ impl Gallery {
     /// The state `to` names shown, or its description's first state when
     /// it names none, as an act on a node led to it: where
     /// the person was is kept for `back`, and the panel says `says`.
-    fn go(&mut self, to: Picked, says: String) {
+    fn go(&mut self, to: Named, says: String) {
         let Some(mut index) = self.line_named(&to) else {
             return self.say(say!(self.lang, gone_from_tree, says));
         };
@@ -1307,7 +1339,7 @@ impl Gallery {
 
     /// `picked` as the panel names it: its description, relative to the
     /// root, and its state.
-    fn named(&self, picked: &Picked) -> String {
+    fn named(&self, picked: &Named) -> String {
         let within = gallery::within(&self.root, &picked.dir);
         match &picked.state {
             Some(state) => format!("{within} · {state}"),
@@ -1329,40 +1361,39 @@ impl Gallery {
         let line = &self.lines[index];
         let (dir, described) = (line.row.dir.clone(), line.row.description().is_some());
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
-        self.picked = Some(index);
-        self.arrow = None;
+        self.line = Some(index);
         let name = state.as_ref().map(|state| state.name().to_string());
-        self.wanted = Some(Picked { dir: dir.clone(), state: name });
+        self.wanted = Some(Named { dir: dir.clone(), state: name });
         (self.scroll, self.across) = (0.0, 0.0);
-        if !described {
-            self.node = None;
-            self.picture = Picture::Flow(self.flow(&dir));
-            return;
-        }
-        if !faults.is_empty() {
-            self.picture = Picture::Faults(faults);
-            return;
-        }
-        // The screens drawn under the root as they now stand: a navigate to
-        // any other is a screen not drawn yet.
-        let drawn = links::drawn(&self.root);
-        if state.is_none() && self.lines.get(index + 1).is_some_and(|next| next.state.is_some()) {
-            self.picture = match self.overview(index, &dir, &drawn) {
+        self.picture = if !described {
+            Picture::Flow(self.flow(&dir))
+        } else if !faults.is_empty() {
+            Picture::Faults(faults)
+        } else if state.is_none() && self.lines.get(index + 1).is_some_and(|next| next.state.is_some()) {
+            // The screens drawn under the root as they now stand: a
+            // navigate to any other is a screen not drawn yet.
+            match self.overview(index, &dir, &links::drawn(&self.root)) {
                 Ok(overview) => Picture::Overview(overview),
                 Err(e) => Picture::Faults(vec![Finding {
                     at: crate::SCREEN.to_string(),
                     problem: format!("{e:#}"),
                 }]),
-            };
-            return;
-        }
-        self.show_pages(&dir, state.as_ref(), &drawn);
+            }
+        } else {
+            self.lay_out_pages(&dir, state.as_ref(), &links::drawn(&self.root))
+        };
+        self.picked = self.still_picked(described);
     }
 
     /// The state `state` of the description in `dir` drawn at each of
-    /// `WIDTHS`, given the screens `drawn` under the root, and shown; or
-    /// why it cannot be. The node picked stays picked while it is there.
-    fn show_pages(&mut self, dir: &Path, state: Option<&State>, drawn: &std::collections::BTreeSet<String>) {
+    /// `WIDTHS`, given the screens `drawn` under the root; or why it
+    /// cannot be.
+    fn lay_out_pages(
+        &self,
+        dir: &Path,
+        state: Option<&State>,
+        drawn: &std::collections::BTreeSet<String>,
+    ) -> Picture {
         let lang = self.lang;
         let laid: Vec<anyhow::Result<Page>> = match self.description(dir) {
             // Each width laid out on a thread of its own, at once.
@@ -1403,19 +1434,12 @@ impl Gallery {
             }),
             Err(e) => vec![Err(e)],
         };
-        let pages = match laid.into_iter().collect::<anyhow::Result<Vec<Page>>>() {
-            Ok(pages) => pages,
+        match laid.into_iter().collect::<anyhow::Result<Vec<Page>>>() {
+            Ok(pages) => Picture::Pages(pages),
             Err(e) => {
-                let at = crate::SCREEN.to_string();
-                self.picture = Picture::Faults(vec![Finding { at, problem: format!("{e:#}") }]);
-                return;
+                Picture::Faults(vec![Finding { at: crate::SCREEN.to_string(), problem: format!("{e:#}") }])
             }
-        };
-        let kept = self.node.as_ref().is_some_and(|id| pages.iter().any(|page| page.has(id)));
-        if !kept {
-            self.node = None;
         }
-        self.picture = Picture::Pages(pages);
     }
 
     /// The journey on line `index` played from its step `at` (its last, past
@@ -1425,9 +1449,9 @@ impl Gallery {
     fn play(&mut self, index: usize, at: usize) {
         let line = &self.lines[index];
         let (file, faults) = (line.row.dir.clone(), line.row.faults.clone());
-        self.picked = Some(index);
+        self.line = Some(index);
         self.playing = None;
-        (self.arrow, self.node) = (None, None);
+        self.picked = Picked::Nothing;
         (self.scroll, self.across) = (0.0, 0.0);
         if !faults.is_empty() {
             self.wanted = None;
@@ -1458,15 +1482,15 @@ impl Gallery {
         };
         // Acting on a node from here goes on as the prototype does, from
         // the step's state.
-        self.wanted = Some(Picked { dir: step.dir.clone(), state: Some(step.state.clone()) });
+        self.wanted = Some(Named { dir: step.dir.clone(), state: Some(step.state.clone()) });
         let dir = step.dir.clone();
-        self.show_pages(&dir, Some(&state), &links::drawn(&self.root));
+        self.picture = self.lay_out_pages(&dir, Some(&state), &links::drawn(&self.root));
         self.playing = Some(Playing { steps, at, state });
     }
 
     /// The step `at` of the journey played shown. Whether one is played.
     fn step(&mut self, at: usize) -> bool {
-        let (Some(index), Some(_)) = (self.picked, &self.playing) else {
+        let (Some(index), Some(_)) = (self.line, &self.playing) else {
             return false;
         };
         self.acted = None;
@@ -1514,7 +1538,7 @@ impl Gallery {
     /// its description and state, the act that leads on from it, and a
     /// button to each step beside it.
     fn playing_card(&self) -> Option<Card<Do>> {
-        let (Some(playing), Some(index)) = (&self.playing, self.picked) else {
+        let (Some(playing), Some(index)) = (&self.playing, self.line) else {
             return None;
         };
         let lang = self.lang;
@@ -1752,7 +1776,7 @@ impl Gallery {
         for (index, (arrow, (path, at))) in overview.arrows.iter().zip(self.overview_arrows()).enumerate() {
             // The arrow picked stands out; the others are drawn quieter
             // than their labels, which are what a person reads.
-            let (ink, edge, said) = if self.arrow == Some(index) {
+            let (ink, edge, said) = if self.arrow() == Some(index) {
                 (Ink::Strong, Ink::Strong, Ink::Strong)
             } else {
                 (Ink::Muted, Ink::Line, Ink::Text)
@@ -1966,16 +1990,16 @@ impl Gallery {
     /// an overview or a flow. None where nothing is.
     fn reference(&self) -> Option<Reference> {
         if let Picture::Overview(_) | Picture::Flow(_) = self.picture {
-            return self.arrow_references().into_iter().nth(self.arrow?);
+            return self.arrow_references().into_iter().nth(self.arrow()?);
         }
         let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
             return None;
         };
         let state = self.state_shown()?;
-        let node = self.node.as_ref().and_then(|id| {
+        let node = self.node().and_then(|(id, pointed)| {
             let has = |page: &&Page| page.has(id);
-            let page = pages.get(self.pointed).filter(has).or_else(|| pages.iter().find(has))?;
-            let placed = page.nodes.iter().find(|node| &node.id == id)?;
+            let page = pages.get(pointed).filter(has).or_else(|| pages.iter().find(has))?;
+            let placed = page.nodes.iter().find(|node| node.id == id)?;
             let origin = page.origins.get(id)?.clone();
             Some(Pointed { origin, label: placed.label, width: page.width as u32 })
         });
@@ -2006,7 +2030,7 @@ impl Gallery {
         if let Some(playing) = &self.playing {
             return Some(playing.state.clone());
         }
-        self.picked.and_then(|index| self.lines.get(index)?.state.clone())
+        self.line.and_then(|index| self.lines.get(index)?.state.clone())
     }
 
     /// The answered note whose pin the pointer is now over, kept to show
@@ -2068,7 +2092,7 @@ impl Gallery {
     /// The outline around the node picked, in window points, in each
     /// picture that has it.
     fn outlines(&self) -> Vec<Rect> {
-        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+        let (Some((id, _)), Picture::Pages(pages)) = (self.node(), &self.picture) else {
             return Vec::new();
         };
         let zoom = self.zoom(self.pane());
@@ -2147,11 +2171,11 @@ impl Gallery {
         // The node picked is kept through an overview, for the next state:
         // it is picked only while a state is drawn.
         let drawn = matches!(self.picture, Picture::Pages(_));
-        let busy = drawn && self.node.is_some() || self.arrow.is_some();
+        let busy = drawn && self.node().is_some() || self.arrow().is_some();
         if busy || self.draft.is_some() || self.playing.is_some() {
             return Vec::new();
         }
-        let Some(line) = self.picked.and_then(|index| self.lines.get(index)).filter(|line| !line.journey)
+        let Some(line) = self.line.and_then(|index| self.lines.get(index)).filter(|line| !line.journey)
         else {
             return Vec::new();
         };
@@ -2214,7 +2238,7 @@ impl Gallery {
     fn inbox_card(&self) -> Option<Card<Do>> {
         let dirs = self.inboxed();
         let grouped = self
-            .picked
+            .line
             .and_then(|index| self.lines.get(index))
             .is_some_and(|line| line.row.description().is_none());
         let mut drawn = None;
@@ -2307,12 +2331,12 @@ impl Gallery {
         self.acted = None;
         let (dir, on) = match visit {
             Visit::Guess(dir, state, id) => {
-                let Some(index) = self.line_named(&Picked { dir, state: Some(state.name().to_string()) })
+                let Some(index) = self.line_named(&Named { dir, state: Some(state.name().to_string()) })
                 else {
                     return false;
                 };
                 self.pick(index);
-                self.arrow = None;
+                self.picked = Picked::Nothing;
                 self.pick_node(|page| page.has(&id).then(|| id.clone()), None);
                 return true;
             }
@@ -2328,14 +2352,14 @@ impl Gallery {
         match &on {
             On::Node { state, .. } | On::State { state } => {
                 let Some(index) =
-                    self.line_named(&Picked { dir: dir.clone(), state: Some(state.name().to_string()) })
+                    self.line_named(&Named { dir: dir.clone(), state: Some(state.name().to_string()) })
                 else {
                     return false;
                 };
-                if self.picked != Some(index) {
+                if self.line != Some(index) {
                     self.pick(index);
                 }
-                (self.node, self.arrow) = (None, None);
+                self.picked = Picked::Nothing;
                 if let On::Node { node, .. } = &on {
                     let origin = node.origin.clone();
                     self.pick_node(
@@ -2366,9 +2390,8 @@ impl Gallery {
                 let wanted = Reference { description: dir.clone(), on: on.clone() };
                 for index in shown_in {
                     self.pick(index);
-                    self.node = None;
-                    self.arrow = self.arrow_references().iter().position(|arrow| *arrow == wanted);
-                    if self.arrow.is_some() {
+                    if let Some(at) = self.arrow_references().iter().position(|arrow| *arrow == wanted) {
+                        self.picked = Picked::Arrow(at);
                         break;
                     }
                 }
@@ -2386,7 +2409,7 @@ impl Gallery {
         let mut order: Vec<usize> = (0..pages.len()).collect();
         order.sort_by_key(|&at| Some(pages[at].width as u32) != width);
         if let Some((pointed, id)) = order.into_iter().find_map(|at| Some((at, found(&pages[at])?))) {
-            (self.node, self.pointed) = (Some(id), pointed);
+            self.picked = Picked::Node { id, pointed };
         }
     }
 
@@ -2414,7 +2437,7 @@ impl Gallery {
 
     /// The card of the arrow picked: what it is.
     fn arrow_card(&self) -> Option<Card<Do>> {
-        self.arrow?;
+        self.arrow()?;
         let said = self.reference()?.on.said(self.lang);
         Some(Card::new(said.strip_prefix("on ").unwrap_or(&said).to_string(), Vec::new()))
     }
@@ -2466,7 +2489,7 @@ impl Gallery {
     /// The node picked, as a note on it references it, and what was assumed
     /// there; none when nothing was.
     fn assumption(&self) -> Option<(Reference, String)> {
-        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+        let (Some((id, _)), Picture::Pages(pages)) = (self.node(), &self.picture) else {
             return None;
         };
         let assumed =
@@ -2487,7 +2510,7 @@ impl Gallery {
             return;
         };
         let screen = crate::read(&on.description).map(|(screen, _)| screen).unwrap_or(Value::Null);
-        let id = self.node.clone().unwrap_or_default();
+        let id = self.node().map(|(id, _)| id.to_string()).unwrap_or_default();
         let component =
             pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)).map(|n| n.component.clone());
         let guess = Guess::of(
@@ -2696,9 +2719,7 @@ impl Gallery {
                 if self.draft.take().is_some() {
                     return true;
                 }
-                let picked = self.node.is_some() || self.arrow.is_some();
-                (self.node, self.arrow) = (None, None);
-                return picked;
+                return self.pick_thing(Picked::Nothing);
             }
             _ => {}
         }
@@ -2977,7 +2998,7 @@ impl Gallery {
     /// out its details: its id, and its label and box at each width. None
     /// when none is.
     fn node_card(&self) -> Option<Card<Do>> {
-        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+        let (Some((id, _)), Picture::Pages(pages)) = (self.node(), &self.picture) else {
             return None;
         };
         let lang = self.lang;
@@ -2991,7 +3012,7 @@ impl Gallery {
         let (fold, details) = (if self.details { "▾" } else { "▸" }, lang.words().details);
         blocks.push(Block::Fold(format!("{fold} {details}"), Do::Details));
         if self.details {
-            blocks.push(Block::Fact(say!(lang, id), id.clone()));
+            blocks.push(Block::Fact(say!(lang, id), id.to_string()));
             for page in pages {
                 let width = page.width;
                 let at = say!(lang, at_width, width);
@@ -3153,9 +3174,9 @@ impl Gallery {
             return (Vec::new(), 0.0);
         };
         let wide = pane - 2.0 * MARGIN;
-        let path = self.picked.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
+        let path = self.line.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
         let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
-        let journey = self.picked.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
+        let journey = self.line.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
         let lang = self.lang;
         let heading = match (journey, faults.len()) {
             (true, 1) => say!(lang, faults_not_played_one, within),
@@ -3263,7 +3284,7 @@ impl Gallery {
         for (index, line) in self.lines.iter().enumerate() {
             let Line { row, state, .. } = line;
             let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
-            if self.picked == Some(index) {
+            if self.line == Some(index) {
                 list.push(Draw::Box {
                     rect: rect(6.0, y + 1.0, tree - 12.0, ROW - 2.0),
                     radius: chrome::PICKED_RADIUS,
@@ -3455,7 +3476,7 @@ impl Gallery {
             paint::draws(
                 &mut scene,
                 at,
-                &flow_draws(flow, self.arrow, self.lang),
+                &flow_draws(flow, self.arrow(), self.lang),
                 chrome::colour,
                 &mut self.typesetter,
             );
@@ -4155,7 +4176,7 @@ mod tests {
         let loading = line_of(&gallery, "airbnb-listing") + 5;
         over_row(&mut gallery, loading);
         assert!(gallery.press_here());
-        assert_eq!(gallery.picked, Some(loading));
+        assert_eq!(gallery.line, Some(loading));
         assert_eq!(captions(&gallery), ["loading · 390", "loading · 1120"]);
     }
 
@@ -4165,14 +4186,14 @@ mod tests {
         let docs = line_of(&gallery, "docs");
         over_row(&mut gallery, docs + 1);
         assert!(gallery.press_here(), "the state is picked");
-        assert_eq!(gallery.picked, Some(docs + 1));
+        assert_eq!(gallery.line, Some(docs + 1));
         let Picture::Pages(pages) = &gallery.picture else { panic!("docs has no faults") };
         let widths: Vec<f64> = pages.iter().map(|page| page.width).collect();
         assert_eq!(widths, vec![390.0, 1120.0]);
         assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
         assert!(!gallery.press_here(), "picking it again changes nothing");
         gallery.press_at((gallery.tree + 100.0, 100.0));
-        assert_eq!(gallery.picked, Some(docs + 1), "a press on the pictures leaves the state picked");
+        assert_eq!(gallery.line, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
 
     /// The overview shown: each state's name, and each arrow as (from, to,
@@ -4197,7 +4218,7 @@ mod tests {
         let orders = line_of(&gallery, "orders");
         over_row(&mut gallery, orders);
         assert!(gallery.press_here(), "the description is picked");
-        assert_eq!(gallery.picked, Some(orders), "the description itself, not a state of it");
+        assert_eq!(gallery.line, Some(orders), "the description itself, not a state of it");
         let listed: Vec<&str> = gallery.lines[orders + 1..]
             .iter()
             .take_while(|line| line.state.is_some())
@@ -4244,7 +4265,7 @@ mod tests {
             gallery.press_at((error_cell.0 + 10.0, error_cell.1 + 10.0)),
             "clicking a state's picture picks it"
         );
-        assert_eq!(gallery.picked, Some(error));
+        assert_eq!(gallery.line, Some(error));
         assert_eq!(captions(&gallery), ["error · 390", "error · 1120"]);
     }
 
@@ -4328,7 +4349,7 @@ mod tests {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
-        let (picked, node) = (gallery.picked, gallery.node.clone());
+        let (picked, node) = (gallery.line, gallery.picked.clone());
         let bar = bar_of(&mut gallery, Scrolls::Down);
         let thumb = bar.thumb().unwrap();
 
@@ -4350,7 +4371,7 @@ mod tests {
         assert!(gallery.grabbed.is_none());
         gallery.move_to((gallery.cursor.0, 500.0));
         assert_eq!(gallery.scroll, 0.0);
-        assert_eq!((gallery.picked, &gallery.node), (picked, &node), "nothing picked by any of it");
+        assert_eq!((gallery.line, &gallery.picked), (picked, &node), "nothing picked by any of it");
 
         let across = bar_of(&mut gallery, Scrolls::Across).thumb().unwrap();
         gallery.press_at((across.center().x, across.center().y));
@@ -4392,7 +4413,7 @@ mod tests {
         showing(&mut gallery, listing + 1);
         gallery.feed([Input::Resized((1440.0, 300.0))]);
         gallery.clamp();
-        let (picked, node) = (gallery.picked, gallery.node.clone());
+        let (picked, node) = (gallery.line, gallery.picked.clone());
         for scrolls in [Scrolls::Tree, Scrolls::Down, Scrolls::Across, Scrolls::Side] {
             let bar = bar_of(&mut gallery, scrolls);
             let thumb = bar.thumb().unwrap_or_else(|| panic!("{scrolls:?} overflows a short window"));
@@ -4400,8 +4421,8 @@ mod tests {
                 gallery.move_to(at);
                 assert_eq!(gallery.edge_at(), None, "{scrolls:?}: a scrollbar is never a line's");
                 gallery.press_here();
-                assert_eq!(gallery.picked, picked, "{scrolls:?}: no line of the tree picked");
-                assert_eq!(gallery.node, node, "{scrolls:?}: no node picked");
+                assert_eq!(gallery.line, picked, "{scrolls:?}: no line of the tree picked");
+                assert_eq!(gallery.picked, node, "{scrolls:?}: no node picked");
                 assert!(gallery.resizing.is_none(), "{scrolls:?}: no line");
                 assert!(gallery.draft.is_none() && gallery.acted.is_none(), "{scrolls:?}: no button pressed");
                 gallery.cursor.1 += 5.0;
@@ -4428,6 +4449,59 @@ mod tests {
                 assert!(clear, "{scrolls:?}'s scrollbar {lane:?} clear of the line at {line}");
             }
         }
+    }
+
+    #[test]
+    fn one_thing_is_picked_at_a_time_and_a_pin_picks_what_its_note_is_on() {
+        let root = root_of("one-picked", &[("orders", "orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        let orders = line_of(&gallery, "orders");
+        showing(&mut gallery, orders);
+        let last = gallery.arrow_spots().len() - 1;
+        let at = on_arrow(&gallery, last);
+        say_at(&mut gallery, at, "should it say why?");
+        assert_eq!(gallery.picked, Picked::Arrow(last), "the arrow talked about stays picked");
+
+        assert!(gallery.press_at(on_arrow(&gallery, 0)));
+        assert_eq!(gallery.picked, Picked::Arrow(0), "another arrow picked in its place");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "and its own conversation");
+        assert!(gallery.press_at(on_pin(&gallery, "N1")));
+        assert_eq!(gallery.picked, Picked::Arrow(last), "its pin picks the arrow its note is on");
+
+        // A point of the overview on no state, arrow, mark, pin or scrollbar.
+        let nowhere = (0..40)
+            .flat_map(|x| (0..40).map(move |y| (x, y)))
+            .map(|(x, y)| (gallery.tree + 20.0 + f64::from(x) * 20.0, 10.0 + f64::from(y) * 20.0))
+            .find(|&at| {
+                gallery.state_at(at).is_none()
+                    && gallery.arrow_at(at).is_none()
+                    && gallery.pass_at(at).is_none()
+                    && gallery.pin_at(at).is_none()
+                    && at.0 < gallery.pane_right() - 20.0
+            })
+            .unwrap();
+        assert!(gallery.press_at(nowhere), "a press on nothing unpicks the arrow");
+        assert_eq!(gallery.picked, Picked::Nothing);
+
+        show(&mut gallery, "orders", "default");
+        say_on(&mut gallery, 0, "nav-export", "rename it");
+        assert!(gallery.press_at(on_node(&gallery, 0, "order-0-cancel")));
+        assert_eq!(gallery.picked, Picked::Node { id: "order-0-cancel".into(), pointed: 0 });
+        assert!(gallery.press_at(on_pin(&gallery, "N2")));
+        assert_eq!(
+            gallery.picked,
+            Picked::Node { id: "nav-export".into(), pointed: 0 },
+            "the note's node, not the one picked before"
+        );
+        assert!(gallery.panel().iter().any(|line| line == "IconButton"), "whose card is shown");
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(gallery.picked, Picked::Nothing, "Esc lets it go");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The id of the node `gallery` holds picked, as [`Picked`] says it.
+    fn picked_node(gallery: &Gallery) -> Option<&str> {
+        gallery.node().map(|(id, _)| id)
     }
 
     /// The point in the window at the middle of node `id` in picture `page`.
@@ -4460,7 +4534,7 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
         assert!(gallery.press_at(on_node(&gallery, 0, "nav-save")), "a node is picked");
-        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "the innermost, not the bar it sits in");
+        assert_eq!(picked_node(&gallery), Some("nav-save"), "the innermost, not the bar it sits in");
         assert_eq!(
             gallery.panel(),
             [
@@ -4567,7 +4641,7 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
         gallery.press_at(on_node(&gallery, 1, "photos-show-all"));
-        assert_eq!(gallery.node.as_deref(), Some("photos-show-all"), "not the photos under it");
+        assert_eq!(picked_node(&gallery), Some("photos-show-all"), "not the photos under it");
     }
 
     #[test]
@@ -4577,12 +4651,12 @@ mod tests {
         showing(&mut gallery, listing + 1);
         gallery.press_at(on_node(&gallery, 0, "nav-back"));
         showing(&mut gallery, listing + 2);
-        assert_eq!(gallery.node.as_deref(), Some("nav-back"), "another fixture has it");
+        assert_eq!(picked_node(&gallery), Some("nav-back"), "another fixture has it");
         showing(&mut gallery, listing + 5);
-        assert_eq!(gallery.node.as_deref(), Some("nav-back"), "and so does the loading phase");
+        assert_eq!(picked_node(&gallery), Some("nav-back"), "and so does the loading phase");
         gallery.press_at(on_node(&gallery, 0, "loading-skeleton"));
         showing(&mut gallery, listing + 1);
-        assert_eq!(gallery.node, None, "the data has no skeleton");
+        assert_eq!(picked_node(&gallery), None, "the data has no skeleton");
         assert_eq!(gallery.panel()[0], "default · the whole state", "the state's card in its place");
     }
 
@@ -4594,7 +4668,7 @@ mod tests {
         gallery.press_at(on_node(&gallery, 0, "nav-save"));
         let (left, top) = gallery.origins()[1];
         assert!(gallery.press_at((left - MARGIN / 2.0, top + 10.0)), "between the pictures");
-        assert_eq!(gallery.node, None);
+        assert_eq!(picked_node(&gallery), None);
         assert_eq!(gallery.panel()[0], "default · the whole state", "the node's card is gone");
     }
 
@@ -4620,7 +4694,7 @@ mod tests {
             !gallery.press_at((1440.0 - SIDEBAR / 2.0, 890.0)),
             "a press in the sidebar off its buttons does nothing"
         );
-        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "and leaves the node picked");
+        assert_eq!(picked_node(&gallery), Some("nav-save"), "and leaves the node picked");
 
         gallery.chord("\\");
         assert_eq!(gallery.pane_right(), 1440.0, "hidden: the pictures take the width");
@@ -4629,7 +4703,7 @@ mod tests {
             gallery.press_at(on_node(&gallery, 1, "nav-save")),
             "a node near the window's right edge is picked, no sidebar there"
         );
-        assert_eq!(gallery.pointed, 1);
+        assert_eq!(gallery.node().map(|(_, pointed)| pointed), Some(1));
         gallery.chord("\\");
         assert_eq!(gallery.pane_right(), 1440.0 - SIDEBAR, "and shown again");
     }
@@ -4649,11 +4723,7 @@ mod tests {
         gallery.move_to(on_node(&gallery, 1, "nav-save"));
         assert!(gallery.cursor.0 < gallery.pane_right(), "the desktop picture's save button in view");
         assert!(gallery.press_here());
-        assert_eq!(
-            (gallery.node.as_deref(), gallery.pointed),
-            (Some("nav-save"), 1),
-            "the right node, scaled and scrolled"
-        );
+        assert_eq!(gallery.node(), Some(("nav-save", 1)), "the right node, scaled and scrolled");
 
         let tag = |draw: &Draw| match draw {
             Draw::Tag { rect, text, .. } => Some((rect.width, text.clone())),
@@ -4674,17 +4744,17 @@ mod tests {
         assert_eq!(gallery.tree, TREE, "the window opens with the tree at 260pt");
         // The sidebar hidden, the pictures are above half size, to shrink.
         gallery.chord("\\");
-        let (picked, wide) = (gallery.picked, gallery.zoom(gallery.pane()));
+        let (picked, wide) = (gallery.line, gallery.zoom(gallery.pane()));
 
         assert!(!gallery.press_at((TREE + 2.0, 300.0)), "a press on the line changes nothing shown");
-        assert_eq!(gallery.picked, picked, "and picks no line of the tree");
+        assert_eq!(gallery.line, picked, "and picks no line of the tree");
         gallery.cursor = (400.0, 320.0);
         assert!(gallery.resize(), "the drag moves the line");
         assert_eq!(gallery.tree, 400.0, "to where the pointer is");
         assert_eq!(gallery.origins()[0].0, 400.0 + MARGIN, "the pictures start after it");
         assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
         assert!(!gallery.let_go(), "letting go picks nothing");
-        assert_eq!(gallery.picked, picked);
+        assert_eq!(gallery.line, picked);
         gallery.cursor = (500.0, 320.0);
         assert!(!gallery.resize(), "let go, the line stays");
         assert_eq!(gallery.tree, 400.0);
@@ -4724,14 +4794,14 @@ mod tests {
         gallery.move_to((line - 3.0, 300.0));
         assert_eq!(gallery.edge_at(), Some(Edge::Side), "the pointer takes hold of the line");
         assert!(!gallery.press_here(), "a press on the line changes nothing shown");
-        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "and leaves the node picked");
+        assert_eq!(picked_node(&gallery), Some("nav-save"), "and leaves the node picked");
         assert!(!gallery.details, "nor presses a button");
         assert!(gallery.move_to((line - 400.0, 320.0)), "the drag moves the line");
         assert_eq!(gallery.side, SIDEBAR + 400.0, "to where the pointer is");
         assert_eq!(gallery.tree, TREE, "the tree keeps its width");
         assert!(gallery.zoom(gallery.pane()) < wide, "the pictures fit the width left");
         assert!(!gallery.let_go(), "letting go picks nothing");
-        assert_eq!(gallery.node.as_deref(), Some("nav-save"));
+        assert_eq!(picked_node(&gallery), Some("nav-save"));
         assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded, wide");
 
         gallery.press_at((line - 400.0, 300.0));
@@ -4922,7 +4992,7 @@ mod tests {
         gallery.reload();
 
         let typing = state_of(&gallery, "typing");
-        assert_eq!(gallery.picked, Some(typing), "the same state, though a state was added above it");
+        assert_eq!(gallery.line, Some(typing), "the same state, though a state was added above it");
         assert_eq!(gallery.lines[typing - 2].row.name, "first", "the tree lists the new state");
         assert_eq!(captions(&gallery), ["typing · 390", "typing · 1120"]);
         let after = heights(&gallery);
@@ -4939,7 +5009,7 @@ mod tests {
         write_todo_screen(&root, &screen);
         gallery.reload();
         let todo = line_of(&gallery, "todo");
-        assert_eq!(gallery.picked, Some(todo), "a state gone: its description's overview");
+        assert_eq!(gallery.line, Some(todo), "a state gone: its description's overview");
         assert!(matches!(gallery.picture, Picture::Overview(_)));
         assert_eq!(gallery.scroll, 0.0, "from its top");
         std::fs::remove_dir_all(root).unwrap();
@@ -4967,8 +5037,8 @@ mod tests {
         assert_eq!(names[1..], ["a-flow", "sign-in", "todo"], "the new one, under its directory");
         let typing = line_of(&gallery, "todo") + 2;
         assert_eq!(gallery.lines[typing].row.name, "typing");
-        assert_eq!(gallery.picked, Some(typing), "still the state shown");
-        assert_eq!(gallery.lines[gallery.picked.unwrap()].row.description(), Some(&*root.join("todo")));
+        assert_eq!(gallery.line, Some(typing), "still the state shown");
+        assert_eq!(gallery.lines[gallery.line.unwrap()].row.description(), Some(&*root.join("todo")));
 
         std::fs::remove_dir_all(root.join("todo")).unwrap();
         gallery.reload();
@@ -4979,13 +5049,13 @@ mod tests {
             .map(|line| line.row.name.as_str())
             .collect();
         assert_eq!(names[1..], ["a-flow", "sign-in"], "the removed one has left");
-        assert_eq!(gallery.picked, Some(2), "its description gone: the first description's overview");
+        assert_eq!(gallery.line, Some(2), "its description gone: the first description's overview");
         assert_eq!(overview(&gallery).0[0], "default");
 
         std::fs::remove_dir_all(root.join("a-flow")).unwrap();
         gallery.reload();
         assert!(gallery.lines.is_empty(), "nothing left to list");
-        assert_eq!(gallery.picked, None);
+        assert_eq!(gallery.line, None);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5002,7 +5072,7 @@ mod tests {
         write_todo_screen(&root, &broken);
         gallery.reload();
         assert!(!gallery.lines[1].row.faults.is_empty(), "the tree marks it");
-        assert_eq!(gallery.picked, Some(typing), "the same state");
+        assert_eq!(gallery.line, Some(typing), "the same state");
         assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[1].row.faults));
 
         std::fs::write(root.join("todo").join(crate::KINDS), "{}").unwrap();
@@ -5098,7 +5168,7 @@ mod tests {
         act_on(&mut gallery, "order-0-cancel");
         act_on(&mut gallery, "nav-export");
         let export = line_of(&gallery, "export");
-        assert_eq!(gallery.picked, Some(export + 1), "the export screen's first state");
+        assert_eq!(gallery.line, Some(export + 1), "the export screen's first state");
         assert_eq!(gallery.panel()[0], "nav-export.tap navigates to ExportDocuments");
         act_on(&mut gallery, "nav-back");
         assert_eq!(shown(&gallery), "orders · cancel-dialog", "back across screens, to where it came from");
@@ -5254,7 +5324,7 @@ mod tests {
         let shop = gallery.lines.iter().position(|line| line.row.name == "shop").unwrap();
         over_row(&mut gallery, shop);
         assert!(gallery.press_here(), "a directory can be picked");
-        assert_eq!(gallery.picked, Some(shop));
+        assert_eq!(gallery.line, Some(shop));
         let flow = flow_shown(&gallery);
         let screens: Vec<&Screen> = flow.map.places.iter().map(|place| &place.screen).collect();
         let undrawn = |name: &str| Screen::Undrawn(name.to_string());
@@ -5330,7 +5400,7 @@ mod tests {
         assert!(!gallery.press_at(on_undrawn), "a screen not drawn yet has no description to pick");
         assert!(gallery.press_at(on_listing), "its box picks the description");
         let listing = line_of(&gallery, "listing");
-        assert_eq!(gallery.picked, Some(listing), "the description itself");
+        assert_eq!(gallery.line, Some(listing), "the description itself");
         assert_eq!(overview(&gallery).0[0], "default", "showing its overview");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -5367,7 +5437,7 @@ mod tests {
         std::fs::rename(export.join("export"), root.join("app/export")).unwrap();
         std::fs::remove_dir_all(export).unwrap();
         gallery.reload();
-        assert_eq!(gallery.picked, Some(1), "the directory is still picked");
+        assert_eq!(gallery.line, Some(1), "the directory is still picked");
         assert_eq!(undrawn(&gallery), 1, "ExportDocuments is drawn now");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -5547,7 +5617,7 @@ mod tests {
         assert!(!gallery.release(), "a drag over the picture picks nothing more");
         assert_eq!(gallery.reference(), picked, "the node pressed stays picked");
         press_keys(&mut gallery, &["Esc"]);
-        assert_eq!(gallery.node, None, "Esc lets it go");
+        assert_eq!(picked_node(&gallery), None, "Esc lets it go");
         assert_eq!(
             gallery.reference().map(|on| on.on),
             Some(On::State { state: State::Fixture("default".into()) }),
@@ -5588,7 +5658,7 @@ mod tests {
         press_keys(&mut gallery, &["Esc"]);
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(gallery.press(), "clicking a pin picks what its note is on");
-        assert_eq!(gallery.node.as_deref(), Some("nav-export"));
+        assert_eq!(picked_node(&gallery), Some("nav-export"));
         assert_eq!(
             talk_shown(&gallery),
             ["note N1 · answered", "rename it", "renamed it Export"],
@@ -5628,7 +5698,7 @@ mod tests {
         assert_eq!((note.stands(), note.messages.len()), (Stands::Answered, 3), "never closed: {note:?}");
         assert_eq!(note.messages[0].says, "on `nav-export`, now gone");
         gallery.press_at(on_pin(&gallery, "N1"));
-        assert_eq!(gallery.node, None, "its pin picks the whole state");
+        assert_eq!(picked_node(&gallery), None, "its pin picks the whole state");
         assert_eq!(
             talk_shown(&gallery),
             ["note N1 · answered", "on `nav-export`, now gone", "say export what", "it says Export"]
@@ -5660,7 +5730,7 @@ mod tests {
         });
         assert!(shown.is_some(), "a state of checkout shows the card form");
         gallery.press_at(on_guess(&gallery, 0, "card-number"));
-        assert_eq!(gallery.node.as_deref(), Some("card-number"), "a click on its \"?\" picks it");
+        assert_eq!(picked_node(&gallery), Some("card-number"), "a click on its \"?\" picks it");
         let panel = gallery.panel();
         for part in [
             "Card fields are drawn here",
@@ -5896,7 +5966,7 @@ mod tests {
         assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the node's own conversation");
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(gallery.press(), "clicking its pin picks the whole state");
-        assert_eq!(gallery.node, None);
+        assert_eq!(picked_node(&gallery), None);
         assert_eq!(talk_shown(&gallery)[0], "note N1 · waiting on the agent");
         let orders = line_of(&gallery, "orders");
         let default = state_of_in(&gallery, orders, "default");
@@ -5922,7 +5992,7 @@ mod tests {
         let declared = screen["transitions"].as_array().unwrap().clone();
 
         assert!(gallery.press_at(on_arrow(&gallery, 0)), "a click on its label picks the arrow");
-        assert_eq!(gallery.arrow, Some(0));
+        assert_eq!(gallery.arrow(), Some(0));
         let reference = gallery.reference().unwrap();
         let On::Transition { transition } = &reference.on else { panic!("not a transition: {reference:?}") };
         assert_eq!(serde_json::to_value(transition).unwrap(), declared[0], "as screen.json writes it");
@@ -5941,10 +6011,10 @@ mod tests {
         assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "should it say why?"]);
         assert_eq!(gallery.pins().len(), 1, "a pin beside its arrow");
         press_keys(&mut gallery, &["Esc"]);
-        assert_eq!(gallery.arrow, None);
+        assert_eq!(gallery.arrow(), None);
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(gallery.press());
-        assert_eq!(gallery.arrow, Some(last), "its pin picks its arrow");
+        assert_eq!(gallery.arrow(), Some(last), "its pin picks its arrow");
         assert_eq!(talk_shown(&gallery)[0], "note N1 · waiting on the agent");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -5979,7 +6049,7 @@ mod tests {
         assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "is this the right screen?"]);
         assert_eq!(gallery.pins().len(), 1, "a pin under its arrow");
         gallery.cursor = on_pin(&gallery, "N1");
-        assert!(!gallery.press() || gallery.arrow == Some(0), "its pin keeps its arrow picked");
+        assert!(!gallery.press() || gallery.arrow() == Some(0), "its pin keeps its arrow picked");
         let Line { row, state, .. } = &gallery.lines[line_of(&gallery, "orders")];
         assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its description");
         std::fs::remove_dir_all(root).unwrap();
@@ -6054,7 +6124,7 @@ mod tests {
         assert_eq!(played(&gallery).0, 2);
         assert!(click_panel_line(&mut gallery, "← previous step"));
         assert_eq!(played(&gallery).0, 1);
-        assert_eq!(gallery.picked, Some(journey), "the journey stays picked as it plays");
+        assert_eq!(gallery.line, Some(journey), "the journey stays picked as it plays");
 
         let orders = line_of(&gallery, "orders");
         over_row(&mut gallery, orders);
@@ -6109,7 +6179,7 @@ mod tests {
             gallery.press_at((f64::from(open.x) + 4.0, f64::from(open.y) + 4.0)),
             "picking the mark plays the journey"
         );
-        assert_eq!(gallery.picked, Some(journey_of(&gallery, "cancel-an-order")));
+        assert_eq!(gallery.line, Some(journey_of(&gallery, "cancel-an-order")));
         assert_eq!(
             played(&gallery),
             (2, vec![Some("summary-cancel".to_string()), Some("summary-cancel".to_string())])
@@ -6225,7 +6295,7 @@ mod tests {
 
         std::fs::write(&order, walks).unwrap();
         gallery.reload();
-        assert_eq!(gallery.picked, Some(journey), "the journey stays picked");
+        assert_eq!(gallery.line, Some(journey), "the journey stays picked");
         assert_eq!(played(&gallery).0, 1, "fixed, it is played");
         press_keys(&mut gallery, &["→"]);
         gallery.reload();
@@ -6263,7 +6333,7 @@ mod tests {
 
         assert!(click_panel_line(&mut gallery, "nav-export in default"), "an item is clicked by its box");
         assert_eq!(shown(&gallery), "orders · default", "clicking an item shows its state");
-        assert_eq!(gallery.node.as_deref(), Some("nav-export"), "with its node picked");
+        assert_eq!(picked_node(&gallery), Some("nav-export"), "with its node picked");
         assert_eq!(gallery.panel()[0], "assumed, for you to answer", "its assumption, to answer");
         assert!(gallery.panel().iter().any(|line| line == "IconButton"), "and its card");
         assert!(inbox(&gallery).is_empty(), "a node picked: the inbox gives way to its card");
@@ -6288,7 +6358,7 @@ mod tests {
 
         assert!(click_panel_line(&mut gallery, "on nav-export in default at 390"));
         assert_eq!(shown(&gallery), "orders · default");
-        assert_eq!(gallery.node.as_deref(), Some("nav-export"), "the note's node picked");
+        assert_eq!(picked_node(&gallery), Some("nav-export"), "the note's node picked");
         assert_eq!(talk_shown(&gallery)[0], "note N1 · answered", "with its conversation");
 
         let top = gallery.lines.iter().position(|line| line.row.dir == root).unwrap();
@@ -6380,7 +6450,7 @@ mod tests {
 
         gallery.press_at(on_node(&gallery, 0, "nav-save"));
         gallery.let_go();
-        assert_eq!(gallery.node.as_deref(), Some("nav-save"));
+        assert_eq!(picked_node(&gallery), Some("nav-save"));
         type_text(&mut gallery, "too small");
         assert!(gallery.chord("a"), "⌘A selects all of the box");
         assert!(gallery.chord("c"), "⌘C copies what is selected in it");
