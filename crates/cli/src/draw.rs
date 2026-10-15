@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use underdraw_format::{Breakpoint, Lang, Model, Node, State, Transition};
 use underdraw_layout::Page;
@@ -26,8 +27,11 @@ pub struct Wanted {
     pub scale: u32,
 }
 
-/// A state of a description: one of its fixtures, or one of its phases.
-#[derive(Clone, Debug, PartialEq)]
+/// A state of a description: one of its fixtures, or one of its phases;
+/// written `{"fixture": <name>}` or `{"phase": <name>}`, as `render`
+/// answers it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Shown {
     Fixture(String),
     Phase(String),
@@ -62,9 +66,11 @@ pub struct Handlers {
 
 /// Where a node is written in the description: its id as written, where
 /// in screen.json (a JSON Pointer), and for which element of each `each`
-/// around it, the outermost first.
-#[derive(Clone, Debug, PartialEq)]
+/// around it, the outermost first. Written with the id as written under
+/// `id`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Origin {
+    #[serde(rename = "id")]
     pub written: String,
     pub at: String,
     pub instance: Vec<usize>,

@@ -19,6 +19,9 @@ START HERE
                              yet, not a fault
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
+  underdraw notes <root>     what the person said there: each open note, pinned
+                             to a node; act on it, then answer it with
+                             `underdraw notes <dir> --answer N1 --reply "…"`
   underdraw handoff <dir> --platform ios
                              once agreed: what to build, and what to test it against
   underdraw compare <dir> --platform ios --capture c.json
@@ -40,7 +43,10 @@ COMMANDS
                              given a directory of descriptions, every one of them,
                              and each navigate resolved to the screen it names
     underdraw gallery <root> a window for the person: every description under
-                             <root>, each drawn at a phone and a desktop width
+                             <root>, each drawn at a phone and a desktop width,
+                             where they write notes on its nodes
+    underdraw notes <root>   the person's open notes, each with where it is pinned;
+                             with --answer <id> --reply "…", one answered
     underdraw render <dir>   a wireframe PNG of one state, and where each node went,
                              for the agent to read the node boxes
   For the agent building the screen on a platform:

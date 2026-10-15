@@ -10,7 +10,8 @@ READS
   Every screen description under <root>: each directory, at any depth,
   that holds screen.json. The tree leaves out renders/ and platforms/,
   hidden directories, and directories leading to no description. Nothing is
-  read from renders/: the window draws from the descriptions themselves.
+  read from renders/: the window draws from the descriptions themselves,
+  and from the notes.json beside each, the person's notes.
 
 DOES
   Opens a window in a process of its own and exits at once; only the window
@@ -90,8 +91,26 @@ DOES
   outermost first), its label and the width it was drawn at, which say
   which data showed what they mean; it is not where to edit.
 
+  Write a note, for the agent, on a node: press N, then click the node (or
+  pick the node and click "write a note on it" in its panel), and type.
+  Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V pastes. It is
+  kept in notes.json beside the description's screen.json, pinned as ⌘C
+  references it: the node as written, the state, and the instance pointed
+  at. A blue pin numbered N1, N2… is drawn at the node's top-right corner,
+  in the state and at the width it was written in; every other state and
+  width that holds that node shows a faint dot there. The tree shows how
+  many notes are open on each description and each state ("2 notes").
+  The agent reads them with `underdraw notes <root>` and answers one with a
+  line of reply: its pin turns green, and the pointer over it shows the
+  reply. Click a pin to read its note in the panel, then close it, or
+  reopen it, saying what is still to do (Enter saves that line): it is open
+  again, for the agent. A closed note is drawn no more. The window writes
+  notes.json, and only the person's acts; it never writes a description:
+  the agent makes every change. Commit notes.json with the description.
+
   The window watches <root> and is drawn from the files as they now stand:
-  edit a description's screen.json, tokens.json or kinds.json and the state
+  edit a description's screen.json, tokens.json, kinds.json or notes.json
+  (`underdraw notes --answer` does) and the state
   shown is drawn again within a moment, scrolled where it was and with the
   node picked still picked while it is there, without the window coming
   forward; a description that gains faults shows them, and its
