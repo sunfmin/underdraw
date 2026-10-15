@@ -1,5 +1,7 @@
 # The person speaks through notes; the gallery never writes a description
 
+Superseded in part: a note became a conversation, never closed, with no regions and no N mode, by [ADR 0023](0023-a-note-is-a-conversation.md); that the gallery writes only notes, in `notes.json`, and the agent learns of them through `--wait`, stands.
+
 The gallery shows a person the design, but what they think of it reached
 the agent only as words typed into a conversation: "the third row, the
 price, on the phone", which the agent then had to find in `screen.json`.
