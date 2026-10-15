@@ -61,7 +61,7 @@ pub enum Ink {
     /// A note the person wrote, open: never part of a wireframe, only of
     /// the gallery drawn around it.
     Note,
-    /// A note the agent answered, for the person to close or reopen.
+    /// A note the agent answered last, for the person to read.
     Answered,
 }
 
