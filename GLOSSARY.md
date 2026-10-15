@@ -71,13 +71,15 @@ screen not drawn yet).
 _Avoid_: guess, TODO
 
 **Note**:
-What the person says to the agent about a design, pinned where they said it:
-a node, a region, a whole state, or an arrow. The agent answers it; the
-person closes it, or it closes itself, saying why, once what it is pinned to
-is gone; reopened, it is pinned to the whole state. Confirming or rejecting an **Assumption** is a note on its
-node: ✓ (the guess was right) closes itself once the agent has taken the
-guess out; ✗ (it was wrong) says what is right, and runs as any note.
-_Avoid_: comment, feedback
+A conversation between the person and the agent about a design, pinned
+where it is held: a node, a whole state, or an arrow, its messages kept in
+the order said. Each has at most one; one whose node or arrow is gone joins
+its state's note, saying where it was. Only the person starts one; the agent
+answers in it, at any length, and may ask back. It waits on the agent while
+the person spoke last, and is answered while the agent did; it is never
+closed. Confirming (✓) or rejecting (✗, saying what is right) an
+**Assumption** is a message in its node's note.
+_Avoid_: comment, feedback, chat, thread
 
 ### Data and decisions
 
