@@ -1,0 +1,17 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "first"
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "用 frontend-design 优化这个页面",
+          "taken": 1792073676
+        }
+      ]
+    }
+  ]
+}

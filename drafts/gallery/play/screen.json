@@ -1256,6 +1256,115 @@
                 ]
               },
               {
+                "id": "cue",
+                "component": "Stack",
+                "if": "walks",
+                "gap": 10,
+                "$comment": "The one thing to do next, as the headline over the pictures: its badge is the label the node to act on carries in them.",
+                "children": [
+                  {
+                    "id": "cue-act",
+                    "component": "Row",
+                    "if": "acting",
+                    "gap": 10,
+                    "children": [
+                      {
+                        "id": "cue-label",
+                        "component": "Badge",
+                        "if": "labelled",
+                        "text": "{step.label}"
+                      },
+                      {
+                        "id": "cue-act-text",
+                        "component": "Text",
+                        "text": "{step.act}",
+                        "font": "font.cue"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "cue-leads",
+                    "component": "Text",
+                    "if": "acting",
+                    "text": {
+                      "cases": [
+                        {
+                          "if": "answers",
+                          "then": "{step.answer}, then leads to {step.leadsTo}"
+                        },
+                        {
+                          "else": "Leads to {step.leadsTo}"
+                        }
+                      ]
+                    },
+                    "color": "color.textSecondary"
+                  },
+                  {
+                    "id": "cue-end",
+                    "component": "Text",
+                    "if": "ending",
+                    "text": "The journey ends here.",
+                    "font": "font.cue"
+                  },
+                  {
+                    "id": "cue-buttons",
+                    "component": "Row",
+                    "gap": 8,
+                    "children": [
+                      {
+                        "id": "back",
+                        "component": "Button",
+                        "variant": "secondary",
+                        "size": "small",
+                        "text": "← Back",
+                        "disabled": "atFirst",
+                        "on": {
+                          "tap": {
+                            "set": "picked",
+                            "to": null
+                          }
+                        }
+                      },
+                      {
+                        "id": "next",
+                        "component": "Button",
+                        "variant": "primary",
+                        "size": "small",
+                        "text": "Next →",
+                        "if": "!atLast",
+                        "on": {
+                          "tap": {
+                            "set": "picked",
+                            "to": null
+                          }
+                        }
+                      },
+                      {
+                        "id": "again",
+                        "component": "Button",
+                        "variant": "secondary",
+                        "size": "small",
+                        "text": "Play again",
+                        "if": "atLast",
+                        "on": {
+                          "tap": {
+                            "set": "picked",
+                            "to": null
+                          }
+                        }
+                      },
+                      {
+                        "id": "keys",
+                        "component": "Text",
+                        "text": "or ← →",
+                        "font": "font.caption",
+                        "color": "color.textSecondary"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
                 "id": "step-pictures",
                 "component": "Columns",
                 "if": "walks",
@@ -1364,129 +1473,6 @@
             "padding": 12,
             "border": "color.border",
             "children": [
-              {
-                "id": "journey-card",
-                "component": "Card",
-                "gap": 8,
-                "padding": 12,
-                "border": "color.primary",
-                "children": [
-                  {
-                    "id": "jc-where",
-                    "component": "Text",
-                    "text": "Step {step.number} of {journey.steps} · {step.screen} · {step.state}",
-                    "font": "font.caption",
-                    "color": "color.textSecondary"
-                  },
-                  {
-                    "id": "jc-next",
-                    "component": "Stack",
-                    "if": "acting",
-                    "gap": 4,
-                    "children": [
-                      {
-                        "id": "jc-next-label",
-                        "component": "Text",
-                        "text": "Next",
-                        "font": "font.caption",
-                        "color": "color.textSecondary"
-                      },
-                      {
-                        "id": "jc-next-act",
-                        "component": "Text",
-                        "text": "{step.act}",
-                        "font": "font.heading"
-                      },
-                      {
-                        "id": "jc-next-answer",
-                        "component": "Text",
-                        "if": "answers",
-                        "text": "{step.answer}, then",
-                        "font": "font.caption",
-                        "color": "color.textSecondary"
-                      },
-                      {
-                        "id": "jc-next-leads",
-                        "component": "Text",
-                        "text": "leads to {step.leadsTo}",
-                        "font": "font.caption",
-                        "color": "color.textSecondary"
-                      }
-                    ]
-                  },
-                  {
-                    "id": "jc-end",
-                    "component": "Text",
-                    "if": "ending",
-                    "text": "The journey ends here.",
-                    "font": "font.heading"
-                  },
-                  {
-                    "id": "jc-broken",
-                    "component": "Text",
-                    "if": "broken",
-                    "text": "Not played until check finds it walks.",
-                    "font": "font.heading"
-                  },
-                  {
-                    "id": "jc-buttons",
-                    "component": "Row",
-                    "if": "walks",
-                    "gap": 8,
-                    "children": [
-                      {
-                        "id": "back",
-                        "component": "Button",
-                        "variant": "secondary",
-                        "size": "small",
-                        "text": "← Back",
-                        "disabled": "atFirst",
-                        "on": {
-                          "tap": {
-                            "set": "picked",
-                            "to": null
-                          }
-                        }
-                      },
-                      {
-                        "id": "next",
-                        "component": "Button",
-                        "variant": "primary",
-                        "size": "small",
-                        "text": "Next →",
-                        "if": "!atLast",
-                        "on": {
-                          "tap": {
-                            "set": "picked",
-                            "to": null
-                          }
-                        }
-                      },
-                      {
-                        "id": "again",
-                        "component": "Button",
-                        "variant": "secondary",
-                        "size": "small",
-                        "text": "Play again",
-                        "if": "atLast",
-                        "on": {
-                          "tap": {
-                            "set": "picked",
-                            "to": null
-                          }
-                        }
-                      },
-                      {
-                        "id": "keys",
-                        "component": "Text",
-                        "text": "or ← →",
-                        "font": "font.caption",
-                        "color": "color.textSecondary"
-                      }
-                    ]
-                  }
-                ]
-              },
               {
                 "id": "journey-note",
                 "component": "Card",
