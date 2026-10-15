@@ -1,0 +1,17 @@
+picture
+  overview default, cancel-dialog, cancel-ready, cancel-unpaid, no-match, filter-empty, loading, error
+    ▸ default → cancel-dialog: 10
+    cancel-dialog → cancel-ready: 1
+    cancel-dialog → default: 5
+    cancel-ready → default: 5
+    cancel-ready → default: 6 · ok
+    cancel-ready → cancel-ready: 6 · shipped
+    default → filter-empty: 4 · ok
+    filter-empty → default: 4 · ok
+    no-match → default: 9
+    error → default: 3 · ok
+    error → error: 3 · offline
+sidebar
+  transition from default on order-{index}-cancel.tap to cancel-dialog
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.

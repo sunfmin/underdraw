@@ -1,0 +1,30 @@
+tree
+  root/
+    orders
+      ▸ default
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+picture
+  page default · 390
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
+  page default · 1120
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
+  pin N1 on page 0: Line
+sidebar
+  default · the whole state
+  note N1 · answered
+    the list is too dense
+    gave each row more room; should the filters fold away too?
+  waits on you · 2
+    ? nav-export in default
+    This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet
+    ? order-{index} in default
+    This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet
+  box: "yes, behind a button\nnamed Filters"
