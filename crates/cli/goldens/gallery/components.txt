@@ -1,0 +1,24 @@
+tree
+  root/
+    → cancel-an-order
+    components/
+      OrderRow
+        ▸ pending
+        shipped
+      OrderStatus
+        pending
+        cancelled
+    order
+      open
+      shipped
+      cancelled
+    orders
+      default
+      loading
+picture
+  page pending · 390
+  page pending · 1120
+sidebar
+  pending · the whole state
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
