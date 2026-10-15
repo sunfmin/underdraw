@@ -34,6 +34,11 @@ const WINDOW: (f64, f64) = (1440.0, 900.0);
 fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
     let mut gallery = Gallery::new(root, text::Typesetter::new(None).unwrap());
     gallery.size = size;
+    // A root of a test's own is named for its process: its line is named
+    // the same in every run, for the frame to hold.
+    if let Some(line) = gallery.lines.first_mut().filter(|line| line.row.dir == root && !line.row.described) {
+        line.row.name = "root".to_string();
+    }
     acts(&mut gallery);
     gallery.clamp();
     let scene = gallery.frame();
@@ -134,6 +139,21 @@ fn an_overview_with_its_arrows_and_journey_marks() {
 }
 
 #[test]
+fn the_inbox_of_the_root_grouped_by_description() {
+    let root = root_of("frame-inbox", &[("orders", "orders"), ("checkout", "pay/checkout")]);
+    let dir = root.join("orders");
+    let whole =
+        Reference { description: dir.clone(), on: On::State { state: State::Fixture("default".into()) } };
+    notes::add(&whole, "too dense").unwrap();
+    notes::add(&whole, "a bigger title").unwrap();
+    notes::answer(&dir, "N2", "the title is a heading now").unwrap();
+    let gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
+    let card = gallery.inbox_card().expect("the inbox of everything under the root");
+    assert_eq!(card.title, "waits on you · 6");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_flow_with_a_screen_not_drawn_yet() {
     let root = root_of("frame-flow", &[("airbnb-listing", "shop/listing"), ("checkout", "shop/checkout")]);
     let gallery = held("flow", &root, WINDOW, |gallery| {
@@ -150,7 +170,7 @@ fn a_description_with_faults() {
     let root = root_of("frame-faults", &[]);
     std::fs::create_dir_all(root.join("broken")).unwrap();
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
-    let gallery = held("faults", &root, WINDOW, |gallery| gallery.pick(0));
+    let gallery = held("faults", &root, WINDOW, |gallery| gallery.pick(1));
     assert!(matches!(&gallery.picture, Picture::Faults(faults) if !faults.is_empty()));
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -235,6 +255,49 @@ fn an_assumption_picked_by_its_question_mark() {
         gallery.press();
     });
     assert_eq!(gallery.node.as_deref(), Some("card-number"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_note_read_as_a_conversation() {
+    let root = root_of("frame-conversation", &[("orders", "orders")]);
+    let gallery = held("conversation", &root, WINDOW, |gallery| {
+        show(gallery, "orders", "default");
+        note_on(gallery, "nav-export", "rename it, and say what it exports");
+        notes::answer(&root.join("orders"), "N1", "renamed it Export orders").unwrap();
+        gallery.reload();
+        gallery.cursor = on_pin(gallery, "N1");
+        gallery.press();
+    });
+    assert!(gallery.panel().iter().any(|line| line == "not yet…"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_wrong_assumption_written_with_an_input_method() {
+    let root = root_of("frame-rejecting", &[("orders", "orders")]);
+    let gallery = held("rejecting", &root, WINDOW, |gallery| {
+        show(gallery, "orders", "default");
+        gallery.cursor = on_guess(gallery, 0, "nav-export");
+        gallery.press();
+        assert!(click_panel_line(gallery, "✗ wrong…"));
+        type_text(gallery, "导出是");
+        gallery.ime(Ime::Preedit("dui hua kuang".to_string(), None));
+    });
+    assert!(gallery.draft.as_ref().is_some_and(|draft| draft.text.is_composing()));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_confirmation_waiting_to_be_undone() {
+    let root = root_of("frame-confirming", &[("orders", "orders")]);
+    let gallery = held("confirming", &root, WINDOW, |gallery| {
+        show(gallery, "orders", "default");
+        gallery.cursor = on_guess(gallery, 0, "nav-export");
+        gallery.press();
+        assert!(click_panel_line(gallery, "✓ right, keep it"));
+    });
+    assert!(gallery.confirming.is_some());
     std::fs::remove_dir_all(root).unwrap();
 }
 

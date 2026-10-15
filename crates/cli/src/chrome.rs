@@ -98,3 +98,12 @@ pub const MARK_RADIUS: f32 = 9.0;
 /// The corners of a card of the sidebar, and of a button on it.
 pub const CARD_RADIUS: f32 = 8.0;
 pub const BUTTON_RADIUS: f32 = 6.0;
+/// What an assumption guessed, as the sidebar sets it: large, to be read
+/// first.
+pub const BIG: Font = Font { size: 20.0, weight: 600, line_height: 26.0 };
+/// The space inside a bubble of a note's conversation, or a field, around
+/// its text; how much of a card's width a bubble takes at most; and its
+/// corners.
+pub const INSET: f64 = 8.0;
+pub const BUBBLE: f64 = 0.82;
+pub const BUBBLE_RADIUS: f32 = 10.0;

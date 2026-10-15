@@ -7,10 +7,11 @@
 mod act;
 mod chrome;
 mod draw;
-mod editor;
+mod field;
 mod flow;
 mod gallery;
 mod gpu;
+mod inbox;
 mod journeys;
 mod links;
 mod notes;

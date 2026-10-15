@@ -147,3 +147,21 @@ fn says_when_there_is_no_display() {
     assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("display"), "{answer}");
 }
+
+#[test]
+fn gallery_help_says_what_the_inbox_lists_and_what_a_click_on_an_item_does() {
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["gallery", "--help"]).output().unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    for said in [
+        "The inbox:",
+        "waits on you · <how many>",
+        "assumption no note answers yet",
+        "A directory's lists every",
+        "root's line too",
+        "waiting on the agent · 2",
+        "Click an item to show its state with what",
+        "leave it",
+    ] {
+        assert!(help.contains(said), "{said:?} not in gallery --help");
+    }
+}
