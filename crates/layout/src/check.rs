@@ -45,10 +45,8 @@ pub fn check(
         }
     }
     let mut checked = model.checked;
-    if !cut.is_empty() {
-        checked.ok = false;
-        checked.conditions.clear();
-        checked.findings.append(&mut cut);
+    for finding in cut {
+        checked.fault(finding);
     }
     Ok(checked)
 }
