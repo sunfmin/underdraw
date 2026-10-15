@@ -37,7 +37,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
-use crate::act::{self, Act};
+use crate::act::{self, Way};
 use crate::area::{over, rect};
 use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW, TOOLBAR};
 use crate::draw::{self, Shown as State, Wanted};
@@ -54,7 +54,8 @@ use crate::{chrome, gpu, links, paint, text};
 use history::History;
 use panes::{Content, Pane, Panes, Scrolls, Took};
 use picture::{
-    Arrow, Desk, Faults, Flow, Overview, Page, Pages, Pass, Picture, Pin, Seen, Target, Thumb, Tile,
+    Arrow, Desk, Faults, Flow, Offer, Overview, Page, Pages, Pass, Picture, Pin, Seen, Target, Thumb, Tile,
+    offer_widths,
 };
 use toolbar::Tool;
 
@@ -342,9 +343,9 @@ struct Confirming {
 /// What a click on a button of the sidebar does.
 #[derive(Clone, Debug, PartialEq)]
 enum Do {
-    /// Chooses the outcome the last act's operation answered with: the
-    /// state it goes to shown.
-    Choose { outcome: String, to: String },
+    /// Goes where acting on the node picked goes this way, as a ⌘-click on
+    /// it does: one outcome its operation answers with, chosen.
+    Go(Way),
     /// Says in the note on the node acted on where acting on it should go:
     /// a message marked as that proposal.
     Propose(Proposal),
@@ -871,11 +872,18 @@ impl Gallery {
             };
         }
         if pane == Pane::Pictures {
+            // As they are drawn: the pins over the buttons floating beside
+            // the node picked, and both over the nodes.
+            if !self.acting
+                && let Some((dir, id)) = self.pin_at(self.cursor)
+            {
+                return self.visit(Visit::Note(dir, id));
+            }
+            if let Some(way) = self.offer_at(self.cursor) {
+                return self.click(Do::Go(way));
+            }
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
-            }
-            if let Some((dir, id)) = self.pin_at(self.cursor) {
-                return self.visit(Visit::Note(dir, id));
             }
             return match self.target_at(self.cursor) {
                 Some(Target::Node { id, pointed }) => self.pick_thing(Picked::Node { id, pointed }),
@@ -1049,42 +1057,108 @@ impl Gallery {
         else {
             return self.pick_thing(Picked::Nothing);
         };
-        let page = &pages.pages[pointed];
-        let handlers = page.handlers.get(&id).cloned().unwrap_or_default();
-        let calls = page.calls.get(&id).cloned().unwrap_or_default();
+        let calls = pages.pages[pointed].calls.get(&id).cloned().unwrap_or_default();
         self.pick_thing(Picked::Node { id, pointed });
-        let Some(here) = self.wanted.clone() else {
+        let (Some(here), Some(on)) = (self.wanted.clone(), self.acted_on()) else {
             return true;
         };
         let state = here.state.clone().unwrap_or_default();
-        let on = format!("{}.{}", handlers.written, act::event(&handlers.events));
+        match self.ways().to_vec().as_slice() {
+            [] => {
+                let says = say!(self.lang, no_transition, state, on);
+                let choices = self.proposals(&here.dir, &on);
+                self.acted = Some(Acted { says, choices });
+            }
+            [way] => self.follow(&on, way.clone()),
+            // One for each outcome, offered on the node's card under it.
+            _ => {
+                let calls = calls.join(", ");
+                self.say(say!(self.lang, acted_calls, on, state, calls));
+            }
+        }
+        true
+    }
+
+    /// The node picked as acting on it names it: its id as written and the
+    /// event a click raises on it. None while no node is picked.
+    fn acted_on(&self) -> Option<String> {
+        let ((id, pointed), Picture::Pages(pages)) = (self.node()?, &self.picture) else {
+            return None;
+        };
+        let handled = |page: &&Page| page.handlers.contains_key(id);
+        let page = pages.pages.get(pointed).filter(handled).or_else(|| pages.pages.iter().find(handled));
+        let handlers = page.and_then(|page| page.handlers.get(id)).cloned().unwrap_or_default();
+        Some(format!("{}.{}", handlers.written, act::event(&handlers.events)))
+    }
+
+    /// Where acting on the node picked goes from the state shown, in the
+    /// order written: none while no node is picked, or it goes nowhere.
+    fn ways(&self) -> &[Way] {
+        match (self.node(), &self.picture) {
+            (Some((id, _)), Picture::Pages(pages)) => pages.ways.get(id).map_or(&[], Vec::as_slice),
+            _ => &[],
+        }
+    }
+
+    /// `way` as it is offered beside the node picked and on its card: where
+    /// it goes, in --lang, grayed for a screen not drawn yet.
+    fn offer(&self, way: &Way) -> Offer {
         let lang = self.lang;
-        let screen = crate::read(&here.dir).ok().map(|(screen, _)| screen);
-        let transitions = screen.as_ref().map_or(&[][..], |screen| screen.transitions.as_slice());
-        match act::act(transitions, &state, &handlers.written, &handlers.events) {
-            Act::Go { to } => {
+        let (says, live) = match way {
+            Way::To { outcome: None, to } => (say!(lang, way_state, to), true),
+            Way::To { outcome: Some(outcome), to } => (say!(lang, way_outcome, to, outcome), true),
+            Way::Navigate { screen, drawn: true } => (say!(lang, way_navigate, screen), true),
+            Way::Navigate { screen, drawn: false } => (say!(lang, way_undrawn, screen), false),
+            Way::Back => (say!(lang, way_back), true),
+        };
+        Offer { says, live }
+    }
+
+    /// The button floating beside the node picked under `at`, a point in
+    /// the window: where it goes. A grayed one only says where it would,
+    /// and a press goes through it to what is under it.
+    fn offer_at(&mut self, at: (f64, f64)) -> Option<Way> {
+        let (id, pointed) = self.node().map(|(id, pointed)| (id.to_string(), pointed))?;
+        let ways = self.ways().to_vec();
+        let offers: Vec<Offer> = ways.iter().map(|way| self.offer(way)).collect();
+        let wide = offer_widths(&offers, &mut self.typesetter);
+        let Picture::Pages(pages) = &self.picture else {
+            return None;
+        };
+        let offered = pages.offered(&id, pointed, &wide, &self.desk());
+        let at = vello::kurbo::Point::new(at.0, at.1);
+        let live = |index: &usize| offers[*index].live && offered[*index].contains(at);
+        (0..offered.len()).find(live).map(|index| ways[index].clone())
+    }
+
+    /// Goes where `way` says acting on the node picked, `on` (its id as
+    /// written and event), goes from the state shown: to a state of the
+    /// screen; to the first state of the screen a navigate names, or, for
+    /// one not drawn yet, says so; or back along the path taken. The panel
+    /// says what came of it.
+    fn follow(&mut self, on: &str, way: Way) {
+        let Some(here) = self.wanted.clone() else {
+            return;
+        };
+        let state = here.state.clone().unwrap_or_default();
+        let lang = self.lang;
+        match way {
+            Way::To { outcome: None, to } => {
                 let says = say!(lang, acted_to_state, on, state, to);
                 self.go(Named { dir: here.dir, state: Some(to) }, says);
             }
-            Act::Choose(choices) => {
-                let calls = calls.join(", ");
-                let says = say!(lang, acted_calls, on, state, calls);
-                let choices = choices
-                    .into_iter()
-                    .map(|(outcome, to)| (format!("{outcome} → {to}"), Do::Choose { outcome, to }))
-                    .collect();
-                self.acted = Some(Acted { says, choices });
+            Way::To { outcome: Some(outcome), to } => {
+                let says = say!(lang, acted_outcome, outcome, state, to);
+                self.go(Named { dir: here.dir, state: Some(to) }, says);
             }
-            Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
+            Way::Navigate { screen, .. } => match links::declared(&self.root).remove(&screen) {
                 Some(description) => {
                     let says = say!(lang, acted_navigates, on, screen);
                     self.go(Named { dir: description, state: None }, says);
                 }
-                None => {
-                    self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], self.lang)))
-                }
+                None => self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], lang))),
             },
-            Act::Back => match self.path.pop() {
+            Way::Back => match self.path.pop() {
                 Some(back) => {
                     let to = self.named(&back);
                     match self.line_named(&back) {
@@ -1097,13 +1171,7 @@ impl Gallery {
                 }
                 None => self.say(say!(lang, acted_goes_back_nowhere, on)),
             },
-            Act::Nothing => {
-                let says = say!(lang, no_transition, state, on);
-                let choices = self.proposals(&here.dir, &on);
-                self.acted = Some(Acted { says, choices });
-            }
         }
-        true
     }
 
     /// Where acting on `on`, a node's id as written and its event, could be
@@ -1131,7 +1199,11 @@ impl Gallery {
     /// to do.
     fn click(&mut self, does: Do) -> bool {
         match does {
-            Do::Choose { outcome, to } => self.choose(outcome, to),
+            Do::Go(way) => {
+                let on = self.acted_on().unwrap_or_default();
+                self.follow(&on, way);
+                true
+            }
             Do::Propose(proposal) => {
                 self.propose(proposal);
                 true
@@ -1160,18 +1232,6 @@ impl Gallery {
                 true
             }
         }
-    }
-
-    /// The outcome the last act's operation answered with chosen: the
-    /// state `to` it goes to shown. Whether a state was shown to go from.
-    fn choose(&mut self, outcome: String, to: String) -> bool {
-        let Some(here) = self.wanted.clone() else {
-            return false;
-        };
-        let state = here.state.clone().unwrap_or_default();
-        let says = say!(self.lang, acted_outcome, outcome, state, to);
-        self.go(Named { dir: here.dir, state: Some(to.clone()) }, says);
-        true
     }
 
     /// `proposal` said in the note on the node acted on, at the instance
@@ -1315,9 +1375,39 @@ impl Gallery {
             Err(e) => vec![Err(e)],
         };
         match laid.into_iter().collect::<anyhow::Result<Vec<Page>>>() {
-            Ok(pages) => Picture::Pages(Pages { dir: dir.to_path_buf(), state: state.cloned(), pages }),
+            Ok(pages) => {
+                let ways = self.ways_of(dir, state, &pages, drawn);
+                Picture::Pages(Pages { dir: dir.to_path_buf(), state: state.cloned(), pages, ways })
+            }
             Err(e) => self.faulty(vec![Finding { at: crate::SCREEN.to_string(), problem: format!("{e:#}") }]),
         }
+    }
+
+    /// Where acting on each node of `pages` goes from `state` of the
+    /// description in `dir`, given the screens `drawn` under the root: by
+    /// id, a node that goes nowhere left out.
+    fn ways_of(
+        &self,
+        dir: &Path,
+        state: Option<&State>,
+        pages: &[Page],
+        drawn: &std::collections::BTreeSet<String>,
+    ) -> BTreeMap<String, Vec<Way>> {
+        let Some(state) = state else {
+            return BTreeMap::new();
+        };
+        let transitions = self.description(dir).and_then(|d| d.transitions()).unwrap_or_default();
+        let mut ways = BTreeMap::new();
+        for (id, handlers) in pages.iter().flat_map(|page| &page.handlers) {
+            if ways.contains_key(id) {
+                continue;
+            }
+            let goes = act::act(&transitions, state.name(), &handlers.written, &handlers.events).ways(drawn);
+            if !goes.is_empty() {
+                ways.insert(id.clone(), goes);
+            }
+        }
+        ways
     }
 
     /// The journey on line `index` played from its step `at` (its last, past
@@ -2427,6 +2517,14 @@ impl Gallery {
             None => say!(lang, calls_nothing),
         };
         let mut blocks = vec![Block::Fact(say!(lang, calls), calls)];
+        let ways = self.ways();
+        for way in ways {
+            let Offer { says, live } = self.offer(way);
+            blocks.push(if live { Block::Button(says, Do::Go(way.clone())) } else { Block::Muted(says) });
+        }
+        if !ways.is_empty() {
+            blocks.push(Block::Muted(say!(lang, way_hint)));
+        }
         let (fold, details) = (if self.details { "▾" } else { "▸" }, lang.words().details);
         blocks.push(Block::Fold(format!("{fold} {details}"), Do::Details));
         if self.details {
@@ -2570,7 +2668,8 @@ impl Gallery {
             Picked::Node { id, pointed } => Some(Target::Node { id: id.clone(), pointed: *pointed }),
             Picked::Arrow(arrow) => Some(Target::Arrow(*arrow)),
         };
-        Seen { picked, marked: self.written_marked().map(str::to_string), lang: self.lang }
+        let offers = self.ways().iter().map(|way| self.offer(way)).collect();
+        Seen { picked, marked: self.written_marked().map(str::to_string), offers, lang: self.lang }
     }
 
     /// The tree's lines, in window points, top to bottom: for each, the
@@ -4092,10 +4191,83 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · cancel-ready", "nothing is shown until an outcome is chosen");
         let panel = gallery.panel();
         assert_eq!(panel[0], "cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered");
-        assert_eq!(panel[1..3], ["ok → default", "shipped → cancel-ready"]);
-        assert!(click_panel_line(&mut gallery, "ok → default"), "the first outcome clicked");
+        assert_eq!(panel[3..5], ["→ default · ok", "→ cancel-ready · shipped"], "on the node's card");
+        assert!(click_panel_line(&mut gallery, "→ default · ok"), "the first outcome clicked");
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(gallery.panel()[0], "ok in cancel-ready → default");
+    }
+
+    /// The buttons floating beside the node picked: what each says, and
+    /// whether it goes there.
+    fn offers(gallery: &Gallery) -> Vec<(String, bool)> {
+        gallery.seen().offers.into_iter().map(|offer| (offer.says, offer.live)).collect()
+    }
+
+    /// Whether a line of the sidebar reads `line`.
+    fn reads(gallery: &Gallery, line: &str) -> bool {
+        gallery.panel().iter().any(|l| l.trim() == line)
+    }
+
+    /// The middle of the button floating beside the node picked that says
+    /// `says`.
+    fn on_offer(gallery: &mut Gallery, says: &str) -> (f64, f64) {
+        let (id, pointed) = gallery.node().map(|(id, pointed)| (id.to_string(), pointed)).unwrap();
+        let offers = gallery.seen().offers;
+        let wide = offer_widths(&offers, &mut gallery.typesetter);
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no pages") };
+        let offered = pages.offered(&id, pointed, &wide, &gallery.desk());
+        let index = offers.iter().position(|offer| offer.says == says).unwrap();
+        let area = offered[index];
+        (area.center().x, area.center().y)
+    }
+
+    #[test]
+    fn a_node_picked_offers_where_acting_on_it_goes_beside_it_and_on_its_card() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        gallery.press_at(on_node(&gallery, 0, "nav-export"));
+        assert_eq!(offers(&gallery), [("↗ Go to ExportDocuments".to_string(), true)]);
+        let hint = "Holding ⌘ (Ctrl) and clicking the node does the same.";
+        assert!(reads(&gallery, "↗ Go to ExportDocuments") && reads(&gallery, hint));
+        let at = on_offer(&mut gallery, "↗ Go to ExportDocuments");
+        assert!(gallery.press_at(at), "the button floating beside it clicked");
+        let export = line_of(&gallery, "export");
+        assert_eq!(gallery.line, Some(export + 1), "as a ⌘-click does: the screen's first state");
+        assert_eq!(gallery.panel()[0], "nav-export.tap navigates to ExportDocuments");
+
+        gallery.press_at(on_node(&gallery, 0, "nav-back"));
+        assert_eq!(offers(&gallery), [("← Back".to_string(), true)]);
+        assert!(click_panel_line(&mut gallery, "← Back"), "on the card, as beside it");
+        assert_eq!(shown(&gallery), "orders · default", "back where it came from");
+
+        gallery.press_at(on_node(&gallery, 0, "order-0"));
+        assert_eq!(
+            offers(&gallery),
+            [("↗ OrderDetail · not drawn yet".to_string(), false)],
+            "a screen not drawn yet, grayed"
+        );
+        assert!(reads(&gallery, "↗ OrderDetail · not drawn yet"), "said on the card");
+        assert!(
+            !gallery.placed().unwrap().buttons().iter().any(|(_, says, _)| says.contains("OrderDetail")),
+            "and not a button there"
+        );
+
+        show(&mut gallery, "orders", "cancel-ready");
+        gallery.press_at(on_node(&gallery, 0, "cd-confirm"));
+        assert_eq!(
+            offers(&gallery),
+            [("→ default · ok".to_string(), true), ("→ cancel-ready · shipped".to_string(), true)],
+            "one for each outcome"
+        );
+        let at = on_offer(&mut gallery, "→ default · ok");
+        assert!(gallery.press_at(at));
+        assert_eq!(shown(&gallery), "orders · default");
+        assert_eq!(gallery.panel()[0], "ok in cancel-ready → default");
+
+        show(&mut gallery, "orders", "cancel-unpaid");
+        gallery.press_at(on_node(&gallery, 0, "cd-keep"));
+        assert!(offers(&gallery).is_empty(), "a node that goes nowhere offers nothing");
+        assert!(!reads(&gallery, hint));
     }
 
     #[test]

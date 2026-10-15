@@ -25,6 +25,8 @@ sidebar
     ✓: the agent takes the guess out · ✗: say what is right
   IconButton
     calls  nothing
+    ↗ ExportDocuments · not drawn yet
+    Holding ⌘ (Ctrl) and clicking the node does the same.
     ▸ details
   note N1 · answered
     rename it, and say what it exports

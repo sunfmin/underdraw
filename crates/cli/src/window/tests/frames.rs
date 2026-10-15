@@ -393,7 +393,7 @@ fn a_prototype_act_and_its_outcomes() {
         act_on(gallery, "cd-confirm");
     });
     fits(&mut gallery);
-    assert!(panel_has(&gallery, "ok → default") && panel_has(&gallery, "shipped → cancel-ready"));
+    assert!(panel_has(&gallery, "→ default · ok") && panel_has(&gallery, "→ cancel-ready · shipped"));
 }
 
 #[test]
@@ -677,4 +677,15 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
     });
     assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_node_picked_offers_where_acting_on_it_goes_in_buttons_floating_beside_it() {
+    let mut gallery = drawn("offers", drafts(), WINDOW, |gallery| {
+        show(gallery, "orders", "cancel-ready");
+        gallery.press_at(on_node(gallery, 0, "cd-confirm"));
+    });
+    fits(&mut gallery);
+    assert_eq!(picked_node(&gallery), Some("cd-confirm"));
+    assert_eq!(gallery.seen().offers.len(), 2, "one for each outcome");
 }
