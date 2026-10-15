@@ -2880,6 +2880,7 @@ dependencies = [
  "parley",
  "png",
  "pollster",
+ "proptest",
  "serde",
  "serde_json",
  "underdraw-compare",
