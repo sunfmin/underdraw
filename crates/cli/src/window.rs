@@ -75,6 +75,9 @@ const NOTCH: f64 = 40.0;
 const SMALLEST: f64 = 0.5;
 /// How long a ✓ on an assumption can be undone before it is written.
 const UNDO: Duration = Duration::from_secs(5);
+/// How long every node that acting on goes somewhere is lit up after a
+/// ⌘-click that goes nowhere: long enough to see where to click instead.
+const FLASH: Duration = Duration::from_millis(700);
 
 /// What the window is told from other threads.
 enum Told {
@@ -256,6 +259,9 @@ struct Gallery {
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
     /// or Ctrl, is held.
     acting: bool,
+    /// Until when every node that acting on goes somewhere is lit up, after
+    /// a ⌘-click that went nowhere.
+    flashed: Option<Instant>,
     /// The states acting has come from, the last one last: where `back`
     /// returns to. Picking a state in the tree starts a new path.
     path: Vec<Named>,
@@ -529,6 +535,7 @@ impl Gallery {
             details: false,
             cursor: (0.0, 0.0),
             acting: false,
+            flashed: None,
             path: Vec::new(),
             history: History::new(),
             acted: None,
@@ -570,7 +577,13 @@ impl Gallery {
                 let at = (x, y - TOOLBAR);
                 self.cursor = at;
                 let grip = self.panes.grip(at);
-                effects.cursor = Some(if grip { CursorIcon::EwResize } else { CursorIcon::Default });
+                effects.cursor = Some(if grip {
+                    CursorIcon::EwResize
+                } else if self.leads_at(at) {
+                    CursorIcon::Pointer
+                } else {
+                    CursorIcon::Default
+                });
                 let dragged = self.panes.drag(at);
                 if dragged {
                     self.clamp();
@@ -590,7 +603,11 @@ impl Gallery {
                 effects.redraw = true;
             }
             Input::Modifiers(held) => {
-                self.acting = held.super_key() || held.control_key();
+                let acting = held.super_key() || held.control_key();
+                // Every node that acting on goes somewhere lit up, or no
+                // longer.
+                effects.redraw = acting != self.acting && matches!(self.picture, Picture::Pages(_));
+                self.acting = acting;
                 self.shift = held.shift_key();
             }
             Input::Key { key, code, text, repeat } => {
@@ -1055,7 +1072,9 @@ impl Gallery {
         let (Some(Target::Node { id, pointed }), Picture::Pages(pages)) =
             (self.target_at(self.cursor), &self.picture)
         else {
-            return self.pick_thing(Picked::Nothing);
+            self.flash();
+            self.pick_thing(Picked::Nothing);
+            return true;
         };
         let calls = pages.pages[pointed].calls.get(&id).cloned().unwrap_or_default();
         self.pick_thing(Picked::Node { id, pointed });
@@ -1065,6 +1084,7 @@ impl Gallery {
         let state = here.state.clone().unwrap_or_default();
         match self.ways().to_vec().as_slice() {
             [] => {
+                self.flash();
                 let says = say!(self.lang, no_transition, state, on);
                 let choices = self.proposals(&here.dir, &on);
                 self.acted = Some(Acted { says, choices });
@@ -1172,6 +1192,34 @@ impl Gallery {
                 None => self.say(say!(lang, acted_goes_back_nowhere, on)),
             },
         }
+    }
+
+    /// Every node that acting on goes somewhere lit up for a moment, to show
+    /// where a ⌘-click would.
+    fn flash(&mut self) {
+        self.flashed = Some(Instant::now() + FLASH);
+    }
+
+    /// When the flash after a ⌘-click that went nowhere ends, from `now`,
+    /// for the window to wake then and draw the nodes unlit: none while
+    /// there is none.
+    fn flash_ends(&self, now: Instant) -> Option<Instant> {
+        self.flashed.filter(|&end| end > now)
+    }
+
+    /// Whether `at`, a point under the toolbar, is on a node of the state
+    /// shown that acting on goes somewhere.
+    fn leads_at(&self, at: (f64, f64)) -> bool {
+        let Picture::Pages(pages) = &self.picture else {
+            return false;
+        };
+        if self.panes.pane_at(at) != Pane::Pictures {
+            return false;
+        }
+        matches!(
+            self.picture.shows().target_at(at, &self.desk()),
+            Some(Target::Node { id, .. }) if pages.ways.contains_key(&id)
+        )
     }
 
     /// Where acting on `on`, a node's id as written and its event, could be
@@ -1799,6 +1847,7 @@ impl Gallery {
         let blocks = vec![
             Block::Muted(say!(lang, hint_click)),
             Block::Muted(say!(lang, hint_act)),
+            Block::Muted(say!(lang, hint_marks)),
             Block::Muted(say!(lang, hint_keys)),
         ];
         cards.push(Card { ink: Ink::Muted, ..Card::new(say!(lang, nothing_picked), blocks) });
@@ -2692,8 +2741,9 @@ impl Gallery {
             Picked::Node { id, pointed } => Some(Target::Node { id: id.clone(), pointed: *pointed }),
             Picked::Arrow(arrow) => Some(Target::Arrow(*arrow)),
         };
+        let lit = self.acting || self.flash_ends(Instant::now()).is_some();
         let offers = self.ways().iter().map(|way| self.offer(way)).collect();
-        Seen { picked, marked: self.written_marked().map(str::to_string), offers, lang: self.lang }
+        Seen { picked, marked: self.written_marked().map(str::to_string), offers, lit, lang: self.lang }
     }
 
     /// The tree's lines, in window points, top to bottom: for each, the
@@ -3097,7 +3147,7 @@ impl ApplicationHandler<Told> for App {
     /// While a ✓ waits to be written: written once its time comes, the
     /// window woken each second until then to count down. While the
     /// conversation shown counts how long ago the agent took it, woken
-    /// each second too. While the field written in is the one keys go to,
+    /// each second too. While nodes flash, woken as the flash ends. While the field written in is the one keys go to,
     /// woken as its caret shows or hides, and only then.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
@@ -3108,7 +3158,8 @@ impl ApplicationHandler<Told> for App {
             now + if tick.is_zero() { Duration::from_secs(1).min(left) } else { tick }
         });
         let counting = self.gallery.counting().then(|| now + Duration::from_secs(1));
-        let wake = confirming.into_iter().chain(counting).min();
+        let flash = self.gallery.flash_ends(now);
+        let wake = confirming.into_iter().chain(counting).chain(flash).min();
         if let Some(shown) = &self.shown
             && (written || wake.is_some())
         {
@@ -3195,6 +3246,7 @@ impl ApplicationHandler<Told> for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::act::Leads;
     use crate::chrome::{CAPTION, MARGIN};
     use crate::chrome::{SIDEBAR, SIDEBAR_LEAST, TREE, TREE_LEAST};
 
@@ -4201,6 +4253,48 @@ mod tests {
         assert!(act_on(&mut gallery, "order-0-cancel"));
         assert_eq!(shown(&gallery), "orders · cancel-dialog", "a row's button, by its id as written");
         assert_eq!(gallery.panel()[0], "order-{index}-cancel.tap in default → cancel-dialog");
+    }
+
+    #[test]
+    fn the_nodes_that_go_somewhere_are_marked_pointed_at_with_a_hand_and_lit_while_command_is_held() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        let Picture::Pages(pages) = &gallery.picture else { panic!("orders has faults") };
+        let leads = |id: &str| pages.ways.get(id).and_then(|ways| ways.first()).map(Way::leads);
+        let phone = &pages.pages[0];
+        let rows: Vec<&str> =
+            phone.nodes.iter().map(|n| n.id.as_str()).filter(|id| id.ends_with("-cancel")).collect();
+        assert!(rows.len() > 1, "{rows:?}");
+        for row in &rows {
+            assert_eq!(leads(row), Some(Leads::State), "{row}: every row's button, by its transition");
+        }
+        assert_eq!(leads("nav-export"), Some(Leads::Screen), "a navigate");
+        assert_eq!(leads("nav-back"), Some(Leads::Screen), "back");
+        assert!(phone.nodes.iter().any(|n| leads(&n.id).is_none()), "not every node goes somewhere");
+
+        let button = on_node(&gallery, 0, rows[0]);
+        let moved = |gallery: &mut Gallery, at: (f64, f64)| {
+            gallery.feed([Input::Moved((at.0, at.1 + TOOLBAR))]).cursor
+        };
+        assert_eq!(moved(&mut gallery, button), Some(CursorIcon::Pointer), "a hand over it");
+        let margin = (gallery.panes.pictures().x0 + 10.0, 300.0);
+        assert_eq!(moved(&mut gallery, margin), Some(CursorIcon::Default), "off every node");
+
+        assert!(!gallery.seen().lit, "outlined only");
+        assert!(gallery.feed([Input::Modifiers(ModifiersState::SUPER)]).redraw);
+        assert!(gallery.seen().lit, "lit while ⌘ is held");
+        assert!(gallery.feed([Input::Modifiers(ModifiersState::empty())]).redraw);
+        assert!(!gallery.seen().lit);
+
+        // A ⌘-click that goes nowhere: each lit for a moment, then not.
+        gallery.feed([Input::Modifiers(ModifiersState::CONTROL)]);
+        assert!(gallery.press_here(), "drawn again, to flash");
+        gallery.feed([Input::Modifiers(ModifiersState::empty())]);
+        assert!(gallery.seen().lit, "flashed");
+        let now = Instant::now();
+        assert!(gallery.flash_ends(now).is_some_and(|end| end <= now + FLASH), "the window wakes as it ends");
+        assert_eq!(gallery.flash_ends(now + FLASH), None, "and then it is over");
+        assert_eq!(shown(&gallery), "orders · default", "going nowhere");
     }
 
     #[test]
@@ -5993,7 +6087,7 @@ mod tests {
         let (tree, side) = (gallery.panes.pictures().x0, gallery.panes.pictures().x1);
         assert_eq!(moved(&mut gallery, (tree + 1.0, 300.0)), Some(CursorIcon::EwResize));
         assert_eq!(moved(&mut gallery, (side - 1.0, 300.0)), Some(CursorIcon::EwResize));
-        assert_eq!(moved(&mut gallery, (tree + 40.0, 300.0)), Some(CursorIcon::Default));
+        assert_eq!(moved(&mut gallery, (tree + 10.0, 300.0)), Some(CursorIcon::Default));
         gallery.press_at((gallery.panes.pictures().x0, 300.0));
         assert_eq!(
             moved(&mut gallery, (600.0, 300.0)),

@@ -65,6 +65,35 @@ impl Act {
     }
 }
 
+impl Way {
+    /// Where it leads, as the gallery marks the node in purple.
+    pub fn leads(&self) -> Leads {
+        match self {
+            Way::To { .. } => Leads::State,
+            Way::Navigate { .. } | Way::Back => Leads::Screen,
+        }
+    }
+}
+
+/// Where acting on a node leads, from the state shown: off the screen (a
+/// navigate, or back), or to another of its states (a transition).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Leads {
+    Screen,
+    State,
+}
+
+impl Leads {
+    /// The badge the gallery marks the node with: ↗ for another screen, →
+    /// for another state.
+    pub fn badge(self) -> &'static str {
+        match self {
+            Leads::Screen => "↗",
+            Leads::State => "→",
+        }
+    }
+}
+
 /// The event a click raises on a node whose handlers are `events`.
 pub fn event(events: &Map<String, Value>) -> &str {
     if events.contains_key(CLICK) {
@@ -179,6 +208,14 @@ mod tests {
         );
         assert_eq!(Act::Back.ways(&declared), [Way::Back]);
         assert!(Act::Nothing.ways(&declared).is_empty(), "nowhere");
+    }
+
+    #[test]
+    fn a_transition_leads_to_a_state_and_a_navigate_or_back_to_a_screen() {
+        assert_eq!(Way::To { outcome: None, to: "dialog".into() }.leads(), Leads::State);
+        assert_eq!(Way::Navigate { screen: "Detail".into(), drawn: false }.leads(), Leads::Screen);
+        assert_eq!(Way::Back.leads(), Leads::Screen);
+        assert_eq!((Leads::Screen.badge(), Leads::State.badge()), ("↗", "→"));
     }
 
     #[test]

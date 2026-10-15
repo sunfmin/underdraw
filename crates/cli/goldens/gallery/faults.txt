@@ -12,4 +12,5 @@ sidebar
   Nothing picked
     Click a node, a state or an arrow to see it and talk about it.
     ⌘-click a node to act on it, as a prototype.
+    Purple marks where acting goes: ↗ another screen, → another state. Hold ⌘ to light them all.
     ⌘C copies a reference · ⌘\ hides this sidebar

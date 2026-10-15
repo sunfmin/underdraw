@@ -11,7 +11,11 @@ tree
       error
 picture
   page default · 390
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
   page default · 1120
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
   pin N1 on page 0: Line
 sidebar
   default · the whole state

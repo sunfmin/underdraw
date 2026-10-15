@@ -12,8 +12,10 @@ tree
 picture
   page no-address-new-card · 390
     picked card-number: 16, 996 · 358 × 70
+    ↗ nav-back, address-add
   page no-address-new-card · 1120
     picked card-number: 16, 996 · 675 × 70
+    ↗ nav-back, address-add
 sidebar
   assumed, for you to answer
     Card fields are drawn here
