@@ -4969,4 +4969,7 @@ mod tests {
         assert_eq!(played(&gallery).0, 2, "a change keeps the step shown");
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    /// Each surface of the window drawn to a PNG and held to a golden one.
+    mod frames;
 }
