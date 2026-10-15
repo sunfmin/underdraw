@@ -208,7 +208,9 @@ _Avoid_: mockup viewer, preview
 **Overview**:
 Every state of one description, small, in the order the tree lists them,
 and each transition it declares an arrow from its `from` state to its `to`,
-labelled with the label of the node acted on and, for a call, the outcome.
+labelled with the label of the node acted on and, for a call, the outcome;
+each state marked with the journeys that pass through it, a mark that
+plays its journey from that step.
 _Avoid_: state machine, storyboard
 
 **Flow**:

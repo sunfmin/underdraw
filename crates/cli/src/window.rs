@@ -425,7 +425,29 @@ struct Thumb {
     scene: Scene,
     width: f64,
     height: f64,
+    /// The journeys that pass through the state, one mark for each step of
+    /// one that is in it.
+    journeys: Vec<Pass>,
 }
+
+/// One step of a journey in a state of the overview, marked over its
+/// picture: picking the mark plays the journey from that step.
+struct Pass {
+    /// The tree's line of the journey.
+    line: usize,
+    /// The step, from 0.
+    step: usize,
+    label: String,
+    /// How wide the label is set, in points.
+    wide: f64,
+}
+
+/// The font a journey's mark in the overview is labelled in.
+const PASS_FONT: Font = Font { size: 11.0, weight: 600, line_height: 14.0 };
+/// How tall a journey's mark in the overview is, and how far it is set in
+/// from its picture's corner and from the mark above it.
+const PASS_TALL: f64 = 18.0;
+const PASS_INSET: f64 = 6.0;
 
 /// One transition: from one state to another, by their places in
 /// [`Overview::thumbs`], labelled with the label of the node acted on and,
@@ -551,7 +573,8 @@ impl Gallery {
     /// on a line of the panel, does what it does; while N is pressed, starts
     /// a note there; on a pin, picks its note; on the pictures, picks the
     /// node under it, or none, or acts on it while [`Gallery::acting`]; on
-    /// the overview, picks the arrow, or the state, under it; on the flow,
+    /// the overview, picks the arrow under it, or plays the journey whose
+    /// mark is, from that step, or picks the state; on the flow,
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
@@ -598,6 +621,12 @@ impl Gallery {
                     true
                 }
                 Picture::Overview(_) => {
+                    if let Some((line, step)) = self.pass_at(self.cursor) {
+                        self.history.clear();
+                        self.acted = None;
+                        self.play(line, step);
+                        return true;
+                    }
                     let Some(line) = self.state_at(self.cursor) else {
                         return self.unpick_arrow();
                     };
@@ -1235,7 +1264,20 @@ impl Gallery {
                 width: f64::from(drawing.page.width),
                 height: f64::from(drawing.page.height),
                 scene: drawing.scene,
+                journeys: Vec::new(),
             });
+        }
+        // Each step of a journey listed in the tree that is in one of these
+        // states, read as written: one that does not walk is marked too,
+        // and picking it shows its faults.
+        for (line, journey) in self.lines.iter().enumerate().filter(|(_, line)| line.journey) {
+            for (step, on) in journeys::steps(&journey.row.dir).unwrap_or_default().iter().enumerate() {
+                let thumb = thumbs.iter().position(|thumb| thumb.name == on.state);
+                let Some(thumb) = thumb.filter(|_| on.dir == dir) else { continue };
+                let label = format!("→ {} · step {}", journey.row.name, step + 1);
+                let wide = f64::from(self.typesetter.text(&label, PASS_FONT, None).width) + 10.0;
+                thumbs[thumb].journeys.push(Pass { line, step, label, wide });
+            }
         }
         let at = |name: &str| thumbs.iter().position(|thumb| thumb.name == name);
         let mut arrows = Vec::new();
@@ -1285,6 +1327,35 @@ impl Gallery {
                 (x, y, THUMB, (thumb.height * THUMB / thumb.width).min(THUMB_TALL))
             })
             .collect()
+    }
+
+    /// The marks of the journeys through each state of the overview, in
+    /// window points, stacked down from its picture's top left corner, each
+    /// no wider than the picture.
+    fn passes(&self) -> Vec<(Rect, &Pass)> {
+        let Picture::Overview(overview) = &self.picture else {
+            return Vec::new();
+        };
+        let mut list = Vec::new();
+        for (thumb, (x, y, w, _)) in overview.thumbs.iter().zip(self.cells()) {
+            for (index, pass) in thumb.journeys.iter().enumerate() {
+                let top = y + PASS_INSET + index as f64 * (PASS_TALL + PASS_INSET / 2.0);
+                let wide = pass.wide.min(w - 2.0 * PASS_INSET);
+                list.push((rect(x + PASS_INSET, top, wide, PASS_TALL), pass));
+            }
+        }
+        list
+    }
+
+    /// The journey, by its tree line, and its step whose mark in the
+    /// overview is under `at`, a point in the window.
+    fn pass_at(&self, at: (f64, f64)) -> Option<(usize, usize)> {
+        self.passes().into_iter().find_map(|(r, pass)| {
+            let (x, y) = (f64::from(r.x), f64::from(r.y));
+            let over =
+                (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1);
+            over.then_some((pass.line, pass.step))
+        })
     }
 
     /// The tree's line of the state whose picture in the overview is under
@@ -2574,6 +2645,32 @@ impl Gallery {
                     thumbs.push(((x, y, w, h), w / thumb.width, &thumb.scene));
                 }
                 pane.extend(arrows);
+                // Over the pictures, in the notes' ink, as the node a
+                // journey acts on is marked when it plays.
+                for (at, pass) in self.passes() {
+                    pane.push(Draw::Box {
+                        rect: at,
+                        radius: 9.0,
+                        fill: Some(Ink::Paper),
+                        stroke: Some(Ink::Note),
+                        dashed: false,
+                    });
+                    pane.push(Draw::Text {
+                        rect: rect(
+                            f64::from(at.x) + 5.0,
+                            f64::from(at.y) + 2.0,
+                            f64::from(at.width) - 10.0,
+                            14.0,
+                        ),
+                        text: pass.label.clone(),
+                        font: PASS_FONT,
+                        ink: Ink::Note,
+                        max_lines: Some(1),
+                        align: Align::Start,
+                        underline: false,
+                        strike: false,
+                    });
+                }
             }
             Picture::Faults(_) | Picture::Flow(_) => {}
         }
@@ -4666,6 +4763,56 @@ mod tests {
         over_row(&mut gallery, orders);
         gallery.press();
         assert!(gallery.playing.is_none(), "picking another line stops playing");
+    }
+
+    /// The line of the description in `dir`, a directory of the drafts.
+    fn description_in(gallery: &Gallery, dir: &str) -> usize {
+        let dir = Path::new(DRAFTS).join(dir);
+        gallery
+            .lines
+            .iter()
+            .position(|line| line.state.is_none() && !line.journey && line.row.dir == dir)
+            .unwrap()
+    }
+
+    /// The labels of the journeys marked on each state of the overview
+    /// shown, by the state's name.
+    fn passes_shown(gallery: &Gallery) -> Vec<(&str, Vec<&str>)> {
+        let Picture::Overview(overview) = &gallery.picture else { panic!("not an overview") };
+        let marked = overview.thumbs.iter().filter(|thumb| !thumb.journeys.is_empty());
+        marked
+            .map(|thumb| (thumb.name.as_str(), thumb.journeys.iter().map(|p| p.label.as_str()).collect()))
+            .collect()
+    }
+
+    #[test]
+    fn an_overview_marks_the_journeys_through_each_state_and_plays_one_from_its_mark() {
+        let mut gallery = gallery();
+        let (orders, order) =
+            (description_in(&gallery, "shop/orders"), description_in(&gallery, "shop/order"));
+        showing(&mut gallery, orders);
+        assert_eq!(passes_shown(&gallery), [("default", vec!["→ cancel-an-order · step 1"])]);
+        showing(&mut gallery, order);
+        assert_eq!(
+            passes_shown(&gallery),
+            [("open", vec!["→ cancel-an-order · step 2"]), ("cancelled", vec!["→ cancel-an-order · step 3"])]
+        );
+        let other = description_in(&gallery, "orders");
+        showing(&mut gallery, other);
+        assert!(passes_shown(&gallery).is_empty(), "no journey passes through the other orders");
+
+        showing(&mut gallery, order);
+        let passes = gallery.passes();
+        let (open, cell) = (
+            passes[0].0,
+            gallery.cells()[gallery.lines[order + 1..].iter().position(|l| l.row.name == "open").unwrap()],
+        );
+        assert!(open.x as f64 > cell.0 && (open.y as f64) > cell.1, "over the state's picture");
+        gallery.cursor = (f64::from(open.x) + 4.0, f64::from(open.y) + 4.0);
+        assert!(gallery.press(), "picking the mark plays the journey");
+        assert_eq!(gallery.picked, Some(journey_of(&gallery, "cancel-an-order")));
+        assert_eq!(played(&gallery), (2, vec![Some("cancel".to_string()), Some("cancel".to_string())]));
+        assert_eq!(captions(&gallery), ["open · 390", "open · 1120"]);
     }
 
     /// A copy of the shop draft in a directory of its own, named `name`.
