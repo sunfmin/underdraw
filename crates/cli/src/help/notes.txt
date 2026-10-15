@@ -14,8 +14,8 @@ READS
   notes.json beside each screen.json under <path>: <path> itself, when it
   is a description's directory, or every description under it at any
   depth, as the gallery finds them. A description with no notes.json has no
-  notes. Writes nothing, but with --answer, and to close a note whose
-  target is gone (GONE, below).
+  notes. Writes nothing, but with --answer, and to close a note that closes
+  itself (GONE, below).
 
 DOES
   A note is what the person says of a design, pinned where they said it,
@@ -41,7 +41,8 @@ DOES
   entry of `transitions` the "transition" names; or the navigate on the
   node "navigate.node". A note with "proposes" asks for where acting on
   its node should go: declare the transition, or the navigate, it names.
-  Then answer:
+  A note with "answers" is the person's answer to the assumption on its
+  node (ASSUMPTIONS, below). Then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
@@ -51,11 +52,29 @@ DOES
   nothing more; with another, it takes the last reply's place. A closed note
   is not answered.
 
+ASSUMPTIONS
+  The person answers an assumption with a note on its node, its
+  "answers" saying which and how: "assumed", the guess as the gallery
+  showed it; "guess", what made it: "author" (the node's own `assumed`),
+  {"undrawn": [<screen>, …]} (a navigate to a screen not drawn yet) or
+  {"kind": <kind>} (a kind underdraw does not know); and "answer":
+    right  ✓: the guess was right. Make it a decision: take the guess out
+           of the description (remove the node's `assumed`; draw the
+           screen; define the kind), then answer the note saying so. Once
+           nothing guesses it, the note closes itself (GONE, below).
+    wrong  ✗: the guess was wrong, and the note's thread says what is
+           right. Change the description to that, then answer the note;
+           the person closes it, or reopens it, as any note.
+
 GONE
   A note closes itself when what it is on is gone from its description:
   no tree writes its node's id any more (removed or renamed), nor any node
   a region covered; its fixture or phase is gone; or no transition, or
-  navigate, is written with the same keys. It is judged only once the
+  navigate, is written with the same keys; and a ✓ on an assumption
+  closes itself once the guess is taken out: the node writes no
+  `assumed`, the screens it named are drawn (under the <path> read) or
+  not navigated to, or its kind is defined or changed ("the assumption on
+  card-number, confirmed, is taken out"). It is judged only once the
   description checks clean, so one half edited closes nothing; then
   whatever reads the notes first, `underdraw notes`, `underdraw check` or
   the gallery, closes it, writing why in notes.json ("closed_because":
@@ -130,6 +149,9 @@ ANSWERS
                                  transition to add to "transitions" from
                                  "state", or {"on", "navigate": <screen>},
                                  a navigate to give the node's handler
+                  "answers":     for a note answering an assumption only:
+                                 {"assumed", "guess", "answer": "right"
+                                 or "wrong"} (ASSUMPTIONS, above)
                   "reference":   the same as one line, as ⌘C copies it,
                   "closed_because": for a note that closed itself, why:
                                  "<what> is gone (removed or renamed)",
