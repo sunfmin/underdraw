@@ -561,10 +561,12 @@ impl<'a> Walk<'a> {
                 "\"index\" names the index of the repeat \"each\" makes, and this node has no \"each\"",
             );
         }
-        let props = match object.get("component") {
-            Some(Value::String(kind)) if self.known.has(kind) => self.props(kind, object, scope, &known, at),
-            _ => BTreeSet::new(),
-        };
+        let mut props = BTreeSet::new();
+        if let Some(Value::String(kind)) = object.get("component")
+            && self.known.has(kind)
+        {
+            props = self.props(kind, object, scope, &known, at);
+        }
         for (k, v) in object {
             if INERT.contains(&k.as_str()) || props.contains(k) {
                 continue;
@@ -608,12 +610,12 @@ impl<'a> Walk<'a> {
         known: &Known,
         at: &str,
     ) -> BTreeSet<String> {
-        let typed = self.known.typed(kind).map(<[(String, Field)]>::to_vec);
+        let typed: Vec<(String, Field)> = self.known.typed(kind).unwrap_or_default().to_vec();
         let mut held = BTreeSet::new();
         for (prop, value) in object {
-            let param = typed.as_ref().map(|typed| typed.iter().find(|(param, _)| param == prop));
+            let param = typed.iter().find(|(param, _)| param == prop).map(|(_, field)| field.clone());
             // Text shows no Bool, unless a typed param says what it takes.
-            let text = TEXT.contains(&prop.as_str()) && !matches!(param, Some(Some(_)));
+            let text = TEXT.contains(&prop.as_str()) && param.is_none();
             if INERT.contains(&prop.as_str()) || text || prop == "disabled" {
                 continue;
             }
@@ -622,7 +624,7 @@ impl<'a> Walk<'a> {
             else {
                 continue;
             };
-            if let Some(Some((_, field))) = param
+            if let Some(field) = &param
                 && !field.is_plain_bool()
             {
                 self.findings.add(
@@ -632,26 +634,30 @@ impl<'a> Walk<'a> {
             }
             held.insert(prop.clone());
         }
-        for (param, field) in typed.iter().flatten() {
+        for (param, field) in &typed {
             if held.contains(param) {
                 continue;
             }
-            let prop = format!("{at}.{param}");
-            match object.get(param) {
-                None if field.default.is_none() && !field.nullable => self.findings.add(
-                    at,
-                    &format!("{kind} reads {param} ({}), which the node does not give", field.describe()),
-                ),
-                None => {}
-                Some(Value::String(text)) if field.is_plain_bool() && !text.starts_with('{') => {
+            let Some(value) = object.get(param) else {
+                if field.default.is_none() && !field.nullable {
                     self.findings.add(
-                        &prop,
-                        &format!(
-                            "{text:?} is text, and {param} is a bool: give true, false, a Bool path (\"{{item.on}}\") or a condition's name (\"{{hasDates}}\"); name anything more in conditions"
-                        ),
+                        at,
+                        &format!("{kind} reads {param} ({}), which the node does not give", field.describe()),
                     );
                 }
-                Some(value) => self.argument(value, field, scope, known, &prop),
+                continue;
+            };
+            let prop = format!("{at}.{param}");
+            let literal = value.as_str().filter(|text| field.is_plain_bool() && !text.starts_with('{'));
+            if let Some(text) = literal {
+                self.findings.add(
+                    &prop,
+                    &format!(
+                        "{text:?} is text, and {param} is a bool: give true, false, a Bool path (\"{{item.on}}\") or a condition's name (\"{{hasDates}}\"); name anything more in conditions"
+                    ),
+                );
+            } else {
+                self.argument(value, field, scope, known, &prop);
             }
             held.insert(param.clone());
         }
