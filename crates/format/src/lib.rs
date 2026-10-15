@@ -22,6 +22,7 @@ mod operations;
 mod overlay;
 mod schema;
 mod template;
+mod transitions;
 
 // Never called: each is there for Flux to refuse.
 #[cfg(flux)]
@@ -40,3 +41,4 @@ pub use model::{Model, model};
 pub use operations::{BulkOf, Does, Fill, Operation, Operations};
 pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};
+pub use transitions::Transition;
