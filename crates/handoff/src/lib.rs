@@ -168,17 +168,17 @@ pub fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handof
     let mut walk = nodes::Walk {
         platform: &platform,
         mapping,
-        components: &components,
+        instances: underdraw_format::Instances::new(&components),
         specs: Vec::new(),
         hidden: Vec::new(),
         findings: Vec::new(),
     };
     if let Some(root) = screen.get("root") {
-        walk.node(root, None, "root", None);
+        walk.node(root, None, "root");
     }
     for phase in &model.checked.phases {
         if let Some(tree) = screen.pointer(&format!("/phases/{phase}")) {
-            walk.node(tree, None, "phase", None);
+            walk.node(tree, None, "phase");
         }
     }
     findings.append(&mut walk.findings);
