@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
-use underdraw_format::{Lang, ScreenParams};
+use underdraw_format::{Lang, Screen, ScreenParams};
 
 use crate::gallery::{self, within};
 use crate::{SCREEN, notes, read};
@@ -42,7 +42,7 @@ pub fn params(root: &Path) -> ScreenParams {
     for screen in screens(&dirs).into_iter().flatten() {
         if let Some(name) = declares(&screen)
             && !params.contains_key(&name)
-            && let Some(declared) = underdraw_format::params(&screen)
+            && let Some(declared) = screen.params
         {
             params.insert(name, declared);
         }
@@ -150,7 +150,7 @@ pub fn links(root: &Path) -> Vec<Link> {
 
 /// The navigates of the descriptions in `dirs`, each read as `screens`
 /// holds it, resolved among them.
-fn between(dirs: &[PathBuf], screens: &[Option<Value>]) -> Vec<Link> {
+fn between(dirs: &[PathBuf], screens: &[Option<Screen>]) -> Vec<Link> {
     let mut declared: Vec<(String, &PathBuf)> = Vec::new();
     for (dir, screen) in dirs.iter().zip(screens) {
         if let Some(name) = screen.as_ref().and_then(declares) {
@@ -161,7 +161,7 @@ fn between(dirs: &[PathBuf], screens: &[Option<Value>]) -> Vec<Link> {
     for (dir, screen) in dirs.iter().zip(screens) {
         let Some(screen) = screen else { continue };
         let from = declares(screen).unwrap_or_default();
-        for navigate in underdraw_format::navigates(screen) {
+        for navigate in screen.navigates() {
             let target =
                 declared.iter().find(|(name, _)| *name == navigate.to).map(|(_, dir)| (*dir).clone());
             links.push(Link {
@@ -186,15 +186,15 @@ fn description_dirs(root: &Path) -> Vec<PathBuf> {
 }
 
 /// Each description in `dirs` read, or `None` where it cannot be.
-fn screens(dirs: &[PathBuf]) -> Vec<Option<Value>> {
+fn screens(dirs: &[PathBuf]) -> Vec<Option<Screen>> {
     dirs.iter().map(|dir| read(dir).ok().map(|(screen, _)| screen)).collect()
 }
 
 /// The screen a description declares, by its "screen": none for one that
 /// shows a shared component, which no navigate reaches.
-fn declares(screen: &Value) -> Option<String> {
-    if underdraw_format::shows(screen).is_some() {
+fn declares(screen: &Screen) -> Option<String> {
+    if underdraw_format::shows(screen.description()).is_some() {
         return None;
     }
-    screen.get("screen").and_then(Value::as_str).map(str::to_string)
+    screen.description().get("screen").and_then(Value::as_str).map(str::to_string)
 }

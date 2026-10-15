@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde_json::{Map, Value, json};
+use underdraw_format::{Screen, Shared};
 
 /// The file at a project's root holding the domain its screens share
 /// (ADR 0020); it marks where the project is.
@@ -52,21 +53,12 @@ impl Project {
         Ok(Project { root, tokens_file, tokens, domain, components })
     }
 
-    /// `screen` as every command hands it to the pure crates: with the
-    /// domain and the components it shares, when the project has them.
-    pub fn describe(&self, mut screen: Value) -> Value {
-        if let Some(fields) = screen.as_object_mut() {
-            if let Some(domain) = &self.domain {
-                fields.insert(underdraw_format::DOMAIN.to_string(), domain.clone());
-            }
-            if !self.components.is_empty() {
-                fields.insert(
-                    underdraw_format::SHARED_COMPONENTS.to_string(),
-                    Value::Object(self.components.clone()),
-                );
-            }
-        }
-        screen
+    /// The description `description` read as a screen of this project, as
+    /// every command hands it to the pure crates: with the domain and the
+    /// components it shares, when the project has them.
+    pub fn screen(&self, description: &Value) -> Screen {
+        let components = (!self.components.is_empty()).then_some(&self.components);
+        Screen::read(description, Shared { domain: self.domain.as_ref(), components })
     }
 }
 

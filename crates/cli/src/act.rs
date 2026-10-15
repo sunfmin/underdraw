@@ -5,6 +5,7 @@
 //! is declared, the act says so rather than doing nothing.
 
 use serde_json::{Map, Value};
+use underdraw_format::Transition;
 
 /// The event a click raises on a node: `tap`, or the node's first event
 /// when it has no `tap`.
@@ -35,10 +36,11 @@ pub fn event(events: &Map<String, Value>) -> &str {
     events.keys().next().map_or(CLICK, String::as_str)
 }
 
-/// What acting on a node does in state `state` of `screen`: the node by its
-/// id as written (`written`), its handlers with their cases decided
-/// (`events`), and the event a click raises on it (see [`event`]).
-pub fn act(screen: &Value, state: &str, written: &str, events: &Map<String, Value>) -> Act {
+/// What acting on a node does in state `state` of a screen whose
+/// transitions are `transitions`: the node by its id as written
+/// (`written`), its handlers with their cases decided (`events`), and the
+/// event a click raises on it (see [`event`]).
+pub fn act(transitions: &[Transition], state: &str, written: &str, events: &Map<String, Value>) -> Act {
     let event = event(events);
     if let Some(handler) = events.get(event) {
         if let Some(Value::String(to)) = handler.get("navigate") {
@@ -48,10 +50,10 @@ pub fn act(screen: &Value, state: &str, written: &str, events: &Map<String, Valu
             return Act::Back;
         }
     }
-    let declared: Vec<(Option<String>, String)> = underdraw_format::transitions(screen)
-        .into_iter()
+    let declared: Vec<(Option<String>, String)> = transitions
+        .iter()
         .filter(|t| t.from == state && t.node == written && t.event == event)
-        .map(|t| (t.outcome, t.to))
+        .map(|t| (t.outcome.clone(), t.to.clone()))
         .collect();
     match declared.as_slice() {
         [] => Act::Nothing,
@@ -72,6 +74,10 @@ mod tests {
         on.as_object().cloned().unwrap()
     }
 
+    fn transitions() -> Vec<Transition> {
+        underdraw_format::Screen::read(&screen(), Default::default()).transitions
+    }
+
     fn screen() -> Value {
         json!({ "transitions": [
             { "from": "list", "on": "row-{index}-cancel.tap", "to": "dialog" },
@@ -84,14 +90,14 @@ mod tests {
     #[test]
     fn a_declared_transition_goes_to_its_state() {
         let on = events(json!({ "tap": { "open": "dialog" } }));
-        assert_eq!(act(&screen(), "list", "row-{index}-cancel", &on), Act::Go { to: "dialog".into() });
+        assert_eq!(act(&transitions(), "list", "row-{index}-cancel", &on), Act::Go { to: "dialog".into() });
     }
 
     #[test]
     fn several_outcomes_are_chosen_from() {
         let on = events(json!({ "tap": { "call": "cancelOrder" } }));
         assert_eq!(
-            act(&screen(), "dialog", "confirm", &on),
+            act(&transitions(), "dialog", "confirm", &on),
             Act::Choose(vec![("ok".into(), "list".into()), ("shipped".into(), "dialog".into())])
         );
     }
@@ -99,23 +105,23 @@ mod tests {
     #[test]
     fn only_from_the_state_shown() {
         let on = events(json!({ "tap": { "call": "cancelOrder" } }));
-        assert_eq!(act(&screen(), "list", "confirm", &on), Act::Nothing);
-        assert_eq!(act(&screen(), "dialog", "other", &on), Act::Nothing, "nor another node");
+        assert_eq!(act(&transitions(), "list", "confirm", &on), Act::Nothing);
+        assert_eq!(act(&transitions(), "dialog", "other", &on), Act::Nothing, "nor another node");
     }
 
     #[test]
     fn navigate_and_back_leave_the_screen() {
         let on = events(json!({ "tap": { "navigate": "OrderDetail", "with": { "id": "1" } } }));
-        assert_eq!(act(&screen(), "list", "row", &on), Act::Navigate("OrderDetail".into()));
+        assert_eq!(act(&transitions(), "list", "row", &on), Act::Navigate("OrderDetail".into()));
         let on = events(json!({ "tap": { "back": true } }));
-        assert_eq!(act(&screen(), "list", "nav-back", &on), Act::Back);
+        assert_eq!(act(&transitions(), "list", "nav-back", &on), Act::Back);
     }
 
     #[test]
     fn a_node_without_tap_raises_its_first_event() {
         let on = events(json!({ "change": { "set": "text" } }));
         assert_eq!(event(&on), "change");
-        assert_eq!(act(&screen(), "list", "field", &on), Act::Go { to: "typing".into() });
+        assert_eq!(act(&transitions(), "list", "field", &on), Act::Go { to: "typing".into() });
         assert_eq!(event(&Map::new()), "tap", "a node with no handler at all");
     }
 }

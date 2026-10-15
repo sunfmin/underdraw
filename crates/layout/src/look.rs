@@ -743,7 +743,7 @@ mod tests {
         parsed.reads(&[], &mut read);
         let tokens_json = json!({});
         let tokens = Tokens(&tokens_json);
-        let components = Components::read(&json!({}));
+        let components = underdraw_format::Screen::read(&json!({}), Default::default()).components;
         let catalog = Catalog { tokens: &tokens, components: &components, lang: Lang::default() };
         let scope = Scope { props, vars: Map::new(), node: None };
         LOOKED_UP.with(|all| all.borrow_mut().clear());

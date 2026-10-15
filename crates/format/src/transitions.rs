@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use crate::check::Findings;
 use crate::instance::Node;
 use crate::operations::Operations;
+use crate::subtrees::Subtrees;
 
 /// One transition: in state `from`, the person raises `event` on the node
 /// `node`, and the screen is then in state `to`. `outcome` names how the
@@ -34,6 +35,8 @@ const OK: &str = "ok";
 /// Every transition `screen` declares, in the order written; an entry that
 /// is not one is left out, for `check` to name.
 pub fn read(screen: &Value) -> Vec<Transition> {
+    #[cfg(test)]
+    crate::screen::tests::count("transitions");
     let mut read = Vec::new();
     for entry in entries(screen) {
         let text = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_string);
@@ -66,7 +69,13 @@ fn entries(screen: &Value) -> Vec<&Value> {
 /// writes, an event the node has no handler for or one that leaves the
 /// screen, and an outcome missing where the event calls an operation, given
 /// where it calls none, or not one the operation answers with.
-pub fn check(screen: &Value, states: &[String], operations: &Operations, findings: &mut Findings) {
+pub(crate) fn check(
+    screen: &Value,
+    subtrees: &Subtrees,
+    states: &[String],
+    operations: &Operations,
+    findings: &mut Findings,
+) {
     match screen.get("transitions") {
         None | Some(Value::Array(_)) => {}
         Some(_) => {
@@ -76,7 +85,7 @@ pub fn check(screen: &Value, states: &[String], operations: &Operations, finding
             );
         }
     }
-    let nodes = written(screen);
+    let nodes = written(screen, subtrees);
     for (index, entry) in entries(screen).into_iter().enumerate() {
         let at = format!("transitions.{index}");
         let Some(entry) = entry.as_object() else {
@@ -205,23 +214,15 @@ impl Effect {
     }
 }
 
-/// Whether `screen` writes a node with the id `id`, as written (a template
-/// inside an item), in its trees, phases or components.
-pub fn writes(screen: &Value, id: &str) -> bool {
-    written(screen).contains_key(id)
-}
-
-/// The fields of the node `screen` writes with the id `id`, as written;
-/// none when it writes none.
-pub fn written_node<'a>(screen: &'a Value, id: &str) -> Option<&'a Map<String, Value>> {
-    written(screen).get(id).copied()
-}
-
-/// Every node the description writes, in its trees and phases and, through
-/// each instance, its components, by its id as written and joined.
-fn written(screen: &Value) -> BTreeMap<String, &Map<String, Value>> {
+/// Every node the description `screen`, whose components with nodes are
+/// `subtrees`, writes, in its trees and phases and, through each instance,
+/// its components, by its id as written and joined.
+pub(crate) fn written<'a>(
+    screen: &'a Value,
+    subtrees: &'a Subtrees,
+) -> BTreeMap<String, &'a Map<String, Value>> {
     let mut nodes = BTreeMap::new();
-    for (id, node) in crate::subtrees::written(screen) {
+    for (id, node) in crate::subtrees::written(screen, subtrees) {
         nodes.entry(id).or_insert(node);
     }
     nodes

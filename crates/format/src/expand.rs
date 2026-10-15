@@ -21,21 +21,21 @@ use crate::subtrees::{self, Subtree, Subtrees};
 use crate::template;
 
 /// What a node is, where a walk meets it.
-pub enum Met<'c, 'a> {
+pub enum Met<'c> {
     /// A node of its own.
     Node,
     /// An instance of `component`: the walk enters it, walks its root (its
     /// `nodes`) and leaves it.
-    Instance(&'c Subtree<'a>),
+    Instance(&'c Subtree),
     /// A `{"slot": key}` node: inside an instance, what the instance gives
     /// under `key`; outside any, a fault.
     Slot(String),
 }
 
 /// One instance whose nodes are being walked.
-pub struct Frame<'a, T> {
+pub struct Frame<'c, T> {
     /// Its component's name.
-    pub name: &'a str,
+    pub name: &'c str,
     /// The instance's id, and its id as written: what each node inside is
     /// named by, joined to its own.
     pub id: String,
@@ -57,20 +57,20 @@ impl<T> Frame<'_, T> {
 }
 
 /// The instances a walk is inside, the outermost first.
-pub struct Instances<'c, 'a, T> {
-    components: &'c Subtrees<'a>,
-    frames: Vec<Frame<'a, T>>,
+pub struct Instances<'c, T> {
+    components: &'c Subtrees,
+    frames: Vec<Frame<'c, T>>,
 }
 
-impl<'c, 'a, T> Instances<'c, 'a, T> {
+impl<'c, T> Instances<'c, T> {
     /// Outside any instance, with the screen's `components`.
-    pub fn new(components: &'c Subtrees<'a>) -> Self {
+    pub fn new(components: &'c Subtrees) -> Self {
         Instances { components, frames: Vec::new() }
     }
 
     /// What `node` is: a `{"slot": …}` node, an instance of one of the
     /// screen's components whose body is nodes, or a node of its own.
-    pub fn met(&self, node: &Map<String, Value>) -> Met<'c, 'a> {
+    pub fn met(&self, node: &Map<String, Value>) -> Met<'c> {
         if subtrees::is_slot(node) {
             return Met::Slot(node.get("slot").and_then(Value::as_str).unwrap_or_default().to_string());
         }
@@ -93,10 +93,10 @@ impl<'c, 'a, T> Instances<'c, 'a, T> {
 
     /// The fault of walking into `component` here, when it uses itself: it
     /// is one of the instances already walked into.
-    pub fn uses_itself(&self, component: &Subtree<'a>) -> Option<String> {
+    pub fn uses_itself(&self, component: &'c Subtree) -> Option<String> {
         let around = self.frames.iter().position(|frame| frame.name == component.name)?;
         let mut through: Vec<&str> = self.frames.iter().skip(around).map(|frame| frame.name).collect();
-        through.push(component.name);
+        through.push(&component.name);
         Some(format!("component {} uses itself: {}", component.name, through.join(" → ")))
     }
 
@@ -105,7 +105,7 @@ impl<'c, 'a, T> Instances<'c, 'a, T> {
     /// itself. The walk leaves it once its root is walked.
     pub fn enter(
         &mut self,
-        component: &Subtree<'a>,
+        component: &'c Subtree,
         instance: &Map<String, Value>,
         id: String,
         written_id: String,
@@ -122,7 +122,7 @@ impl<'c, 'a, T> Instances<'c, 'a, T> {
             }
         }
         self.frames.push(Frame {
-            name: component.name,
+            name: &component.name,
             id,
             written_id,
             paths,
@@ -135,17 +135,17 @@ impl<'c, 'a, T> Instances<'c, 'a, T> {
     /// Leaves the innermost instance: once its root is walked, or, for a
     /// `{"slot": …}` node inside it, while what it gives is walked where it
     /// is, after which [`resume`](Self::resume) puts it back.
-    pub fn leave(&mut self) -> Option<Frame<'a, T>> {
+    pub fn leave(&mut self) -> Option<Frame<'c, T>> {
         self.frames.pop()
     }
 
     /// Goes back into `frame`, taken off by [`leave`](Self::leave).
-    pub fn resume(&mut self, frame: Frame<'a, T>) {
+    pub fn resume(&mut self, frame: Frame<'c, T>) {
         self.frames.push(frame);
     }
 
     /// The instance the walk is in, if any.
-    pub fn innermost(&self) -> Option<&Frame<'a, T>> {
+    pub fn innermost(&self) -> Option<&Frame<'c, T>> {
         self.frames.last()
     }
 

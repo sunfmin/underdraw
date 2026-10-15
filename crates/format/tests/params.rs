@@ -2,7 +2,7 @@
 //! navigate to it, among the screens under a root, gives each of its type.
 
 use serde_json::{Value, json};
-use underdraw_format::{Checked, ScreenParams, check, check_among, params};
+use underdraw_format::{Checked, Field, Screen, ScreenParams, Shared};
 
 /// OrderDetail, opened with the order's id and whether to show its history.
 fn detail() -> Value {
@@ -119,4 +119,21 @@ fn a_navigate_to_a_screen_not_drawn_or_alone_is_held_to_nothing() {
     assert!(check(&bare).ok, "{:#?}", check(&bare).findings);
     let among = check_among(&bare, &others());
     assert!(problems(&among).iter().all(|(at, _)| !at.starts_with("later")), "{:#?}", among.findings);
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
+}
+
+fn check_among(description: &Value, others: &ScreenParams) -> Checked {
+    underdraw_format::check_among(&read(description), others)
+}
+
+fn params(description: &Value) -> Option<Vec<(String, Field)>> {
+    read(description).params
 }
