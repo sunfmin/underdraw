@@ -146,8 +146,9 @@ CONDITIONS
   named there at all, and one on a type is never named whole elsewhere.
   It is no field: fixtures never give it, the type has no field of its
   name, and it is used only through a value of its type (check names one
-  used on a value of another type). It must be true of one value of the
-  type and false of another, in any fixtures, wherever they hold one.
+  used on a value of another type). A screen that reads it must hold, in
+  its fixtures, one value of the type it is true of and one it is false
+  of; a screen that never reads it is not held to it.
   Declare one in domain.json (DOMAIN.JSON) to share it: the domain has no
   screen's data, so a condition every screen asks of an Order is one on
   Order. A condition over a screen's data stays that screen's.
@@ -528,7 +529,10 @@ COMPONENTS
   - It holds no view state: check refuses a param marked "view". A flag
     such as a menu's open state is the screen's, in data marked "view":
     true, passed in whole ("{rowMenuOpen}"); a "set" or "toggle" on the
-    param acts on what was passed.
+    param acts on what was passed, and check refuses it where a screen
+    passes domain data. Shown on its own, a shared component holds its
+    params itself, so its set and toggle on them are checked as view
+    state's.
   - It varies only through its params and slots: the instance holds only
     id, component, with, if, only, assumed and the slots it fills; any
     other key reaches inside, and is refused. { "slot": "children" } in
@@ -764,7 +768,12 @@ TOKENS.JSON
   naming one. Groups and names are the project's; a platform file names
   them in code ("tokenNaming"). The wireframe is gray: color.textSecondary
   draws muted, color.primary strong, color.border as a line, other colours
-  as text.
+  as text. Colour itself is out of a design's reach, so the discussion stays
+  on structure: no token or ink draws a hue. Where a meaning rides on a
+  colour (blue for a journey, orange for a guess), let the wireframe show
+  it in structure as well (an icon, a word, a strong fill or a dashed
+  line), and say the colour in "$comment" on the node or in the
+  component's "doc"; a platform file maps the token to the real colour.
 
 LOOKS
   What a look component (COMPONENTS) is drawn as. A component is never a
@@ -832,6 +841,7 @@ LOOKS
   Inks: text, muted, line, fill, strong, paper, or a colour token, drawn in
   the ink it reads as: color.primary strong, color.textSecondary muted,
   color.border line, a colour near white in tokens.json paper, else text.
+  None is a hue: say a colour in "$comment" (TOKENS.JSON).
   Look placeholders take filters, left to right: or:v (when missing),
   count, first, last, head, tail (first word / the rest), slashes
   (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.
