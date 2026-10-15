@@ -8,7 +8,8 @@
 //! the agent, and once the agent did it is answered; that is read from
 //! the messages, never stored. What the agent wants to ask unprompted is
 //! an assumption. An assumption is answered with a note on its node: ✓
-//! says the guess was right; ✗ says it was wrong, with what is right.
+//! says the guess was right; ✗ says it was wrong, with what is right. A
+//! note whose node or arrow is gone joins its state's note ([`settle`]).
 //! Each change is read from the file as it now stands and written back
 //! whole, so the window and the agent never undo each other's.
 
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::SCREEN;
+use crate::draw::Shown;
 use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json; a
@@ -42,6 +44,10 @@ pub enum Stands {
 pub enum By {
     Person,
     Agent,
+    /// underdraw itself: the line saying where the messages after it were,
+    /// in a note on what is gone, before they joined this note. Neither
+    /// person nor agent; where the note stands is read past it.
+    Underdraw,
 }
 
 /// One message of a note: what the person wrote, or what the agent answered,
@@ -178,7 +184,7 @@ impl Note {
     /// Where the conversation stands: waiting on the agent while the
     /// person spoke last, answered once the agent did.
     pub fn stands(&self) -> Stands {
-        match self.messages.last() {
+        match self.messages.iter().rev().find(|said| said.by != By::Underdraw) {
             Some(Said { by: By::Agent, .. }) => Stands::Answered,
             _ => Stands::Waiting,
         }
@@ -457,7 +463,8 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
 
 /// The notes of every description under `root` that wait on the agent, as
 /// `notes` answers each, and how many there are waiting and answered: read
-/// from the files as they now stand, descriptions added since included.
+/// from the files as they now stand, descriptions added since included,
+/// each note on what is gone joined its state's first ([`settle`]).
 fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
     let dirs: Vec<PathBuf> = crate::gallery::descriptions(root)
         .into_iter()
@@ -465,6 +472,7 @@ fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
         .collect();
     let (mut waiting, mut counts) = (Vec::new(), Counts::default());
     for dir in &dirs {
+        settle(dir)?;
         let notes = read(dir)?;
         counts = counts.add(Counts::of(&notes));
         waiting.extend(notes.iter().filter(|note| note.waits()).map(|note| note.answer(root, dir)));
@@ -473,20 +481,175 @@ fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
 }
 
 /// What `check` says of the notes of the description in `dir`: how many
-/// wait on the agent and how many are answered, or why they cannot be
-/// read. Never a fault of its own: a notes.json in the old form is one
-/// `check` reports among the description's findings.
+/// wait on the agent and how many are answered, each on what is gone
+/// joined its state's first ([`settle`]), or why they cannot be read.
+/// Never a fault of its own: a notes.json in the old form is one `check`
+/// reports among the description's findings.
 pub fn counted(dir: &Path) -> Value {
-    match read(dir) {
+    match settle(dir).and_then(|_| read(dir)) {
         Ok(notes) => json!(Counts::of(&notes)),
         Err(e) => json!({ "waiting": 0, "answered": 0, "error": format!("{e:#}") }),
     }
 }
 
+/// Where a note on `on` was, now that it is gone from `screen`, the
+/// description as it is now written: the line its messages follow in the
+/// note they join (`on `price`, now gone`). None while it is there. A node
+/// is gone once no tree writes its id, or its state is; a region once its
+/// state is, or every node it covered; a whole state once the description
+/// has no state by its name; a transition or a navigate once none is
+/// written with the same keys.
+fn gone(screen: &Value, on: &On) -> Option<String> {
+    let now_gone = |was: String| Some(format!("on {was}, now gone"));
+    let state_gone = on.state().filter(|state| {
+        let key = match state {
+            Shown::Fixture(_) => "fixtures",
+            Shown::Phase(_) => "phases",
+        };
+        !screen.get(key).and_then(Value::as_object).is_some_and(|all| all.contains_key(state.name()))
+    });
+    let in_state = |was: String| match state_gone {
+        Some(state) => now_gone(format!("{was} in {}", said_state(state))),
+        None => now_gone(was),
+    };
+    let writes = |id: &str| underdraw_format::writes(screen, id);
+    match on {
+        On::Node { node, .. } if state_gone.is_some() || !writes(&node.origin.written) => {
+            in_state(format!("`{}`", node.origin.written))
+        }
+        On::Region { region, .. }
+            if state_gone.is_some()
+                || (!region.nodes.is_empty() && region.nodes.iter().all(|node| !writes(&node.written))) =>
+        {
+            let covered: Vec<String> =
+                region.nodes.iter().map(|node| format!("`{}`", node.written)).collect();
+            let covering = if covered.is_empty() { "no node".to_string() } else { covered.join(", ") };
+            in_state(format!("a region covering {covering}"))
+        }
+        On::State { state } if state_gone.is_some() => {
+            now_gone(format!("the whole of {}", said_state(state)))
+        }
+        On::Transition { transition } => {
+            let declared = underdraw_format::transitions(screen).into_iter().any(|declared| {
+                declared.from == transition.from
+                    && format!("{}.{}", declared.node, declared.event) == transition.on
+                    && declared.outcome == transition.outcome
+                    && declared.to == transition.to
+            });
+            if declared { None } else { now_gone(format!("transition {}", transition.said())) }
+        }
+        On::Navigate { navigate } => {
+            let from = screen.get("screen").and_then(Value::as_str) == Some(navigate.from.as_str());
+            let written = underdraw_format::navigates(screen)
+                .into_iter()
+                .any(|written| written.node == navigate.node && written.to == navigate.to);
+            if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
+        }
+        On::Node { .. } | On::Region { .. } | On::State { .. } => None,
+    }
+}
+
+/// A state as the line of a gone note names it: fixture `empty`.
+fn said_state(state: &Shown) -> String {
+    match state {
+        Shown::Fixture(name) => format!("fixture `{name}`"),
+        Shown::Phase(name) => format!("phase `{name}`"),
+    }
+}
+
+/// The state whose note a gone note on `on` joins, among `states`, the
+/// description's in order, fixtures first: the state it was in, or the
+/// transition was from, while the description has it; else the first.
+fn joins(on: &On, states: &[Shown]) -> Option<Shown> {
+    let was = match on {
+        On::Transition { transition } => states.iter().find(|state| state.name() == transition.from),
+        on => on.state().and_then(|was| states.iter().find(|state| *state == was)),
+    };
+    was.or(states.first()).cloned()
+}
+
+/// `notes` with each note on what is gone from `screen` joined to its
+/// state's note, among `states` ([`joins`]): its messages, after a line
+/// saying where they were, in the order the notes were, go in before what
+/// the person said in that note since the agent last spoke, so what waited
+/// on the agent still waits. A state with no note gets the first gone
+/// note itself, pinned to the whole state and keeping its id. Whether any
+/// joined.
+fn join(notes: &mut Vec<Note>, screen: &Value, states: &[Shown]) -> bool {
+    let mut moved: Vec<Vec<Said>> = vec![Vec::new(); notes.len()];
+    let mut gone_from = vec![false; notes.len()];
+    let mut joined = false;
+    for i in 0..notes.len() {
+        let Some((was, state)) = gone(screen, &notes[i].on).zip(joins(&notes[i].on, states)) else {
+            continue;
+        };
+        joined = true;
+        let whole = On::State { state };
+        let line = Said { by: By::Underdraw, says: was };
+        let home = (0..notes.len()).find(|&home| home != i && !gone_from[home] && notes[home].on == whole);
+        match home {
+            Some(home) => {
+                gone_from[i] = true;
+                moved[home].push(line);
+                moved[home].append(&mut notes[i].messages);
+            }
+            None => {
+                let note = &mut notes[i];
+                note.on = whole;
+                note.messages.insert(0, line);
+                note.proposes = None;
+                note.answers = None;
+            }
+        }
+    }
+    let mut was_gone = gone_from.into_iter();
+    let mut moved = moved.into_iter();
+    notes.retain_mut(|note| {
+        let block = moved.next().unwrap_or_default();
+        let messages = &mut note.messages;
+        let since = messages.iter().rposition(|said| said.by != By::Person).map_or(0, |at| at + 1);
+        messages.splice(since..since, block);
+        !was_gone.next().unwrap_or(false)
+    });
+    joined
+}
+
+/// The notes of the description in `dir` on what is gone from it — a node
+/// removed or renamed, a state, an arrow — each joined to its state's note
+/// ([`join`]), so nothing said is lost: whoever reads the notes first, the
+/// window or a command, joins them, and reading again joins nothing more.
+/// Judged only once the description checks clean, so that one half edited
+/// moves nothing.
+pub fn settle(dir: &Path) -> anyhow::Result<()> {
+    let notes = read(dir)?;
+    let Ok((screen, _)) = crate::read(dir) else {
+        return Ok(());
+    };
+    if !notes.iter().any(|note| gone(&screen, &note.on).is_some()) {
+        return Ok(());
+    }
+    let Ok(checked) = crate::checked(&screen, dir) else {
+        return Ok(());
+    };
+    if !checked.ok {
+        return Ok(());
+    }
+    let states: Vec<Shown> = checked
+        .fixtures
+        .into_iter()
+        .map(Shown::Fixture)
+        .chain(checked.phases.into_iter().map(Shown::Phase))
+        .collect();
+    change(dir, |notes| {
+        join(notes, &screen, &states);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::{Origin, Shown};
+    use crate::draw::Origin;
     use crate::reference::{Frame, Navigate, Pointed, Region, Transition};
 
     /// A directory of its own named `name`, holding an empty description.
@@ -752,5 +915,112 @@ mod tests {
         std::fs::write(dir.join(NOTES), "{").unwrap();
         assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn a_note_on_what_is_gone_joins_its_states_note_saying_where_it_was() {
+        let screen = json!({
+            "screen": "Orders",
+            "fixtures": { "default": {}, "empty": {} },
+            "root": { "id": "list", "component": "Column", "children": [
+                { "id": "price", "component": "Text" },
+                { "id": "go", "component": "Button", "on": { "tap": { "navigate": "Next" } } },
+            ] },
+            "transitions": [{ "from": "default", "on": "go.tap", "to": "empty" }],
+        });
+        let states = [Shown::Fixture("default".into()), Shown::Fixture("empty".into())];
+        let node = |state: &str, id: &str| On::Node {
+            state: Shown::Fixture(state.into()),
+            node: Pointed {
+                origin: Origin { written: id.into(), at: "/root".into(), instance: vec![] },
+                label: None,
+                width: 390,
+            },
+        };
+        let whole = |state: Shown| On::State { state };
+        let transition = |to: &str| On::Transition {
+            transition: Transition {
+                from: "default".into(),
+                on: "go.tap".into(),
+                outcome: None,
+                to: to.into(),
+            },
+        };
+        let navigate = |to: &str| On::Navigate {
+            navigate: Navigate { from: "Orders".into(), node: "go".into(), to: to.into() },
+        };
+        let person = |says: &str| Said { by: By::Person, says: says.into() };
+        let agent = |says: &str| Said { by: By::Agent, says: says.into() };
+        let line = |says: &str| Said { by: By::Underdraw, says: says.into() };
+        let note = |id: &str, on: On, messages: Vec<Said>| Note {
+            id: id.into(),
+            on,
+            messages,
+            proposes: None,
+            answers: None,
+        };
+        let kept = vec![
+            note("N1", node("default", "price"), vec![person("there")]),
+            note("N2", transition("empty"), vec![person("there")]),
+            note("N3", navigate("Next"), vec![person("there")]),
+        ];
+        let mut notes = kept.clone();
+        assert!(!join(&mut notes, &screen, &states), "nothing is gone");
+        assert_eq!(notes, kept);
+        let mut alone = vec![note("N1", node("empty", "total"), vec![person("cut")])];
+        assert!(join(&mut alone, &screen, &states), "one gone alone is pinned to its state");
+        assert_eq!(alone[0].on, whole(Shown::Fixture("empty".into())));
+
+        let proposal = Proposal { on: "price.tap".into(), goes: Goes::To("empty".into()) };
+        let mut notes = vec![
+            note("N1", whole(Shown::Fixture("default".into())), vec![person("too dense")]),
+            Note {
+                proposes: Some(proposal),
+                ..note("N2", node("empty", "total"), vec![person("cut"), agent("wrapped it")])
+            },
+            note("N3", node("default", "total"), vec![person("bold")]),
+            note("N4", node("removed", "price"), vec![person("red")]),
+            note("N5", whole(Shown::Phase("loading".into())), vec![person("slow")]),
+            note("N6", transition("removed"), vec![person("why?")]),
+            note("N7", navigate("Elsewhere"), vec![person("where?"), agent("there")]),
+            kept[0].clone(),
+        ];
+        assert!(join(&mut notes, &screen, &states));
+        assert_eq!(
+            notes[1],
+            note(
+                "N2",
+                whole(Shown::Fixture("empty".into())),
+                vec![line("on `total`, now gone"), person("cut"), agent("wrapped it")]
+            ),
+            "a state with no note gets the gone one, keeping its id, proposing nothing"
+        );
+        assert_eq!(notes[1].stands(), Stands::Answered, "read past underdraw's line");
+        assert_eq!(notes.len(), 3, "the rest joined default's: {notes:#?}");
+        assert_eq!(notes[2], kept[0], "what is there stays");
+        assert_eq!(
+            notes[0].messages,
+            [
+                line("on `total`, now gone"),
+                person("bold"),
+                line("on `price` in fixture `removed`, now gone"),
+                person("red"),
+                line("on the whole of phase `loading`, now gone"),
+                person("slow"),
+                line("on transition from default on go.tap to removed, now gone"),
+                person("why?"),
+                line("on navigate from Orders on go to Elsewhere, now gone"),
+                person("where?"),
+                agent("there"),
+                person("too dense"),
+            ],
+            "each after a line saying where, before what still waits on the agent"
+        );
+        assert_eq!(notes[0].stands(), Stands::Waiting, "what waited still waits");
+
+        let joined = notes.clone();
+        assert!(!join(&mut notes, &screen, &states), "reading again moves nothing twice");
+        assert_eq!(notes, joined);
+        let mut none = vec![note("N1", node("default", "total"), vec![person("x")])];
+        assert!(!join(&mut none, &screen, &[]), "no state to join: left as it is");
     }
 }
