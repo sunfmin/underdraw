@@ -1,0 +1,85 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "status": "closed",
+      "state": {
+        "fixture": "viewing"
+      },
+      "node": {
+        "id": "room-{index}-viewer",
+        "at": "/root/children/1/children/1/item/children/1",
+        "instance": [
+          1
+        ],
+        "label": null,
+        "width": 390
+      },
+      "thread": [
+        {
+          "by": "person",
+          "says": "这里写了个卧室,其他客厅什么的都没有这个东西,为什么卧室出来个这样的东西?"
+        }
+      ],
+      "closed_because": "room-{index}-viewer is gone (removed or renamed)"
+    },
+    {
+      "id": "N2",
+      "status": "answered",
+      "state": {
+        "fixture": "viewing"
+      },
+      "node": {
+        "id": "viewer-photos",
+        "at": "/root/overlay/children/1",
+        "instance": [],
+        "label": null,
+        "width": 390
+      },
+      "thread": [
+        {
+          "by": "person",
+          "says": "那这里不应该是只有两张图片和卧室。应该是所有的图片都可以轮循播放。"
+        },
+        {
+          "by": "agent",
+          "says": "改好了：查看器现在轮播全部 7 张照片，循环播放（最后一张后回到第一张），标题是「全部 7 张」。点哪个房间的照片，就从那个房间的第一张开始（卧室 = 第 4 张）。从哪张开始仍标了橙色 ?。"
+        },
+        {
+          "by": "person",
+          "says": "在哪里有橙色,我也没看到啊"
+        },
+        {
+          "by": "agent",
+          "says": "你说得对，看不到：那个 ? 原本标在整屏查看器上，落在画面最顶端右角、被裁掉了一半。已挪到照片轮播上，现在照片右上角有个橙色 ?，虚线框住照片。点它就能 ✓ / ✗。"
+        }
+      ]
+    },
+    {
+      "id": "N3",
+      "status": "closed",
+      "state": {
+        "fixture": "viewing"
+      },
+      "node": {
+        "id": "viewer-photos",
+        "at": "/root/overlay/children/1",
+        "instance": [],
+        "label": null,
+        "width": 390
+      },
+      "thread": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description"
+        }
+      ],
+      "closed_because": "the assumption on viewer-photos, confirmed, is taken out",
+      "answers": {
+        "assumed": "点某个房间的照片，就从这个房间的第一张开始，在全部照片里循环轮播（最后一张之后回到第一张）；也可以从点的那一张开始，但一组缩略图里分不出点的是哪张",
+        "guess": "author",
+        "answer": "right"
+      }
+    }
+  ]
+}
