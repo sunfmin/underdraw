@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use underdraw_format::{Breakpoint, Node, Screen, Shared, State};
 
 fn draft() -> Value {
-    serde_json::from_str(include_str!("../../../drafts/airbnb-listing/screen.json")).unwrap()
+    serde_json::from_str(include_str!("airbnb-listing/screen.json")).unwrap()
 }
 
 fn find<'a>(node: &'a Node, id: &str) -> Option<&'a Node> {

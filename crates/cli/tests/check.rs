@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
-const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
+const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
 fn underdraw(args: &[&str]) -> (Value, i32) {
     let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();

@@ -25,7 +25,7 @@ pub struct Guessed {
 /// One thing that waits on the person.
 #[derive(Debug, PartialEq)]
 pub enum Item<'a> {
-    /// An assumption no note answers yet.
+    /// An assumption no message answers yet.
     Guess(&'a Guessed),
     /// A note the agent has answered, not read yet: the person reads it,
     /// and may say more.
@@ -47,7 +47,7 @@ pub struct Inbox<'a> {
 impl<'a> Inbox<'a> {
     /// The inbox of a description whose assumptions are `guessed`, each
     /// once, and whose notes are `notes`. An assumption is answered once a
-    /// note on its node answers it.
+    /// message in a note on its node is marked as answering it.
     pub fn of(guessed: &'a [Guessed], notes: &'a [Note]) -> Inbox<'a> {
         let answers = |guess: &Guessed| {
             notes.iter().any(|note| {
@@ -55,7 +55,7 @@ impl<'a> Inbox<'a> {
                     On::Node { node, .. } => node.origin.written == guess.written,
                     _ => false,
                 };
-                on && note.answers.is_some()
+                on && note.answers().next().is_some()
             })
         };
         let guesses = guessed.iter().filter(|guess| !answers(guess)).map(Item::Guess);
@@ -87,21 +87,23 @@ mod tests {
     }
 
     /// A note on node `written`, the agent having spoken last when
-    /// `answered`, not read yet, answering its assumption when `answers`.
+    /// `answered`, not read yet, its first message answering its
+    /// assumption when `answers`.
     fn note(id: &str, written: &str, answered: bool, answers: bool) -> Note {
         let mut messages = vec![json!({ "by": "person", "says": "this" })];
+        if answers {
+            messages[0]["answers"] =
+                json!({ "assumed": "a guess; or not", "guess": "author", "answer": "wrong" });
+        }
         if answered {
             messages.push(json!({ "by": "agent", "says": "done", "unread": true }));
         }
-        let mut note = json!({
+        let note = json!({
             "id": id,
             "state": { "fixture": "default" },
             "node": { "id": written, "at": "/root", "instance": [], "label": null, "width": 390 },
             "messages": messages,
         });
-        if answers {
-            note["answers"] = json!({ "assumed": "a guess; or not", "guess": "author", "answer": "wrong" });
-        }
         serde_json::from_value(note).unwrap()
     }
 

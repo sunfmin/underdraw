@@ -9,7 +9,7 @@ use underdraw_format::{Breakpoint, Lang, Screen, Shared, State};
 use underdraw_handoff::handoff;
 use underdraw_layout::{Font, Measure, Size, layout};
 
-const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
+const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
 struct Fixed;
 

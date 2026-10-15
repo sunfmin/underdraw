@@ -96,12 +96,10 @@ fn hold(name: &str, width: u32, height: u32, pixels: &[u8]) {
 /// That every text of the sidebar fits the box it is set in, inside the
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
-    let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
     let (left, width) = (gallery.panes.pictures().x1, gallery.panes.side_width());
-    let at = (-gallery.panes.scrolled(Scrolls::Side), gallery.panes.window().1);
-    let laid = sidebar::lay_out(&cards, foot.as_ref(), (left, width), at, &mut gallery.typesetter);
+    let (cards, foot) = gallery.placed().expect("the sidebar is shown").draws();
     let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
-    for draw in laid.draws.iter().chain(&laid.foot_draws) {
+    for draw in cards.iter().chain(&foot) {
         let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
         let (x, right) = (f64::from(rect.x), f64::from(rect.x + rect.width));
         assert!(x >= inside && right <= outside, "{text:?} set outside the sidebar's gutters");
@@ -380,7 +378,7 @@ fn a_wrong_assumption_written_with_an_input_method() {
         gallery.compose(Ime::Preedit("dui hua kuang".to_string(), None));
     });
     fits(&mut gallery);
-    assert!(gallery.draft.as_ref().is_some_and(|draft| draft.text.is_composing()));
+    assert!(gallery.rejecting.is_some() && gallery.sidebar.talk().is_composing());
     std::fs::remove_dir_all(root).unwrap();
 }
 

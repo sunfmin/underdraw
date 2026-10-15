@@ -187,6 +187,7 @@ impl Panes {
     }
 
     /// The sidebar's width, kept while it is hidden.
+    #[cfg(test)]
     pub fn side_width(&self) -> f64 {
         self.widths().1
     }

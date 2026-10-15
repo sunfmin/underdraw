@@ -452,3 +452,34 @@ fn gallery_help_names_everything_a_note_can_be_pinned_to() {
         assert!(help.contains(pinned), "{pinned} not in gallery --help");
     }
 }
+
+#[test]
+fn notes_carries_each_messages_mark_and_its_help_says_what_each_means() {
+    let root = root("marks");
+    let dir = root.join("orders");
+    let answers = json!({ "assumed": "a screen not drawn yet", "guess": { "undrawn": ["ExportDocuments"] }, "answer": "wrong" });
+    let proposes = json!({ "on": "order-{index}-cancel.tap", "to": "cancel-dialog" });
+    let mut notes: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+    let messages = notes["notes"][0]["messages"].as_array_mut().unwrap();
+    messages.push(json!({ "by": "person", "says": "it exports the orders shown", "answers": answers }));
+    messages.push(json!({ "by": "person", "says": "it should open the dialog", "proposes": proposes }));
+    std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
+
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{answer}");
+    let messages = &answer["notes"][0]["messages"];
+    assert_eq!(messages[0], json!({ "by": "person", "says": "too red" }), "plain talk carries no mark");
+    assert_eq!(messages[1]["answers"], answers);
+    assert_eq!(messages[2]["proposes"], proposes);
+    assert_eq!(answer["notes"][0].get("proposes"), None, "the marks are the messages'");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["notes", "--help"]).output().unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    for said in
+        ["MARKS", "\"answers\"   the person's answer", "\"proposes\"  where acting", "right  ✓", "wrong  ✗"]
+    {
+        assert!(help.contains(said), "{said:?} not in notes --help");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
