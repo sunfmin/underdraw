@@ -21,14 +21,16 @@ use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
+use winit::keyboard::{Key, KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::act::{self, Act};
-use crate::draw::{self, Handlers, Shown as State, Wanted};
+use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
+use crate::reference::{Pointed, Reference};
 use crate::{gpu, links, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
@@ -111,6 +113,9 @@ struct Gallery {
     /// The id of the node picked in the picture, kept from state to state
     /// while the state shown has it.
     node: Option<String>,
+    /// The picture, of those at each of `WIDTHS`, the node was picked in:
+    /// the instance the person pointed at.
+    pointed: usize,
     /// How far the pictures, and the tree, are scrolled down, in points.
     scroll: f64,
     tree_scroll: f64,
@@ -137,6 +142,9 @@ struct Gallery {
     proxy: Option<EventLoopProxy<Told>>,
     /// Later runs of the command answered, once the window is open.
     answering: Option<Answering>,
+    /// The clipboard ⌘C copies to, kept open once opened: on Linux what
+    /// was copied goes with it.
+    clipboard: Option<arboard::Clipboard>,
 }
 
 /// One line of the tree: a directory, a description, or one of a
@@ -231,6 +239,8 @@ struct Page {
     calls: BTreeMap<String, Vec<String>>,
     /// What each node does when acted on, by id.
     handlers: BTreeMap<String, Handlers>,
+    /// Where each node is written in the description, by id.
+    origins: BTreeMap<String, Origin>,
 }
 
 /// A description's overview: each of its states, in the order the tree
@@ -292,6 +302,7 @@ impl Gallery {
             wanted: None,
             picture: Picture::Faults(Vec::new()),
             node: None,
+            pointed: 0,
             scroll: 0.0,
             tree_scroll: 0.0,
             cursor: (0.0, 0.0),
@@ -304,6 +315,7 @@ impl Gallery {
             reported: false,
             proxy: None,
             answering: None,
+            clipboard: None,
         }
     }
 
@@ -353,9 +365,13 @@ impl Gallery {
             if self.acting {
                 return self.act();
             }
-            let node = self.node_at(self.cursor);
-            let changed = node != self.node || self.acted.is_some();
+            let (node, pointed) = match self.hit(self.cursor) {
+                Some((pointed, _, node)) => (Some(node.id.clone()), pointed),
+                None => (None, 0),
+            };
+            let changed = node != self.node || pointed != self.pointed || self.acted.is_some();
             self.node = node;
+            self.pointed = pointed;
             self.acted = None;
             return changed;
         }
@@ -423,9 +439,9 @@ impl Gallery {
     /// the path taken. The panel says what came of it, and so where nothing
     /// is declared. Whether that changed what is shown.
     fn act(&mut self) -> bool {
-        let Some((id, handlers, calls)) = self.hit(self.cursor).map(|(page, node)| {
+        let Some((pointed, id, handlers, calls)) = self.hit(self.cursor).map(|(pointed, page, node)| {
             let handlers = page.handlers.get(&node.id).cloned().unwrap_or_default();
-            (node.id.clone(), handlers, page.calls.get(&node.id).cloned().unwrap_or_default())
+            (pointed, node.id.clone(), handlers, page.calls.get(&node.id).cloned().unwrap_or_default())
         }) else {
             let changed = self.node.is_some() || self.acted.is_some();
             self.node = None;
@@ -433,6 +449,7 @@ impl Gallery {
             return changed;
         };
         self.node = Some(id);
+        self.pointed = pointed;
         let Some(here) = self.wanted.clone() else {
             return true;
         };
@@ -577,6 +594,7 @@ impl Gallery {
                         nodes: drawing.page.nodes,
                         calls: drawing.calls,
                         handlers: drawing.handlers,
+                        origins: drawing.origins,
                     });
                 }
                 Err(e) => {
@@ -840,15 +858,10 @@ impl Gallery {
             .collect()
     }
 
-    /// The id of the node under `at`, a point in the window, in whichever
-    /// picture it falls on; none off the pictures or where no node is.
-    fn node_at(&self, at: (f64, f64)) -> Option<String> {
-        self.hit(at).map(|(_, node)| node.id.clone())
-    }
-
     /// The node under `at`, a point in the window, and the picture it is
-    /// in; none off the pictures or where no node is.
-    fn hit(&self, at: (f64, f64)) -> Option<(&Page, &Placed)> {
+    /// in, with its place among them; none off the pictures or where no
+    /// node is.
+    fn hit(&self, at: (f64, f64)) -> Option<(usize, &Page, &Placed)> {
         let Picture::Pages(pages) = &self.picture else {
             return None;
         };
@@ -856,12 +869,52 @@ impl Gallery {
         pages
             .iter()
             .zip(self.origins())
-            .find_map(|(page, (left, top))| {
+            .enumerate()
+            .find_map(|(index, (page, (left, top)))| {
                 let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
                 ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y))
-                    .then(|| page.node_at((x, y)).map(|node| (page, node)))
+                    .then(|| page.node_at((x, y)).map(|node| (index, page, node)))
             })
             .flatten()
+    }
+
+    /// What ⌘C copies: the node picked, as the description writes it, and
+    /// the instance of it pointed at (in the picture it was picked in, or
+    /// the first that has it); or, with no node picked, the state shown.
+    /// None where no state is shown.
+    fn reference(&self) -> Option<Reference> {
+        let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
+            return None;
+        };
+        let state = self.picked.and_then(|index| self.lines.get(index)?.state.clone())?;
+        let node = self.node.as_ref().and_then(|id| {
+            let has = |page: &&Page| page.has(id);
+            let page = pages.get(self.pointed).filter(has).or_else(|| pages.iter().find(has))?;
+            let placed = page.nodes.iter().find(|node| &node.id == id)?;
+            let origin = page.origins.get(id)?.clone();
+            Some(Pointed { origin, label: placed.label, width: page.width as u32 })
+        });
+        Some(Reference { description: wanted.dir.clone(), state, node })
+    }
+
+    /// The reference to what is picked put on the clipboard, and the panel
+    /// says so; or says why nothing was.
+    fn copy(&mut self) {
+        let Some(reference) = self.reference() else {
+            return self.say("nothing to copy: pick a state, or a node in it, first".to_string());
+        };
+        let line = reference.line();
+        if self.clipboard.is_none() {
+            self.clipboard = arboard::Clipboard::new().ok();
+        }
+        let copied = match &mut self.clipboard {
+            Some(clipboard) => clipboard.set_text(line.clone()).map_err(|e| e.to_string()),
+            None => Err("there is no clipboard to copy to".to_string()),
+        };
+        match copied {
+            Ok(()) => self.say(format!("copied  {line}")),
+            Err(e) => self.say(format!("could not copy ({e}): {line}")),
+        }
     }
 
     /// The line of the panel at `y`, a height in the window; none off the
@@ -1417,6 +1470,11 @@ impl ApplicationHandler<Told> for Gallery {
                 let held = modifiers.state();
                 self.acting = held.super_key() || held.control_key();
             }
+            WindowEvent::KeyboardInput { event, .. } if self.acting && copies(&event) => {
+                let window = shown.window.clone();
+                self.copy();
+                window.request_redraw();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let down = match delta {
                     MouseScrollDelta::LineDelta(_, y) => -f64::from(y) * NOTCH,
@@ -1434,6 +1492,18 @@ impl ApplicationHandler<Told> for Gallery {
             WindowEvent::RedrawRequested => self.redraw(),
             _ => {}
         }
+    }
+}
+
+/// Whether `event` is the C key pressed: ⌘C (Ctrl+C) copies, on any
+/// keyboard layout, or where the layout has no C, on the key where C is.
+fn copies(event: &KeyEvent) -> bool {
+    if event.state != ElementState::Pressed || event.repeat {
+        return false;
+    }
+    match &event.logical_key {
+        Key::Character(c) if c.chars().all(|c| c.is_ascii_alphabetic()) => c.eq_ignore_ascii_case("c"),
+        _ => event.physical_key == PhysicalKey::Code(KeyCode::KeyC),
     }
 }
 
@@ -1626,6 +1696,13 @@ mod tests {
         (left + middle.0 * zoom, top + middle.1 * zoom)
     }
 
+    /// The line of the state named `name` of the description on line
+    /// `description`.
+    fn state_of_in(gallery: &Gallery, description: usize, name: &str) -> usize {
+        let mut states = gallery.lines[description + 1..].iter().take_while(|line| line.state.is_some());
+        description + 1 + states.position(|line| line.row.name == name).unwrap()
+    }
+
     /// The gallery showing line `index` of the tree.
     fn showing(gallery: &mut Gallery, index: usize) {
         over_row(gallery, index);
@@ -1654,6 +1731,63 @@ mod tests {
         assert!(panel[5].starts_with("at 1120  label "), "and where it is at the other width: {}", panel[5]);
         assert!(!gallery.press(), "picking it again changes nothing");
         assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
+    }
+
+    #[test]
+    fn a_node_in_a_repeat_is_referenced_by_its_template_and_the_instance_pointed_at() {
+        let mut gallery = gallery();
+        let orders = line_of(&gallery, "orders");
+        showing(&mut gallery, orders + 1);
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
+        gallery.cursor = on_node(&gallery, 1, &id);
+        assert!(gallery.press(), "the cancel button is picked, in the desktop picture");
+        let reference = gallery.reference().unwrap();
+        assert_eq!(reference.description, Path::new(DRAFTS).join("orders"));
+        assert_eq!(reference.state, State::Fixture("default".into()));
+        let node = reference.node.clone().unwrap();
+        assert_eq!(node.origin.written, "order-{index}-cancel", "the template, not {id}");
+        assert_eq!(node.origin.instance.len(), 1, "one each around it");
+        assert_eq!(id, format!("order-{}-cancel", node.origin.instance[0]), "the row pointed at");
+        assert_eq!(node.width, 1120, "the width it was picked at");
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        assert_eq!(node.label, pages[1].nodes.iter().find(|n| n.id == id).unwrap().label);
+        let screen: Value = serde_json::from_str(
+            &std::fs::read_to_string(reference.description.join("screen.json")).unwrap(),
+        )
+        .unwrap();
+        let written =
+            screen.pointer(&node.origin.at).unwrap_or_else(|| panic!("{} names nothing", node.origin.at));
+        assert_eq!(written["id"], "order-{index}-cancel", "the pointer names that node in screen.json");
+        let line = reference.line();
+        assert!(
+            line.contains(&format!("order-{{index}}-cancel at {} in screen.json", node.origin.at)),
+            "{line}"
+        );
+        assert!(line.contains(&format!("pointed at [{}], label ", node.origin.instance[0])), "{line}");
+        assert!(line.ends_with("width 1120"), "{line}");
+    }
+
+    #[test]
+    fn with_no_node_picked_the_state_shown_is_referenced() {
+        let mut gallery = gallery();
+        let orders = line_of(&gallery, "orders");
+        assert!(gallery.reference().is_none(), "an overview is no state");
+        gallery.copy();
+        assert_eq!(gallery.panel()[0], "nothing to copy: pick a state, or a node in it, first");
+        let loading = state_of_in(&gallery, orders, "loading");
+        showing(&mut gallery, loading);
+        let Picture::Pages(_) = &gallery.picture else { panic!("no picture") };
+        // A click on a picture's caption picks no node: the state itself.
+        let (left, top) = gallery.origins()[0];
+        gallery.cursor = (left + 4.0, top - CAPTION / 2.0);
+        gallery.press();
+        let reference = gallery.reference().unwrap();
+        assert_eq!(reference.node, None);
+        assert_eq!(
+            reference.line(),
+            format!("{} · phase loading", Path::new(DRAFTS).join("orders").display())
+        );
     }
 
     #[test]

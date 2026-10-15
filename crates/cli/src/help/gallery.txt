@@ -71,6 +71,24 @@ DOES
     the description's `transitions` (`underdraw check --help`, FORMAT).
   The panel says what each act came to, above what it says of the node.
 
+  Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
+  and Windows) puts one line on the clipboard naming the node picked as the
+  description writes it, or, with no node picked (click a picture's
+  caption, or where no node is), the state shown; the panel says
+  "copied" and the line. For a node:
+    <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
+  e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
+  /root/children/2/children/0/children/1/item/children in screen.json ·
+  pointed at [2], label 7, width 390. For a state: `<description dir> · phase loading`.
+  The id is the one written, a template inside a repeat (`order-{index}`),
+  never the id one row was given; the JSON Pointer (RFC 6901) is where that
+  node is written in <description dir>/screen.json, under /root, a phase
+  (/phases/<name>) or a component (/components/<name>): edit the node
+  there. What follows "pointed at" is context, the one instance the person
+  pointed at: the element of each repeat around it ([2] is the third,
+  outermost first), its label and the width it was drawn at, which say
+  which data showed what they mean; it is not where to edit.
+
   The window watches <root> and is drawn from the files as they now stand:
   edit a description's screen.json, tokens.json or kinds.json and the state
   shown is drawn again within a moment, scrolled where it was and with the

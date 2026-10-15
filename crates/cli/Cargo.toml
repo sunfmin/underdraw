@@ -18,3 +18,4 @@ underdraw-layout = { version = "0.1.0", path = "../layout" }
 underdraw-handoff = { path = "../handoff" }
 underdraw-compare = { path = "../compare" }
 winit = "0.30"
+arboard = { version = "3", default-features = false }

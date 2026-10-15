@@ -60,6 +60,16 @@ pub struct Handlers {
     pub events: Map<String, Value>,
 }
 
+/// Where a node is written in the description: its id as written, where
+/// in screen.json (a JSON Pointer), and for which element of each `each`
+/// around it, the outermost first.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Origin {
+    pub written: String,
+    pub at: String,
+    pub instance: Vec<usize>,
+}
+
 /// One state laid out, the scene not built yet: everything that can be
 /// wrong with the description is found by here, before a GPU is needed.
 pub struct Laid {
@@ -76,6 +86,8 @@ pub struct Laid {
     /// The id each node is first given in this state, by its id as the
     /// description writes it: a transition names a node so.
     pub written: BTreeMap<String, String>,
+    /// Where each node is written, by id.
+    pub origins: BTreeMap<String, Origin>,
     typesetter: text::Typesetter,
 }
 
@@ -90,6 +102,8 @@ pub struct Drawing {
     pub calls: BTreeMap<String, Vec<String>>,
     /// The id each node is first given in this state, by its id as written.
     pub written: BTreeMap<String, String>,
+    /// Where each node is written, by id.
+    pub origins: BTreeMap<String, Origin>,
     /// What each node does when acted on, by id.
     pub handlers: BTreeMap<String, Handlers>,
     pub scene: Scene,
@@ -147,7 +161,9 @@ pub fn lay_out(path: &Path, wanted: &Wanted, drawn: Option<&BTreeSet<String>>) -
     handled(&root, &mut handlers);
     let mut written = BTreeMap::new();
     ids(&root, &mut written);
-    Ok(Laid { dir, shown, breakpoint, page, calls, handlers, written, typesetter })
+    let mut origins = BTreeMap::new();
+    originated(&root, &mut origins);
+    Ok(Laid { dir, shown, breakpoint, page, calls, handlers, written, origins, typesetter })
 }
 
 /// The transitions the description at `path` declares, in the order
@@ -172,6 +188,19 @@ fn ids(node: &Node, written: &mut BTreeMap<String, String>) {
     written.entry(node.written_id.clone()).or_insert_with(|| node.id.clone());
     for child in &node.children {
         ids(child, written);
+    }
+}
+
+/// Where `node` and each node in it are written, added to `origins` by id.
+fn originated(node: &Node, origins: &mut BTreeMap<String, Origin>) {
+    let origin = Origin {
+        written: node.written_id.clone(),
+        at: node.written_at.clone(),
+        instance: node.instance.clone(),
+    };
+    origins.insert(node.id.clone(), origin);
+    for child in &node.children {
+        originated(child, origins);
     }
 }
 
@@ -218,6 +247,7 @@ impl Laid {
             calls: self.calls,
             handlers: self.handlers,
             written: self.written,
+            origins: self.origins,
             scene,
             scale,
             pixels: [pixels_wide, pixels_high],

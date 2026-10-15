@@ -11,6 +11,7 @@ mod gallery;
 mod gpu;
 mod links;
 mod paint;
+mod reference;
 mod text;
 mod window;
 
