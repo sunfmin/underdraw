@@ -150,8 +150,9 @@ struct Marked {
     acts: bool,
     /// It was guessed: it gets an orange outline and "?".
     guessed: bool,
-    /// Where its "?" goes, when it was guessed.
-    guess: Rect,
+    /// What the person sees of it, which its "?" sits by when it was
+    /// guessed.
+    shown: Rect,
     covered: bool,
 }
 
@@ -161,10 +162,24 @@ fn guess_tag(shown: Rect, page: Rect) -> Rect {
     tag(shown.x + shown.width - 12.0, shown.y - 6.0, page)
 }
 
+/// Where else the "?" of a guess may go, after [`guess_tag`], each still
+/// by the top-right corner of `shown`: off it, above it, right of it,
+/// then below it.
+fn guess_tags(shown: Rect, page: Rect) -> [Rect; 5] {
+    let right = shown.x + shown.width;
+    [
+        guess_tag(shown, page),
+        tag(right - 2.0, shown.y - 16.0, page),
+        tag(right - 18.0, shown.y - 19.0, page),
+        tag(right + 1.0, shown.y, page),
+        tag(right - 18.0, shown.y + shown.height + 1.0, page),
+    ]
+}
+
 pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Result<Page, TaffyError> {
     let mut tree: TaffyTree<usize> = TaffyTree::new();
     let mut texts = Vec::new();
-    let laid = add(&mut tree, root, &mut texts)?;
+    let laid = add(&mut tree, root, false, &mut texts)?;
     let mut style = root.style.clone();
     style.size.width = taffy::Dimension::length(width);
     tree.set_style(laid.id, style)?;
@@ -310,24 +325,34 @@ fn moved(draw: &Draw, scale: f32, x: f32, y: f32) -> Draw {
     }
 }
 
+/// Puts `elem` and everything in it into `tree`; `in_a_row` says its
+/// parent lays it out side by side with its siblings.
 fn add<'e>(
     tree: &mut TaffyTree<usize>,
     elem: &'e Elem,
+    in_a_row: bool,
     texts: &mut Vec<&'e Words>,
 ) -> Result<Laid, TaffyError> {
+    let mut style = elem.style.clone();
+    // A look's `self: "start"` means as wide as its content, not its
+    // column: in a row it sits across as its siblings do.
+    if in_a_row && style.align_self == Some(taffy::AlignSelf::FLEX_START) {
+        style.align_self = None;
+    }
     if let Some(words) = &elem.words {
         texts.push(words);
-        let id = tree.new_leaf_with_context(elem.style.clone(), texts.len() - 1)?;
+        let id = tree.new_leaf_with_context(style, texts.len() - 1)?;
         return Ok(Laid { id, children: Vec::new() });
     }
+    let row = style.display == taffy::Display::Flex && style.flex_direction == taffy::FlexDirection::Row;
     let mut children = Vec::new();
     let mut ids = Vec::new();
     for child in &elem.children {
-        let laid = add(tree, child, texts)?;
+        let laid = add(tree, child, row, texts)?;
         ids.push(laid.id);
         children.push(laid);
     }
-    let id = tree.new_with_children(elem.style.clone(), &ids)?;
+    let id = tree.new_with_children(style, &ids)?;
     Ok(Laid { id, children })
 }
 
@@ -447,7 +472,7 @@ fn emit<'t, 'n>(
             }
         }
         if let (Some(shown), Some(marked)) = (shown, out.marked.get_mut(index)) {
-            marked.guess = guess_tag(shown, page);
+            marked.shown = shown;
         }
     }
     if let (Some(radius), Some(saved)) = (elem.clip, saved) {
@@ -519,9 +544,8 @@ fn record(
     let mut held = None;
     if acts || guessed {
         let listed = (!node.id.is_empty()).then_some(out.nodes.len());
-        let guess = guess_tag(rect, out.page);
         held = guessed.then_some(out.marked.len());
-        out.marked.push(Marked { node: listed, rect, acts, guessed, guess, covered: false });
+        out.marked.push(Marked { node: listed, rect, acts, guessed, shown: rect, covered: false });
     }
     if !node.id.is_empty() {
         out.nodes.push(Placed {
@@ -546,7 +570,7 @@ fn cover(over: Rect, out: &mut Out) {
             Rect { x: rect.x + rect.width / 2.0, y: rect.y + rect.height / 2.0, width: 0.0, height: 0.0 };
         if inside(middle, over)
             || (marked.acts && overlaps(number_tag(rect, page), over))
-            || (marked.guessed && overlaps(marked.guess, over))
+            || (marked.guessed && overlaps(guess_tag(marked.shown, page), over))
         {
             marked.covered = true;
         }
@@ -554,8 +578,11 @@ fn cover(over: Rect, out: &mut Out) {
 }
 
 /// Numbers, in order, every node a person can act on and still see, and
-/// marks every guess still seen.
+/// marks every guess still seen; each tag where it covers no other node's
+/// text, nor a tag drawn before it.
 fn mark(out: &mut Out) {
+    let mut words = Vec::new();
+    texts(&out.draws, None, &mut words);
     let mut next: u32 = 1;
     for marked in &out.marked {
         if marked.covered {
@@ -565,11 +592,8 @@ fn mark(out: &mut Out) {
             if let Some(placed) = marked.node.and_then(|index| out.nodes.get_mut(index)) {
                 placed.label = Some(next);
             }
-            out.tags.push(Draw::Tag {
-                rect: number_tag(marked.rect, out.page),
-                text: next.to_string(),
-                ink: Ink::Label,
-            });
+            let rect = clear(&number_tags(marked.rect, out.page), marked.rect, &words, &out.tags);
+            out.tags.push(Draw::Tag { rect, text: next.to_string(), ink: Ink::Label });
             next = next.saturating_add(1);
         }
         if marked.guessed {
@@ -583,12 +607,52 @@ fn mark(out: &mut Out) {
                 stroke: Some(Ink::Assumed),
                 dashed: true,
             });
+            let guess = clear(&guess_tags(marked.shown, out.page), rect, &words, &out.tags);
             if let Some(placed) = marked.node.and_then(|index| out.nodes.get_mut(index)) {
-                placed.guess_tag = Some(marked.guess);
+                placed.guess_tag = Some(guess);
             }
-            out.tags.push(Draw::Tag { rect: marked.guess, text: "?".to_string(), ink: Ink::Assumed });
+            out.tags.push(Draw::Tag { rect: guess, text: "?".to_string(), ink: Ink::Assumed });
         }
     }
+}
+
+/// The first of `spots` that covers no text in `words` but what lies
+/// within `own`, the node the tag names, and no tag among `marks` (a
+/// guess's outline is no tag); the first of them when each covers some.
+fn clear(spots: &[Rect], own: Rect, words: &[Rect], marks: &[Draw]) -> Rect {
+    let foreign = |spot: Rect| {
+        words.iter().any(|word| !within(*word, own) && overlaps(spot, *word))
+            || marks.iter().any(|mark| matches!(mark, Draw::Tag { rect, .. } if overlaps(spot, *rect)))
+    };
+    match spots.iter().find(|spot| !foreign(**spot)) {
+        Some(spot) => *spot,
+        None => spots.first().copied().unwrap_or_default(),
+    }
+}
+
+/// Where each text in `draws` is drawn, cut to `clip` when there is one,
+/// added to `words`: what a tag must not cover.
+fn texts(draws: &[Draw], clip: Option<Rect>, words: &mut Vec<Rect>) {
+    for draw in draws {
+        match draw {
+            Draw::Text { rect, .. } => {
+                let seen = cut(*rect, clip);
+                if seen.width > 0.0 && seen.height > 0.0 {
+                    words.push(seen);
+                }
+            }
+            Draw::Clip { rect, draws, .. } => texts(draws, Some(cut(*rect, clip)), words),
+            _ => {}
+        }
+    }
+}
+
+/// Whether `rect` lies within `area`, to within half a point.
+fn within(rect: Rect, area: Rect) -> bool {
+    rect.x >= area.x - 0.5
+        && rect.y >= area.y - 0.5
+        && rect.x + rect.width <= area.x + area.width + 0.5
+        && rect.y + rect.height <= area.y + area.height + 0.5
 }
 
 /// Whether `point`, a rect with no size, lies within `area`.
@@ -617,7 +681,26 @@ fn along(edge: Edge, start: f32, length: f32, size: f32, inset: f32) -> f32 {
 fn number_tag(rect: Rect, page: Rect) -> Rect {
     let (size, gap, margin) = (18.0, 1.0, 1.0);
     let left = rect.x - gap - size;
-    if left >= page.x + margin { tag(left, rect.y, page) } else { tag(rect.x - 16.0, rect.y - 16.0, page) }
+    if left >= page.x + margin { tag(left, rect.y, page) } else { corner_tag(rect, page) }
+}
+
+/// Off the top-left corner of `rect`, the circle touching it from outside,
+/// kept on `page`.
+fn corner_tag(rect: Rect, page: Rect) -> Rect {
+    tag(rect.x - 16.0, rect.y - 16.0, page)
+}
+
+/// Where else the number of a node laid out at `rect` may go, after
+/// [`number_tag`], each still by its top-left: off its corner, above it,
+/// below it, then right of its top.
+fn number_tags(rect: Rect, page: Rect) -> [Rect; 5] {
+    [
+        number_tag(rect, page),
+        corner_tag(rect, page),
+        tag(rect.x, rect.y - 19.0, page),
+        tag(rect.x, rect.y + rect.height + 1.0, page),
+        tag(rect.x + rect.width + 1.0, rect.y, page),
+    ]
 }
 
 /// A tag's circle at `x`, `y`, moved in as far as it takes to be wholly on

@@ -326,7 +326,11 @@ fn a_look_reads_only_the_params_its_component_declares() {
     }
     assert!(found(&checked, "components.Framed.look", "reads padding, which"), "{:#?}", checked.findings);
     assert!(!found(&checked, "components.Framed.look", "reads gap, which"), "{:#?}", checked.findings);
-    assert!(found(&checked, "components.Unlisted.params", "params is a list"), "{:#?}", checked.findings);
+    assert!(
+        found(&checked, "components.Unlisted.params", "params lists the names"),
+        "{:#?}",
+        checked.findings
+    );
 }
 
 #[test]
@@ -435,4 +439,67 @@ fn read(description: &Value) -> Screen {
 
 fn check(description: &Value) -> Checked {
     underdraw_format::check(&read(description))
+}
+
+#[test]
+fn a_cases_branch_whose_if_is_not_a_condition_is_found_at_that_branch() {
+    // (name, what the draft says, the "if" planted in its place, where it is found, what it is called)
+    let planted_ifs = [
+        (
+            "nested-cases-in-a-prop",
+            r#"{ "if": "listing.isSaved", "then": "favorite.fill" }"#,
+            r#"{ "if": { "cases": [ { "if": "listing.isSaved", "then": true }, { "else": false } ] }, "then": "favorite.fill" }"#,
+            "nav-save.icon.cases[0].if",
+            "a nested cases",
+        ),
+        (
+            "object-in-a-prop",
+            r#"{ "if": "listing.location.approx", "then": "circle" }"#,
+            r#"{ "if": { "listing.location.approx": true }, "then": "circle" }"#,
+            "map-view.marker.cases[0].if",
+            "an object",
+        ),
+        (
+            "number-in-a-handler",
+            r#"{ "if": "!hasDates", "then": { "scrollTo": "calendar" } }"#,
+            r#"{ "if": 1, "then": { "scrollTo": "calendar" } }"#,
+            "reserve-button.on.tap.cases[0].if",
+            "a number",
+        ),
+    ];
+    for (name, from, to, at, what) in planted_ifs {
+        let checked = check(&planted(name, from, to));
+        assert!(!checked.ok, "{name}");
+        let said = format!("{what} is not a condition: an \"if\" takes a condition");
+        assert!(
+            found(&checked, at, &said),
+            "{name}: expected a finding at {at} saying {said:?}, got {:#?}",
+            checked.findings
+        );
+    }
+}
+
+#[test]
+fn a_looks_cases_branch_whose_if_is_not_a_condition_is_found_at_that_branch() {
+    let checked = check(&with_own(json!({
+        "Toolbar": { "params": ["title", "wide"], "look": { "box": "row", "children": [
+            { "text": "{title}", "underline": { "cases": [ { "if": { "cases": [ { "if": "wide", "then": true }, { "else": false } ] }, "then": false }, { "else": true } ] } },
+            { "component": "Glyph", "icon": "star", "filled": { "cases": [ { "if": 3, "then": true }, { "else": false } ] } },
+            { "cases": [ { "if": { "wide": true }, "then": "{title}" }, { "else": null } ] },
+            { "text": "{title}", "underline": { "cases": [ { "if": "wide && !title", "then": true }, { "else": false } ] } }
+        ] } }
+    })));
+    assert!(!checked.ok);
+    let expected = [
+        ("components.Toolbar.look.children[0].underline.cases[0].if", "a nested cases"),
+        ("components.Toolbar.look.children[1].filled.cases[0].if", "a number"),
+        ("components.Toolbar.look.children[2].cases[0].if", "an object"),
+    ];
+    for (at, what) in expected {
+        let said = format!("{what} is not a condition: an \"if\" takes a condition");
+        assert!(found(&checked, at, &said), "expected {said:?} at {at}, got {:#?}", checked.findings);
+    }
+    let well_formed =
+        checked.findings.iter().any(|f| f.at.starts_with("components.Toolbar.look.children[3]"));
+    assert!(!well_formed, "a name, ! and && pass: {:#?}", checked.findings);
 }

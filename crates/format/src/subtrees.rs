@@ -90,9 +90,16 @@ pub(crate) fn is_slot(node: &Map<String, Value>) -> bool {
 /// the project's and its own (`components::Components::check` has the
 /// rest): each is named with a capital, holds only params and nodes, its
 /// params fields of types the screen knows (the domain's among them) and
-/// none of them view state, its root without an id of its own.
+/// none of them view state, its root without an id of its own; and the
+/// typed params of those whose body is a look, held to the same types.
 pub(crate) fn check(declared: &[Declared], schema: &Schema, findings: &mut Findings) {
     for Declared { name, body: declared, at, .. } in declared {
+        // A look component's typed params are held to the same types.
+        if declared.get("nodes").is_none()
+            && let Some(Value::Object(params)) = declared.get("params")
+        {
+            param_faults(params, schema, at, findings);
+        }
         let Some(declared) = declared
             .as_object()
             .filter(|declared| declared.contains_key("nodes") && !declared.contains_key("look"))
@@ -128,37 +135,41 @@ pub(crate) fn check(declared: &[Declared], schema: &Schema, findings: &mut Findi
         }
         match declared.get("params") {
             None => {}
-            Some(Value::Object(params)) => {
-                for (param, spec) in params {
-                    let at = format!("{at}.params.{param}");
-                    let field = match field::read(spec) {
-                        Ok(field) => field,
-                        Err(problem) => {
-                            findings.add(&at, &problem);
-                            continue;
-                        }
-                    };
-                    if field.view {
-                        findings.add(
-                            &at,
-                            "a component holds no view state: declare the field in the screen's data, marked \"view\": true, and pass it in; its set and toggle then act on what was passed",
-                        );
-                    }
-                    if field.from.is_some() || field.derived.is_some() {
-                        findings
-                            .add(&at, "a param is given by the instance: from and derived belong to data");
-                    }
-                    if let Base::Named(type_name) = &field.base
-                        && !schema.has(type_name)
-                    {
-                        findings.add(&at, &format!("unknown type {type_name}"));
-                    }
-                }
-            }
+            Some(Value::Object(params)) => param_faults(params, schema, at, findings),
             Some(_) => findings.add(
                 &format!("{at}.params"),
                 "params maps each param's name to its type: {\"order\": \"Order\"}",
             ),
+        }
+    }
+}
+
+/// Every fault in the typed `params` of the component at `at`: each a
+/// field of a type the screen knows, and none view state, filled or
+/// derived.
+fn param_faults(params: &Map<String, Value>, schema: &Schema, at: &str, findings: &mut Findings) {
+    for (param, spec) in params {
+        let at = format!("{at}.params.{param}");
+        let field = match field::read(spec) {
+            Ok(field) => field,
+            Err(problem) => {
+                findings.add(&at, &problem);
+                continue;
+            }
+        };
+        if field.view {
+            findings.add(
+                &at,
+                "a component holds no view state: declare the field in the screen's data, marked \"view\": true, and pass it in; its set and toggle then act on what was passed",
+            );
+        }
+        if field.from.is_some() || field.derived.is_some() {
+            findings.add(&at, "a param is given by the instance: from and derived belong to data");
+        }
+        if let Base::Named(type_name) = &field.base
+            && !schema.has(type_name)
+        {
+            findings.add(&at, &format!("unknown type {type_name}"));
         }
     }
 }

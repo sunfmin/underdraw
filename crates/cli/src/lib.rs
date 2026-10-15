@@ -121,8 +121,8 @@ enum Command {
     Notes {
         /// A description's directory, or a directory of them at any depth
         path: PathBuf,
-        /// The note to answer, by its id (N3), in the description at <path>
-        #[arg(long, value_name = "ID", requires = "reply")]
+        /// The note to answer, as `notes <path>` lists it ("note"): <description>/<id> under <path> (play/N3), or <id> alone for <path>'s own (N3)
+        #[arg(long, value_name = "NOTE", requires = "reply")]
         answer: Option<String>,
         /// The answer: what was done, or why not, or what you ask back; as many lines as it takes
         #[arg(long, value_name = "TEXT")]

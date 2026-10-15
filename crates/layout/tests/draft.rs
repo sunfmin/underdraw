@@ -806,3 +806,93 @@ fn a_foot_sits_on_the_bottom_of_its_column_after_everything_else() {
     assert_eq!(send.y + send.height, side.y + side.height, "the foot closes the pane");
     assert!(send.y > card.y + card.height, "below the cards, with room between: {card:?} {send:?}");
 }
+
+#[test]
+fn a_row_of_small_controls_keeps_every_word_whole_under_its_labels_and_marks() {
+    // Chips side by side, no gap between them: a number left of one, or a
+    // "?" over its top-right corner, would sit on the end of the word beside it.
+    let own = serde_json::json!({ "components": {
+        "Bar": { "look": { "box": "row", "padding": 24, "gap": 0, "children": ["$children"] } },
+        "Chip": { "look": { "box": "row", "padding": [4, 4], "stroke": "line",
+            "children": [ { "text": "{text}" } ] } } } });
+    let chip = |id: &str, text: &str, assumed: bool| {
+        let mut chip = serde_json::json!({ "id": id, "component": "Chip", "text": text,
+            "on": { "tap": { "navigate": "Other" } } });
+        if assumed {
+            chip["assumed"] = serde_json::json!("a guess");
+        }
+        chip
+    };
+    let page = tiny_with(
+        serde_json::json!([{ "id": "bar", "component": "Bar", "children": [
+            chip("inspect", "Inspect", true), chip("listen", "Agent listening", true),
+            chip("stop", "Stop", false) ] }]),
+        Some(&own),
+    );
+    let ids = ["inspect", "listen", "stop"];
+    let nodes: Vec<&Placed> = ids.iter().map(|id| placed(&page, id)).collect();
+    assert_eq!(nodes.iter().map(|n| n.label).collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
+    let words: Vec<underdraw_layout::Rect> = page
+        .wireframe()
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Text { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    let overlaps = |a: underdraw_layout::Rect, b: underdraw_layout::Rect| {
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    };
+    let near = |a: underdraw_layout::Rect, b: underdraw_layout::Rect| {
+        let grown = underdraw_layout::Rect {
+            x: b.x - 2.0,
+            y: b.y - 2.0,
+            width: b.width + 4.0,
+            height: b.height + 4.0,
+        };
+        overlaps(a, grown)
+    };
+    let mut tags = Vec::new();
+    for draw in page.marks() {
+        let Draw::Tag { rect, text, ink } = draw else { continue };
+        let node = match ink {
+            Ink::Label => nodes.iter().find(|n| n.label.map(|l| l.to_string()).as_ref() == Some(text)),
+            _ => nodes.iter().find(|n| n.guess_tag == Some(*rect)),
+        };
+        let node = node.unwrap_or_else(|| panic!("{text:?} at {rect:?} names no chip"));
+        assert!(near(*rect, node.rect), "{text:?} sits by {}: {rect:?} {:?}", node.id, node.rect);
+        for other in nodes.iter().filter(|n| n.id != node.id) {
+            for word in words.iter().filter(|w| overlaps(**w, other.rect)) {
+                assert!(
+                    !overlaps(*rect, *word),
+                    "{text:?} of {} covers {}'s text: {rect:?} {word:?}",
+                    node.id,
+                    other.id
+                );
+            }
+        }
+        tags.push(*rect);
+    }
+    assert_eq!(tags.len(), 5, "three numbers and two \"?\": {tags:?}");
+    for (i, a) in tags.iter().enumerate() {
+        assert!(!tags.iter().skip(i + 1).any(|b| overlaps(*a, *b)), "no tag on another: {tags:?}");
+    }
+}
+
+#[test]
+fn a_badge_in_a_row_is_centred_across_as_its_siblings_are() {
+    let page = tiny(serde_json::json!([
+        { "id": "head", "component": "Row", "gap": "space.2", "children": [
+            { "id": "name", "component": "Text", "text": "Home" },
+            { "id": "tag", "component": "Badge", "text": "Default" },
+            { "id": "more", "component": "IconButton", "icon": "more_vert" } ] },
+        { "id": "alone", "component": "Badge", "text": "Default" }
+    ]));
+    let middle = |id: &str| {
+        let rect = placed(&page, id).rect;
+        rect.y + rect.height / 2.0
+    };
+    assert_eq!(middle("tag"), middle("name"), "centred on the row, as the text is");
+    let (alone, screen) = (placed(&page, "alone").rect, placed(&page, "tiny").rect);
+    assert!(alone.width < screen.width / 2.0, "in a column, as wide as its words: {alone:?}");
+}

@@ -80,10 +80,48 @@ fn notes_lists_the_waiting_ones_under_a_root_and_answer_adds_the_agents_message_
 
     let (refused, code) = underdraw(&["notes", root.to_str().unwrap(), "--answer", "N2", "--reply", "x"]);
     assert_eq!(code, 2);
-    assert!(refused["error"].as_str().unwrap().contains("the directory the note is in"), "{refused}");
+    assert!(refused["error"].as_str().unwrap().contains("as `underdraw notes <root>` names it"), "{refused}");
+    let (refused, code) = underdraw(&["notes", root.to_str().unwrap(), "--answer", "../N2", "--reply", "x"]);
+    assert_eq!(code, 2);
+    assert!(refused["error"].as_str().unwrap().contains("is not a directory under"), "{refused}");
     let (refused, code) = underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N9", "--reply", "x"]);
     assert_eq!(code, 2);
     assert!(refused["error"].as_str().unwrap().contains("no note N9"), "{refused}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn each_listed_note_is_answered_by_copying_what_the_listing_names_it() {
+    let root = root("named");
+    let play = root.join("play");
+    std::fs::create_dir_all(&play).unwrap();
+    for file in ["screen.json", "tokens.json", "notes.json"] {
+        std::fs::copy(root.join("orders").join(file), play.join(file)).unwrap();
+    }
+    let (listed, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{listed}");
+    let names: Vec<&str> =
+        listed["notes"].as_array().unwrap().iter().map(|note| note["note"].as_str().unwrap()).collect();
+    assert_eq!(names, ["orders/N1", "orders/N2", "play/N1", "play/N2"], "two N1s told apart");
+
+    let (answered, code) =
+        underdraw(&["notes", root.to_str().unwrap(), "--answer", "play/N1", "--reply", "played"]);
+    assert_eq!(code, 0, "{answered}");
+    assert_eq!(answered["note"]["note"], "play/N1", "named as listed");
+    let (answered, code) =
+        underdraw(&["notes", root.to_str().unwrap(), "--answer", "orders/N1", "--reply", "ordered"]);
+    assert_eq!(code, 0, "{answered}");
+    let reply = |dir: &Path| {
+        let file: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+        file["notes"][0]["messages"][1]["says"].clone()
+    };
+    assert_eq!((reply(&play), reply(&root.join("orders"))), (json!("played"), json!("ordered")));
+
+    let (listed, _) = underdraw(&["notes", play.to_str().unwrap()]);
+    assert_eq!(listed["notes"][0]["note"], "N2", "from the description's own directory, the id alone");
+    let (answered, code) = underdraw(&["notes", play.to_str().unwrap(), "--answer", "N2", "--reply", "said"]);
+    assert_eq!((code, &answered["note"]["note"]), (0, &json!("N2")), "{answered}");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -604,4 +642,17 @@ fn notes_carries_each_messages_mark_and_its_help_says_what_each_means() {
         assert!(help.contains(said), "{said:?} not in notes --help");
     }
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn notes_help_answers_a_note_by_what_the_listing_names_it() {
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["notes", "--help"]).output().unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    for said in [
+        "underdraw notes <path> --answer play/N3 --reply",
+        "[{\"note\":        what --answer takes for it",
+        "--answer takes the note's \"note\", not its \"id\"",
+    ] {
+        assert!(help.contains(said), "{said:?} not in notes --help");
+    }
 }

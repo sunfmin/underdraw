@@ -1,51 +1,46 @@
-//! Each surface of the gallery window held to a golden kept in
-//! `crates/cli/goldens/gallery`: most as text, a few as pixels.
+//! Each surface of the gallery window, acted on as a person would and held
+//! to the few lines of text, or numbers, that say what its test is about:
+//! never to its pixels, nor to all it shows.
 //!
 //! What most of a frame shows is text and structure: the tree's lines, the
 //! pictures and what is picked on them, the pins, the sidebar's cards.
-//! [`held`] is the glue for those: a test gives it a root, a window size
-//! and its acts on the gallery (pick a line, click a node, press keys), and
-//! what the window then shows is written as text ([`said`]) and held to
-//! the golden `<name>.txt`, a failure saying which lines differ. Only where
-//! the look is the point (the chrome, the scrollbars, the pictures at half
-//! size) does [`drawn`] render the window's real frame headless on the GPU
-//! `render` uses, one pixel a point, and hold it to the golden
-//! `<name>.png`; those draw a fixture root of their own ([`fixture`]), not
-//! the drafts, so a draft changed never moves a pixel golden; the
-//! journey's surfaces draw a frozen shop of their own ([`frozen_shop`]).
-//! `UNDERDRAW_GOLDENS=rewrite cargo nextest run -p underdraw frames`
-//! rewrites every golden from what is shown instead; look at each before
-//! committing it.
-
-use std::io::BufReader;
+//! [`acted`] is the glue: a test gives it a root, a window size and its acts
+//! on the gallery (pick a line, click a node, press keys), and
+//! [`shows_lines`] holds what the window then shows, as [`said`] writes it,
+//! to the lines the test chose, a failure naming the line missing. So a
+//! draft added, or a word changed, fails only the tests about it. Where the
+//! look is the point (the scrollbars, the pictures at half size, the marks
+//! hidden, the narrow window) a test asserts it from the window's state: a
+//! scrollbar's thumb there or not, the zoom, what is drawn over the
+//! pictures. Those draw a fixture root of their own ([`fixture`]) or a
+//! frozen copy of a draft ([`frozen`]), as the journey's surfaces draw the
+//! frozen shop.
 
 use super::*;
 
-/// Where the goldens are kept.
-const GOLDENS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/goldens/gallery");
-/// The variable that, set to `rewrite`, rewrites the goldens.
-const REWRITE: &str = "UNDERDRAW_GOLDENS";
-/// How far a channel of a pixel may stray from the golden's before the
-/// pixel differs: antialiasing, not a change.
-const CHANNEL: u8 = 32;
-/// How many pixels in a million may differ before the frame does: a line
-/// of text changed is hundreds of pixels at 1440 × 900.
-const PER_MILLION: usize = 20;
-/// The description the pixel goldens draw: a copy of the Airbnb listing
+/// The description the look's tests draw: a copy of the Airbnb listing
 /// frozen for the tests, which no draft changes.
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
-/// The shop the journey goldens draw: a copy of the shop draft frozen for
+/// The shop the journey's tests draw: a copy of the shop draft frozen for
 /// the tests, its journey walkable, with a broken journey of its own.
 const SHOP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/shop");
+
+/// The orders the offers' test draws: a copy of the orders draft frozen
+/// for the tests.
+const ORDERS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/orders");
 
 /// The window this size by default, as it opens.
 const WINDOW: (f64, f64) = (1440.0, 900.0);
 
-/// The gallery over `root`, `size` points, after `acts`. A root of a
-/// test's own is named for its process: its line is named the same in
-/// every run, for what is held to hold, and again after acts that reload
-/// the tree.
+/// A narrow window: its pictures' pane too narrow for both pages at half
+/// size.
+const NARROW: (f64, f64) = (1000.0, 900.0);
+
+/// The gallery over `root`, `size` points, after `acts`, its panes fitted
+/// to what they then hold. A root of a test's own is named for its
+/// process: its line is named `root` in every run, and again after acts
+/// that reload the tree.
 fn acted(root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
     let mut gallery = opened(root, size);
     let named = |gallery: &mut Gallery| {
@@ -58,28 +53,7 @@ fn acted(root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gall
     named(&mut gallery);
     acts(&mut gallery);
     named(&mut gallery);
-    gallery
-}
-
-/// The gallery over `root`, `size` points, after `acts`: what it shows,
-/// as [`said`] writes it, held to the golden text named `name`. The
-/// gallery is handed back for what the test asserts of it.
-fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
-    let mut gallery = acted(root, size, acts);
-    let shown = said(&mut gallery, root != drafts());
-    hold_text(name, &shown);
-    gallery
-}
-
-/// The gallery over `root`, `size` points, after `acts`: its frame
-/// rendered on the GPU and held to the golden PNG named `name`.
-fn drawn(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
-    let mut gallery = acted(root, size, acts);
-    let scene = gallery.drawn();
-    let (width, height) = (size.0 as u32, size.1 as u32);
-    let mut gpu = gpu::Gpu::open().expect("drawing the window needs a GPU");
-    let pixels = gpu.render(&scene, width, height).unwrap();
-    hold(name, width, height, &pixels);
+    gallery.clamp();
     gallery
 }
 
@@ -96,9 +70,9 @@ fn fixture(name: &str, at: &str) -> PathBuf {
     root
 }
 
-/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
-/// its directory `shop`.
-fn frozen_shop(name: &str) -> PathBuf {
+/// A root of its own named `name`, holding the frozen directory `from`
+/// (such as [`SHOP`]) as its directory `at`.
+fn frozen(name: &str, from: &str, at: &str) -> PathBuf {
     fn copy(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
@@ -109,20 +83,42 @@ fn frozen_shop(name: &str) -> PathBuf {
     }
     let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    copy(Path::new(SHOP), &root.join("shop"));
+    copy(Path::new(from), &root.join(at));
     root
 }
 
-/// What the window shows, as text, a heading for each part: the tree's
-/// lines when `tree` (it is left out over the drafts, whose tree changes
-/// with every draft added), the picture shown and what is picked on it,
-/// the pins, and the sidebar's cards and what its box holds.
-fn said(gallery: &mut Gallery, tree: bool) -> String {
-    let mut out = Vec::new();
-    if tree {
-        out.push("tree".to_string());
-        out.extend(tree_shown(gallery).into_iter().map(|line| format!("  {line}")));
+/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
+/// its directory `shop`.
+fn frozen_shop(name: &str) -> PathBuf {
+    frozen(name, SHOP, "shop")
+}
+
+/// That the window shows each of `lines`, as [`said`] writes it, its indent
+/// aside; a failure names the line missing and all that is shown.
+fn shows_lines(gallery: &mut Gallery, lines: &[&str]) {
+    let said = said(gallery);
+    for line in lines {
+        assert!(said.lines().any(|shown| shown.trim() == *line), "{line:?} is not shown in:\n{said}");
     }
+}
+
+/// Whether a line the window shows, as [`said`] writes it, reads `line`,
+/// its indent aside.
+fn shows_line(gallery: &mut Gallery, line: &str) -> bool {
+    said(gallery).lines().any(|shown| shown.trim() == line)
+}
+
+/// Whether the scrollbar `scrolls` is drawn: its pane overflows.
+fn bar_shown(gallery: &Gallery, scrolls: Scrolls) -> bool {
+    gallery.panes.bar(scrolls).is_some_and(|bar| bar.thumb().is_some())
+}
+
+/// What the window shows, as text, a heading for each part: the tree's
+/// lines, the picture shown and what is picked on it, the pins, and the
+/// sidebar's cards and what its box holds.
+fn said(gallery: &mut Gallery) -> String {
+    let mut out = vec!["tree".to_string()];
+    out.extend(tree_shown(gallery).into_iter().map(|line| format!("  {line}")));
     out.push("picture".to_string());
     out.extend(picture_shown(gallery).into_iter().map(|line| format!("  {line}")));
     out.push("sidebar".to_string());
@@ -161,9 +157,8 @@ fn tree_shown(gallery: &mut Gallery) -> Vec<String> {
 
 /// The picture shown, as text: a state's pages by their captions, the node
 /// picked and its box in each page, the nodes marked ↗ and → in each, and
-/// the pins; an overview's states,
-/// its arrows and the journeys marked on it; a flow's words; a
-/// description's faults.
+/// the pins; an overview's states, its arrows and the journeys marked on
+/// it; a flow's words; a description's faults.
 fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
     let mut out = Vec::new();
     match &gallery.picture {
@@ -224,76 +219,6 @@ fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
     out
 }
 
-/// `shown` held to the golden text named `name`, or written as it when
-/// [`REWRITE`] says so. A failure lists the lines that differ, `-` for the
-/// golden's and `+` for what is shown, between the lines both share.
-fn hold_text(name: &str, shown: &str) {
-    let golden = Path::new(GOLDENS).join(format!("{name}.txt"));
-    if std::env::var(REWRITE).as_deref() == Ok("rewrite") {
-        std::fs::create_dir_all(GOLDENS).unwrap();
-        std::fs::write(&golden, shown).unwrap();
-        return;
-    }
-    let Ok(kept) = std::fs::read_to_string(&golden) else {
-        panic!("no golden {}: {REWRITE}=rewrite writes it", golden.display())
-    };
-    if kept == shown {
-        return;
-    }
-    let (kept, shown): (Vec<&str>, Vec<&str>) = (kept.lines().collect(), shown.lines().collect());
-    let same = kept.iter().zip(&shown).take_while(|(a, b)| a == b).count();
-    let tail = kept[same..].iter().rev().zip(shown[same..].iter().rev()).take_while(|(a, b)| a == b).count();
-    let mut diff = Vec::new();
-    diff.extend(kept[same.saturating_sub(2)..same].iter().map(|line| format!("  {line}")));
-    diff.extend(kept[same..kept.len() - tail].iter().map(|line| format!("- {line}")));
-    diff.extend(shown[same..shown.len() - tail].iter().map(|line| format!("+ {line}")));
-    diff.extend(kept[kept.len() - tail..].iter().take(2).map(|line| format!("  {line}")));
-    panic!(
-        "{name} strays from its golden {}; {REWRITE}=rewrite rewrites it:\n{}",
-        golden.display(),
-        diff.join("\n")
-    );
-}
-
-/// `pixels`, `width` × `height`, held to the golden named `name`, or
-/// written as it when [`REWRITE`] says so.
-fn hold(name: &str, width: u32, height: u32, pixels: &[u8]) {
-    let golden = Path::new(GOLDENS).join(format!("{name}.png"));
-    if std::env::var(REWRITE).as_deref() == Ok("rewrite") {
-        std::fs::create_dir_all(GOLDENS).unwrap();
-        crate::write_png(&golden, width, height, pixels).unwrap();
-        return;
-    }
-    let Ok(file) = std::fs::File::open(&golden) else {
-        panic!("no golden {}: {REWRITE}=rewrite writes it", golden.display())
-    };
-    let mut reader = png::Decoder::new(BufReader::new(file)).read_info().unwrap();
-    let mut kept = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut kept).unwrap();
-    let differing = if (info.width, info.height) == (width, height) {
-        kept.chunks(4)
-            .zip(pixels.chunks(4))
-            .filter(|(a, b)| a.iter().zip(*b).any(|(a, b)| a.abs_diff(*b) > CHANNEL))
-            .count()
-    } else {
-        usize::MAX
-    };
-    if differing > pixels.len() / 4 * PER_MILLION / 1_000_000 {
-        let drawn = std::env::temp_dir().join(format!("underdraw-frame-{name}.png"));
-        crate::write_png(&drawn, width, height, pixels).unwrap();
-        panic!(
-            "the frame {name} strays from its golden {} ({}): drawn at {}; {REWRITE}=rewrite rewrites the golden",
-            golden.display(),
-            if differing == usize::MAX {
-                format!("{}×{} kept, {width}×{height} drawn", info.width, info.height)
-            } else {
-                format!("{differing} pixels differ")
-            },
-            drawn.display()
-        );
-    }
-}
-
 /// That every text of the sidebar fits the box it is set in, inside the
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
@@ -331,10 +256,21 @@ fn the_tree_lists_directories_descriptions_states_phases_journeys_and_counts_fau
     let root = shop("frame-tree");
     std::fs::create_dir_all(root.join("broken")).unwrap();
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
-    let gallery = held("tree", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         say_on(gallery, 0, "order-0", "rename it");
     });
+    shows_lines(
+        &mut gallery,
+        &[
+            "root/",
+            "→ cancel-an-order",
+            "broken  [2 faults]",
+            "components/",
+            "orders  [1 note]",
+            "▸ default  [1 note]",
+        ],
+    );
     let line = |name: &str| gallery.lines.iter().find(|l| l.row.name == name).unwrap();
     assert!(!line("broken").row.faults.is_empty(), "a description with faults");
     assert!(line("cancel-an-order").journey, "a journey");
@@ -346,29 +282,48 @@ fn the_tree_lists_directories_descriptions_states_phases_journeys_and_counts_fau
 
 #[test]
 fn a_state_at_both_widths_with_its_labels() {
-    let gallery = held("state", drafts(), WINDOW, |gallery| show(gallery, "airbnb-listing", "default"));
+    let mut gallery = acted(drafts(), WINDOW, |gallery| show(gallery, "airbnb-listing", "default"));
     assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
+    shows_lines(&mut gallery, &["default · the whole state"]);
+    assert!(tags_drawn(&mut gallery) > 0, "its labels drawn");
 }
 
 #[test]
 fn a_state_and_an_overview_with_their_marks_hidden() {
-    drawn("state-bare", drafts(), WINDOW, |gallery| {
-        show(gallery, "airbnb-listing", "default");
-        gallery.use_tool(Tool::Marks);
+    let root = fixture("frame-bare", "airbnb-listing");
+    let mut gallery = acted(&root, WINDOW, |gallery| show(gallery, "airbnb-listing", "default"));
+    assert!(tags_drawn(&mut gallery) > 0 && leads_drawn(&gallery) > 0, "labels and marks, before");
+    gallery.use_tool(Tool::Marks);
+    assert_eq!(tags_drawn(&mut gallery), 0, "no label, no \"?\"");
+    assert_eq!(leads_drawn(&gallery), 0, "no purple mark");
+    std::fs::remove_dir_all(root).unwrap();
+
+    let root = frozen_shop("frame-overview-bare");
+    let order = root.join("shop").join("order");
+    let mut gallery = acted(&root, WINDOW, |gallery| {
+        let line = gallery.lines.iter().position(|line| line.row.dir == order && line.state.is_none());
+        showing(gallery, line.unwrap());
     });
-    drawn("overview-bare", drafts(), WINDOW, |gallery| {
-        let order = description_in(gallery, "shop/order");
-        showing(gallery, order);
-        gallery.use_tool(Tool::Marks);
-    });
+    assert!(passes_drawn(&mut gallery), "the journey's marks, before");
+    gallery.use_tool(Tool::Marks);
+    assert!(!passes_drawn(&mut gallery), "no journey's mark");
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn an_overview_with_its_arrows_and_journey_marks() {
-    let gallery = held("overview", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         let order = description_in(gallery, "shop/order");
         showing(gallery, order);
     });
+    shows_lines(
+        &mut gallery,
+        &[
+            "open → cancelled: 1 · ok",
+            "journeys through open: → cancel-an-order · step 2",
+            "ShopOrder · the whole screen",
+        ],
+    );
     assert!(
         matches!(&gallery.picture, Picture::Overview(overview) if !overview.arrows.is_empty()),
         "its transitions"
@@ -385,15 +340,17 @@ fn the_inbox_of_the_root_grouped_by_description() {
     notes::say(&whole, "too dense").unwrap();
     notes::say(&whole, "a bigger title").unwrap();
     notes::answer(&dir, "N1", "the title is a heading now").unwrap();
-    let mut gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
+    let mut gallery = acted(&root, WINDOW, |gallery| gallery.pick(0));
     let card = gallery.inbox_card().expect("the inbox of everything under the root");
     assert_eq!(card.title, "waits on you · 6");
+    shows_lines(&mut gallery, &["root · these screens", "? nav-export in default"]);
     fits(&mut gallery);
-    let mut gallery = held("inbox-zh", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         gallery.lang = Lang::Zh;
         gallery.pick(0);
     });
     assert_eq!(gallery.inbox_card().unwrap().title, "等你处理 · 6");
+    shows_lines(&mut gallery, &["root · 这些屏幕", "? nav-export（default）"]);
     fits(&mut gallery);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -401,10 +358,11 @@ fn the_inbox_of_the_root_grouped_by_description() {
 #[test]
 fn a_flow_with_a_screen_not_drawn_yet() {
     let root = root_of("frame-flow", &[("airbnb-listing", "shop/listing"), ("checkout", "shop/checkout")]);
-    let gallery = held("flow", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         let shop = gallery.lines.iter().position(|line| line.row.name == "shop").unwrap();
         showing(gallery, shop);
     });
+    shows_lines(&mut gallery, &["flow", "checkout", "listing", "AddressBook", "shop · these screens"]);
     let flow = flow_shown(&gallery);
     assert!(flow.map.places.iter().any(|place| matches!(place.screen, Screen::Undrawn(_))));
     std::fs::remove_dir_all(root).unwrap();
@@ -415,7 +373,15 @@ fn a_description_with_faults() {
     let root = root_of("frame-faults", &[]);
     std::fs::create_dir_all(root.join("broken")).unwrap();
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
-    let gallery = held("faults", &root, WINDOW, |gallery| gallery.pick(1));
+    let mut gallery = acted(&root, WINDOW, |gallery| gallery.pick(1));
+    shows_lines(
+        &mut gallery,
+        &[
+            "▸ broken  [2 faults]",
+            "broken has 2 faults, so it is not drawn: `underdraw check` it",
+            "the screen needs a root node",
+        ],
+    );
     assert!(
         matches!(&gallery.picture, Picture::Faults(Faults { findings: faults, .. }) if !faults.is_empty())
     );
@@ -424,29 +390,39 @@ fn a_description_with_faults() {
 
 #[test]
 fn a_journey_playing() {
-    let mut gallery = held("journey", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         let journey = journey_of(gallery, "cancel-an-order");
         showing(gallery, journey);
         press_keys(gallery, &["→"]);
     });
     fits(&mut gallery);
     assert_eq!(played(&gallery).0, 2, "its second step, its node marked");
+    shows_lines(
+        &mut gallery,
+        &[
+            "journey cancel-an-order · step 2 of 3 · shop/order · open",
+            "acts on summary-cancel (label 1) · tap, answered ok (marked)",
+            "← previous step",
+            "→ next step",
+        ],
+    );
 }
 
 #[test]
 fn a_prototype_act_and_its_outcomes() {
-    let mut gallery = held("act", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         show(gallery, "orders", "cancel-ready");
         act_on(gallery, "cd-confirm");
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "→ default · ok") && panel_has(&gallery, "→ cancel-ready · shipped"));
+    shows_lines(&mut gallery, &["cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered"]);
 }
 
 #[test]
 fn the_whole_state_talked_about_with_more_typed_in_the_box() {
     let root = root_of("frame-talk", &[("orders", "orders")]);
-    let mut gallery = held("talk", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         type_text(gallery, "the list is too dense");
         press_keys(gallery, &["Enter"]);
@@ -464,23 +440,31 @@ fn the_whole_state_talked_about_with_more_typed_in_the_box() {
     fits(&mut gallery);
     assert_eq!(talk_shown(&gallery)[0], "note N1 · answered");
     assert_eq!(gallery.foot().map(|foot| foot.does), Some(Some(Do::Send)), "Send can send what is typed");
+    shows_lines(&mut gallery, &["pin N1 on page 0: Line", "box: \"yes, behind a button\\nnamed Filters\""]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn an_arrow_picked_in_the_overview() {
-    let gallery = held("arrow", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         let orders = line_of(gallery, "orders");
         showing(gallery, orders);
         gallery.press_at(on_arrow(gallery, 0));
     });
     assert_eq!(gallery.picked, Picked::Arrow(0));
+    shows_lines(
+        &mut gallery,
+        &[
+            "▸ default → cancel-dialog: 10",
+            "transition from default on order-{index}-cancel.tap to cancel-dialog",
+        ],
+    );
 }
 
 #[test]
 fn note_pins_open_and_answered_with_its_reply() {
     let root = root_of("frame-notes", &[("orders", "orders")]);
-    let mut gallery = held("notes", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         say_on(gallery, 0, "nav-export", "rename it");
         say_on(gallery, 0, "order-0-cancel", "too red");
@@ -491,6 +475,7 @@ fn note_pins_open_and_answered_with_its_reply() {
     let inks: Vec<Ink> = gallery.pins().into_iter().filter(|pin| !pin.faint).map(|pin| pin.ink).collect();
     assert_eq!(inks, [Ink::Answered, Ink::Note]);
     assert!(!gallery.reply_shown().is_empty(), "the reply shown");
+    shows_lines(&mut gallery, &["orders  [1 note]", "note N2 · waiting on the agent", "too red"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -498,7 +483,7 @@ fn note_pins_open_and_answered_with_its_reply() {
 fn where_each_note_stands_marked_on_the_pictures_and_counted_in_the_sidebar() {
     let root = root_of("frame-stands", &[("orders", "orders")]);
     let dir = root.join("orders");
-    let mut gallery = held("stands", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         gallery.time = Some(1_000_023);
         show(gallery, "orders", "default");
         for (id, says) in [("nav-export", "rename it"), ("search", "wider"), ("load-more", "say how many")] {
@@ -532,13 +517,14 @@ fn where_each_note_stands_marked_on_the_pictures_and_counted_in_the_sidebar() {
         talk_shown(&gallery),
         ["note N3 · waiting on the agent", "say how many", "the agent is changing it (23s)"]
     );
+    shows_lines(&mut gallery, &["orders  [2 notes]", "▸ default  [2 notes]"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn an_assumption_picked_by_its_question_mark() {
     let root = root_of("frame-assumption", &[("checkout", "checkout")]);
-    let mut gallery = held("assumption", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         let checkout = line_of(gallery, "checkout");
         let mut offset = 1;
         loop {
@@ -556,13 +542,17 @@ fn an_assumption_picked_by_its_question_mark() {
     });
     fits(&mut gallery);
     assert_eq!(picked_node(&gallery), Some("card-number"));
+    shows_lines(
+        &mut gallery,
+        &["assumed, for you to answer", "Card fields are drawn here", "✓ right, keep it", "✗ wrong…"],
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_note_read_as_a_conversation() {
     let root = root_of("frame-conversation", &[("orders", "orders")]);
-    let mut gallery = held("conversation", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         say_on(gallery, 0, "nav-export", "rename it, and say what it exports");
         notes::answer(&root.join("orders"), "N1", "renamed it Export orders").unwrap();
@@ -578,13 +568,15 @@ fn a_note_read_as_a_conversation() {
         ["note N1 · answered", "rename it, and say what it exports", "renamed it Export orders"]
     );
     assert!(!gallery.panel().iter().any(|line| line == "not yet…" || line == "close"), "never closed");
+    assert!(gallery.reply_shown().is_empty(), "no reply over the pictures");
+    shows_lines(&mut gallery, &["pin N1 on page 0: Line"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_wrong_assumption_written_with_an_input_method() {
     let root = root_of("frame-rejecting", &[("orders", "orders")]);
-    let mut gallery = held("rejecting", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         gallery.press_at(on_guess(gallery, 0, "nav-export"));
         assert!(click_panel_line(gallery, "✗ wrong…"));
@@ -593,53 +585,73 @@ fn a_wrong_assumption_written_with_an_input_method() {
     });
     fits(&mut gallery);
     assert!(gallery.rejecting.is_some() && gallery.sidebar.talk().is_composing());
+    shows_lines(
+        &mut gallery,
+        &[
+            "✗: write what is right in the box below and send it; not sent empty · Esc takes the ✗ back",
+            "box: \"导出是\"",
+        ],
+    );
+    assert!(!shows_line(&mut gallery, "✓ right, keep it"), "the choice made");
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_confirmation_waiting_to_be_undone() {
     let root = root_of("frame-confirming", &[("orders", "orders")]);
-    let mut gallery = held("confirming", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         gallery.press_at(on_guess(gallery, 0, "nav-export"));
         assert!(click_panel_line(gallery, "✓ right, keep it"));
     });
     fits(&mut gallery);
     assert!(gallery.confirming.is_some());
+    shows_lines(
+        &mut gallery,
+        &["✓ right on nav-export in default at 390", "written to notes.json in 5s, for the agent", "undo"],
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_shared_component_in_the_components_section() {
     let root = shop("frame-components");
-    let gallery = held("components", &root, WINDOW, |gallery| show(gallery, "OrderRow", "pending"));
+    let mut gallery = acted(&root, WINDOW, |gallery| show(gallery, "OrderRow", "pending"));
     assert_eq!(captions(&gallery), ["pending · 390", "pending · 1120"]);
+    shows_lines(&mut gallery, &["components/", "▸ pending", "pending · the whole state"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
-    let mut gallery = held("node", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.press_at(on_node(gallery, 0, "nav-save"));
         gallery.details = true;
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "id  nav-save"));
+    shows_lines(
+        &mut gallery,
+        &["IconButton", "calls  toggleSaved", "▾ details", "at 390  label 3 · box 334, 8 · 40 × 40"],
+    );
 }
 
 #[test]
 fn the_sidebar_hidden_the_pictures_take_its_width() {
-    let gallery = held("sidebar-hidden", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.chord("\\");
     });
+    assert!(gallery.panes.side().is_none(), "hidden");
     assert_eq!(gallery.panes.pictures().x1, WINDOW.0);
+    assert!(!bar_shown(&gallery, Scrolls::Side), "nor its scrollbar");
+    shows_lines(&mut gallery, &["page default · 390", "page default · 1120"]);
 }
 
 #[test]
 fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
-    let mut gallery = held("sidebar-narrow", drafts(), WINDOW, |gallery| {
+    let mut gallery = acted(drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.press_at(on_node(gallery, 1, "nav-save"));
         gallery.let_go();
@@ -649,12 +661,13 @@ fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
     });
     assert_eq!(gallery.panes.side_width(), SIDEBAR_LEAST);
     fits(&mut gallery);
+    shows_lines(&mut gallery, &["calls  toggleSaved"]);
 }
 
 #[test]
 fn the_window_in_chinese() {
     let root = root_of("frame-zh", &[("checkout", "checkout")]);
-    let mut gallery = held("zh", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         gallery.lang = Lang::Zh;
         let checkout = line_of(gallery, "checkout");
         showing(gallery, checkout + 1);
@@ -664,13 +677,14 @@ fn the_window_in_chinese() {
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "▸ 详情"));
+    shows_lines(&mut gallery, &["假定，等你回答", "✓ 对，保留", "↗ AddressBook · 还没画"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn the_window_in_japanese() {
     let root = root_of("frame-ja", &[("checkout", "checkout")]);
-    let mut gallery = held("ja", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         gallery.speak(Lang::Ja).unwrap();
         let checkout = line_of(gallery, "checkout");
         showing(gallery, checkout + 1);
@@ -680,34 +694,50 @@ fn the_window_in_japanese() {
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "▸ 詳細"));
+    shows_lines(
+        &mut gallery,
+        &["推測、あなたの回答待ち", "✓ 正しい、このまま", "↗ AddressBook · まだ描かれていません"],
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
-// The pixel goldens: only where the look is the point, over the fixture.
+// The look, from the window's state, over a fixture root of its own.
 
 #[test]
-fn the_window_drawn_its_tree_pictures_and_sidebar_in_their_chrome() {
+fn the_window_its_pictures_at_half_size_and_scrollbars_shown_while_needed() {
     let root = fixture("frame-window", "airbnb-listing");
-    let mut gallery = drawn("window", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.press_at(on_node(gallery, 0, "nav-save"));
         gallery.details = true;
     });
     fits(&mut gallery);
     assert_eq!(picked_node(&gallery), Some("nav-save"));
+    assert_eq!(zoom(&gallery), SMALLEST, "both pages at half size");
+    assert!(bar_shown(&gallery, Scrolls::Down), "the listing taller than the pane");
+    assert!(bar_shown(&gallery, Scrolls::Across), "both pages wider than the pane");
+    assert!(!bar_shown(&gallery, Scrolls::Tree), "the tree fits");
+    assert!(!bar_shown(&gallery, Scrolls::Side), "the sidebar fits");
+    shows_lines(
+        &mut gallery,
+        &["airbnb-listing", "▸ default", "picked nav-save: 334, 8 · 40 × 40", "id  nav-save"],
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_narrow_window_at_half_size_scrolled_across() {
     let root = fixture("frame-narrow", "airbnb-listing");
-    let gallery = drawn("narrow", &root, (1000.0, 900.0), |gallery| {
+    let gallery = acted(&root, NARROW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
         gallery.wheel_by(1e6, 0.0);
         gallery.press_at(on_node(gallery, 1, "nav-save"));
     });
     assert_eq!(zoom(&gallery), SMALLEST);
+    assert!(bar_shown(&gallery, Scrolls::Across), "wider than the pane");
+    let bar = gallery.panes.bar(Scrolls::Across).unwrap();
+    assert_eq!(gallery.panes.scrolled(Scrolls::Across), bar.content - bar.pane.width(), "as far as its end");
     assert_eq!(picked_node(&gallery), Some("nav-save"), "picked, scaled and scrolled");
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -716,18 +746,27 @@ fn a_narrow_window_at_half_size_scrolled_across() {
 fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
     let listing = "a-listing-whose-name-runs-past-the-narrowest-tree";
     let root = fixture("frame-tree-narrow", listing);
-    let gallery = drawn("tree-narrow", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, listing, "default");
         gallery.press_at((gallery.panes.pictures().x0, MARGIN));
         gallery.move_to((0.0, MARGIN));
         gallery.let_go();
     });
-    assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
+    let tree = gallery.panes.pictures().x0;
+    assert_eq!(tree, TREE_LEAST);
+    let draws = gallery.tree_draws();
+    let Some(Draw::Text { rect, font, .. }) =
+        draws.iter().find(|draw| matches!(draw, Draw::Text { text, .. } if text == listing))
+    else {
+        panic!("{listing} is not in the tree")
+    };
+    assert!(f64::from(rect.x + rect.width) < tree, "its box ends inside the tree");
+    let set = gallery.typesetter.text(listing, *font, None);
+    assert!(set.width > rect.width, "its name runs past its box, cut at its edge");
     std::fs::remove_dir_all(root).unwrap();
 }
 
-// The journey's every surface, drawn over the frozen shop: the "before" its
-// redesign starts from.
+// The journey's every surface, over the frozen shop.
 
 /// The gallery playing the shop's journey to its step `step`, from 1.
 fn playing_to(gallery: &mut Gallery, step: usize) {
@@ -742,17 +781,38 @@ fn playing_to(gallery: &mut Gallery, step: usize) {
 #[test]
 fn the_journey_in_the_tree_nothing_picked() {
     let root = frozen_shop("frame-journey-tree");
-    let gallery = drawn("journey-tree", &root, WINDOW, |_| {});
+    let mut gallery = acted(&root, WINDOW, |_| {});
     assert!(gallery.line.is_none() && gallery.lines.iter().any(|line| line.journey));
+    shows_lines(
+        &mut gallery,
+        &["→ cancel-an-order", "→ refund-a-cancelled-order  [1 fault]", "Nothing picked"],
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn the_journey_played_at_its_first_middle_and_last_steps() {
     let root = frozen_shop("frame-journey-steps");
-    for (name, step) in [("journey-first", 1), ("journey-middle", 2), ("journey-last", 3)] {
-        let mut gallery = drawn(name, &root, WINDOW, |gallery| playing_to(gallery, step));
+    let steps = [
+        (
+            1,
+            "journey cancel-an-order · step 1 of 3 · shop/orders · default",
+            "acts on order-{index} (label 1) · tap (marked)",
+        ),
+        (
+            2,
+            "journey cancel-an-order · step 2 of 3 · shop/order · open",
+            "acts on summary-cancel (label 1) · tap, answered ok (marked)",
+        ),
+        (3, "journey cancel-an-order · step 3 of 3 · shop/order · cancelled", "the journey ends here"),
+    ];
+    for (step, heading, acts) in steps {
+        let mut gallery = acted(&root, WINDOW, |gallery| playing_to(gallery, step));
         fits(&mut gallery);
+        assert_eq!(zoom(&gallery), SMALLEST, "step {step} at half size");
+        shows_lines(&mut gallery, &["▸ → cancel-an-order", heading, acts]);
+        assert_eq!(shows_line(&mut gallery, "← previous step"), step > 1, "step {step}");
+        assert_eq!(shows_line(&mut gallery, "→ next step"), step < 3, "step {step}");
     }
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -760,13 +820,14 @@ fn the_journey_played_at_its_first_middle_and_last_steps() {
 #[test]
 fn a_step_of_the_journey_with_a_node_picked() {
     let root = frozen_shop("frame-journey-node");
-    let mut gallery = drawn("journey-node", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         playing_to(gallery, 2);
         gallery.press_at(on_node(gallery, 0, "summary-total"));
     });
     fits(&mut gallery);
     assert_eq!(picked_node(&gallery), Some("summary-total"));
     assert_eq!(played(&gallery).0, 2, "still played");
+    shows_lines(&mut gallery, &["journey cancel-an-order · step 2 of 3 · shop/order · open", "Text"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -774,41 +835,52 @@ fn a_step_of_the_journey_with_a_node_picked() {
 fn an_overview_with_the_journey_marked_on_its_states() {
     let root = frozen_shop("frame-journey-overview");
     let order = root.join("shop").join("order");
-    let gallery = drawn("journey-overview", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         let line = gallery.lines.iter().position(|line| line.row.dir == order && line.state.is_none());
         showing(gallery, line.unwrap());
     });
     assert_eq!(passes_shown(&gallery).len(), 2, "the journey's marks");
+    assert!(passes_drawn(&mut gallery), "drawn");
+    shows_lines(&mut gallery, &["journeys through open: → cancel-an-order · step 2"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn the_broken_journey_picked_its_faults_shown() {
     let root = frozen_shop("frame-journey-broken");
-    let gallery = drawn("journey-broken", &root, WINDOW, |gallery| {
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         let journey = journey_of(gallery, "refund-a-cancelled-order");
         showing(gallery, journey);
     });
     assert!(gallery.playing.is_none());
     assert!(matches!(&gallery.picture, Picture::Faults(Faults { findings, .. }) if !findings.is_empty()));
+    shows_lines(
+        &mut gallery,
+        &["refunded is not a state of order: name a fixture or a phase (open, shipped, cancelled)"],
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn the_journey_playing_in_a_narrow_window() {
     let root = frozen_shop("frame-journey-narrow");
-    let mut gallery = drawn("journey-narrow", &root, (1000.0, 900.0), |gallery| playing_to(gallery, 2));
+    let mut gallery = acted(&root, NARROW, |gallery| playing_to(gallery, 2));
     fits(&mut gallery);
+    assert_eq!(zoom(&gallery), SMALLEST);
+    assert!(bar_shown(&gallery, Scrolls::Across), "the pages wider than the narrow pane");
+    shows_lines(&mut gallery, &["journey cancel-an-order · step 2 of 3 · shop/order · open"]);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn a_node_picked_offers_where_acting_on_it_goes_in_buttons_floating_beside_it() {
-    let mut gallery = drawn("offers", drafts(), WINDOW, |gallery| {
+    let root = frozen("frame-offers", ORDERS, "orders");
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "cancel-ready");
         gallery.press_at(on_node(gallery, 0, "cd-confirm"));
     });
     fits(&mut gallery);
     assert_eq!(picked_node(&gallery), Some("cd-confirm"));
     assert_eq!(gallery.seen().offers.len(), 2, "one for each outcome");
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -40,17 +40,10 @@ cargo build --release          # target/release/underdraw
 ignored; `verify.sh` refuses any checker other than the pinned one. The render
 tests need a GPU.
 
-Every surface of the gallery window is held by a test to a golden in
-`crates/cli/goldens/gallery`: most as text (the tree's lines, the pictures
-and what is picked on them, the pins, the sidebar's cards), and a few, where
-the look is the point, as a PNG drawn from a fixture root of their own and
-held within a small tolerance. After a deliberate change to what the window
-shows or how it draws, rewrite the goldens and look at each before
-committing it:
-
-```sh
-UNDERDRAW_GOLDENS=rewrite cargo nextest run -p underdraw frames
-```
+Every surface of the gallery window is tested by acting on it as a person
+would and asserting the few lines of text, or numbers, that say what the test
+is about: never its pixels, nor all it shows. A draft added or a word changed
+fails only the tests about it.
 
 ## Usage
 

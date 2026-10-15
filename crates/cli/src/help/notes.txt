@@ -59,13 +59,19 @@ DOES
   takes; for the screens under a directory, in each description under it
   that it takes; for a journey, in <dir>/journeys/<"journey">.json or in
   the screens its steps go through; and do what each marked message asks (MARKS, below).
-  Then answer:
+  Then answer it by what the listing names it, its "note", from the same
+  <path> it was listed under:
 
-    underdraw notes <dir> --answer N3 --reply "made the price wrap"
+    underdraw notes <path> --answer play/N3 --reply "made the price wrap"
 
-  <dir> is that description's directory, or, for a note on the screens
-  under a directory or on a journey, that directory:
-  <path>/<"description">. The reply
+  "note" is <"description">/<"id">, or "id" alone for a note of <path>'s
+  own ("description": "."): copy it as listed, nothing to join. From a
+  description's own directory its notes are listed, and answered, by
+  their id alone:
+
+    underdraw notes <path>/play --answer N3 --reply "made the price wrap"
+
+  The reply
   is at any length, as many lines as it takes, kept as written but for
   blank space at its ends: say what was done, or why not, or ask back.
   It is added to the conversation as the agent's message, unread, and the
@@ -86,7 +92,7 @@ DOES
   findings, and reading again moves nothing twice. The joined note waits
   on the agent while the person spoke last, like any other.
 
-    underdraw notes <dir> --answer N3 --reply "Made the price wrap.
+    underdraw notes <path> --answer play/N3 --reply "Made the price wrap.
     Should the date wrap too, or be cut?"
 
 MARKS
@@ -157,7 +163,10 @@ ANSWERS
     "notes":    the notes waiting on the agent, description by description
                 (and directory by directory) in the tree's
                 order, each in the order written:
-                [{"description": its directory, relative to root ("." for
+                [{"note":        what --answer takes for it, from this
+                                 same <path>: "play/N3", or "N3" for
+                                 <path>'s own,
+                  "description": its directory, relative to root ("." for
                                  root itself),
                   "id":          "N3",
                   "stands":      "waiting", "taken", "unread" or "read",
@@ -202,21 +211,20 @@ ANSWERS
   }
   With --answer:
   {
-    "note":    the note answered, as above
+    "note":    the note answered, as above, named from <path>
     "changed": false when the agent's last message already said that
   }
   With --wait: the same as without it, once a note waits.
   Exits 2 with {"error"} when <path> is not a directory, --wait is given
   with --answer, the reply is empty, notes.json is not notes as the
   gallery writes them or is in the old form (`underdraw check` says to
-  delete it), or --answer names no note there.
+  delete it), or --answer names no note under <path>.
 
 WHAT TRIPS YOU UP
-  - --answer takes the directory the note is in, as "description" names
-    it: ids are numbered within each description and each directory, so
-    two can each have an N1. The root is that directory only for a note
-    on the screens under it, or on a journey in its own journeys/
-    ("description": ".").
+  - --answer takes the note's "note", not its "id": ids are numbered
+    within each description and each directory, so two can each have an
+    N1, and "note" (play/N1, orders/N1) tells them apart. Give it with
+    the same <path> the listing was run on.
   - --wait answers at once while any note waits on you: answer every note
     it lists before you start it again, or it never waits.
   - Quote a reply of many lines as one argument; the shell keeps its line
