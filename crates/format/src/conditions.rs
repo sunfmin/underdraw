@@ -665,6 +665,25 @@ fn show(atom: &Atom) -> String {
     }
 }
 
+/// What an `"if"` is said to take, where one is written as anything but a
+/// string.
+pub(crate) const IF_TAKES: &str =
+    "an \"if\" takes a condition: a condition's name or a Bool path, with an optional !, joined by &&";
+
+/// What `written`, an `"if"` that is not a string, is called in a finding:
+/// "a nested cases", "an object", "a number".
+pub(crate) fn what_if_is(written: &Value) -> &'static str {
+    match written {
+        Value::Object(object) if object.contains_key("cases") => "a nested cases",
+        Value::Object(_) => "an object",
+        Value::Array(_) => "a list",
+        Value::Number(_) => "a number",
+        Value::Bool(_) => "true or false",
+        Value::Null => "null",
+        Value::String(_) => "a string",
+    }
+}
+
 /// Where a node or a branch asks a yes/no (`if`, `disabled`): terms joined
 /// by `&&`, each `!` to turn it round, then a condition's name or a Bool
 /// path. It holds when every term does.

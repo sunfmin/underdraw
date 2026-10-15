@@ -263,7 +263,7 @@ impl Cases {
         let mut parsed = Vec::new();
         for branch in branches {
             parsed.push(Branch {
-                when: branch.get("if").and_then(Value::as_str).map(Condition::parse),
+                when: branch.get("if").map(Condition::written),
                 then: branch.get("then").map(Look::parse),
                 otherwise: branch.get("else").map(Look::parse),
             });
@@ -295,6 +295,18 @@ impl Condition {
         let parsed = expr::parse_names(written, Names::Placeholders)
             .map(|expr| expr.named(&|name: String| Placeholder::parse(&name)));
         Condition { written: written.to_string(), parsed }
+    }
+
+    /// A branch's `"if"` as written: a string parsed; anything else a
+    /// condition that never holds, saying an `"if"` takes a condition.
+    fn written(written: &Value) -> Condition {
+        match written {
+            Value::String(condition) => Condition::parse(condition),
+            other => Condition {
+                written: crate::conditions::what_if_is(other).to_string(),
+                parsed: Err(crate::conditions::IF_TAKES.to_string()),
+            },
+        }
     }
 
     /// Every placeholder it reads, in the order written.

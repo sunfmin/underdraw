@@ -740,14 +740,30 @@ impl<'a> Walk<'a> {
             self.findings
                 .add(at, "the last branch of cases must be {\"else\": …}, so every state has a value");
         }
-        for branch in branches {
+        for (index, branch) in branches.iter().enumerate() {
             let mut known = known.clone();
-            if let Some(Value::String(used)) = branch.get("if") {
-                known.extend(self.use_site(used, scope, &format!("{at}.cases")));
-            }
+            known.extend(self.branch_if(branch, scope, at, index));
             if let Some(value) = branch.get("then").or_else(|| branch.get("else")) {
                 self.node(value, scope, &known, at, key);
             }
+        }
+    }
+
+    /// What the `"if"` of `branch`, the `index`th of the cases at `at`,
+    /// makes known where it holds; one that is not a string is no
+    /// condition, and is found at that branch.
+    fn branch_if(&mut self, branch: &Value, scope: &Scope, at: &str, index: usize) -> Known {
+        match branch.get("if") {
+            Some(Value::String(used)) => self.use_site(used, scope, &format!("{at}.cases")),
+            Some(other) => {
+                let what = crate::conditions::what_if_is(other);
+                self.findings.add(
+                    &format!("{at}.cases[{index}].if"),
+                    &format!("{what} is not a condition: {}", crate::conditions::IF_TAKES),
+                );
+                Known::default()
+            }
+            None => Known::default(),
         }
     }
 
@@ -765,11 +781,9 @@ impl<'a> Walk<'a> {
                 self.findings
                     .add(at, "the last branch of cases must be {\"else\": …}, so every state has a handler");
             }
-            for branch in branches {
+            for (index, branch) in branches.iter().enumerate() {
                 let mut known = known.clone();
-                if let Some(Value::String(used)) = branch.get("if") {
-                    known.extend(self.use_site(used, scope, &format!("{at}.cases")));
-                }
+                known.extend(self.branch_if(branch, scope, at, index));
                 if let Some(chosen) = branch.get("then").or_else(|| branch.get("else")) {
                     self.handler(chosen, scope, &known, at, node);
                 }
