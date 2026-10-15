@@ -32,8 +32,7 @@ fn code(language: &str) -> String {
         "tokenNaming": { "pattern": "{group}.{name}" },
         "components": { "Screen": "screen", "Text": "text" }, "actions": {}
     });
-    let handoff =
-        handoff(&screen(), &mapping, &json!({}), None).unwrap_or_else(|c| panic!("{:?}", c.findings));
+    let handoff = handoff(&screen(), &mapping, &json!({})).unwrap_or_else(|c| panic!("{:?}", c.findings));
     assert!(handoff.ok, "{:?}", handoff.findings);
     handoff.code.text
 }
@@ -89,8 +88,7 @@ fn a_mapping_that_misses_a_component_says_so() {
         "platform": "ios", "language": "swift", "testId": "{id}",
         "tokenNaming": { "pattern": "{group}.{name}" }, "components": { "Screen": "screen" }, "actions": {}
     });
-    let handoff =
-        handoff(&screen(), &mapping, &json!({}), None).unwrap_or_else(|c| panic!("{:?}", c.findings));
+    let handoff = handoff(&screen(), &mapping, &json!({})).unwrap_or_else(|c| panic!("{:?}", c.findings));
     assert!(!handoff.ok);
     assert_eq!(handoff.findings.len(), 1);
     assert_eq!(handoff.findings[0].at, "t");
@@ -122,7 +120,7 @@ fn on_a_type(language: &str) -> String {
         "tokenNaming": { "pattern": "{group}.{name}" },
         "components": { "Screen": "screen", "Text": "text" }, "actions": {}
     });
-    let handoff = handoff(&screen, &mapping, &json!({}), None).unwrap_or_else(|c| panic!("{:?}", c.findings));
+    let handoff = handoff(&screen, &mapping, &json!({})).unwrap_or_else(|c| panic!("{:?}", c.findings));
     assert!(handoff.ok, "{:?}", handoff.findings);
     handoff.code.text
 }

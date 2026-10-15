@@ -128,7 +128,7 @@ DOES
   The id is the one written, a template inside a repeat (`order-{index}`),
   never the id one row was given; the JSON Pointer (RFC 6901) is where that
   node is written in <description dir>/screen.json, under /root, a phase
-  (/phases/<name>) or a component (/components/<name>): edit the node
+  (/phases/<name>) or a component (/components/<name>/nodes): edit the node
   there. What follows "pointed at" is context, the one instance the person
   pointed at: the element of each repeat around it ([2] is the third,
   outermost first), its label and the width it was drawn at, which say
@@ -196,7 +196,7 @@ DOES
   the agent makes every change. Commit notes.json with the description.
 
   The window watches <root> and is drawn from the files as they now stand:
-  edit a description's screen.json, kinds.json or notes.json (`underdraw
+  edit a description's screen.json or notes.json (`underdraw
   notes --answer` does), or a tokens.json under <root> it takes its tokens
   from, and the state shown is drawn again within a moment, scrolled where
   it was and with the node picked still picked while it is there, without

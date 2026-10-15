@@ -134,17 +134,10 @@ impl Guess {
     }
 
     /// Whether the guess is still made of the node written `written` in
-    /// `screen`, in the description in `dir`, among the screens `drawn`
-    /// under the root: its `assumed` still written; a screen it named still
-    /// navigated to and not drawn; its component still its component
-    /// and still unknown.
-    fn stands(
-        &self,
-        screen: &Value,
-        dir: &Path,
-        written: &str,
-        drawn: impl FnOnce() -> BTreeSet<String>,
-    ) -> bool {
+    /// `screen`, among the screens `drawn` under the root: its `assumed`
+    /// still written; a screen it named still navigated to and not drawn;
+    /// its component still its component and still unknown.
+    fn stands(&self, screen: &Value, written: &str, drawn: impl FnOnce() -> BTreeSet<String>) -> bool {
         let node = underdraw_format::written_node(screen, written);
         match self {
             Guess::Author => node.is_some_and(|node| node.contains_key("assumed")),
@@ -155,11 +148,7 @@ impl Guess {
             Guess::Component(component) => {
                 let still =
                     node.and_then(|node| node.get("component")).and_then(Value::as_str) == Some(component);
-                let kinds = crate::read_kinds(dir).ok().flatten();
-                let components = screen.get("components").and_then(Value::as_object);
-                still
-                    && !underdraw_format::Kinds::read(kinds.as_ref()).has(component)
-                    && !components.is_some_and(|components| components.contains_key(component))
+                still && !underdraw_format::Components::read(screen).has(component)
             }
         }
     }
@@ -440,16 +429,11 @@ fn whole(dir: &Path, on: &On) -> anyhow::Result<Shown> {
     })
 }
 
-/// Why `note` closes itself, in `screen`, the description in `dir` as it
-/// is now written, among the screens `drawn` under the root: what it is
+/// Why `note` closes itself, in `screen`, the description as it is now
+/// written, among the screens `drawn` under the root: what it is
 /// pinned to is gone, or, for a ✓, the assumption it confirmed has been
 /// taken out. None while neither is.
-fn closes(
-    screen: &Value,
-    dir: &Path,
-    note: &Note,
-    drawn: impl FnOnce() -> BTreeSet<String>,
-) -> Option<String> {
+fn closes(screen: &Value, note: &Note, drawn: impl FnOnce() -> BTreeSet<String>) -> Option<String> {
     if let Some(why) = gone(screen, &note.on) {
         return Some(why);
     }
@@ -457,7 +441,7 @@ fn closes(
         return None;
     };
     let written = &node.origin.written;
-    let taken = answers.answer == Answer::Right && !answers.guess.stands(screen, dir, written, drawn);
+    let taken = answers.answer == Answer::Right && !answers.guess.stands(screen, written, drawn);
     taken.then(|| format!("the assumption on {written}, confirmed, is taken out"))
 }
 
@@ -521,20 +505,18 @@ pub fn settle(dir: &Path, root: &Path) -> anyhow::Result<Vec<Note>> {
     };
     let drawn = std::cell::OnceCell::new();
     let drawn = || drawn.get_or_init(|| crate::links::drawn(root)).clone();
-    let closing = |note: &Note| note.status != Status::Closed && closes(&screen, dir, note, drawn).is_some();
+    let closing = |note: &Note| note.status != Status::Closed && closes(&screen, note, drawn).is_some();
     if !notes.iter().any(closing) {
         return Ok(Vec::new());
     }
-    let clean = crate::read_kinds(dir)
-        .and_then(|kinds| crate::checked(&screen, dir, kinds.as_ref()))
-        .is_ok_and(|checked| checked.ok);
+    let clean = crate::checked(&screen, dir).is_ok_and(|checked| checked.ok);
     if !clean {
         return Ok(Vec::new());
     }
     change(dir, |notes| {
         let mut closed = Vec::new();
         for note in notes.iter_mut().filter(|note| note.status != Status::Closed) {
-            if let Some(why) = closes(&screen, dir, note, drawn) {
+            if let Some(why) = closes(&screen, note, drawn) {
                 note.status = Status::Closed;
                 note.closed_because = Some(why);
                 closed.push(note.clone());
@@ -763,23 +745,17 @@ mod tests {
             (Guess::Undrawn(vec!["OrderDetail".into()]), "row"),
             (Guess::Component("Gauge".into()), "gauge"),
         ] {
-            assert!(guess.stands(&screen, &dir, written, none), "{guess:?}");
+            assert!(guess.stands(&screen, written, none), "{guess:?}");
         }
         let drawn = || BTreeSet::from(["OrderDetail".to_string()]);
-        assert!(!Guess::Undrawn(vec!["OrderDetail".into()]).stands(&screen, &dir, "row", drawn), "drawn now");
+        assert!(!Guess::Undrawn(vec!["OrderDetail".into()]).stands(&screen, "row", drawn), "drawn now");
         let taken = json!({ "root": { "id": "list", "component": "Column", "children": [
             { "id": "card", "component": "TextField" },
             { "id": "gauge", "component": "Text" },
         ] } });
-        assert!(!Guess::Author.stands(&taken, &dir, "card", none), "its assumed taken out");
-        assert!(
-            !Guess::Component("Gauge".into()).stands(&taken, &dir, "gauge", none),
-            "another component now"
-        );
-        assert!(
-            !Guess::Component("Row".into()).stands(&screen, &dir, "row", none),
-            "a component underdraw knows"
-        );
+        assert!(!Guess::Author.stands(&taken, "card", none), "its assumed taken out");
+        assert!(!Guess::Component("Gauge".into()).stands(&taken, "gauge", none), "another component now");
+        assert!(!Guess::Component("Row".into()).stands(&screen, "row", none), "a component underdraw knows");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

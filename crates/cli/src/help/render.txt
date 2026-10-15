@@ -9,9 +9,9 @@ WHO
 
 READS
   <path>/screen.json, its tokens.json (spaces, radii, fonts, breakpoints;
-  the nearest at or above <path>, as `underdraw --help` says) and, beside
-  it, kinds.json when there is one (what the project's own
-  components look like). Refuses a description `check` finds faults in. With
+  the nearest at or above <path>, as `underdraw --help` says); each node is
+  drawn as the screen's own "components" or underdraw's say. Refuses a
+  description `check` finds faults in. With
   --root, also the "screen" of every description under that directory, as
   `check <root>` reads them: a node that navigates to a screen none of them
   declares is assumed, a screen not drawn yet. Without it, navigates are

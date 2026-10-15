@@ -40,7 +40,8 @@ pub const VERSION: &str = env!("UNDERDRAW_VERSION");
 
 /// The file a screen's directory holds its description in.
 const SCREEN: &str = "screen.json";
-/// What the project's own components look like, beside the description; optional.
+/// Where a project's own components were written before they moved into
+/// screen.json's "components" (ADR 0021): `check` refuses one still there.
 const KINDS: &str = "kinds.json";
 
 /// `-h` is the one-screen listing; `--help` adds `help.txt`, the guide an
@@ -251,28 +252,36 @@ fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
 /// holds.
 fn check_at(path: &Path, others: &ScreenParams) -> anyhow::Result<underdraw_format::Checked> {
     let (screen, dir) = read(path)?;
-    let kinds = read_kinds(&dir)?;
-    checked_among(&screen, &dir, kinds.as_ref(), others)
+    checked_among(&screen, &dir, others)
 }
 
 /// Every fault in the description, overlays the picture would cut among
 /// them: laid out in the system's fonts, as `render` does.
-fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<underdraw_format::Checked> {
-    checked_among(screen, dir, kinds, &ScreenParams::new())
+fn checked(screen: &Value, dir: &Path) -> anyhow::Result<underdraw_format::Checked> {
+    checked_among(screen, dir, &ScreenParams::new())
 }
 
 /// What [`checked`] finds, and each navigate to a screen in `others` that
-/// does not give its params.
+/// does not give its params, and a kinds.json still beside it.
 fn checked_among(
     screen: &Value,
     dir: &Path,
-    kinds: Option<&Value>,
     others: &ScreenParams,
 ) -> anyhow::Result<underdraw_format::Checked> {
     let tokens = Project::of(dir)?.tokens;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    underdraw_layout::check(screen, &tokens, kinds, others, &mut typesetter).map_err(anyhow::Error::msg)
+    let mut checked =
+        underdraw_layout::check(screen, &tokens, others, &mut typesetter).map_err(anyhow::Error::msg)?;
+    if dir.join(KINDS).exists() {
+        checked.ok = false;
+        checked.conditions.clear();
+        checked.findings.push(underdraw_format::Finding {
+            at: KINDS.to_string(),
+            problem: "kinds.json is no longer read: move each of its components into screen.json's \"components\", declaring the params its look reads, then delete kinds.json (`underdraw check --help`, COMPONENTS)".to_string(),
+        });
+    }
+    Ok(checked)
 }
 
 /// The screen at `path` (a directory or its screen.json), with the domain
@@ -293,9 +302,8 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
 }
 
 fn schema(path: &Path) -> anyhow::Result<Value> {
-    let (screen, dir) = read(path)?;
-    let kinds = read_kinds(&dir)?;
-    match underdraw_format::model(&screen, kinds.as_ref()) {
+    let (screen, _) = read(path)?;
+    match underdraw_format::model(&screen) {
         Ok(model) => {
             Ok(json!({ "screen": model.screen(), "schema": underdraw_handoff::json_schema(&model) }))
         }
@@ -308,9 +316,8 @@ fn schema(path: &Path) -> anyhow::Result<Value> {
 }
 
 fn derive_cli(path: &Path) -> anyhow::Result<Value> {
-    let (screen, dir) = read(path)?;
-    let kinds = read_kinds(&dir)?;
-    match underdraw_format::model(&screen, kinds.as_ref()) {
+    let (screen, _) = read(path)?;
+    match underdraw_format::model(&screen) {
         Ok(model) => Ok(serde_json::to_value(underdraw_handoff::cli(&model))?),
         Err(checked) => bail!(
             "the description has {} finding(s), so a CLI derived from it would be wrong: run `underdraw check {}` and fix them first",
@@ -323,9 +330,8 @@ fn derive_cli(path: &Path) -> anyhow::Result<Value> {
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
     let tokens = Project::of(&dir)?.tokens;
-    let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
-    match underdraw_handoff::handoff(&screen, &mapping, &tokens, kinds.as_ref()) {
+    match underdraw_handoff::handoff(&screen, &mapping, &tokens) {
         Ok(handoff) => Ok(serde_json::to_value(handoff)?),
         Err(checked) => bail!(
             "the description has {} finding(s), so what is handed off would be wrong: run `underdraw check {}` and fix them first",
@@ -343,8 +349,7 @@ fn compare(
     phase: Option<String>,
 ) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
-    let kinds = read_kinds(&dir)?;
-    let checked = underdraw_format::check(&screen, kinds.as_ref());
+    let checked = underdraw_format::check(&screen);
     if !checked.ok {
         bail!(
             "the description has {} finding(s), so it cannot say what the UI or CLI should show: run `underdraw check {}` and fix them first",
@@ -366,8 +371,8 @@ fn compare(
         if let State::Phase(_) = state {
             bail!("a CLI answers from data, not in a phase: pass --fixture, or no --phase");
         }
-        let comparison = underdraw_compare::compare_cli(&screen, kinds.as_ref(), &name, &capture_value)
-            .map_err(anyhow::Error::msg)?;
+        let comparison =
+            underdraw_compare::compare_cli(&screen, &name, &capture_value).map_err(anyhow::Error::msg)?;
         return Ok(serde_json::to_value(comparison)?);
     }
     let Some(platform) = platform else {
@@ -380,16 +385,9 @@ fn compare(
     let mapping = read_platform(&dir, platform)?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    let comparison = underdraw_compare::compare(
-        &screen,
-        &mapping,
-        &tokens,
-        kinds.as_ref(),
-        state,
-        &capture_value,
-        &mut typesetter,
-    )
-    .map_err(anyhow::Error::msg)?;
+    let comparison =
+        underdraw_compare::compare(&screen, &mapping, &tokens, state, &capture_value, &mut typesetter)
+            .map_err(anyhow::Error::msg)?;
     Ok(serde_json::to_value(comparison)?)
 }
 
@@ -415,16 +413,6 @@ fn read_platform(dir: &Path, platform: &str) -> anyhow::Result<Value> {
         }
     };
     serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
-}
-
-/// kinds.json beside the description, when the project has one.
-fn read_kinds(dir: &Path) -> anyhow::Result<Option<Value>> {
-    match std::fs::read_to_string(dir.join(KINDS)) {
-        Ok(text) => serde_json::from_str(&text)
-            .map(Some)
-            .with_context(|| format!("{} is not JSON", dir.join(KINDS).display())),
-        Err(_) => Ok(None),
-    }
 }
 
 fn render(

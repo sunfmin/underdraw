@@ -1,17 +1,22 @@
 # Components drawn as a look
 
-Every node names the `component` it is (`Button`, `ListItem`, `TodoRow`), and
-`kinds.json` says what each component looks like in a wireframe. underdraw
-ships its components in
-[`crates/format/kinds.json`](../../crates/format/kinds.json). A project's own
-`kinds.json`, beside `screen.json`, adds components and replaces a default by
-name. Why: [ADR 0007](../adr/0007-kinds-are-data.md).
+Every node names the `component` it is (`Button`, `ListItem`, `TodoRow`). A
+component whose body is a **look** says what it is drawn as in a wireframe,
+and declares the `params` its look reads; a node gives them as props.
+underdraw ships its components in
+[`crates/format/components.json`](../../crates/format/components.json). A
+screen's own are in its `screen.json` `"components"`, beside those whose body
+is nodes, and replace one of underdraw's by name. A component has a look or
+nodes, never both. There is no `kinds.json`. Why:
+[ADR 0021](../adr/0021-kinds-become-components-one-screens-or-the-projects.md),
+and [ADR 0007](../adr/0007-kinds-are-data.md) for the look vocabulary.
 
 ```json
 {
   "components": {
     "TextField": {
       "doc": "A one-line input: fills what its row leaves.",
+      "params": ["value", "placeholder"],
       "look": {
         "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line", "radius": "radius.sm",
         "children": [ { "cases": [
@@ -23,11 +28,16 @@ name. Why: [ADR 0007](../adr/0007-kinds-are-data.md).
 }
 ```
 
-`check` refuses a node whose component no file defines, and every fault in a
-project's looks. A component is never a guess: `check` refuses `"assumed"` on
-one (a node may still carry one).
+`check` refuses a node whose component neither the screen nor underdraw
+defines, a component with both a look and nodes or neither, and every fault in
+a screen's own looks, among them a name a look reads that its `params` leave
+out: a placeholder's first step, a name in an `if` or a `cases` branch, and,
+for a box with `"frame": true`, `padding`, `gap`, `radius`, `border` and
+`elevation`. What a `repeat` binds (`n`, `index`, `item`) is no param. A
+component is never a guess: `check` refuses `"assumed"` on one (a node may
+still carry one).
 
-Beside `look` and `doc`, a component may say how a platform treats it, which
+Beside `params`, `look` and `doc`, a component may say how a platform treats it, which
 `compare` reads: `"scrolls": true` when its content scrolls or pages, so what
 is in it may lie outside its frame (`Screen`, `Carousel`), and
 `"pinned": true` when it is pinned to the screen, out of its siblings' order

@@ -17,13 +17,13 @@ fn read(path: &Path) -> Option<Value> {
 
 /// Whether `check` and the schema agree on `data`, written as a fixture of
 /// its own; what each says when they do not.
-fn agree(screen: &Value, kinds: Option<&Value>, data: &Value) -> Result<bool, String> {
-    let schema = json_schema(&model(screen, kinds).map_err(|c| format!("{:?}", c.findings))?);
+fn agree(screen: &Value, data: &Value) -> Result<bool, String> {
+    let schema = json_schema(&model(screen).map_err(|c| format!("{:?}", c.findings))?);
     let validator = jsonschema::validator_for(&schema).unwrap();
     let mut probed = screen.clone();
     probed["fixtures"]["probe"] = data.clone();
     let findings: Vec<_> =
-        check(&probed, kinds).findings.into_iter().filter(|f| f.at.starts_with("fixtures.probe")).collect();
+        check(&probed).findings.into_iter().filter(|f| f.at.starts_with("fixtures.probe")).collect();
     let by_schema = validator.is_valid(data);
     if by_schema == findings.is_empty() {
         Ok(by_schema)
@@ -38,9 +38,8 @@ fn every_draft_fixture_is_valid_and_every_planted_fault_is_refused() {
     for entry in std::fs::read_dir(DRAFTS).unwrap() {
         let dir = entry.unwrap().path();
         let Some(screen) = read(&dir.join("screen.json")) else { continue };
-        let kinds = read(&dir.join("kinds.json"));
         drafts += 1;
-        let model = model(&screen, kinds.as_ref()).unwrap_or_else(|c| panic!("{dir:?}: {:?}", c.findings));
+        let model = model(&screen).unwrap_or_else(|c| panic!("{dir:?}: {:?}", c.findings));
         let schema = json_schema(&model);
         let validator = jsonschema::validator_for(&schema).unwrap();
         for (name, data) in &model.fixtures {
@@ -65,7 +64,7 @@ fn every_draft_fixture_is_valid_and_every_planted_fault_is_refused() {
             }
         }
         for data in &planted {
-            assert_eq!(agree(&screen, kinds.as_ref(), data), Ok(false), "{dir:?}");
+            assert_eq!(agree(&screen, data), Ok(false), "{dir:?}");
         }
     }
     assert!(drafts >= 7, "found only {drafts} drafts under {DRAFTS}");
@@ -122,9 +121,9 @@ fn each_type_is_bounded_as_check_bounds_it() {
         for (key, value) in change.as_object().unwrap() {
             data[key] = value.clone();
         }
-        assert_eq!(agree(&screen, None, &data), Ok(valid), "{change}");
+        assert_eq!(agree(&screen, &data), Ok(valid), "{change}");
     }
-    let schema = json_schema(&model(&screen, None).unwrap_or_else(|c| panic!("{:?}", c.findings)));
+    let schema = json_schema(&model(&screen).unwrap_or_else(|c| panic!("{:?}", c.findings)));
     assert_eq!(
         schema["properties"]["owner"]["description"],
         "Who owns it. Derived by the server: from the session"

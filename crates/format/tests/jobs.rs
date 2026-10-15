@@ -6,11 +6,6 @@ use serde_json::Value;
 use underdraw_format::{Checked, Does, Shape, check, model};
 
 const DRAFT: &str = include_str!("../../../drafts/export/screen.json");
-const KINDS: &str = include_str!("../../../drafts/export/kinds.json");
-
-fn kinds() -> Value {
-    serde_json::from_str(KINDS).unwrap()
-}
 
 /// The draft with `from` replaced by `to`, where `from` appears exactly once.
 fn planted(name: &str, from: &str, to: &str) -> Value {
@@ -25,7 +20,7 @@ fn found(checked: &Checked, at: &str, said: &str) -> bool {
 #[test]
 fn a_long_command_derives_its_job_type_and_the_query_that_reads_it() {
     let screen: Value = serde_json::from_str(DRAFT).unwrap();
-    let model = model(&screen, Some(&kinds())).unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let export = model.operations.get("exportDocs").unwrap();
     assert!(export.long);
     assert_eq!(
@@ -128,7 +123,7 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
     ];
     for (name, from, to, at, said) in cases {
-        let checked = check(&planted(name, from, to), Some(&kinds()));
+        let checked = check(&planted(name, from, to));
         assert!(found(&checked, at, said), "{name}: wanted {at}: {said}; got {:#?}", checked.findings);
     }
 }

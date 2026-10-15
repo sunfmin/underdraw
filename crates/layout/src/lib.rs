@@ -141,19 +141,20 @@ pub trait Measure {
 
 /// `root` laid out `width` points wide, its height whatever its content
 /// takes, with `tokens` (tokens.json) for spaces, radii and fonts, and each
-/// component drawn as `kinds` (the project's kinds.json, over underdraw's own)
-/// says; a node of a component none of them defines is drawn as a box with its
-/// name, and assumed, said in `lang`.
+/// component drawn as `screen` (the description `root` is a state of) says
+/// in its own `"components"`, over underdraw's own; a node of a component
+/// none of them defines is drawn as a box with its name, and assumed, said
+/// in `lang`.
 pub fn layout(
     root: &Node,
     tokens: &Value,
-    kinds: Option<&Value>,
+    screen: &Value,
     width: f32,
     lang: Lang,
     measure: &mut dyn Measure,
 ) -> Result<Page, String> {
     let tokens = tokens::Tokens(tokens);
-    let kinds = underdraw_format::Kinds::read(kinds);
-    let elem = look::Catalog { tokens: &tokens, kinds: &kinds, lang }.node(root);
+    let components = underdraw_format::Components::read(screen);
+    let elem = look::Catalog { tokens: &tokens, components: &components, lang }.node(root);
     place::place(&elem, width, measure).map_err(|e| format!("layout failed: {e}"))
 }

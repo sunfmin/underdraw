@@ -72,7 +72,7 @@ fn ids(node: &Node, out: &mut Vec<String>) {
 fn a_row_gates_its_cancel_button_on_the_orders_condition() {
     for gate in [json!({ "if": "item.cancellable" }), json!({ "disabled": "!item.cancellable" })] {
         let screen = screen(button(gate.clone()));
-        let checked = check(&screen, None);
+        let checked = check(&screen);
         assert!(checked.ok, "{gate}: {:#?}", checked.findings);
         let table: Vec<(&str, &[String])> =
             checked.conditions.iter().map(|c| (c.name.as_str(), c.holds_in.as_slice())).collect();
@@ -86,7 +86,7 @@ fn a_row_gates_its_cancel_button_on_the_orders_condition() {
             ]
         );
     }
-    let model = model(&screen(button(json!({ "if": "item.cancellable" }))), None).unwrap();
+    let model = model(&screen(button(json!({ "if": "item.cancellable" })))).unwrap();
     let orders = &model.fixtures[0].1["orders"];
     assert_eq!(orders[0]["cancellable"], true, "each Order reads it as a Bool field");
     assert_eq!(orders[1]["cancellable"], false);
@@ -100,7 +100,7 @@ fn a_row_gates_its_cancel_button_on_the_orders_condition() {
 
 #[test]
 fn check_names_an_ungated_call_and_a_condition_on_the_wrong_value() {
-    let ungated = check(&screen(button(json!({}))), None);
+    let ungated = check(&screen(button(json!({}))));
     let at = "order-{index}-cancel";
     assert!(
         found(&ungated, at, "calls cancelOrder, which requires Order.cancellable")
@@ -109,14 +109,14 @@ fn check_names_an_ungated_call_and_a_condition_on_the_wrong_value() {
         ungated.findings
     );
 
-    let other = check(&screen(button(json!({ "if": "item.customer.cancellable" }))), None);
+    let other = check(&screen(button(json!({ "if": "item.customer.cancellable" }))));
     assert!(
         found(&other, IF, "cancellable is a condition on Order, and item.customer is Customer"),
         "{:#?}",
         other.findings
     );
 
-    let bare = check(&screen(button(json!({ "if": "Order.cancellable" }))), None);
+    let bare = check(&screen(button(json!({ "if": "Order.cancellable" }))));
     assert!(found(&bare, IF, "is a condition on Order: use it through a value"), "{:#?}", bare.findings);
 }
 
@@ -125,7 +125,7 @@ fn check_names_a_condition_on_a_type_that_is_written_wrong() {
     let planted = |name: &str, body: Value| {
         let mut screen = screen(button(json!({ "if": "item.cancellable" })));
         screen["conditions"] = json!({ name: body });
-        check(&screen, None)
+        check(&screen)
     };
     let cases = [
         ("Nothing.x", json!({ "when": "true", "label": "x" }), "Nothing is not an object type"),
@@ -150,7 +150,7 @@ fn check_names_a_condition_on_a_type_that_is_written_wrong() {
                 "hasOrders": { "when": "orders != null", "label": "x" },
                 name: body
             });
-            checked = check(&screen, None);
+            checked = check(&screen);
         }
         let at = format!("conditions.{name}");
         if said.is_empty() {
@@ -164,7 +164,7 @@ fn check_names_a_condition_on_a_type_that_is_written_wrong() {
     screen["conditions"] = json!({
         "anyCancellable": { "when": "Order.cancellable", "label": "x" }
     });
-    let checked = check(&screen, None);
+    let checked = check(&screen);
     assert!(
         found(
             &checked,

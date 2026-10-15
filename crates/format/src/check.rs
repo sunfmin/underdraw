@@ -6,13 +6,13 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
+use crate::components::{Components, track_faults};
 use crate::conditions::{Conditions, UseSite};
 use crate::domain;
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::instance::{State, build};
 use crate::jobs;
-use crate::kinds::{Kinds, track_faults};
 use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::params::{self, ScreenParams};
@@ -77,22 +77,22 @@ impl Findings {
 /// fixtures, the conditions, and every node's paths, templates and cases.
 /// When there is none, which fixtures each condition holds in; a condition
 /// that holds in all of them, or in none, is then itself a fault. Every
-/// node's component is one `kinds` (the project's kinds.json) or underdraw
-/// defines, and the project's looks are checked too. Where it navigates is
+/// node's component is one the screen's own `"components"` or underdraw
+/// defines, and the screen's own components are checked too. Where it navigates is
 /// not: one description alone cannot see the others.
-pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
-    check_among(screen, kinds, &ScreenParams::new())
+pub fn check(screen: &Value) -> Checked {
+    check_among(screen, &ScreenParams::new())
 }
 
 /// What `check` makes of `screen`, among the screens under its root whose
 /// params `others` holds: each `navigate` to one of them gives each of its
 /// params, of its type, in `with`, and nothing else. A navigate to a screen
 /// not in `others` is held to nothing.
-pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams) -> Checked {
+pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
     let mut findings = Findings::default();
     let screen = &domain::expand(screen, &mut findings);
-    let known = Kinds::read(kinds);
-    known.check(kinds, &mut findings);
+    let known = Components::read(screen);
+    known.check(screen, &mut findings);
     let schema = Schema::read(screen, &mut findings);
     let mut fixtures = fixture::read(screen, &schema, &mut findings);
     params::read(screen, &schema, &mut findings);
@@ -110,7 +110,7 @@ pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams)
         conditions: &conditions,
         operations: &operations,
         components: &components,
-        kinds: &known,
+        known: &known,
         findings: &mut findings,
     };
     match screen.get("root") {
@@ -272,7 +272,8 @@ struct Walk<'a> {
     conditions: &'a Conditions,
     operations: &'a Operations,
     components: &'a Map<String, Value>,
-    kinds: &'a Kinds,
+    /// Every component a node may be: underdraw's and the screen's look components.
+    known: &'a Components,
     findings: &'a mut Findings,
 }
 
@@ -303,7 +304,15 @@ impl Walk<'_> {
         let at = object.get("id").and_then(Value::as_str).unwrap_or(at);
         if let Some(name) = object.get("ref") {
             match name.as_str().and_then(|name| self.components.get(name)) {
-                Some(component) => self.node(component, scope, known, at, key),
+                Some(component) => match component.get("nodes") {
+                    Some(nodes) => self.node(nodes, scope, known, at, key),
+                    None => self.findings.add(
+                        at,
+                        &format!(
+                            "ref {name} names a look component: a node is one with \"component\": {name}"
+                        ),
+                    ),
+                },
                 None => self.findings.add(at, &format!("ref {name} is not in components")),
             }
             return;
@@ -315,11 +324,11 @@ impl Walk<'_> {
             );
         }
         if let Some(Value::String(kind)) = object.get("component")
-            && !self.kinds.has(kind)
+            && !self.known.has(kind)
         {
             self.findings.add(
                 at,
-                &format!("component {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, LOOKS)"),
+                &format!("component {kind} is not defined: define it in the screen's \"components\", with its params and look (`underdraw check --help`, COMPONENTS)"),
             );
         }
         match object.get("assumed") {
@@ -336,7 +345,7 @@ impl Walk<'_> {
         }
         if let Some(Value::String(kind)) = object.get("component")
             && key != "overlay"
-            && self.kinds.backdrop(kind)
+            && self.known.backdrop(kind)
         {
             self.findings.add(
                 at,
@@ -346,7 +355,7 @@ impl Walk<'_> {
         let mut known = known.clone();
         if key == "overlay"
             && let Some(Value::String(kind)) = object.get("component")
-            && self.kinds.backdrop(kind)
+            && self.known.backdrop(kind)
             && object.get("id").and_then(Value::as_str).is_some_and(|id| self.opened.contains(id))
         {
             known.confirming = true;

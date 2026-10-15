@@ -32,8 +32,8 @@ pub struct Node {
     #[serde(skip)]
     pub written_id: String,
     /// Where it is written in screen.json, as a JSON Pointer (RFC 6901):
-    /// `/root/children/1/item`, or under `/components` for one a `ref`
-    /// brings in.
+    /// `/root/children/1/item`, or under `/components/<name>/nodes` for one
+    /// a `ref` brings in.
     #[serde(skip)]
     pub written_at: String,
     /// Which element of each `each` it was made for, the outermost first:
@@ -177,9 +177,11 @@ impl Fill<'_> {
             return Err(format!("expected a node, found {written}"));
         };
         if let Some(Value::String(name)) = object.get("ref") {
-            let component = self.components.get(name).ok_or_else(|| format!("no component {name}"))?;
-            let at = Written { at: format!("/components/{}", escaped(name)), instance: at.instance.clone() };
-            return self.node(component, scope, slot, &at);
+            let nodes = self.components.get(name).and_then(|component| component.get("nodes"));
+            let nodes = nodes.ok_or_else(|| format!("no component {name} whose body is nodes"))?;
+            let at =
+                Written { at: format!("/components/{}/nodes", escaped(name)), instance: at.instance.clone() };
+            return self.node(nodes, scope, slot, &at);
         }
         if let Some(Value::String(only)) = object.get("only")
             && Breakpoint::parse(only) != Some(self.breakpoint)
