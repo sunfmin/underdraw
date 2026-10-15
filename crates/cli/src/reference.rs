@@ -4,7 +4,8 @@
 //! description's overview, or a navigate's arrow in a directory's flow.
 //! A whole description, its overview picked, is a reference too: the
 //! whole screen; and so is a whole directory, its flow picked: these
-//! screens. What ⌘C copies, as one line, and what a note is pinned to.
+//! screens; and a whole journey, picked to play. What ⌘C copies, as one
+//! line, and what a note is pinned to.
 
 use std::path::PathBuf;
 
@@ -18,15 +19,16 @@ use crate::draw::{Origin, Shown};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     /// The directory the description is in; for a navigate, the one it is
-    /// written in; for these screens, the directory they are under.
+    /// written in; for these screens, the directory they are under; for a
+    /// journey, the directory its `journeys/` is in.
     pub description: PathBuf,
     pub on: On,
 }
 
 /// What in a description a reference names. Written, in notes.json, as the
 /// fields of the one it is: `{"state", "node"}`, `{"state"}`,
-/// `{"transition"}`, `{"navigate"}`, `{"whole": "screen"}` or
-/// `{"whole": "screens"}`.
+/// `{"transition"}`, `{"navigate"}`, `{"whole": "screen"}`,
+/// `{"whole": "screens"}` or `{"journey"}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum On {
@@ -41,6 +43,8 @@ pub enum On {
     /// A whole description or a whole directory: its overview, or its
     /// flow.
     Whole { whole: Whole },
+    /// A whole journey, by its name, the path through all its steps.
+    Journey { journey: String },
 }
 
 /// What a note on a whole is on: written `"screen"` or `"screens"`.
@@ -91,7 +95,7 @@ impl On {
     pub fn state(&self) -> Option<&Shown> {
         match self {
             On::Node { state, .. } | On::State { state } => Some(state),
-            On::Transition { .. } | On::Navigate { .. } | On::Whole { .. } => None,
+            On::Transition { .. } | On::Navigate { .. } | On::Whole { .. } | On::Journey { .. } => None,
         }
     }
 
@@ -112,7 +116,7 @@ impl On {
     /// What it is, as the gallery's sidebar says a note is on it, in
     /// `lang`: `on <id> in <state> at <width>`, `on the whole of <state>`,
     /// `on transition …`, `on navigate …`, `on the whole screen`, `on
-    /// these screens`.
+    /// these screens`, `on journey <name>`.
     pub fn said(&self, lang: Lang) -> String {
         match self {
             On::Node { state, node } => {
@@ -130,6 +134,7 @@ impl On {
             On::Navigate { navigate: n } => say!(lang, on_navigate, from = n.from, node = n.node, to = n.to),
             On::Whole { whole: Whole::Screen } => say!(lang, on_screen),
             On::Whole { whole: Whole::Screens } => say!(lang, on_screens),
+            On::Journey { journey } => say!(lang, on_journey, journey),
         }
     }
 }
@@ -155,7 +160,8 @@ impl Reference {
     /// node's id as written and where in screen.json, then the instance
     /// pointed at, as context; for an arrow, the transition or navigate
     /// with the keys screen.json and `check` name it by; for the whole
-    /// screen, or the screens under a directory, that.
+    /// screen, or the screens under a directory, that; for a journey, its
+    /// name.
     pub fn line(&self) -> String {
         let state = |state: &Shown| match state {
             Shown::Fixture(name) => format!("fixture {name}"),
@@ -183,6 +189,7 @@ impl Reference {
             On::Navigate { navigate } => format!("{description} · navigate {}", navigate.said()),
             On::Whole { whole: Whole::Screen } => format!("{description} · the whole screen"),
             On::Whole { whole: Whole::Screens } => format!("{description} · these screens"),
+            On::Journey { journey } => format!("{description} · journey {journey}"),
         }
     }
 }
@@ -243,6 +250,8 @@ mod tests {
         assert_eq!(screen.line(), "/d/todo · the whole screen");
         let screens = Reference { description: "/d".into(), on: On::Whole { whole: Whole::Screens } };
         assert_eq!(screens.line(), "/d · these screens");
+        let journey = Reference { description: "/d".into(), on: On::Journey { journey: "checkout".into() } };
+        assert_eq!(journey.line(), "/d · journey checkout");
     }
 
     #[test]
@@ -342,6 +351,7 @@ mod tests {
             ),
             (On::Whole { whole: Whole::Screen }, "on the whole screen", "在整个屏幕"),
             (On::Whole { whole: Whole::Screens }, "on these screens", "在这些屏幕"),
+            (On::Journey { journey: "checkout".into() }, "on journey checkout", "在旅程 checkout 上"),
         ];
         for (on, en, zh) in cases {
             assert_eq!(on.said(Lang::En), en);

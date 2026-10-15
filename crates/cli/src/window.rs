@@ -9,8 +9,8 @@
 //! steps played one by one. Along the top, over all three, the toolbar
 //! ([`toolbar`]): back and forward through what the window has shown
 //! ([`history`]), and the button that hides and shows the sidebar. The person talks to the agent about what they
-//! picked (ADR 0023): a node, a whole state, or an arrow of an overview or
-//! a flow has one note, a conversation shown in the sidebar under its
+//! picked (ADR 0023): a node, a whole state, an arrow of an overview or
+//! a flow, or a whole journey played has one note, a conversation shown in the sidebar under its
 //! card, said more in from the box at its foot, and drawn as a numbered pin
 //! where it was written; the window writes nothing else. The tree and panels are drawn by hand, in
 //! the chrome's look ([`chrome`]). The window is drawn from the files as
@@ -1728,11 +1728,12 @@ impl Gallery {
     /// node picked, as the description writes it, and the instance of it
     /// pointed at (in the picture it was picked in, or the first that has
     /// it); or, with none picked, the state shown, the whole screen whose
-    /// overview is shown, or the screens under the directory whose flow is;
-    /// or the arrow picked in an overview or a flow.
-    /// None where nothing is.
+    /// overview is shown, or the screens under the directory whose flow is,
+    /// or the whole journey picked, through every step it plays; or the
+    /// arrow picked in an overview or a flow. None where nothing is.
     fn reference(&self) -> Option<Reference> {
         let picked = match &self.picked {
+            Picked::Nothing if self.journey_picked().is_some() => return self.journey_picked(),
             Picked::Nothing => Target::Caption,
             Picked::Node { id, pointed } => Target::Node { id: id.clone(), pointed: *pointed },
             Picked::Arrow(arrow) => Target::Arrow(*arrow),
@@ -1806,7 +1807,8 @@ impl Gallery {
     }
 
     /// The sidebar's cards, top to bottom, with a button for each thing a
-    /// click does: the journey played, its step and the steps beside it;
+    /// click does: the journey picked, as a whole; the journey played, its
+    /// step and the steps beside it;
     /// what the last act on a node came to, and any outcomes to choose
     /// from; a ✓ waiting to be written, to undo; the assumption on the node
     /// picked, to answer; then what is picked: the node (what it is, what
@@ -1815,7 +1817,7 @@ impl Gallery {
     /// its note, as a conversation, newest at the bottom. None when none of
     /// these is there.
     fn cards(&self) -> Vec<Card<Do>> {
-        let mut cards: Vec<Card<Do>> = self.playing_card().into_iter().collect();
+        let mut cards: Vec<Card<Do>> = self.journey_card().into_iter().chain(self.playing_card()).collect();
         if let Some(Acted { says, choices }) = &self.acted {
             let buttons =
                 choices.iter().map(|(said, does)| Block::Button(said.clone(), does.clone())).collect();
@@ -2068,6 +2070,18 @@ impl Gallery {
                     Whole::Screens => self.directory_line(&dir),
                 };
                 let Some(index) = line else {
+                    return false;
+                };
+                self.pick(index);
+                self.picked = Picked::Nothing;
+            }
+            On::Journey { .. } => {
+                let wanted = Reference { description: dir.clone(), on: on.clone() };
+                let Some(index) = self
+                    .lines
+                    .iter()
+                    .position(|line| line.journey && journeys::noted(&line.row.dir).as_ref() == Some(&wanted))
+                else {
                     return false;
                 };
                 self.pick(index);
@@ -2536,11 +2550,15 @@ impl Gallery {
 
     /// The card of the state shown, with no node picked: its name, for the
     /// conversation under it on the whole state. None where no state is
-    /// drawn.
+    /// drawn, or the state is a step of the journey picked, whose
+    /// conversation is the journey's.
     fn state_card(&self) -> Option<Card<Do>> {
         let Picture::Pages(_) = self.picture else {
             return None;
         };
+        if self.journey_picked().is_some() {
+            return None;
+        }
         let state = self.state_shown()?;
         Some(Card::new(say!(self.lang, whole_state, state = state.name()), Vec::new()))
     }
@@ -2557,6 +2575,23 @@ impl Gallery {
         let screen =
             if screen.is_empty() { gallery::within(&self.root, &overview.dir) } else { screen.to_string() };
         Some(Card::new(say!(self.lang, whole_screen, screen), Vec::new()))
+    }
+
+    /// The card of the journey picked, played or broken: its name, for the
+    /// conversation on the whole journey, kept above the step it plays as
+    /// it steps. None while no journey is picked.
+    fn journey_card(&self) -> Option<Card<Do>> {
+        let Some(On::Journey { journey }) = self.journey_picked().map(|picked| picked.on) else {
+            return None;
+        };
+        Some(Card { ink: Ink::Note, ..Card::new(say!(self.lang, whole_journey, journey), Vec::new()) })
+    }
+
+    /// The whole journey on the line picked, as a note is pinned to it;
+    /// none while the line picked is no journey.
+    fn journey_picked(&self) -> Option<Reference> {
+        let line = self.line.and_then(|index| self.lines.get(index)).filter(|line| line.journey)?;
+        journeys::noted(&line.row.dir)
     }
 
     /// The card of the directory picked, its flow shown with no arrow
@@ -2626,8 +2661,12 @@ impl Gallery {
 
     /// How many notes wait on the agent on the tree's line of `row` and
     /// `state`: on the whole description, or on that state of it; or on
-    /// the screens under a directory, as a group.
+    /// the screens under a directory, as a group; or on a whole journey.
     fn waiting_notes(&self, row: &Row, state: Option<&State>) -> usize {
+        if let Some(journey) = journeys::noted(&row.dir) {
+            let notes = self.notes.get(&journey.description).map(Vec::as_slice).unwrap_or_default();
+            return notes.iter().filter(|note| note.waits() && note.on == journey.on).count();
+        }
         let Some(notes) = self.notes.get(&row.dir) else {
             return 0;
         };
