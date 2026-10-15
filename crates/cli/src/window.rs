@@ -4050,12 +4050,55 @@ fn is_key(event: &KeyEvent, letter: &str, code: KeyCode) -> bool {
 mod tests {
     use super::*;
 
-    const DRAFTS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts");
+    /// The drafts as git has them committed at `HEAD`, not as they stand in
+    /// the working tree: a draft added, edited or noted on and not committed
+    /// changes no test. They are written once for each commit to a directory
+    /// all tests read and none writes, and a test that changes a draft
+    /// copies it to a root of its own first.
+    fn drafts() -> &'static Path {
+        static DRAFTS: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        DRAFTS.get_or_init(|| {
+            let repo = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+            let git = |args: &[&str]| {
+                let mut git = std::process::Command::new("git");
+                git.arg("-C").arg(repo).args(args);
+                git
+            };
+            let head = git(&["rev-parse", "HEAD"]).output().unwrap();
+            assert!(head.status.success(), "the drafts are read from git's HEAD");
+            let at = std::env::temp_dir()
+                .join(format!("underdraw-drafts-{}", String::from_utf8(head.stdout).unwrap().trim()));
+            if !at.is_dir() {
+                // Written beside it and renamed into place: each test runs in
+                // a process of its own, and another may be writing it too.
+                let writing = at.with_extension(std::process::id().to_string());
+                let _ = std::fs::remove_dir_all(&writing);
+                std::fs::create_dir_all(&writing).unwrap();
+                let mut archive =
+                    git(&["archive", "HEAD", "drafts"]).stdout(std::process::Stdio::piped()).spawn().unwrap();
+                let tar = std::process::Command::new("tar")
+                    .arg("-x")
+                    .arg("-C")
+                    .arg(&writing)
+                    .stdin(archive.stdout.take().unwrap())
+                    .status()
+                    .unwrap();
+                assert!(
+                    archive.wait().unwrap().success() && tar.success(),
+                    "the drafts are read from git's HEAD"
+                );
+                if std::fs::rename(&writing, &at).is_err() {
+                    std::fs::remove_dir_all(&writing).unwrap();
+                }
+            }
+            at.join("drafts")
+        })
+    }
 
     /// The gallery over the drafts, in a window of 1440 × 900 points that
     /// is never opened.
     fn gallery() -> Gallery {
-        let mut gallery = Gallery::new(Path::new(DRAFTS), text::Typesetter::new(None).unwrap());
+        let mut gallery = Gallery::new(drafts(), text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         gallery
     }
@@ -4161,10 +4204,9 @@ mod tests {
         let (names, arrows) = overview(&gallery);
         assert_eq!(names, listed, "every state, in the order the tree lists them");
         assert!(names.contains(&"loading"), "a state no transition reaches or leaves is still shown");
-        let screen: Value = serde_json::from_str(
-            &std::fs::read_to_string(Path::new(DRAFTS).join("orders/screen.json")).unwrap(),
-        )
-        .unwrap();
+        let screen: Value =
+            serde_json::from_str(&std::fs::read_to_string(drafts().join("orders/screen.json")).unwrap())
+                .unwrap();
         let declared = screen["transitions"].as_array().unwrap();
         assert_eq!(arrows.len(), declared.len(), "an arrow for each transition declared");
         for ((from, to, label), declared) in arrows.iter().zip(declared) {
@@ -4184,7 +4226,7 @@ mod tests {
         let retry = shown.arrows.iter().find(|arrow| shown.thumbs[arrow.from].name == "error").unwrap();
         let error = orders + 1 + names.iter().position(|name| *name == "error").unwrap();
         let drawing = draw::lay_out(
-            &Path::new(DRAFTS).join("orders"),
+            &drafts().join("orders"),
             &gallery.lines[error].state.as_ref().unwrap().wanted(OVERVIEW, 1),
             None,
             Lang::En,
@@ -4463,7 +4505,7 @@ mod tests {
         gallery.cursor = on_node(&gallery, 1, &id);
         assert!(gallery.press(), "the cancel button is picked, in the desktop picture");
         let reference = gallery.reference().unwrap();
-        assert_eq!(reference.description, Path::new(DRAFTS).join("orders"));
+        assert_eq!(reference.description, drafts().join("orders"));
         let On::Node { state, node } = reference.on.clone() else { panic!("not a node: {reference:?}") };
         assert_eq!(state, State::Fixture("default".into()));
         assert_eq!(node.origin.written, "order-{index}-cancel", "the template, not {id}");
@@ -4507,10 +4549,7 @@ mod tests {
         gallery.press();
         let reference = gallery.reference().unwrap();
         assert_eq!(reference.on, On::State { state: State::Phase("loading".into()) });
-        assert_eq!(
-            reference.line(),
-            format!("{} · phase loading", Path::new(DRAFTS).join("orders").display())
-        );
+        assert_eq!(reference.line(), format!("{} · phase loading", drafts().join("orders").display()));
     }
 
     #[test]
@@ -4857,7 +4896,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("todo")).unwrap();
         for file in [crate::SCREEN, crate::TOKENS] {
-            std::fs::copy(Path::new(DRAFTS).join("todo").join(file), root.join("todo").join(file)).unwrap();
+            std::fs::copy(drafts().join("todo").join(file), root.join("todo").join(file)).unwrap();
         }
         root
     }
@@ -5008,7 +5047,7 @@ mod tests {
     #[test]
     fn a_state_of_a_description_with_faults_shows_them_too() {
         let root = std::env::temp_dir().join(format!("underdraw-window-state-faults-{}", std::process::id()));
-        let todo = Path::new(DRAFTS).join("todo");
+        let todo = drafts().join("todo");
         std::fs::create_dir_all(root.join("todo")).unwrap();
         let mut screen: Value =
             serde_json::from_str(&std::fs::read_to_string(todo.join(crate::SCREEN)).unwrap()).unwrap();
@@ -5208,7 +5247,7 @@ mod tests {
         for (draft, at) in copied {
             std::fs::create_dir_all(root.join(at)).unwrap();
             for file in [crate::SCREEN, crate::TOKENS] {
-                let from = Path::new(DRAFTS).join(draft).join(file);
+                let from = drafts().join(draft).join(file);
                 if from.is_file() {
                     std::fs::copy(from, root.join(at).join(file)).unwrap();
                 }
@@ -6185,7 +6224,7 @@ mod tests {
 
         press_keys(&mut gallery, &["←", "←"]);
         assert_eq!(played(&gallery).0, 1, "back to the first step");
-        let orders = Path::new(DRAFTS).join("shop").join("orders");
+        let orders = drafts().join("shop").join("orders");
         let on = On::State { state: State::Fixture("default".into()) };
         gallery.draft_on(Reference { description: orders, on });
         press_keys(&mut gallery, &["a", "→", "←", "b"]);
@@ -6206,7 +6245,7 @@ mod tests {
 
     /// The line of the description in `dir`, a directory of the drafts.
     fn description_in(gallery: &Gallery, dir: &str) -> usize {
-        let dir = Path::new(DRAFTS).join(dir);
+        let dir = drafts().join(dir);
         gallery
             .lines
             .iter()
@@ -6261,7 +6300,7 @@ mod tests {
     fn shop(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let shop = Path::new(DRAFTS).join("shop");
+        let shop = drafts().join("shop");
         for file in [
             "domain.json",
             "tokens.json",

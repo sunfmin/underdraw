@@ -158,14 +158,13 @@ fn the_tree_lists_directories_descriptions_states_phases_journeys_and_counts_fau
 
 #[test]
 fn a_state_at_both_widths_with_its_labels() {
-    let gallery =
-        held("state", Path::new(DRAFTS), WINDOW, |gallery| show(gallery, "airbnb-listing", "default"));
+    let gallery = held("state", drafts(), WINDOW, |gallery| show(gallery, "airbnb-listing", "default"));
     assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
 }
 
 #[test]
 fn an_overview_with_its_arrows_and_journey_marks() {
-    let gallery = held("overview", Path::new(DRAFTS), WINDOW, |gallery| {
+    let gallery = held("overview", drafts(), WINDOW, |gallery| {
         let order = description_in(gallery, "shop/order");
         showing(gallery, order);
     });
@@ -219,7 +218,7 @@ fn a_description_with_faults() {
 
 #[test]
 fn a_journey_playing() {
-    let mut gallery = held("journey", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("journey", drafts(), WINDOW, |gallery| {
         let journey = journey_of(gallery, "cancel-an-order");
         showing(gallery, journey);
         press_keys(gallery, &["→"]);
@@ -230,7 +229,7 @@ fn a_journey_playing() {
 
 #[test]
 fn a_prototype_act_and_its_outcomes() {
-    let mut gallery = held("act", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("act", drafts(), WINDOW, |gallery| {
         show(gallery, "orders", "cancel-ready");
         act_on(gallery, "cd-confirm");
     });
@@ -253,7 +252,7 @@ fn a_region_dragged_for_a_note() {
 
 #[test]
 fn an_arrow_picked_in_the_overview() {
-    let gallery = held("arrow", Path::new(DRAFTS), WINDOW, |gallery| {
+    let gallery = held("arrow", drafts(), WINDOW, |gallery| {
         let orders = line_of(gallery, "orders");
         showing(gallery, orders);
         gallery.cursor = on_arrow(gallery, 0);
@@ -368,7 +367,7 @@ fn a_shared_component_in_the_components_section() {
 
 #[test]
 fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
-    let mut gallery = held("node", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("node", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.cursor = on_node(gallery, 0, "nav-save");
         gallery.press();
@@ -380,7 +379,7 @@ fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
 
 #[test]
 fn the_sidebar_hidden_the_pictures_take_its_width() {
-    let gallery = held("sidebar-hidden", Path::new(DRAFTS), WINDOW, |gallery| {
+    let gallery = held("sidebar-hidden", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.toggle_sidebar();
     });
@@ -389,7 +388,7 @@ fn the_sidebar_hidden_the_pictures_take_its_width() {
 
 #[test]
 fn a_narrow_window_at_half_size_scrolled_across() {
-    let gallery = held("narrow", Path::new(DRAFTS), (1000.0, 900.0), |gallery| {
+    let gallery = held("narrow", drafts(), (1000.0, 900.0), |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.cursor = (gallery.tree + MARGIN, MARGIN);
         gallery.wheel(1e6, 0.0);
@@ -402,7 +401,7 @@ fn a_narrow_window_at_half_size_scrolled_across() {
 
 #[test]
 fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
-    let gallery = held("tree-narrow", Path::new(DRAFTS), WINDOW, |gallery| {
+    let gallery = held("tree-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.cursor = (gallery.tree, MARGIN);
         gallery.press();
@@ -415,7 +414,7 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
 
 #[test]
 fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
-    let mut gallery = held("sidebar-narrow", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("sidebar-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.cursor = on_node(gallery, 1, "nav-save");
         gallery.press();
