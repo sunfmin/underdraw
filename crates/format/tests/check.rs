@@ -306,7 +306,9 @@ fn each_fault_in_a_screens_components_is_found() {
             { "box": "column", "backdrop": true },
             { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } },
             { "box": "stack", "justify": { "cases": [ { "if": "title", "then": "end" }, { "else": "left" } ] } },
-            { "text": "{title}", "underline": "yes", "pin": { "x": "right", "y": "{edge}", "z": 1 } }
+            { "text": "{title}", "underline": "yes", "pin": { "x": "right", "y": "{edge}", "z": 1 } },
+            { "text": "{title}", "if": "title = \"\"" },
+            { "cases": [ { "if": "title|loud", "then": "{title}" }, { "else": null } ] }
         ] }, "pinned": "yes" }
     }));
     let mut own = own;
@@ -329,6 +331,8 @@ fn each_fault_in_a_screens_components_is_found() {
         ("components.Wrong.look.children[8].underline", "underline is true or false"),
         ("components.Wrong.look.children[8].pin.x", "\"right\" is not an edge: write start, center, end"),
         ("components.Wrong.look.children[8].pin.z", "a pin holds x, y and inset"),
+        ("components.Wrong.look.children[9].if", "title = \"\" is not a condition: equality is written =="),
+        ("components.Wrong.look.children[10].cases[0].if", "loud is not a filter"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {

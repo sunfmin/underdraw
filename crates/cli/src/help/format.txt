@@ -828,7 +828,8 @@ LOOKS
   (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.
     "columns": "{columns|or:2}"     "repeat": "{items|count|atMost:5}"
   A look's "if" uses the condition grammar over props written without
-  braces: "value && value != \"\"", "size == \"small\"", "value|first".
+  braces: "value && value != \"\"", "size == \"small\"", "value|first";
+  check refuses one that is not the grammar, and a filter that is none.
   A prop holds when given and not false; "" counts as given.
   Any key named icon or ending in Icon holds a Material Symbols name.
 
