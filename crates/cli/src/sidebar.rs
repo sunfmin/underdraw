@@ -10,11 +10,6 @@
 
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
-pub use crate::chrome::SIDEBAR as WIDTH;
-/// How wide the text of a card is: its width inside its padding.
-const TEXT_WIDTH: f64 = WIDTH - 2.0 * GUTTER - 2.0 * PADDING;
-/// How wide the text of a field is: a card's, inside the field's outline.
-pub const FIELD_WIDTH: f64 = TEXT_WIDTH - 2.0 * INSET;
 use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, FACT, INSET, MARK, MARK_INSET, MARK_RADIUS, MARK_TALL};
 use crate::chrome::{
     BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
@@ -125,10 +120,28 @@ impl<A> Laid<'_, A> {
     }
 }
 
-/// `cards` laid out one under another in a sidebar whose left edge is at
-/// `left` and whose top is `top` (scrolled), its text set by `typesetter`.
-pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mut Typesetter) -> Laid<'a, A> {
-    let inner = TEXT_WIDTH;
+/// How wide the text of a card is in a sidebar `width` wide: the card's
+/// width inside its padding.
+fn text_width(width: f64) -> f64 {
+    width - 2.0 * GUTTER - 2.0 * PADDING
+}
+
+/// How wide the text of a field is in a sidebar `width` wide: a card's,
+/// inside the field's outline.
+pub fn field_width(width: f64) -> f64 {
+    text_width(width) - 2.0 * INSET
+}
+
+/// `cards` laid out one under another in a sidebar `width` wide whose left
+/// edge is at `left` and whose top is `top` (scrolled), its text set by
+/// `typesetter` to wrap within that width.
+pub fn lay_out<'a, A>(
+    cards: &'a [Card<A>],
+    (left, width): (f64, f64),
+    top: f64,
+    typesetter: &mut Typesetter,
+) -> Laid<'a, A> {
+    let inner = text_width(width);
     let x = left + GUTTER + PADDING;
     let mut laid = Laid { draws: Vec::new(), buttons: Vec::new(), caret: None, field: None, height: 0.0 };
     let mut y = top + GUTTER;
@@ -185,7 +198,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mu
                     tall
                 }
                 Block::Field(shown, empty) => {
-                    let (tall, caret, words) = field(&mut inside, typesetter, (x, y), shown, empty);
+                    let (tall, caret, words) = field(&mut inside, typesetter, (x, y, inner), shown, empty);
                     (laid.caret, laid.field) = (Some(caret), Some(words));
                     tall
                 }
@@ -193,7 +206,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mu
         }
         y += PADDING;
         laid.draws.push(Draw::Box {
-            rect: rect(left + GUTTER, card_top, WIDTH - 2.0 * GUTTER, y - card_top),
+            rect: rect(left + GUTTER, card_top, width - 2.0 * GUTTER, y - card_top),
             radius: CARD_RADIUS,
             fill: Some(Ink::Paper),
             stroke: Some(match card.ink {
@@ -349,11 +362,11 @@ fn bubble(
 fn field(
     draws: &mut Vec<Draw>,
     typesetter: &mut Typesetter,
-    (x, y): (f64, f64),
+    (x, y, wide): (f64, f64, f64),
     shown: &Shown,
     empty: &str,
 ) -> (f64, Rect, Rect) {
-    let (wide, inner) = (TEXT_WIDTH, FIELD_WIDTH);
+    let inner = wide - 2.0 * INSET;
     let (left, top) = (x + INSET, y + INSET);
     let tall = set(typesetter, &shown.text, BODY, inner);
     let box_tall = tall + 2.0 * INSET;
@@ -448,7 +461,7 @@ mod tests {
             ),
         ];
         let mut typesetter = Typesetter::new(None).unwrap();
-        let laid = lay_out(&cards, 1000.0, 0.0, &mut typesetter);
+        let laid = lay_out(&cards, (1000.0, 360.0), 0.0, &mut typesetter);
         assert_eq!(laid.buttons.len(), 2);
         let (first, second) = (laid.buttons[0].0, laid.buttons[1].0);
         assert!(first.y + first.height < second.y, "the second below the first");
@@ -461,7 +474,23 @@ mod tests {
             None,
             "the text above it does nothing"
         );
-        assert!(f64::from(first.x) >= 1000.0 && f64::from(first.x + first.width) <= 1000.0 + WIDTH);
+        assert!(f64::from(first.x) >= 1000.0 && f64::from(first.x + first.width) <= 1000.0 + 360.0);
         assert!(laid.height > f64::from(second.y + second.height), "the cards end below their last block");
+    }
+
+    #[test]
+    fn narrower_the_cards_rewrap_their_text_within_the_width() {
+        let cards = vec![Card::new(
+            "one".to_string(),
+            vec![Block::Text("a long line ".repeat(20)), Block::Button("go".to_string(), 1)],
+        )];
+        let mut typesetter = Typesetter::new(None).unwrap();
+        let wide = lay_out(&cards, (1000.0, 360.0), 0.0, &mut typesetter);
+        let narrow = lay_out(&cards, (1080.0, 280.0), 0.0, &mut typesetter);
+        assert!(narrow.height > wide.height, "taller, the text wrapped to more lines");
+        let button = narrow.buttons[0].0;
+        assert!(f64::from(button.x) >= 1080.0 && f64::from(button.x + button.width) <= 1080.0 + 280.0);
+        let middle = (f64::from(button.x + button.width / 2.0), f64::from(button.y + button.height / 2.0));
+        assert_eq!(narrow.at(middle), Some(&1), "the button clicked by its own box");
     }
 }

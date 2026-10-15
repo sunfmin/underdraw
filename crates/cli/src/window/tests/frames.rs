@@ -102,9 +102,9 @@ fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
     let cards = gallery.sidebar_cards();
-    let left = gallery.pane_right();
-    let laid = sidebar::lay_out(&cards, left, -gallery.side_scroll, &mut gallery.typesetter);
-    let (inside, outside) = (left + chrome::GUTTER, left + sidebar::WIDTH - chrome::GUTTER);
+    let (left, width) = (gallery.pane_right(), gallery.side);
+    let laid = sidebar::lay_out(&cards, (left, width), -gallery.side_scroll, &mut gallery.typesetter);
+    let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
     for draw in &laid.draws {
         let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
         let (x, right) = (f64::from(rect.x), f64::from(rect.x + rect.width));
@@ -392,10 +392,27 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
         gallery.cursor = (gallery.tree, MARGIN);
         gallery.press();
         gallery.cursor = (0.0, MARGIN);
-        gallery.resize_tree();
+        gallery.resize();
         gallery.release();
     });
     assert_eq!(gallery.tree, TREE_LEAST);
+}
+
+#[test]
+fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
+    let mut gallery = held("sidebar-narrow", Path::new(DRAFTS), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.cursor = on_node(gallery, 1, "nav-save");
+        gallery.press();
+        gallery.release();
+        gallery.cursor = (gallery.pane_right(), MARGIN);
+        gallery.press();
+        gallery.cursor = (WINDOW.0, MARGIN);
+        gallery.resize();
+        gallery.release();
+    });
+    assert_eq!(gallery.side, SIDEBAR_LEAST);
+    fits(&mut gallery);
 }
 
 #[test]
