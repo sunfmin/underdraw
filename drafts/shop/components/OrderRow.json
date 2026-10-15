@@ -1,0 +1,18 @@
+{
+  "$comment": "One order as both shop screens show it: who, how much, where it stands, and a cancel button until it ships. Shared by the project, so changing it changes the list and the order's page alike.",
+  "params": { "order": "Order" },
+  "fixtures": {
+    "pending": { "order": { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" } },
+    "shipped": { "$patch": "pending", "order": { "status": "shipped" } }
+  },
+  "nodes": {
+    "component": "Stack", "gap": "space.2",
+    "children": [
+      { "id": "number", "component": "Text", "text": "{order.number} · {order.customer}" },
+      { "id": "total", "component": "Text", "text": "{order.total|money}", "color": "color.textSecondary" },
+      { "id": "status", "component": "OrderStatus", "status": "{order.status}" },
+      { "id": "cancel", "component": "Button", "if": "order.cancellable", "text": "Cancel order", "variant": "secondary", "size": "small",
+        "on": { "tap": { "call": "cancelOrder", "with": { "id": "{order.id}" } } } }
+    ]
+  }
+}
