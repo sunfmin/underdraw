@@ -167,6 +167,11 @@ impl Description {
         Ok(Description { path: path.to_path_buf(), screen, dir, tokens, checked })
     }
 
+    /// The screen's name, as its `screen` gives it.
+    pub fn name(&self) -> &str {
+        self.screen.name()
+    }
+
     /// The state `wanted` names laid out, as [`lay_out`] says.
     pub fn lay_out(
         &self,

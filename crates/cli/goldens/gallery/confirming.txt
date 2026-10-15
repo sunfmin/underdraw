@@ -23,6 +23,8 @@ sidebar
     or else  it could instead be a misspelt name of a screen that is drawn, or the navigate may not be wanted at all: draw it, or correct the name.
   IconButton
     calls  nothing
+    ↗ ExportDocuments · not drawn yet
+    Holding ⌘ (Ctrl) and clicking the node does the same.
     ▸ details
   note · nothing said yet
     Say below what should change: Enter sends, Shift+Enter breaks the line.

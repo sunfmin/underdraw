@@ -21,6 +21,8 @@ sidebar
     ✗: write what is right in the box below and send it; not sent empty · Esc takes the ✗ back
   IconButton
     calls  nothing
+    ↗ ExportDocuments · not drawn yet
+    Holding ⌘ (Ctrl) and clicking the node does the same.
     ▸ details
   note · nothing said yet
     Say below what should change: Enter sends, Shift+Enter breaks the line.

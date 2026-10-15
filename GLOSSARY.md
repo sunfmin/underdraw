@@ -72,9 +72,12 @@ _Avoid_: guess, TODO
 
 **Note**:
 A conversation between the person and the agent about a design, pinned
-where it is held: a node, a whole state, or an arrow, its messages kept in
-the order said. Each has at most one; one whose node or arrow is gone joins
-its state's note, saying where it was. Only the person starts one; the agent
+where it is held: a node of a state, a whole state, an arrow (a transition
+or a navigate), the whole screen (its description picked, apart from any
+one state), or the screens under a directory as a group (its flow picked,
+kept in that directory's own `notes.json`), its messages kept in the order
+said. Each has at most one; one
+whose node or arrow is gone joins its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, **taken** once `--wait` has handed that message to
 the agent; it is answered while the agent did, **unread** until the person
@@ -198,7 +201,8 @@ An ordered choice of one value, ending in an `else`.
 **Inbox**:
 What waits on the person under what they picked, a description or a
 directory: each assumption not yet answered and each note the agent has
-answered that they have not read; and, apart, the notes still waiting on
+answered that they have not read, a directory's own notes and those of the
+directories under it among them; and, apart, the notes still waiting on
 the agent.
 _Avoid_: to-do list, queue, notifications
 
@@ -225,6 +229,14 @@ about what they picked, each with buttons for what they can do with it,
 then the **Note** on what they picked, and at its foot a box to say more
 in, in the language the gallery was opened in. Hidden and shown with ⌘\.
 _Avoid_: panel, inspector, debug view
+
+**Toolbar**:
+The strip along the top of the gallery's window, over the tree, the
+pictures and the sidebar: back and forward through what the window has
+shown, every change of it a step, kept only while the window is open; and
+the button that hides and shows the **sidebar**. Its back is the window's,
+not a design's `back`, which still returns along the path taken by acting.
+_Avoid_: navigation bar, header
 
 **Overview**:
 Every state of one description, small, in the order the tree lists them,

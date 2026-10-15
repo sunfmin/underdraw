@@ -1,7 +1,9 @@
 //! What the person and the agent say of a description, pinned where it is
 //! said (ADR 0019, ADR 0023): kept in notes.json beside its screen.json,
 //! meant to be committed. A note is a conversation on a node, a whole
-//! state, a transition's arrow or a navigate's arrow: the person's
+//! state, a transition's arrow, a navigate's arrow, a whole screen, or the
+//! screens under a directory (kept in that directory's notes.json, though
+//! it holds no screen.json): the person's
 //! messages and the agent's, in the order said, one for each. Only the
 //! person starts one, in the gallery, and says more in it there; the agent answers in it, at any length, and may
 //! ask back. It is never closed: while the person spoke last it waits on
@@ -31,7 +33,8 @@ use crate::draw::Shown;
 use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json; a
-/// shared component's, in `components/<Name>/notes.json`.
+/// shared component's, in `components/<Name>/notes.json`; a directory's,
+/// on the screens under it, in the directory itself.
 pub const NOTES: &str = "notes.json";
 
 /// Where a conversation stands, read from who spoke last and what was
@@ -551,9 +554,9 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
                 "--answer answers one note: run it without --wait, which lists notes, then answer what it lists"
             );
         }
-        if !crate::describes(&path) {
+        if !crate::describes(&path) && !path.join(NOTES).is_file() {
             bail!(
-                "{} holds no {SCREEN} and shows no shared component: --answer takes the directory of the description the note is in, as \"description\" names it under the root",
+                "{} holds no {SCREEN}, shows no shared component and keeps no {NOTES}: --answer takes the directory the note is in, as \"description\" names it under the root",
                 path.display()
             );
         }
@@ -581,16 +584,26 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
     }
 }
 
-/// The notes of every description under `root` that wait on the agent, as
-/// `notes` answers each, and how many there are waiting and answered: read
-/// from the files as they now stand, descriptions added since included,
-/// each note on what is gone joined its state's first ([`settle`]); given
-/// `take`, each marked taken now, unless it was already.
+/// Every directory under `root` that may keep notes, in the order the
+/// gallery's tree lists them: `root` first when it holds no description,
+/// its flow being that of everything under it; then each description and
+/// each directory the tree lists, a directory's notes being on the screens
+/// under it.
+pub fn kept_under(root: &Path) -> Vec<PathBuf> {
+    let rows = crate::gallery::descriptions(root);
+    let root_listed = rows.first().is_some_and(|row| row.dir == root);
+    let root = (!root_listed).then(|| root.to_path_buf());
+    root.into_iter().chain(rows.into_iter().map(|row| row.dir)).collect()
+}
+
+/// The notes of every description and directory under `root` that wait on
+/// the agent, as `notes` answers each, and how many there are waiting and
+/// answered: read from the files as they now stand, descriptions added
+/// since included, each note on what is gone joined its state's first
+/// ([`settle`]); given `take`, each marked taken now, unless it was
+/// already.
 fn listed(root: &Path, take: bool) -> anyhow::Result<(Vec<Value>, Counts)> {
-    let dirs: Vec<PathBuf> = crate::gallery::descriptions(root)
-        .into_iter()
-        .filter_map(|row| row.description().map(Path::to_path_buf))
-        .collect();
+    let dirs = kept_under(root);
     let (mut waiting, mut counts) = (Vec::new(), Counts::default());
     for dir in &dirs {
         settle(dir)?;
@@ -622,7 +635,8 @@ pub fn counted(dir: &Path) -> Value {
 /// is gone once no tree writes its id, or its state is; a region once its
 /// state is, or every node it covered; a whole state once the description
 /// has no state by its name; a transition or a navigate once none is
-/// written with the same keys.
+/// written with the same keys. The whole screen is there while its
+/// description is, and the screens under a directory while it is.
 fn gone(screen: &Screen, on: &On) -> Option<String> {
     let now_gone = |was: String| Some(format!("on {was}, now gone"));
     let state_gone = on.state().filter(|state| {
@@ -665,7 +679,7 @@ fn gone(screen: &Screen, on: &On) -> Option<String> {
                 .any(|written| written.node == navigate.node && written.to == navigate.to);
             if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
         }
-        On::Node { .. } | On::State { .. } => None,
+        On::Node { .. } | On::State { .. } | On::Whole { .. } => None,
     }
 }
 
@@ -768,7 +782,7 @@ pub fn settle(dir: &Path) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::draw::{Origin, Shown};
-    use crate::reference::{Navigate, Pointed, Transition};
+    use crate::reference::{Navigate, Pointed, Transition, Whole};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -1170,6 +1184,7 @@ mod tests {
             note("N1", node("default", "price"), vec![person("there")]),
             note("N2", transition("empty"), vec![person("there")]),
             note("N3", navigate("Next"), vec![person("there")]),
+            note("N4", On::Whole { whole: Whole::Screen }, vec![person("too much")]),
         ];
         let mut notes = kept.clone();
         assert!(!join(&mut notes, &screen, &states), "nothing is gone");

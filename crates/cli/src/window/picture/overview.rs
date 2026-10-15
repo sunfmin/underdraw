@@ -17,7 +17,7 @@ use crate::chrome::{
 };
 use crate::draw::Shown as State;
 use crate::notes::Note;
-use crate::reference::{self, On, Reference};
+use crate::reference::{self, On, Reference, Whole};
 use crate::text::Typesetter;
 use crate::window::{edge, head, line, sheet, words};
 
@@ -249,7 +249,8 @@ impl Shows for Overview {
         list
     }
 
-    /// A transition, or a whole state.
+    /// A transition, a whole state, or, with neither picked, the whole
+    /// screen.
     fn reference(&self, target: &Target) -> Option<Reference> {
         let on = match target {
             Target::Arrow(arrow) => {
@@ -258,7 +259,8 @@ impl Shows for Overview {
             Target::State(line) | Target::Pass { state: line, .. } => {
                 On::State { state: self.thumbs.iter().find(|thumb| thumb.line == *line)?.state.clone() }
             }
-            Target::Node { .. } | Target::Caption | Target::Box(_) => return None,
+            Target::Caption => On::Whole { whole: Whole::Screen },
+            Target::Node { .. } | Target::Box(_) => return None,
         };
         Some(Reference { description: self.dir.clone(), on })
     }

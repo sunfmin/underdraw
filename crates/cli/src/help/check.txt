@@ -88,7 +88,12 @@ ANSWERS
                       "ok": true when it walks,
                       "findings": [{"at": "steps.<n>.<key>", "problem"}, …]
                       }, …]
-    "notes":        {"waiting", "answered"}, over every description
+    "directories":  [{"directory": its path, relative to root ("." for root),
+                      "notes": {"waiting", "answered"}}, …]: each directory
+                    holding no description that keeps notes on the screens
+                    under it, in its own notes.json
+    "notes":        {"waiting", "answered"}, over every description and
+                    every such directory
   }
 
 EXIT

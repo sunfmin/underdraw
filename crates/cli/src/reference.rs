@@ -2,7 +2,9 @@
 //! description writes it so that an agent can act on it without asking
 //! where: a node in a state, a whole state, a transition's arrow in a
 //! description's overview, or a navigate's arrow in a directory's flow.
-//! What ⌘C copies, as one line, and what a note is pinned to.
+//! A whole description, its overview picked, is a reference too: the
+//! whole screen; and so is a whole directory, its flow picked: these
+//! screens. What ⌘C copies, as one line, and what a note is pinned to.
 
 use std::path::PathBuf;
 
@@ -16,14 +18,15 @@ use crate::draw::{Origin, Shown};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     /// The directory the description is in; for a navigate, the one it is
-    /// written in.
+    /// written in; for these screens, the directory they are under.
     pub description: PathBuf,
     pub on: On,
 }
 
 /// What in a description a reference names. Written, in notes.json, as the
 /// fields of the one it is: `{"state", "node"}`, `{"state"}`,
-/// `{"transition"}` or `{"navigate"}`.
+/// `{"transition"}`, `{"navigate"}`, `{"whole": "screen"}` or
+/// `{"whole": "screens"}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum On {
@@ -35,6 +38,20 @@ pub enum On {
     Transition { transition: Transition },
     /// A navigate written in the description, its arrow in a flow.
     Navigate { navigate: Navigate },
+    /// A whole description or a whole directory: its overview, or its
+    /// flow.
+    Whole { whole: Whole },
+}
+
+/// What a note on a whole is on: written `"screen"` or `"screens"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Whole {
+    /// The whole screen, apart from any one state: its overview.
+    Screen,
+    /// The screens under a directory, as a group: its flow. The directory
+    /// holds no description; its notes.json is its own.
+    Screens,
 }
 
 /// A node as the description writes it, and the one instance of it the
@@ -74,7 +91,7 @@ impl On {
     pub fn state(&self) -> Option<&Shown> {
         match self {
             On::Node { state, .. } | On::State { state } => Some(state),
-            On::Transition { .. } | On::Navigate { .. } => None,
+            On::Transition { .. } | On::Navigate { .. } | On::Whole { .. } => None,
         }
     }
 
@@ -94,7 +111,8 @@ impl On {
 
     /// What it is, as the gallery's sidebar says a note is on it, in
     /// `lang`: `on <id> in <state> at <width>`, `on the whole of <state>`,
-    /// `on transition …`, `on navigate …`.
+    /// `on transition …`, `on navigate …`, `on the whole screen`, `on
+    /// these screens`.
     pub fn said(&self, lang: Lang) -> String {
         match self {
             On::Node { state, node } => {
@@ -110,6 +128,8 @@ impl On {
                 say!(lang, on_transition, from = t.from, on = t.on, outcome, to = t.to)
             }
             On::Navigate { navigate: n } => say!(lang, on_navigate, from = n.from, node = n.node, to = n.to),
+            On::Whole { whole: Whole::Screen } => say!(lang, on_screen),
+            On::Whole { whole: Whole::Screens } => say!(lang, on_screens),
         }
     }
 }
@@ -134,7 +154,8 @@ impl Reference {
     /// then what in it. For a state, the state; for a node, the state, the
     /// node's id as written and where in screen.json, then the instance
     /// pointed at, as context; for an arrow, the transition or navigate
-    /// with the keys screen.json and `check` name it by.
+    /// with the keys screen.json and `check` name it by; for the whole
+    /// screen, or the screens under a directory, that.
     pub fn line(&self) -> String {
         let state = |state: &Shown| match state {
             Shown::Fixture(name) => format!("fixture {name}"),
@@ -160,6 +181,8 @@ impl Reference {
             }
             On::Transition { transition } => format!("{description} · transition {}", transition.said()),
             On::Navigate { navigate } => format!("{description} · navigate {}", navigate.said()),
+            On::Whole { whole: Whole::Screen } => format!("{description} · the whole screen"),
+            On::Whole { whole: Whole::Screens } => format!("{description} · these screens"),
         }
     }
 }
@@ -216,6 +239,10 @@ mod tests {
             on: On::State { state: Shown::Phase("loading".into()) },
         };
         assert_eq!(state.line(), "/d/todo · phase loading");
+        let screen = Reference { description: "/d/todo".into(), on: On::Whole { whole: Whole::Screen } };
+        assert_eq!(screen.line(), "/d/todo · the whole screen");
+        let screens = Reference { description: "/d".into(), on: On::Whole { whole: Whole::Screens } };
+        assert_eq!(screens.line(), "/d · these screens");
     }
 
     #[test]
@@ -313,6 +340,8 @@ mod tests {
                 "on navigate from Orders on nav-export to ExportDocuments",
                 "在跳转上：从 Orders 经 nav-export 到 ExportDocuments",
             ),
+            (On::Whole { whole: Whole::Screen }, "on the whole screen", "在整个屏幕"),
+            (On::Whole { whole: Whole::Screens }, "on these screens", "在这些屏幕"),
         ];
         for (on, en, zh) in cases {
             assert_eq!(on.said(Lang::En), en);

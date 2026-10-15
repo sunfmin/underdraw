@@ -14,8 +14,10 @@ WHO
 READS
   notes.json beside each screen.json under <path>: <path> itself, when it
   is a description's directory, or every description under it at any
-  depth, as the gallery finds them. A description with no notes.json has no
-  notes. A shared component shown on its own, the description
+  depth, as the gallery finds them; and the notes.json of each directory
+  under it, <path> itself included, that holds no description: its notes
+  on the screens under it, as a group. A description with no notes.json
+  has no notes. A shared component shown on its own, the description
   components/<Name> under its project's root, keeps them in
   components/<Name>/notes.json; what they are on is edited in
   components/<Name>.json, its fixture under "fixtures". Writes nothing, but
@@ -26,10 +28,14 @@ DOES
   design, pinned where it is held, with the same fields ⌘C copies: one
   node of one state they clicked, as the description writes it, with the
   instance they pointed at as context; a whole state; a
-  transition, as `transitions` in screen.json writes it; or a navigate, as
+  transition, as `transitions` in screen.json writes it; a navigate, as
   `underdraw check <root>` reports it among its "links", kept by the
-  description it is written in. Each is numbered N1, N2… within its
-  description, and holds its messages in the order said, each by the
+  description it is written in; or the whole screen, the description as a
+  whole, apart from any one state ("this screen tries to do too much");
+  or the screens under a directory, as a group, kept in that directory's
+  own notes.json though it holds no screen.json ("these screens repeat
+  the same header"). Each is numbered N1, N2… within its
+  description or directory, and holds its messages in the order said, each by the
   person or the agent, and some of the person's marked as more than talk
   (MARKS, below). Only the person starts one. It is never closed:
   who spoke last says where it stands, read from its messages:
@@ -46,12 +52,15 @@ DOES
   node where "node.at" points (the id written there is "node.id", a
   template inside a repeat); the state's fixture or phase; the entry of
   `transitions` the "transition" names; or the navigate on the node
-  "navigate.node"; and do what each marked message asks (MARKS, below).
+  "navigate.node"; for the whole screen, wherever in the description it
+  takes; for the screens under a directory, in each description under it
+  that it takes; and do what each marked message asks (MARKS, below).
   Then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
-  <dir> is that description's directory: <path>/<"description">. The reply
+  <dir> is that description's directory, or, for a note on the screens
+  under a directory, that directory: <path>/<"description">. The reply
   is at any length, as many lines as it takes, kept as written but for
   blank space at its ends: say what was done, or why not, or ask back.
   It is added to the conversation as the agent's message, unread, and the
@@ -60,7 +69,7 @@ DOES
   same text as the agent's last message changes nothing more; with other
   text, it is one more message.
 
-  A note whose node, region, state or arrow is gone from the description
+  A note whose node, state or arrow is gone from the description
   (removed or renamed) joins its state's note the next time notes are
   read, so nothing said is lost: its messages go into the note on the
   whole state it was in (a transition's: the state it is from), after a
@@ -141,7 +150,7 @@ ANSWERS
   {
     "root":     <path>, resolved
     "notes":    the notes waiting on the agent, description by description
-                in the tree's
+                (and directory by directory) in the tree's
                 order, each in the order written:
                 [{"description": its directory, relative to root ("." for
                                  root itself),
@@ -161,7 +170,12 @@ ANSWERS
                   "transition":  {"from", "on": "<node id>.<event>",
                                  "outcome" (for a call only), "to"}; or
                   "navigate":    {"from": the screen it is in, "node": the
-                                 id as written, "to": the screen it names},
+                                 id as written, "to": the screen it names};
+                                 or
+                  "whole":       "screen": on the whole screen, apart from
+                                 any one state; or "screens": on the
+                                 screens under the directory
+                                 "description" names, as a group,
                   "messages":    [{"by": "person" or "agent", "says"}, …],
                                  the conversation, in the order said, the
                                  person's first; "says" as many lines as
@@ -191,8 +205,10 @@ ANSWERS
   delete it), or --answer names no note there.
 
 WHAT TRIPS YOU UP
-  - --answer takes the description's directory, not the root: ids are
-    numbered within each description, so two can each have an N1.
+  - --answer takes the directory the note is in, as "description" names
+    it: ids are numbered within each description and each directory, so
+    two can each have an N1. The root is that directory only for a note
+    on the screens under it ("description": ".").
   - --wait answers at once while any note waits on you: answer every note
     it lists before you start it again, or it never waits.
   - Quote a reply of many lines as one argument; the shell keeps its line

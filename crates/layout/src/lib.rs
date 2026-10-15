@@ -66,6 +66,9 @@ pub enum Ink {
     /// The circle a label is drawn on: a red no wireframe draws with, so
     /// that a label is told apart at a glance from what it sits on.
     Label,
+    /// Interaction: what acting on a node does, and the node picked. Never
+    /// part of a wireframe, only of the gallery drawn around it.
+    Interaction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
