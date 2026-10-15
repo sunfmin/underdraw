@@ -53,6 +53,9 @@ pub(super) struct Content {
     pub pictures: (f64, f64),
     /// How tall the sidebar's cards are.
     pub side: f64,
+    /// How tall the box at the sidebar's foot is, under what its cards
+    /// scroll in: nothing while there is none.
+    pub foot: f64,
 }
 
 /// What a press took hold of.
@@ -177,6 +180,12 @@ impl Panes {
         self.shown.then(|| Area::new(self.pictures().x1, 0.0, width, height))
     }
 
+    /// Where the sidebar's cards scroll, in window points: the sidebar
+    /// above the box at its foot; none while it is hidden.
+    fn cards(&self) -> Option<Area> {
+        self.side().map(|side| Area { y1: side.y1 - self.content.foot, ..side })
+    }
+
     /// The sidebar's width, kept while it is hidden.
     pub fn side_width(&self) -> f64 {
         self.widths().1
@@ -228,8 +237,10 @@ impl Panes {
             Scrolls::Tree => (self.content.rows as f64 * ROW + MARGIN, self.window.1),
             Scrolls::Down => (self.content.pictures.1, self.window.1),
             Scrolls::Across => (self.content.pictures.0, self.pictures().width()),
-            Scrolls::Side if self.shown => (self.content.side, self.window.1),
-            Scrolls::Side => (0.0, self.window.1),
+            Scrolls::Side => match self.cards() {
+                Some(cards) => (self.content.side, cards.height()),
+                None => (0.0, 0.0),
+            },
         };
         (content - page).max(0.0)
     }
@@ -363,7 +374,7 @@ impl Panes {
         let scrolled = self.scrolled(Scrolls::Tree);
         let tree = Bar { pane: self.tree(), axis: Axis::Down, content, scrolled, corner: 0.0 };
         let mut bars = vec![(Scrolls::Down, down), (Scrolls::Across, across), (Scrolls::Tree, tree)];
-        if let Some(pane) = self.side() {
+        if let Some(pane) = self.cards() {
             let (content, scrolled) = (self.content.side, self.scrolled(Scrolls::Side));
             bars.push((Scrolls::Side, Bar { pane, axis: Axis::Down, content, scrolled, corner: 0.0 }));
         }
@@ -403,7 +414,7 @@ mod tests {
 
     /// What overflows every pane of a window 900 points tall: 100 rows,
     /// pictures 3000 wide and 2000 tall, cards 1500 tall.
-    const TALL: Content = Content { rows: 100, pictures: (3000.0, 2000.0), side: 1500.0 };
+    const TALL: Content = Content { rows: 100, pictures: (3000.0, 2000.0), side: 1500.0, foot: 0.0 };
 
     /// The thumb of the scrollbar `scrolls`, which overflows.
     fn thumb_of(panes: &Panes, scrolls: Scrolls) -> Area {
@@ -438,6 +449,11 @@ mod tests {
         assert_eq!(panes.scrolled(Scrolls::Tree), 100.0 * ROW + MARGIN - 900.0, "as far as its last row");
         panes.wheel((1400.0, 400.0), 0.0, 1e6);
         assert_eq!(panes.scrolled(Scrolls::Side), 1500.0 - 900.0, "over the sidebar, the sidebar");
+        panes.fit(Content { foot: 100.0, ..TALL });
+        panes.wheel((1400.0, 400.0), 0.0, 1e6);
+        assert_eq!(panes.scrolled(Scrolls::Side), 1500.0 - 800.0, "its cards, above the box at its foot");
+        let bar = panes.bar(Scrolls::Side).unwrap();
+        assert_eq!(bar.pane.y1, 800.0, "its scrollbar too");
     }
 
     #[test]
@@ -473,7 +489,7 @@ mod tests {
         assert!(thumb_of(&panes, Scrolls::Tree).x1 <= TREE, "the tree's in the tree");
         assert!(thumb_of(&panes, Scrolls::Side).x0 >= 1440.0 - SIDEBAR, "the sidebar's in the sidebar");
 
-        let fits = Content { rows: 3, pictures: (400.0, 400.0), side: 300.0 };
+        let fits = Content { rows: 3, pictures: (400.0, 400.0), side: 300.0, foot: 0.0 };
         panes.fit(fits);
         let thumbs: Vec<_> = panes.bars().iter().filter_map(|(_, bar)| bar.thumb()).collect();
         assert!(thumbs.is_empty(), "panes large enough for all of it have none: {thumbs:?}");
@@ -629,8 +645,9 @@ mod tests {
     }
 
     fn input() -> impl Strategy<Value = Input> {
-        let content = (0usize..200, 0.0..6000.0, 0.0..6000.0, 0.0..4000.0)
-            .prop_map(|(rows, across, down, side)| Content { rows, pictures: (across, down), side });
+        let content = (0usize..200, 0.0..6000.0, 0.0..6000.0, 0.0..4000.0, 0.0..300.0).prop_map(
+            |(rows, across, down, side, foot)| Content { rows, pictures: (across, down), side, foot },
+        );
         prop_oneof![
             (0.0..3000.0, 0.0..2000.0).prop_map(|(w, h)| Input::Resize(w, h)),
             Just(Input::Toggle),
@@ -674,12 +691,13 @@ mod tests {
                 prop_assert!((TREE_LEAST..=room(beside, TREE_LEAST)).contains(&tree), "tree {tree}");
                 prop_assert!((SIDEBAR_LEAST..=room(tree, SIDEBAR_LEAST)).contains(&side), "side {side}");
                 let pictures = panes.pictures().width();
-                let side_content = if panes.side().is_some() { content.side } else { 0.0 };
+                let (side_content, side_view) =
+                    if panes.side().is_some() { (content.side, window.1 - content.foot) } else { (0.0, 0.0) };
                 for (scrolls, content, view) in [
                     (Scrolls::Tree, content.rows as f64 * ROW + MARGIN, window.1),
                     (Scrolls::Down, content.pictures.1, window.1),
                     (Scrolls::Across, content.pictures.0, pictures),
-                    (Scrolls::Side, side_content, window.1),
+                    (Scrolls::Side, side_content, side_view),
                 ] {
                     let scrolled = panes.scrolled(scrolls);
                     prop_assert!(

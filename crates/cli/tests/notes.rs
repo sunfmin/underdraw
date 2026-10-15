@@ -146,7 +146,7 @@ fn check_counts_the_notes_and_exits_as_it_would_without_them() {
 }
 
 #[test]
-fn notes_lists_a_region_note_with_its_box_and_the_nodes_it_covered() {
+fn a_note_written_on_a_region_before_regions_went_is_listed_on_its_whole_state() {
     let root = root("region");
     let dir = root.join("orders");
     let region = json!({
@@ -161,23 +161,14 @@ fn notes_lists_a_region_note_with_its_box_and_the_nodes_it_covered() {
     });
     let mut notes: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
-    notes["notes"].as_array_mut().unwrap().push(region.clone());
+    notes["notes"].as_array_mut().unwrap().push(region);
     std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
     assert_eq!(code, 0, "{answer}");
     let listed = &answer["notes"][2];
-    assert_eq!((&listed["id"], &listed["region"]), (&json!("N3"), &region["region"]), "its box and nodes");
-    assert!(listed.get("node").is_none(), "{listed}");
-    assert_eq!(
-        listed["reference"],
-        format!(
-            "{} · fixture default · region 10, 145 · 370 × 30 at width 390 · covering match-count at /root/children/1/children/2",
-            dir.display()
-        )
-    );
-    let (answered, code) =
-        underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "tightened it"]);
-    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("answered")), "{answered}");
+    assert_eq!(listed["id"], json!("N3"));
+    assert!(listed.get("region").is_none() && listed.get("node").is_none(), "{listed}");
+    assert_eq!(listed["reference"], format!("{} · fixture default", dir.display()), "on the whole state");
     std::fs::remove_dir_all(root).unwrap();
 }
 
