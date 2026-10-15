@@ -48,7 +48,9 @@ ANSWERS
                   it (notes.json, written in the gallery) are open, for the
                   agent to act on and answer, and how many answered, for
                   the person to close; with "error" when notes.json cannot
-                  be read. Never a finding: `underdraw notes <dir>` reads them
+                  be read. A note whose target is gone from a description
+                  that checks clean is closed first, saying why, and not
+                  counted. Never a finding: `underdraw notes <dir>` reads them
   }
   Given a root:
   {

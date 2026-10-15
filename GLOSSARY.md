@@ -74,7 +74,7 @@ _Avoid_: guess, TODO
 What the person says to the agent about a design, pinned where they said it:
 a node, a region, a whole state, or an arrow. The agent answers it; the
 person closes it, or it closes itself, saying why, once what it is pinned to
-is gone. Confirming or rejecting an **Assumption** is a note on it.
+is gone; reopened, it is pinned to the whole state. Confirming or rejecting an **Assumption** is a note on it.
 _Avoid_: comment, feedback
 
 ### Data and decisions

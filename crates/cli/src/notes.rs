@@ -4,17 +4,20 @@
 //! region, a whole state, a transition's arrow or a navigate's arrow; the agent
 //! answers it with one line; the person closes it, or reopens it with a
 //! line added. The agent never creates, closes or reopens one: what it
-//! wants to ask is an assumption. Each change is read from the file as it
+//! wants to ask is an assumption. A note whose target is gone from the
+//! description closes itself, saying why; reopened, it is on the whole
+//! state. Each change is read from the file as it
 //! now stands and written back whole, so the window and the agent never
 //! undo each other's.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::SCREEN;
+use crate::draw::{self, Shown};
 use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json.
@@ -66,6 +69,12 @@ pub struct Note {
     /// or another screen. The agent declares it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposes: Option<Proposal>,
+    /// Why it closed itself, once what it is pinned to was gone from the
+    /// description: `order-{index} is gone (removed or renamed)`. None for
+    /// a note the person closed, or one never closed; taken away when the
+    /// person reopens it, on the whole state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed_because: Option<String>,
 }
 
 /// Where the person proposes acting on a node should go, where the
@@ -127,6 +136,9 @@ impl Note {
             (answer.as_object_mut(), serde_json::to_value(&self.on))
         {
             answer.extend(on);
+        }
+        if let Some(why) = &self.closed_because {
+            answer["closed_because"] = json!(why);
         }
         answer
     }
@@ -222,6 +234,7 @@ fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Re
             on: on.on.clone(),
             thread: vec![Said { by: By::Person, says }],
             proposes,
+            closed_because: None,
         });
         Ok(id)
     })
@@ -269,14 +282,113 @@ pub fn close(dir: &Path, id: &str) -> anyhow::Result<()> {
 }
 
 /// Note `id` of the description in `dir` reopened by the person, saying
-/// `says` too: open again, for the agent to answer.
+/// `says` too: open again, for the agent to answer. One that closed itself
+/// as what it was on went is on the whole state now: the one it was in, or
+/// the transition was from, while the description has it, else its first.
 pub fn reopen(dir: &Path, id: &str, says: &str) -> anyhow::Result<()> {
     let says = said(says)?;
     change(dir, |notes| {
         let note = find(notes, dir, id)?;
+        if note.closed_because.is_some() {
+            note.on = On::State { state: whole(dir, &note.on)? };
+            note.closed_because = None;
+        }
         note.thread.push(Said { by: By::Person, says });
         note.status = Status::Open;
         Ok(())
+    })
+}
+
+/// The state of the description in `dir` that a note on `on`, gone, is
+/// on once reopened: the state `on` names, or the state a transition is
+/// from, while the description has it; else its first.
+fn whole(dir: &Path, on: &On) -> anyhow::Result<Shown> {
+    let states = draw::states(dir)?;
+    let was = match on {
+        On::Transition { transition } => Some(transition.from.as_str()),
+        on => on.state().map(Shown::name),
+    };
+    let found = states.iter().find(|state| Some(state.name()) == was).or(states.first());
+    found.cloned().ok_or_else(|| {
+        anyhow!("{} has no state to pin the note to: give it a fixture first", dir.join(SCREEN).display())
+    })
+}
+
+/// Why what `on` is pinned to is gone from `screen`, the description as it
+/// is now written; none while it is there. A node is gone once no tree
+/// writes its id; a region once its state is, or every node it covered;
+/// a transition or a navigate once none is written with the same keys.
+fn gone(screen: &Value, on: &On) -> Option<String> {
+    let removed = |what: &str| Some(format!("{what} is gone (removed or renamed)"));
+    if let Some(state) = on.state() {
+        let (key, kind) = match state {
+            Shown::Fixture(_) => ("fixtures", "fixture"),
+            Shown::Phase(_) => ("phases", "phase"),
+        };
+        let there =
+            screen.get(key).and_then(Value::as_object).is_some_and(|all| all.contains_key(state.name()));
+        if !there {
+            return removed(&format!("{kind} {}", state.name()));
+        }
+    }
+    let writes = |id: &str| underdraw_format::writes(screen, id);
+    match on {
+        On::Node { node, .. } if !writes(&node.origin.written) => removed(&node.origin.written),
+        On::Region { region, .. }
+            if !region.nodes.is_empty() && region.nodes.iter().all(|node| !writes(&node.written)) =>
+        {
+            let covered: Vec<&str> = region.nodes.iter().map(|node| node.written.as_str()).collect();
+            Some(format!("the nodes it covered, {}, are gone (removed or renamed)", covered.join(", ")))
+        }
+        On::Transition { transition } => {
+            let declared = underdraw_format::transitions(screen).into_iter().any(|declared| {
+                declared.from == transition.from
+                    && format!("{}.{}", declared.node, declared.event) == transition.on
+                    && declared.outcome == transition.outcome
+                    && declared.to == transition.to
+            });
+            (!declared).then(|| format!("transition {} is gone (removed or changed)", transition.said()))
+        }
+        On::Navigate { navigate } => {
+            let from = screen.get("screen").and_then(Value::as_str) == Some(navigate.from.as_str());
+            let written = underdraw_format::navigates(screen)
+                .into_iter()
+                .any(|written| written.node == navigate.node && written.to == navigate.to);
+            (!(from && written)).then(|| format!("navigate {} is gone (removed or changed)", navigate.said()))
+        }
+        On::Node { .. } | On::Region { .. } | On::State { .. } => None,
+    }
+}
+
+/// The notes of the description in `dir` that are not closed and whose
+/// target is gone from it, closed, each saying why (`closed_because`):
+/// whoever reads the notes first, the window or a command, closes them.
+/// Judged only once the description checks clean, so that one half edited
+/// closes nothing. The notes it closed, as they now stand.
+pub fn settle(dir: &Path) -> anyhow::Result<Vec<Note>> {
+    let notes = read(dir)?;
+    let Ok((screen, _)) = crate::read(dir) else {
+        return Ok(Vec::new());
+    };
+    if !notes.iter().any(|note| note.status != Status::Closed && gone(&screen, &note.on).is_some()) {
+        return Ok(Vec::new());
+    }
+    let clean = crate::read_kinds(dir)
+        .and_then(|kinds| crate::checked(&screen, dir, kinds.as_ref()))
+        .is_ok_and(|checked| checked.ok);
+    if !clean {
+        return Ok(Vec::new());
+    }
+    change(dir, |notes| {
+        let mut closed = Vec::new();
+        for note in notes.iter_mut().filter(|note| note.status != Status::Closed) {
+            if let Some(why) = gone(&screen, &note.on) {
+                note.status = Status::Closed;
+                note.closed_because = Some(why);
+                closed.push(note.clone());
+            }
+        }
+        Ok(closed)
     })
 }
 
@@ -305,19 +417,29 @@ pub const THE_PERSONS: &str = "the agent cannot create, close or reopen a note: 
 const WAIT_BETWEEN: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// `underdraw notes <path>`: the open notes of the description at `path`,
-/// or of every description under it, each with its reference; or, given
-/// `answer`, that note of the description at `path` answered with `reply`.
-/// With `wait`, the open notes once there is any: at once when some are
-/// open already, else as soon as the person writes or reopens one. Nothing
-/// is kept between runs; the files are read again each time.
-pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool) -> anyhow::Result<Value> {
+/// or of every description under it, each with its reference, or with
+/// `closed` the closed ones; or, given `answer`, that note of the
+/// description at `path` answered with `reply`. With `wait`, the open
+/// notes once there is any: at once when some are open already, else as
+/// soon as the person writes or reopens one. Nothing is kept between runs;
+/// the files are read again each time, and a note whose target is gone
+/// closed ([`settle`]).
+pub fn notes(
+    path: &Path,
+    answer: Option<&str>,
+    reply: Option<&str>,
+    wait: bool,
+    closed: bool,
+) -> anyhow::Result<Value> {
     if !path.is_dir() {
         bail!("{} is not a directory: pass a description's directory, or a root of them", path.display());
     }
     let path = path.canonicalize().with_context(|| format!("cannot read {}", path.display()))?;
     if let Some(id) = answer {
-        if wait {
-            bail!("--wait waits for a note to answer: run it without --answer, then answer what it lists");
+        if wait || closed {
+            bail!(
+                "--answer answers one note: run it without --wait or --closed, which list notes, then answer what they list"
+            );
         }
         if !path.join(SCREEN).is_file() {
             bail!(
@@ -335,8 +457,12 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
     if reply.is_some() {
         bail!("--reply answers a note: give the note with --answer <id>");
     }
+    if wait && closed {
+        bail!("--wait waits for an open note; --closed lists the closed ones: give one of them");
+    }
+    let status = if closed { Status::Closed } else { Status::Open };
     loop {
-        let (open, counts) = listed(&path)?;
+        let (open, counts) = listed(&path, status)?;
         if !wait || counts.open > 0 {
             return Ok(
                 json!({ "root": path, "notes": open, "open": counts.open, "answered": counts.answered }),
@@ -346,29 +472,30 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
     }
 }
 
-/// The open notes of every description under `root`, as `notes` answers
-/// each, and how many there are open and answered: read from the files as
-/// they now stand, descriptions added since included.
-fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
+/// The notes of every description under `root` that are `status`, as
+/// `notes` answers each, and how many there are open and answered: read
+/// from the files as they now stand, descriptions added since included,
+/// each note whose target is gone closed first.
+fn listed(root: &Path, status: Status) -> anyhow::Result<(Vec<Value>, Counts)> {
     let dirs: Vec<PathBuf> = crate::gallery::descriptions(root)
         .into_iter()
         .filter_map(|row| row.description().map(Path::to_path_buf))
         .collect();
     let (mut open, mut counts) = (Vec::new(), Counts::default());
     for dir in &dirs {
+        settle(dir)?;
         let notes = read(dir)?;
         counts = counts.add(Counts::of(&notes));
-        open.extend(
-            notes.iter().filter(|note| note.status == Status::Open).map(|note| note.answer(root, dir)),
-        );
+        open.extend(notes.iter().filter(|note| note.status == status).map(|note| note.answer(root, dir)));
     }
     Ok((open, counts))
 }
 
 /// What `check` says of the notes of the description in `dir`: how many are
-/// open and answered, or why they cannot be read. Never a fault.
+/// open and answered, each whose target is gone closed first, or why they
+/// cannot be read. Never a fault.
 pub fn counted(dir: &Path) -> Value {
-    match read(dir) {
+    match settle(dir).and_then(|_| read(dir)) {
         Ok(notes) => json!(Counts::of(&notes)),
         Err(e) => json!({ "open": 0, "answered": 0, "error": format!("{e:#}") }),
     }
@@ -566,5 +693,73 @@ mod tests {
         std::fs::write(dir.join(NOTES), "{").unwrap();
         assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn what_a_note_is_on_is_gone_once_the_description_no_longer_writes_it() {
+        let screen = json!({
+            "screen": "OrderList",
+            "fixtures": { "default": {} },
+            "phases": { "loading": { "id": "spinner" } },
+            "root": { "id": "list", "children": [
+                { "id": "nav-export", "on": { "tap": { "navigate": "ExportDocuments" } } },
+                { "id": "order-{index}" },
+            ] },
+            "transitions": [{ "from": "default", "on": "nav-export.tap", "to": "loading" }],
+        });
+        let node = |written: &str| Origin { written: written.into(), at: String::new(), instance: vec![] };
+        let default = Shown::Fixture("default".into());
+        let on_node = |state: Shown, written: &str| On::Node {
+            state,
+            node: Pointed { origin: node(written), label: None, width: 390 },
+        };
+        let region = |nodes: Vec<Origin>| On::Region {
+            state: default.clone(),
+            region: Region { area: Frame { x: 0, y: 0, width: 1, height: 1 }, width: 390, nodes },
+        };
+        let transition = |to: &str| On::Transition {
+            transition: Transition {
+                from: "default".into(),
+                on: "nav-export.tap".into(),
+                outcome: None,
+                to: to.into(),
+            },
+        };
+        let navigate = |from: &str| On::Navigate {
+            navigate: Navigate { from: from.into(), node: "nav-export".into(), to: "ExportDocuments".into() },
+        };
+        for there in [
+            on_node(default.clone(), "order-{index}"),
+            on_node(Shown::Phase("loading".into()), "spinner"),
+            On::State { state: default.clone() },
+            region(vec![]),
+            region(vec![node("gone"), node("list")]),
+            transition("loading"),
+            navigate("OrderList"),
+        ] {
+            assert_eq!(gone(&screen, &there), None, "{there:?}");
+        }
+        let said = |on: On| gone(&screen, &on).unwrap();
+        assert_eq!(said(on_node(default.clone(), "order-{id}")), "order-{id} is gone (removed or renamed)");
+        assert_eq!(
+            said(on_node(Shown::Fixture("empty".into()), "list")),
+            "fixture empty is gone (removed or renamed)"
+        );
+        assert_eq!(
+            said(On::State { state: Shown::Phase("error".into()) }),
+            "phase error is gone (removed or renamed)"
+        );
+        assert_eq!(
+            said(region(vec![node("a"), node("b")])),
+            "the nodes it covered, a, b, are gone (removed or renamed)"
+        );
+        assert_eq!(
+            said(transition("default")),
+            "transition from default on nav-export.tap to default is gone (removed or changed)"
+        );
+        assert_eq!(
+            said(navigate("Orders")),
+            "navigate from Orders on nav-export to ExportDocuments is gone (removed or changed)"
+        );
     }
 }
