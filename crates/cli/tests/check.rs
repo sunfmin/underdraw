@@ -268,3 +268,42 @@ fn a_root_holds_each_navigate_to_the_params_of_the_screen_it_opens() {
     assert_eq!((code, &alone["ok"]), (0, &json!(true)), "alone, it cannot see ExportDocuments: {alone:#}");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// The index both helps open with names, for each line, the sections that
+/// say how: each must be a heading of `check --help`, and every heading of
+/// FORMAT must be reached from it, so a renamed or added section fails here.
+#[test]
+fn the_index_reaches_every_section_of_format() {
+    let help = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let check = help(&["check", "--help"]);
+    let index: Vec<&str> = check
+        .lines()
+        .skip_while(|line| *line != "FIND IT")
+        .skip(3)
+        .take_while(|line| !line.is_empty())
+        .collect();
+    let named: Vec<&str> =
+        index.iter().flat_map(|line| line.rsplit_once("  ").unwrap().1.split(", ")).collect();
+    // A heading is a line of capitals, not indented.
+    let heading = |line: &&str| {
+        !line.starts_with(' ')
+            && line.chars().any(|c| c.is_ascii_uppercase())
+            && !line.chars().any(|c| c.is_ascii_lowercase())
+    };
+    let headings: Vec<&str> = check.lines().filter(heading).collect();
+    for section in &named {
+        assert!(
+            headings.contains(section),
+            "the index names {section:?}, which no heading of check --help is"
+        );
+    }
+    let format = include_str!("../src/help/format.txt");
+    for section in format.lines().filter(heading) {
+        assert!(named.contains(&section), "FORMAT's {section:?} is not reached from the index");
+    }
+    assert!(check.contains("\nFIND IT\n"), "check --help opens with the index");
+    assert!(help(&["--help"]).contains(&index.join("\n")), "--help opens with the same index");
+}

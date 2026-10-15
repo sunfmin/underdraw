@@ -15,7 +15,7 @@ use crate::jobs;
 use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::params::ScreenParams;
-use crate::schema::{Schema, Scope};
+use crate::schema::{Schema, Scope, Shape};
 use crate::screen::Screen;
 use crate::subtrees::{self, Subtree, Subtrees};
 use crate::template::{self, Format};
@@ -276,8 +276,23 @@ fn twice<'n>(
 /// format rules. Anything else given exactly one placeholder takes the value.
 const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
-const INERT: [&str; 12] =
-    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "with", "only", "each", "index", "if"];
+const INERT: [&str; 15] = [
+    "$comment",
+    "$note",
+    "$why",
+    "assumed",
+    "id",
+    "component",
+    "ref",
+    "with",
+    "only",
+    "each",
+    "index",
+    "if",
+    "nest",
+    "fold",
+    "indent",
+];
 
 /// The actions that only move the UI and touch no data. With `set` and
 /// `toggle` on view state, they are all a screen does by itself.
@@ -528,6 +543,7 @@ impl<'a> Walk<'a> {
                     // An element of a list in view state is view state too.
                     let mut element = resolved.field.element();
                     element.view = self.schema.in_view_state(scope, path);
+                    self.tree(object, &element, at);
                     item_scope.push(("item".to_string(), element));
                     item_scope.push(("index".to_string(), Field::of(Base::Int)));
                     // The index named, so a repeat inside can still reach it.
@@ -554,6 +570,16 @@ impl<'a> Walk<'a> {
                 at,
                 "\"item\" is the template each repeats, and this node has no \"each\": name the array with \"each\"",
             );
+        }
+        for key in ["nest", "fold", "indent"] {
+            if object.contains_key(key) && !object.contains_key("each") {
+                self.findings.add(
+                    &format!("{at}.{key}"),
+                    &format!(
+                        "\"{key}\" makes the rows \"each\" repeats a tree, and this node has no \"each\""
+                    ),
+                );
+            }
         }
         if object.contains_key("index") && !object.contains_key("each") {
             self.findings.add(
@@ -595,6 +621,69 @@ impl<'a> Walk<'a> {
                 }
                 _ => self.node(v, scope, &known, &format!("{at}.{k}"), k),
             }
+        }
+    }
+
+    /// The tree the repeating node `object` makes of elements of `element`,
+    /// at `at`: `nest` names the element's field holding its rows a level
+    /// in, a list of its own type; `fold` a bool field of it in view
+    /// state; `indent` a length. `fold` and `indent` need `nest`.
+    fn tree(&mut self, object: &Map<String, Value>, element: &Field, at: &str) {
+        let type_name = element.base.name().to_string();
+        let fields = match self.schema.shape(element) {
+            Some(Shape::Object(fields)) => fields.clone(),
+            _ => Vec::new(),
+        };
+        let field =
+            |name: &str| fields.iter().find(|(field, _)| field == name).map(|(_, field)| field.clone());
+        match object.get("nest") {
+            None => {
+                for key in ["fold", "indent"] {
+                    if object.contains_key(key) {
+                        self.findings.add(
+                            &format!("{at}.{key}"),
+                            &format!("\"{key}\" is said of a tree, and this node has no \"nest\": name the field of each element that holds its rows a level in"),
+                        );
+                    }
+                }
+            }
+            Some(nest) => {
+                let held = nest.as_str().and_then(field);
+                let nests = held
+                    .as_ref()
+                    .is_some_and(|held| held.array && !held.nullable && held.base == element.base);
+                if !nests {
+                    let is = match &held {
+                        Some(held) => format!("it is {}", held.describe()),
+                        None => format!(
+                            "{type_name} has no field {}",
+                            nest.as_str().map_or(nest.to_string(), str::to_string)
+                        ),
+                    };
+                    self.findings.add(
+                        &format!("{at}.nest"),
+                        &format!("\"nest\" names the field of each element that holds its rows a level in, a list of its own type ({type_name}[]), such as \"children\": {is}"),
+                    );
+                }
+            }
+        }
+        if let Some(fold) = object.get("fold") {
+            let held = fold.as_str().and_then(field);
+            let folds = held.as_ref().is_some_and(|held| held.is_plain_bool() && (held.view || element.view));
+            if !folds {
+                self.findings.add(
+                    &format!("{at}.fold"),
+                    &format!("\"fold\" names the field of each element that says its rows are folded away, a bool in view state, such as \"folded\": {{\"type\": \"bool = false\", \"view\": true}} on {type_name}; {fold} is not one"),
+                );
+            }
+        }
+        if let Some(indent) = object.get("indent")
+            && !(indent.is_string() || indent.as_f64().is_some_and(|n| n >= 0.0))
+        {
+            self.findings.add(
+                &format!("{at}.indent"),
+                &format!("\"indent\" is how far in each level of the tree is drawn: a space token (\"space.4\") or a number of points; {indent} is neither"),
+            );
         }
     }
 

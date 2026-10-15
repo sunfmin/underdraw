@@ -55,9 +55,15 @@ const KINDS: &str = "kinds.json";
 /// `-h` is the one-screen listing; `--help` adds `help.txt`, the guide an
 /// agent reads to learn the tool. Each subcommand's `--help` adds
 /// `help/<name>.txt`; `check --help` also adds `help/format.txt`, the
-/// reference for writing a description.
+/// reference for writing a description. Both `--help` and `check --help`
+/// open with `help/index.txt`, from what the agent wants to do to the section
+/// of `check --help` that says how.
 #[derive(Parser)]
-#[command(name = "underdraw", version = VERSION, about, long_about = include_str!("help.txt"), disable_help_subcommand = true)]
+#[command(name = "underdraw", version = VERSION, about, long_about = concat!(
+    "underdraw — describe a screen once, as JSON, then check it, show it to a\nperson, and hand it off to web, iOS and Android.\n\n",
+    include_str!("help/index.txt"),
+    include_str!("help.txt"),
+), disable_help_subcommand = true)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -66,7 +72,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Check a screen description, or every one under a directory: every fault, and which fixtures each condition holds in
-    #[command(after_long_help = concat!(include_str!("help/check.txt"), include_str!("help/format.txt")))]
+    #[command(after_long_help = concat!(include_str!("help/index.txt"), include_str!("help/check.txt"), include_str!("help/format.txt")))]
     Check {
         /// The screen's directory, which holds screen.json, or the screen.json itself; or a directory holding no screen.json, to check every description under it and the navigates between them
         path: PathBuf,
