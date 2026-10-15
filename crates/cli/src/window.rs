@@ -2689,6 +2689,19 @@ fn sheet(scene: &mut Scene, at: Affine, around: Rect, radius: f32) {
     scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Line), None, &edge);
 }
 
+/// The node picked, at `node` in window points: washed and outlined in the
+/// interaction ink, the outline's paper hairline against the node's edge.
+fn picked(scene: &mut Scene, node: Area, radius: f32) {
+    let at = Affine::IDENTITY;
+    let r = f64::from(radius);
+    scene.fill(Fill::NonZero, at, chrome::INTERACTION_FILL, None, &node.to_rounded_rect(r));
+    let paper = node.inflate(0.5, 0.5).to_rounded_rect(r + 0.5);
+    scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Paper), None, &paper);
+    let out = 1.0 + chrome::PICKED_STROKE / 2.0;
+    let outline = node.inflate(out, out).to_rounded_rect(r + out);
+    scene.stroke(&vello::kurbo::Stroke::new(chrome::PICKED_STROKE), at, chrome::INTERACTION, None, &outline);
+}
+
 /// A scrollbar's thumb at `bar`, in window points, in the chrome's look:
 /// darker while `hot`, the pointer over it or dragging it.
 fn thumb(scene: &mut Scene, bar: Area, hot: bool) {
@@ -3358,7 +3371,7 @@ mod tests {
     }
 
     #[test]
-    fn a_node_picked_in_the_picture_is_outlined_and_says_what_it_is() {
+    fn a_node_picked_in_the_picture_is_marked_and_says_what_it_is() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
@@ -3376,13 +3389,11 @@ mod tests {
             "what it is and what it calls, its id, label and boxes folded away; then its conversation"
         );
         assert!(!gallery.press_here(), "picking it again changes nothing");
-        assert_eq!(
-            overlays(&mut gallery)
-                .iter()
-                .filter(|d| matches!(d, Draw::Box { stroke: Some(Ink::Strong), .. }))
-                .count(),
-            2,
-            "it is outlined at both widths"
+        let Picture::Pages(pages) = &gallery.picture else { panic!("a state is shown") };
+        assert_eq!(pages.picked("nav-save", &gallery.desk()).len(), 2, "it is marked at both widths");
+        assert!(
+            !overlays(&mut gallery).iter().any(|d| matches!(d, Draw::Box { stroke: Some(Ink::Strong), .. })),
+            "in the interaction ink, not the wireframe's strong one"
         );
         assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded");
         let panel = gallery.panel();

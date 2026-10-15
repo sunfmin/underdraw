@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use underdraw_layout::{Draw, Ink, Placed, Rect};
 use vello::Scene;
-use vello::kurbo::Affine;
+use vello::kurbo::{Affine, Rect as Area};
 
 use super::{Desk, Pin, Seen, Shows, Target};
 use crate::area::{over, rect};
@@ -18,7 +18,7 @@ use crate::draw::{Handlers, Origin, Shown as State};
 use crate::notes::Note;
 use crate::reference::{On, Pointed, Reference};
 use crate::text::Typesetter;
-use crate::window::{SMALLEST, caption, sheet};
+use crate::window::{SMALLEST, caption, picked, sheet};
 
 /// One state drawn at each width, of the description in `dir`.
 pub(crate) struct Pages {
@@ -119,6 +119,20 @@ impl Pages {
         self.pages.iter().map(|page| page.written(written)).collect()
     }
 
+    /// The node `id` on each page that shows it, in window points.
+    pub fn picked(&self, id: &str, pane: &Desk) -> Vec<Area> {
+        let zoom = self.zoom(pane.width);
+        self.pages
+            .iter()
+            .zip(self.origins(pane))
+            .filter_map(|(page, at)| {
+                let node = page.nodes.iter().find(|n| n.id == id)?;
+                let (x, y, w, h) = Self::spot(node.rect, at, zoom);
+                Some(Area::new(x, y, x + w, y + h))
+            })
+            .collect()
+    }
+
     /// `r`, in the page at `at` drawn at `zoom`, in window points: its
     /// left, top, width and height.
     fn spot(r: Rect, (left, top): (f64, f64), zoom: f64) -> (f64, f64, f64, f64) {
@@ -182,9 +196,9 @@ impl Shows for Pages {
         on_caption.then_some(Target::Caption)
     }
 
-    /// Each page on a sheet under its caption; over them, the node a
-    /// journey acts on next ringed twice in the notes' ink, and the node
-    /// picked outlined.
+    /// Each page on a sheet under its caption, the node picked marked in
+    /// the interaction ink on each page that shows it; over them, the node
+    /// a journey acts on next ringed twice in the notes' ink.
     fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
         let (zoom, origins) = (self.zoom(pane.width), self.origins(pane));
         let mut over = self.labels(pane);
@@ -217,16 +231,8 @@ impl Shows for Pages {
             }
         }
         if let Some(Target::Node { id, .. }) = &seen.picked {
-            for (page, &at) in self.pages.iter().zip(&origins) {
-                let Some(node) = page.nodes.iter().find(|n| &n.id == id) else { continue };
-                let (x, y, w, h) = Self::spot(node.rect, at, zoom);
-                over.push(Draw::Box {
-                    rect: rect(x - 2.0, y - 2.0, w + 4.0, h + 4.0),
-                    radius: chrome::PICKED_RADIUS / 2.0,
-                    fill: None,
-                    stroke: Some(Ink::Strong),
-                    dashed: false,
-                });
+            for node in self.picked(id, pane) {
+                picked(scene, node, chrome::PICKED_RADIUS / 2.0);
             }
         }
         over
@@ -357,22 +363,23 @@ mod tests {
     }
 
     #[test]
-    fn pages_draw_their_caption_and_outline_the_node_picked() {
+    fn pages_draw_their_caption_and_mark_the_node_picked() {
         let pages = pages();
         let (wide, tall) = pages.size(&PANE, &mut Typesetter::new(None).unwrap());
         assert_eq!((wide, tall), (MARGIN + 390.0 + MARGIN, MARGIN + CAPTION + 600.0 + MARGIN));
         let picked = Some(Target::Node { id: "buy".to_string(), pointed: 0 });
         let drawn = pages.draw(&mut Scene::new(), &PANE, &seen(picked), &mut Typesetter::new(None).unwrap());
         assert!(drawn.iter().any(|d| matches!(d, Draw::Text { text, .. } if text == "default · 390")));
-        let outline = drawn.iter().find_map(|d| match d {
-            Draw::Box { rect, stroke: Some(Ink::Strong), dashed: false, .. } => Some(*rect),
-            _ => None,
-        });
+        assert!(
+            !drawn.iter().any(|d| matches!(d, Draw::Box { stroke: Some(Ink::Strong), .. })),
+            "not in the wireframe's strong ink"
+        );
         let (left, top) = (PANE.left + MARGIN, MARGIN + CAPTION);
         assert_eq!(
-            outline,
-            Some(rect(left + 18.0, top + 18.0, 54.0, 34.0)),
-            "around the button, at both its edges"
+            pages.picked("buy", &PANE),
+            vec![Area::new(left + 20.0, top + 20.0, left + 70.0, top + 50.0)],
+            "the button, on the page that shows it"
         );
+        assert!(pages.picked("gone", &PANE).is_empty());
     }
 }
