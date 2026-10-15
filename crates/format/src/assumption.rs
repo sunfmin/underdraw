@@ -82,15 +82,15 @@ pub fn undrawn(screens: &[String], lang: Lang) -> String {
     }
 }
 
-/// The assumption on a node of `component`, which no kinds.json and none of
+/// The assumption on a node of `component`, which none of the screen's own components and none of
 /// underdraw's own components define.
 pub fn unknown_component(component: &str, lang: Lang) -> String {
     match lang {
         Lang::En => format!(
-            "{component} is not a component underdraw knows, so it is drawn as a box with its name, guessed to be a component of this project whose look is not written yet; it could instead be a misspelt name of a component underdraw has: define its look in kinds.json, or correct the name."
+            "{component} is not a component underdraw knows, so it is drawn as a box with its name, guessed to be a component of this project whose look is not written yet; it could instead be a misspelt name of a component underdraw has: define it in the screen's \"components\", with its params and look, or correct the name."
         ),
         Lang::Zh => format!(
-            "{component} 不是 underdraw 认识的组件，所以画成一个写着名字的框，猜测它是这个项目里还没写外观的组件；也可能是 underdraw 已有组件的名字写错了：在 kinds.json 里写出它的外观，或者改正名字。"
+            "{component} 不是 underdraw 认识的组件，所以画成一个写着名字的框，猜测它是这个项目里还没写外观的组件；也可能是 underdraw 已有组件的名字写错了：在 screen.json 的 \"components\" 里写出它的 params 和外观，或者改正名字。"
         ),
     }
 }

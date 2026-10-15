@@ -16,7 +16,7 @@ fn each_event_names_the_operation_it_calls() {
         "tokenNaming": { "pattern": "{group}.{name}" }, "components": {},
         "actions": { "call": "await operations[operation](with)" }
     });
-    let handoff = handoff(&draft("screen.json"), &mapping, &draft("tokens.json"), Some(&draft("kinds.json")))
+    let handoff = handoff(&draft("screen.json"), &mapping, &draft("tokens.json"))
         .unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let calls = |id: &str| -> Vec<(String, Option<String>, Value)> {
         let node = handoff.nodes.iter().find(|n| n.id == id).unwrap_or_else(|| panic!("no node {id}"));
@@ -76,13 +76,8 @@ fn each_event_names_the_operation_it_calls() {
 
 #[test]
 fn each_state_expects_the_calls_its_nodes_make() {
-    let handoff = handoff(
-        &draft("screen.json"),
-        &draft("platforms/web.json"),
-        &draft("tokens.json"),
-        Some(&draft("kinds.json")),
-    )
-    .unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let handoff = handoff(&draft("screen.json"), &draft("platforms/web.json"), &draft("tokens.json"))
+        .unwrap_or_else(|c| panic!("{:#?}", c.findings));
     assert!(handoff.ok, "{:#?}", handoff.findings);
     let state =
         |fixture: &str| handoff.states.iter().find(|s| s.state == json!({ "fixture": fixture })).unwrap();

@@ -8,7 +8,7 @@ WHO
   The agent building the screen or the API that feeds it.
 
 READS
-  <path>/screen.json (and kinds.json beside it). Writes nothing. Refuses a
+  <path>/screen.json. Writes nothing. Refuses a
   description `check` finds faults in.
 
 ANSWERS

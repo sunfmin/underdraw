@@ -14,7 +14,7 @@ mod cli;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Kinds, Node, State, instantiate};
+use underdraw_format::{Breakpoint, Components, Node, State, instantiate};
 use underdraw_handoff::{Expected, handoff};
 use underdraw_layout::{Measure, Page, Rect, layout};
 
@@ -68,18 +68,17 @@ const SLACK: f32 = 1.0;
 
 /// How `capture` differs from `screen` in `state` on the platform `mapping`
 /// describes. The wireframe is laid out at the capture's width, text
-/// measured by `measure`, each component drawn as `kinds` says. Refused, with why: a description with faults, a
+/// measured by `measure`, each component drawn as the screen's own components, over underdraw's, say. Refused, with why: a description with faults, a
 /// capture that is not one, a state not shown at that width.
 pub fn compare(
     screen: &Value,
     mapping: &Value,
     tokens: &Value,
-    kinds: Option<&Value>,
     state: State,
     capture: &Value,
     measure: &mut dyn Measure,
 ) -> Result<Comparison, String> {
-    let handed = match handoff(screen, mapping, tokens, kinds) {
+    let handed = match handoff(screen, mapping, tokens) {
         Ok(handed) => handed,
         Err(checked) => {
             return Err(format!(
@@ -104,7 +103,7 @@ pub fn compare(
         return Err(format!("the description does not show {named} at the {breakpoint:?} breakpoint"));
     };
     let root = instantiate(screen, state, breakpoint)?;
-    let page = layout(&root, tokens, kinds, capture.width, underdraw_format::Lang::default(), measure)?;
+    let page = layout(&root, tokens, screen, capture.width, underdraw_format::Lang::default(), measure)?;
 
     let mut known = Vec::new();
     for state in &handed.states {
@@ -118,7 +117,7 @@ pub fn compare(
         capture: &capture,
         expected,
         page: &page,
-        kinds: &Kinds::read(kinds),
+        components: &Components::read(screen),
         platform: &handed.platform,
         checked: Checked::default(),
         findings: Vec::new(),
@@ -151,7 +150,7 @@ struct Differ<'a> {
     expected: &'a Expected,
     page: &'a Page,
     /// Which components scroll, and which are pinned out of the flow.
-    kinds: &'a Kinds,
+    components: &'a Components,
     platform: &'a str,
     checked: Checked,
     findings: Vec<Finding>,
@@ -341,14 +340,14 @@ impl Differ<'_> {
                 self.find(&node.id, "inside", problem);
             }
         }
-        let scrolls = self.kinds.scrolls(&node.component);
+        let scrolls = self.components.scrolls(&node.component);
         let (holder, scrolled) = match frame {
             Some(frame) => (Some((node.id.as_str(), frame)), scrolls),
             None => (holder, scrolled || scrolls),
         };
         let mut before: Option<&Node> = None;
         for child in &node.children {
-            let flows = child.slot != "overlay" && !self.kinds.pinned(&child.component);
+            let flows = child.slot != "overlay" && !self.components.pinned(&child.component);
             if flows && self.capture.get(&child.id).is_some() {
                 if let Some(previous) = before {
                     self.order(previous, child);

@@ -3539,7 +3539,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("todo")).unwrap();
-        for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+        for file in [crate::SCREEN, crate::TOKENS] {
             std::fs::copy(Path::new(DRAFTS).join("todo").join(file), root.join("todo").join(file)).unwrap();
         }
         root
@@ -3623,7 +3623,7 @@ mod tests {
 
         let added = root.join("a-flow").join("sign-in");
         std::fs::create_dir_all(&added).unwrap();
-        for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+        for file in [crate::SCREEN, crate::TOKENS] {
             std::fs::copy(root.join("todo").join(file), added.join(file)).unwrap();
         }
         gallery.reload();
@@ -3675,16 +3675,12 @@ mod tests {
         assert_eq!(gallery.picked, Some(typing), "the same state");
         assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
 
-        std::fs::write(root.join("todo").join(crate::KINDS), "{").unwrap();
+        std::fs::write(root.join("todo").join(crate::KINDS), "{}").unwrap();
         gallery.reload();
-        let Picture::Faults(shown) = &gallery.picture else { panic!("kinds that are not JSON are a fault") };
-        assert!(shown.iter().any(|f| f.problem.contains("kinds.json")), "{shown:?}");
+        let Picture::Faults(shown) = &gallery.picture else { panic!("a kinds.json left behind is a fault") };
+        assert!(shown.iter().any(|f| f.problem.contains("kinds.json is no longer read")), "{shown:?}");
 
-        std::fs::copy(
-            Path::new(DRAFTS).join("todo").join(crate::KINDS),
-            root.join("todo").join(crate::KINDS),
-        )
-        .unwrap();
+        std::fs::remove_file(root.join("todo").join(crate::KINDS)).unwrap();
         write_todo_screen(&root, &fine);
         gallery.reload();
         assert!(gallery.lines[0].row.faults.is_empty(), "fixed");
@@ -3896,7 +3892,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         for (draft, at) in copied {
             std::fs::create_dir_all(root.join(at)).unwrap();
-            for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+            for file in [crate::SCREEN, crate::TOKENS] {
                 let from = Path::new(DRAFTS).join(draft).join(file);
                 if from.is_file() {
                     std::fs::copy(from, root.join(at).join(file)).unwrap();

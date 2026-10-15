@@ -167,8 +167,9 @@ pub(crate) fn children(dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// What the window is drawn from under `root`, as it now stands: every
 /// directory the tree may list, and when and how large each file it draws
-/// from was last written. Two differ when a description, its tokens or its
-/// kinds changed, or a directory appeared or went; renders/ is not in it.
+/// from was last written. Two differ when a description or its tokens
+/// changed, a kinds.json `check` refuses was left behind, or a directory
+/// appeared or went; renders/ is not in it.
 #[derive(Debug, PartialEq)]
 pub struct Stamp(Vec<(PathBuf, Option<(SystemTime, u64)>)>);
 
@@ -481,9 +482,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         for dir in ["one", "two"] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
-            for file in [SCREEN, KINDS] {
-                std::fs::copy(draft.join(file), root.join(dir).join(file)).unwrap();
-            }
+            std::fs::copy(draft.join(SCREEN), root.join(dir).join(SCREEN)).unwrap();
         }
         std::fs::copy(draft.join(TOKENS), root.join(TOKENS)).unwrap();
         let rows = tree(&root);
@@ -509,7 +508,7 @@ mod tests {
         step("nothing", &|| {}, false);
         step("the description edited", &|| std::fs::write(dir.join(SCREEN), "{ }").unwrap(), true);
         step("its tokens written", &|| std::fs::write(dir.join(TOKENS), "{}").unwrap(), true);
-        step("its kinds written", &|| std::fs::write(dir.join(KINDS), "{}").unwrap(), true);
+        step("a kinds.json left behind written", &|| std::fs::write(dir.join(KINDS), "{}").unwrap(), true);
         step("a note written or answered", &|| std::fs::write(dir.join(NOTES), "{}").unwrap(), true);
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
         step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);

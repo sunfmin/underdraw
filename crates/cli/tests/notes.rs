@@ -23,7 +23,7 @@ fn root(name: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("orders");
     std::fs::create_dir_all(&dir).unwrap();
-    for file in ["screen.json", "tokens.json", "kinds.json"] {
+    for file in ["screen.json", "tokens.json"] {
         std::fs::copy(Path::new(ORDERS).join(file), dir.join(file)).unwrap();
     }
     let note = |id: &str, says: &str| {

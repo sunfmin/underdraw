@@ -1,7 +1,7 @@
 
 FORMAT — how to write a description
-  The reference for writing screen.json, domain.json, tokens.json and
-  kinds.json, from the files' keys to every built-in component.
+  The reference for writing screen.json, domain.json and tokens.json,
+  from the files' keys to every built-in component.
 
 FILES
   <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
@@ -11,7 +11,6 @@ FILES
   tokens.json         design tokens; read by name, always this file name,
                       from the nearest directory at or above <dir> that
                       has one (beside screen.json, or shared above it)
-  <dir>/kinds.json    optional: the project's own components (LOOKS below)
   <dir>/platforms/<name>.json
                       how one platform builds it: `underdraw handoff --help`
   <dir>/journeys/<name>.json
@@ -29,7 +28,8 @@ SCREEN.JSON
     "fixtures":   {…},                 sample view models, one state each
     "conditions": {…},                 every yes/no the screen decides, named
     "operations": {…},                 the queries and commands it calls (OPERATIONS, PAGING)
-    "components": {"Name": {…}, …},    the screen's own components (COMPONENTS)
+    "components": {"Name": component, …}
+                                       the screen's own components (COMPONENTS)
     "root":       node,                the screen once data has arrived
     "phases":     {"loading": node, "error": node}
                                        trees shown before data; they read no data
@@ -178,9 +178,9 @@ CASES
 NODES
   A node is an object:
     "id"        required, unique: "todo-{index}" inside an item template
-    "component" what the node is: a built-in component (BUILT-IN COMPONENTS),
-                one in kinds.json (LOOKS) or one of the screen's (COMPONENTS);
-                check refuses "kind", its old name
+    "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
+                or one of the screen's own (COMPONENTS); check refuses
+                "kind", its old name
     "if"        a use site: the node and all inside it show only when it holds
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
@@ -463,9 +463,32 @@ PAGING
   --cursor and --limit, and its stdout holds "next" (see cli --help).
 
 COMPONENTS
-  A piece of the screen used more than once (a nav bar, an order row with
-  its cancel button) is declared once in "components", by a name that
-  starts with a capital and is not a built-in's or kinds.json's:
+  "components" holds the screen's own components, each by its name. A
+  component's body is one of two, never both; check refuses a component
+  with both, or with neither:
+    a look     drawn as one element, and built by a platform as one:
+                 "Chip": { "params": ["selected", "text"], "look": … }
+               (LOOKS below). A node is one by its name, and gives it each
+               param as a prop: { "id": "chip-direct", "component": "Chip",
+               "text": "Direct", "selected": "{filters.direct}" }.
+    nodes      a subtree written once and used more than once, with the
+               params it reads typed, and given in "with" (below).
+  A look component lists in "params" every name its look reads, and its
+  look reads nothing else: the first step of each placeholder ("{text}",
+  "{label.short}" reads label), each name in an "if" or a branch of
+  "cases", and, for a box with "frame": true, padding, gap, radius, border
+  and elevation. What a repeat binds (n, index, item) is no param. check
+  names each name a look reads that its params leave out, at
+  "components.<Name>.look", and refuses "params" that is not a list of names.
+  underdraw's own components (BUILT-IN COMPONENTS) are look components of
+  the same form; a screen's own of the same name replaces one whole.
+  There is no kinds.json: check refuses one left beside screen.json. Move
+  each of its components into "components", with the params its look
+  reads, and delete the file.
+
+  A component whose body is nodes is a piece of the screen used more than
+  once (a nav bar, an order row with its cancel button), named with a
+  capital and not as one of underdraw's own:
     "components": { "OrderRow": {
       "params": { "order": "Order", "menuOpen": "bool" },
       "nodes": { "component": "Card", "on": { "tap": { "navigate": "OrderDetail", "with": { "id": "{order.id}" } } },
@@ -520,7 +543,8 @@ POPUPS
   Inside it, paths through the nullable field are safe: "if" tests it.
   The button that opens it says so with a UI-only action, { "open": "cancel-dialog" };
   a list of choices inside it is "each" like anywhere else.
-  "Dialog" is the project's own component (kinds.json): a look such as
+  "Dialog" is the screen's own component (COMPONENTS): "params": ["width"]
+  and a look such as
   { "box": "column", "backdrop": true, "width": "{width|or:88%}",
     "padding": 24, "radius": 16, "fill": "paper", "stroke": "line",
     "children": ["$children"] }, with
@@ -640,6 +664,7 @@ BUILT-IN COMPONENTS
   Stepper          label, bind (an int): − value +
   PriceBreakdown   lines (list of names), total (default "合计")
   Skeleton         shape: a list of "image 4:3" and "line 70%"
+  Each is a look component (COMPONENTS) whose params are the props above.
   Props a component does not read still reach `handoff` (and so the builder):
   write what the platform needs to know, such as "minLength", "sticky".
   The built-in components use the fonts font.body, font.subhead, font.caption,
@@ -693,19 +718,19 @@ TOKENS.JSON
   as text.
 
 LOOKS
-  kinds.json beside screen.json holds the project's own components drawn
-  as a look, and replacements for built-ins by name. A component is never
-  a guess: write its whole look; check refuses "assumed" on one (a node
-  may still carry one).
-    { "components": { "Chip": {
+  What a look component (COMPONENTS) is drawn as. A component is never a
+  guess: write its whole look; check refuses "assumed" on one (a node may
+  still carry one).
+    "components": { "Chip": {
         "doc": "A filter as a pill: filled when on.",
+        "params": ["selected", "text"],
         "look": { "box": "row", "gap": 6, "padding": [6, 12], "radius": 999,
                   "fill":  { "cases": [ { "if": "selected", "then": "strong" }, { "else": null } ] },
                   "stroke": { "cases": [ { "if": "selected", "then": null }, { "else": "line" } ] },
                   "children": [ { "text": "{text}", "font": "font.caption",
                                   "ink": { "cases": [ { "if": "selected", "then": "paper" },
-                                                      { "else": "text" } ] } } ] } } } }
-  Beside "look" and "doc", a component may say how a platform treats it, which
+                                                      { "else": "text" } ] } } ] } } }
+  Beside "params", "look" and "doc", a component may say how a platform treats it, which
   `compare` reads (each true or false):
     "scrolls": true    its content scrolls or pages, so what is in it may
                        lie outside its frame (Screen, Scroll, Carousel)
@@ -713,7 +738,8 @@ LOOKS
                        (StickyBar)
   A node then writes { "id": "chip-direct", "component": "Chip", "text": "Direct",
   "selected": "{filters.direct}" }. A look's templates read the node's props
-  (after the node's own templates are filled), not data.
+  (after the node's own templates are filled), not data, and only those
+  its params declare.
   A look is one of:
     {"box": "row"|"column"|"grid" or none, …box keys}    a box
     {"text": "…", …text keys}                            text

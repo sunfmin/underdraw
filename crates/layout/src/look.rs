@@ -1,15 +1,16 @@
 // A style is built one property per line, as CSS reads.
 #![allow(clippy::field_reassign_with_default)]
 
-//! Components as data: what each component of a node looks like, read from kinds.json
-//! (underdraw's defaults, under a project's own) and turned into boxes for
+//! Components as data: what each component of a node looks like, read from the
+//! screen's own components (over underdraw's) and turned into boxes for
 //! `place` to lay out. A look is a box, text, a `repeat`, `cases`, another
 //! component, or `"$children"`; it reads the node's props through `{prop|filter}`
-//! templates. Why: [ADR 0007](../../../docs/adr/0007-kinds-are-data.md).
+//! templates. Why: [ADR 0007](../../../docs/adr/0007-kinds-are-data.md),
+//! [ADR 0021](../../../docs/adr/0021-kinds-become-components-one-screens-or-the-projects.md).
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{Anchor, Edge, Kinds, Lang, Node, Track};
+use underdraw_format::{Anchor, Components, Edge, Lang, Node, Track};
 
 use crate::place::{Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
@@ -49,7 +50,7 @@ impl Scope<'_, '_> {
 
 pub(crate) struct Catalog<'t> {
     pub(crate) tokens: &'t Tokens<'t>,
-    pub(crate) kinds: &'t Kinds,
+    pub(crate) components: &'t Components,
     /// The language a guess underdraw makes itself is said in.
     pub(crate) lang: Lang,
 }
@@ -58,7 +59,7 @@ impl Catalog<'_> {
     /// `node` drawn as its component's look says, tagged as the node; a box with
     /// the component's name, marked as a guess, when no component has that name.
     pub(crate) fn node<'a>(&self, node: &'a Node) -> Elem<'a> {
-        let mut elem = match self.kinds.look(&node.component) {
+        let mut elem = match self.components.look(&node.component) {
             Some(look) => {
                 let scope = Scope { props: &node.props, vars: Map::new(), node: Some(node) };
                 self.one(look, &scope)
@@ -161,7 +162,7 @@ impl Catalog<'_> {
                 props.insert(key.clone(), self.resolve(value, scope));
             }
         }
-        match self.kinds.look(name) {
+        match self.components.look(name) {
             Some(look) => {
                 let inner = Scope { props: &props, vars: Map::new(), node: None };
                 self.one(look, &inner)

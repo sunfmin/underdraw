@@ -6,18 +6,18 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
-use crate::components::{self, Components};
+use crate::components::{Components, track_faults};
 use crate::conditions::{Conditions, UseSite};
 use crate::domain;
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::instance::{State, build};
 use crate::jobs;
-use crate::kinds::{Kinds, track_faults};
 use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::params::{self, ScreenParams};
 use crate::schema::{Schema, Scope, object};
+use crate::subtrees::{self, Subtrees};
 use crate::template::{self, Format};
 use crate::transitions;
 
@@ -78,22 +78,22 @@ impl Findings {
 /// fixtures, the conditions, and every node's paths, templates and cases.
 /// When there is none, which fixtures each condition holds in; a condition
 /// that holds in all of them, or in none, is then itself a fault. Every
-/// node's component is one `kinds` (the project's kinds.json) or underdraw
-/// defines, and the project's looks are checked too. Where it navigates is
+/// node's component is one the screen's own `"components"` or underdraw
+/// defines, and the screen's own components are checked too. Where it navigates is
 /// not: one description alone cannot see the others.
-pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
-    check_among(screen, kinds, &ScreenParams::new())
+pub fn check(screen: &Value) -> Checked {
+    check_among(screen, &ScreenParams::new())
 }
 
 /// What `check` makes of `screen`, among the screens under its root whose
 /// params `others` holds: each `navigate` to one of them gives each of its
 /// params, of its type, in `with`, and nothing else. A navigate to a screen
 /// not in `others` is held to nothing.
-pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams) -> Checked {
+pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
     let mut findings = Findings::default();
     let screen = &domain::expand(screen, &mut findings);
-    let known = Kinds::read(kinds);
-    known.check(kinds, &mut findings);
+    let known = Components::read(screen);
+    known.check(screen, &mut findings);
     let schema = Schema::read(screen, &mut findings);
     let mut fixtures = fixture::read(screen, &schema, &mut findings);
     params::read(screen, &schema, &mut findings);
@@ -101,13 +101,15 @@ pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams)
     conditions.fill(&schema, &mut fixtures);
     let operations = Operations::read(screen, &schema, &conditions, &mut findings);
     jobs::check(&operations, &schema, &fixtures, &mut findings);
-    components::check(screen, &schema, &mut findings);
-    let components = Components::read(screen);
-    for (name, _) in object(screen, components::KEY) {
-        if known.has(name) {
+    subtrees::check(screen, &schema, &mut findings);
+    let components = Subtrees::read(screen);
+    for (name, declared) in object(screen, subtrees::KEY) {
+        if declared.get("nodes").is_some() && known.has(name) {
             findings.add(
-                &format!("{}.{name}", components::KEY),
-                &format!("{name} is a component already (underdraw's, or kinds.json's): give the screen's its own name"),
+                &format!("{}.{name}", subtrees::KEY),
+                &format!(
+                    "{name} is underdraw's own component: give the screen's whose body is nodes its own name"
+                ),
             );
         }
     }
@@ -120,7 +122,7 @@ pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams)
         conditions: &conditions,
         operations: &operations,
         components: &components,
-        kinds: &known,
+        known: &known,
         frames: Vec::new(),
         findings: &mut findings,
     };
@@ -285,8 +287,9 @@ struct Walk<'a> {
     schema: &'a Schema,
     conditions: &'a Conditions,
     operations: &'a Operations,
-    components: &'a Components<'a>,
-    kinds: &'a Kinds,
+    components: &'a Subtrees<'a>,
+    /// Every component a node may be: underdraw's and the screen's look components.
+    known: &'a Components,
     /// The instances whose nodes are being walked, outermost first.
     frames: Vec<Frame>,
     findings: &'a mut Findings,
@@ -334,7 +337,7 @@ impl Walk<'_> {
             return;
         }
         let at = match object.get("id").and_then(Value::as_str) {
-            Some(id) => components::join(self.frames.last().map(|frame| frame.id.as_str()), id),
+            Some(id) => subtrees::join(self.frames.last().map(|frame| frame.id.as_str()), id),
             None => at.to_string(),
         };
         let at = at.as_str();
@@ -344,7 +347,7 @@ impl Walk<'_> {
                 "ref is gone: declare the component in components as {\"params\": {…}, \"nodes\": {…}} and use it by name, {\"id\": …, \"component\": \"<Name>\", \"with\": {…}}",
             );
         }
-        if components::is_slot(object) {
+        if subtrees::is_slot(object) {
             return self.slotted(object, key, at);
         }
         if self.components.of(object).is_some() {
@@ -363,12 +366,12 @@ impl Walk<'_> {
             );
         }
         if let Some(Value::String(kind)) = object.get("component")
-            && !self.kinds.has(kind)
+            && !self.known.has(kind)
             && !self.components.has(kind)
         {
             self.findings.add(
                 at,
-                &format!("component {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, LOOKS)"),
+                &format!("component {kind} is not defined: define it in the screen's \"components\", with its params and look (`underdraw check --help`, COMPONENTS)"),
             );
         }
         match object.get("assumed") {
@@ -385,7 +388,7 @@ impl Walk<'_> {
         }
         if let Some(Value::String(kind)) = object.get("component")
             && key != "overlay"
-            && self.kinds.backdrop(kind)
+            && self.known.backdrop(kind)
         {
             self.findings.add(
                 at,
@@ -395,7 +398,7 @@ impl Walk<'_> {
         let mut known = known.clone();
         if key == "overlay"
             && let Some(Value::String(kind)) = object.get("component")
-            && self.kinds.backdrop(kind)
+            && self.known.backdrop(kind)
             && object.get("id").and_then(Value::as_str).is_some_and(|id| self.opened.contains(id))
         {
             known.confirming = true;
@@ -501,7 +504,7 @@ impl Walk<'_> {
         let name = component.name.to_string();
         let params = component.params.clone();
         let root = Value::Object(component.nodes.clone());
-        for reached in components::reached_into(object) {
+        for reached in subtrees::reached_into(object) {
             self.findings.add(
                 &format!("{at}.{reached}"),
                 &format!("a screen cannot reach inside an instance of {name}: what it says of {name} is a param, given in \"with\""),
@@ -620,7 +623,7 @@ impl Walk<'_> {
                 "{\"slot\": …} stands for what an instance gives, and only a component's nodes hold one",
             );
         };
-        if let Some(given) = components::slotted(object, &frame.instance) {
+        if let Some(given) = subtrees::slotted(object, &frame.instance) {
             let slot = object.get("slot").and_then(Value::as_str).unwrap_or(key);
             self.node(given, &frame.scope, &frame.known, &format!("{}.{slot}", frame.id), slot);
         }
@@ -1325,7 +1328,7 @@ impl Walk<'_> {
 fn slots_placed(value: &Value, placed: &mut BTreeSet<String>) {
     match value {
         Value::Object(object) => {
-            if components::is_slot(object)
+            if subtrees::is_slot(object)
                 && let Some(Value::String(slot)) = object.get("slot")
             {
                 placed.insert(slot.clone());

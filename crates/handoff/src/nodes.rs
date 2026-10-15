@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Components, Finding, join_id};
+use underdraw_format::{Finding, Subtrees, join_id};
 
 /// One node, as the platform builds it.
 #[derive(Debug, Serialize)]
@@ -68,7 +68,7 @@ const OTHER: [&str; 8] = ["id", "component", "with", "assumed", "platform", "on"
 pub struct Walk<'a> {
     pub platform: &'a str,
     pub mapping: &'a Value,
-    pub components: &'a Components<'a>,
+    pub components: &'a Subtrees<'a>,
     pub specs: Vec<Spec>,
     pub hidden: Vec<Hidden>,
     pub findings: Vec<Finding>,

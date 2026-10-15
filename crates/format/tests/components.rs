@@ -8,7 +8,6 @@ use underdraw_format::{
 };
 
 const ORDERS: &str = include_str!("../../../drafts/orders/screen.json");
-const ORDERS_KINDS: &str = include_str!("../../../drafts/orders/kinds.json");
 
 fn find<'a>(node: &'a Node, id: &str) -> Option<&'a Node> {
     if node.id == id {
@@ -24,7 +23,7 @@ fn found(checked: &Checked, at: &str, said: &str) -> bool {
 #[test]
 fn the_orders_rows_are_named_by_their_instance_and_their_transition_names_them() {
     let screen: Value = serde_json::from_str(ORDERS).unwrap();
-    let checked = check(&screen, Some(&serde_json::from_str(ORDERS_KINDS).unwrap()));
+    let checked = check(&screen);
     assert!(checked.ok, "{:#?}", checked.findings);
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::Regular).unwrap();
     let row = find(&root, "order-0").expect("the first row, named by its instance");
@@ -84,7 +83,7 @@ fn a_component_reads_its_params_toggles_what_was_passed_and_places_its_slot() {
         "children": { "id": "row-{index}-title", "component": "Text", "text": "{title}" }
     });
     let screen = screen(row(), instance);
-    let checked = check(&screen, None);
+    let checked = check(&screen);
     assert!(checked.ok, "{:#?}", checked.findings);
     let root = instantiate(&screen, State::Fixture("some"), Breakpoint::Compact).unwrap();
     assert_eq!(find(&root, "row-0-name").unwrap().props["text"], json!("Milk"));
@@ -191,7 +190,7 @@ fn each_fault_of_a_component_is_found() {
         ("ref", row(), json!({ "ref": "ItemRow" }), "list.item.ref", "ref is gone"),
     ];
     for (name, component, instance, at, said) in cases {
-        let checked = check(&screen(component, instance), None);
+        let checked = check(&screen(component, instance));
         assert!(found(&checked, at, said), "{name}: expected {said:?} at {at}, got {:#?}", checked.findings);
     }
 }
@@ -204,7 +203,7 @@ fn a_bool_param_takes_a_condition_of_the_screens() {
     let instance = json!({ "id": "row-{index}", "component": "ItemRow",
         "with": { "item": "{item}", "open": "{menuOpen}", "shown": "{hasItems}" } });
     let screen = screen(row, instance);
-    let checked = check(&screen, None);
+    let checked = check(&screen);
     assert!(checked.ok, "{:#?}", checked.findings);
     let root = instantiate(&screen, State::Fixture("some"), Breakpoint::Compact).unwrap();
     assert!(find(&root, "row-0-name").is_some(), "hasItems holds where there is a row");

@@ -27,7 +27,7 @@ pub struct Navigate {
 /// in the order written, each node's screens by name, each once.
 pub fn navigates(screen: &Value) -> Vec<Navigate> {
     let mut found = Vec::new();
-    for (node, written) in crate::components::written(screen) {
+    for (node, written) in crate::subtrees::written(screen) {
         if let Some(on) = written.get("on") {
             let mut screens = BTreeSet::new();
             targets(on, &mut screens);

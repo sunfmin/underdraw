@@ -94,7 +94,7 @@ fn a_phase_is_its_own_tree() {
 #[test]
 fn a_model_shows_each_fixture_then_each_phase_as_instantiate_does() {
     let screen = draft();
-    let model = underdraw_format::model(&screen, None).unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = underdraw_format::model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let names: Vec<String> = model.states().iter().map(|state| format!("{state:?}")).collect();
     assert_eq!(
         names,

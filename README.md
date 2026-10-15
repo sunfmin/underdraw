@@ -10,8 +10,8 @@ A command-line tool for AI agents: describe a screen once, then
 
 One platform-neutral description (`screen.json`) is the single source of truth.
 Design tokens live in `tokens.json`; per-platform mappings live in `platforms/`;
-what each component of a node looks like lives in `kinds.json` (underdraw's own, plus the
-project's: see [docs/format/kinds.md](docs/format/kinds.md)).
+what each component of a node looks like is a look in its `components` (underdraw's own, plus the
+screen's: see [docs/format/kinds.md](docs/format/kinds.md)).
 Node ids become each platform's test id (`data-testid`, `accessibilityIdentifier`,
 `testTag`), which is what makes `compare` possible.
 

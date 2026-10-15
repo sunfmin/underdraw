@@ -11,11 +11,11 @@ use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
 use crate::check::Findings;
-use crate::components::{self, Components};
 use crate::conditions::{Conditions, UseSite};
 use crate::domain;
 use crate::fixture;
 use crate::schema::{Schema, object};
+use crate::subtrees::{self, Subtrees};
 use crate::template::{self, Decimals, Format};
 
 /// Which state of the screen to show.
@@ -134,7 +134,7 @@ pub(crate) fn build(
             (found.ok_or_else(|| format!("there is no phase {name}"))?, Value::Object(Map::new()))
         }
     };
-    let components = Components::read(screen);
+    let components = Subtrees::read(screen);
     let fill = Fill { conditions, components: &components, breakpoint };
     let at = match state {
         State::Fixture(_) => "/root".to_string(),
@@ -169,7 +169,7 @@ fn escaped(key: &str) -> String {
 
 struct Fill<'a> {
     conditions: &'a Conditions,
-    components: &'a Components<'a>,
+    components: &'a Subtrees<'a>,
     breakpoint: Breakpoint,
 }
 
@@ -215,9 +215,9 @@ impl Fill<'_> {
             );
         }
         if let Some(inside) = inside
-            && components::is_slot(object)
+            && subtrees::is_slot(object)
         {
-            let Some(given) = components::slotted(object, inside.instance) else {
+            let Some(given) = subtrees::slotted(object, inside.instance) else {
                 return Ok(Vec::new());
             };
             let key = object.get("slot").and_then(Value::as_str).unwrap_or_default();
@@ -228,8 +228,8 @@ impl Fill<'_> {
         }
         let (id, written_id) = match object.get("id") {
             Some(Value::String(id)) => (
-                components::join(inside.map(|inside| inside.id.as_str()), &self.text(id, scope)?),
-                components::join(inside.map(|inside| inside.written_id.as_str()), id),
+                subtrees::join(inside.map(|inside| inside.id.as_str()), &self.text(id, scope)?),
+                subtrees::join(inside.map(|inside| inside.written_id.as_str()), id),
             ),
             _ => return Err(format!("a node has no id: {written}")),
         };
@@ -273,7 +273,7 @@ impl Fill<'_> {
                 outer: inside,
             };
             let at = Written {
-                at: format!("/{}/{}/nodes", components::KEY, escaped(component.name)),
+                at: format!("/{}/{}/nodes", subtrees::KEY, escaped(component.name)),
                 instance: at.instance.clone(),
             };
             let mut node = self.build(

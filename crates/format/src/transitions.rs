@@ -221,7 +221,7 @@ pub fn written_node<'a>(screen: &'a Value, id: &str) -> Option<&'a Map<String, V
 /// each instance, its components, by its id as written and joined.
 fn written(screen: &Value) -> BTreeMap<String, &Map<String, Value>> {
     let mut nodes = BTreeMap::new();
-    for (id, node) in crate::components::written(screen) {
+    for (id, node) in crate::subtrees::written(screen) {
         nodes.entry(id).or_insert(node);
     }
     nodes

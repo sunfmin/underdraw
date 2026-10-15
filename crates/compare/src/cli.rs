@@ -40,13 +40,8 @@ pub struct CliChecked {
 /// made in. Refused, with why: a description with faults, a capture that is
 /// not one, a command line the derived CLI does not take, or one it has no
 /// golden output for.
-pub fn compare_cli(
-    screen: &Value,
-    kinds: Option<&Value>,
-    fixture: &str,
-    capture: &Value,
-) -> Result<CliComparison, String> {
-    let model = model(screen, kinds).map_err(|checked| {
+pub fn compare_cli(screen: &Value, fixture: &str, capture: &Value) -> Result<CliComparison, String> {
+    let model = model(screen).map_err(|checked| {
         format!(
             "the description has {} finding(s), so it cannot say what the CLI should print: run `underdraw check` and fix them first",
             checked.findings.len()

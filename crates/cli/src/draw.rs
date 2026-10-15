@@ -12,7 +12,7 @@ use underdraw_format::{Breakpoint, Lang, Model, Node, State, Transition};
 use underdraw_layout::Page;
 use vello::Scene;
 
-use crate::{checked, paint, pick, read, read_kinds, text};
+use crate::{checked, paint, pick, read, text};
 
 /// The state to draw, and at what size.
 pub struct Wanted {
@@ -126,8 +126,7 @@ pub struct Drawing {
 /// until they are fixed.
 pub fn states(path: &Path) -> anyhow::Result<Vec<Shown>> {
     let (screen, dir) = read(path)?;
-    let kinds = read_kinds(&dir)?;
-    let checked = checked(&screen, &dir, kinds.as_ref())?;
+    let checked = checked(&screen, &dir)?;
     let fixtures = checked.fixtures.into_iter().map(Shown::Fixture);
     Ok(fixtures.chain(checked.phases.into_iter().map(Shown::Phase)).collect())
 }
@@ -155,7 +154,6 @@ pub struct Description {
     screen: Value,
     dir: PathBuf,
     tokens: Value,
-    kinds: Option<Value>,
     checked: underdraw_format::Checked,
 }
 
@@ -165,9 +163,8 @@ impl Description {
     pub fn read(path: &Path) -> anyhow::Result<Description> {
         let (screen, dir) = read(path)?;
         let tokens = crate::project::Project::of(&dir)?.tokens;
-        let kinds = read_kinds(&dir)?;
-        let checked = checked(&screen, &dir, kinds.as_ref())?;
-        Ok(Description { path: path.to_path_buf(), screen, dir, tokens, kinds, checked })
+        let checked = checked(&screen, &dir)?;
+        Ok(Description { path: path.to_path_buf(), screen, dir, tokens, checked })
     }
 
     /// The state `wanted` names laid out, as [`lay_out`] says.
@@ -177,7 +174,7 @@ impl Description {
         drawn: Option<&BTreeSet<String>>,
         lang: Lang,
     ) -> anyhow::Result<Laid> {
-        let Description { screen, dir, tokens, kinds, checked, .. } = self;
+        let Description { screen, dir, tokens, checked, .. } = self;
         if !checked.ok {
             bail!(
                 "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
@@ -196,15 +193,9 @@ impl Description {
         let root = underdraw_format::instantiate(shows, state, breakpoint).map_err(anyhow::Error::msg)?;
         let locale = screen.get("locale").and_then(Value::as_str);
         let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-        let page = underdraw_layout::layout(
-            &root,
-            tokens,
-            kinds.as_ref(),
-            wanted.width as f32,
-            lang,
-            &mut typesetter,
-        )
-        .map_err(anyhow::Error::msg)?;
+        let page =
+            underdraw_layout::layout(&root, tokens, screen, wanted.width as f32, lang, &mut typesetter)
+                .map_err(anyhow::Error::msg)?;
         let mut calls = BTreeMap::new();
         called(&root, &mut calls);
         let mut handlers = BTreeMap::new();

@@ -5,11 +5,6 @@ use serde_json::Value;
 use underdraw_format::{Checked, Does, Fill, check, model};
 
 const DRAFT: &str = include_str!("../../../drafts/docs/screen.json");
-const KINDS: &str = include_str!("../../../drafts/docs/kinds.json");
-
-fn kinds() -> Value {
-    serde_json::from_str(KINDS).unwrap()
-}
 
 /// The draft with `from` replaced by `to`, where `from` appears exactly once.
 fn planted(name: &str, from: &str, to: &str) -> Value {
@@ -24,7 +19,7 @@ fn found(checked: &Checked, at: &str, said: &str) -> bool {
 #[test]
 fn the_draft_declares_its_operations_and_passes() {
     let screen: Value = serde_json::from_str(DRAFT).unwrap();
-    let model = model(&screen, Some(&kinds())).unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let model = model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let read: Vec<_> = model
         .operations
         .all()
@@ -526,7 +521,7 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
     ];
     for (name, from, to, at, said) in cases {
-        let checked = check(&planted(name, from, to), Some(&kinds()));
+        let checked = check(&planted(name, from, to));
         assert!(!checked.ok, "{name}");
         assert!(
             found(&checked, at, said),
@@ -580,7 +575,7 @@ fn a_call_is_gated_by_an_if_or_by_a_condition_that_implies_it() {
             let delete = "/root/children/2/item/overlay/children/4";
             screen.pointer_mut(delete).unwrap()["disabled"] = Value::from("!mayDeleteNow");
         }
-        let checked = check(&screen, Some(&kinds()));
+        let checked = check(&screen);
         assert!(checked.ok, "{name}: {:#?}", checked.findings);
     }
 }
@@ -597,7 +592,7 @@ fn set_and_toggle_write_view_state_and_the_rest_moves_the_ui() {
         ("close", r#""toggle": "sort.menuOpen""#, r#""close": "sort-menu""#),
     ];
     for (name, from, to) in cases {
-        let checked = check(&planted(name, from, to), Some(&kinds()));
+        let checked = check(&planted(name, from, to));
         assert!(checked.ok, "{name}: {:#?}", checked.findings);
     }
 }
