@@ -47,7 +47,7 @@ use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Mark, Note, Proposal, Stands};
-use crate::reference::{self, On, Reference};
+use crate::reference::{self, On, Reference, Whole};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card, Foot, Sidebar};
 use crate::{chrome, gpu, links, paint, text};
@@ -265,8 +265,8 @@ struct Gallery {
     acted: Option<Acted>,
     /// Sets the tree's and the captions' text.
     typesetter: text::Typesetter,
-    /// Every description's notes, by its directory, as notes.json now
-    /// holds them.
+    /// Every description's notes, and every directory's on the screens
+    /// under it, by its directory, as notes.json now holds them.
     notes: BTreeMap<PathBuf, Vec<Note>>,
     /// The sidebar: the box at its foot, where the person writes to the
     /// conversation on what is picked, and its cards as last laid out.
@@ -376,14 +376,14 @@ enum Visit {
     Note(PathBuf, String),
 }
 
-/// Every description's notes on the lines of the tree, by its directory,
-/// each on what is gone joined its state's note first; one whose
-/// notes.json cannot be read has none (`check` says why).
+/// The notes of every description and directory on the lines of the
+/// tree, by its directory, each on what is gone joined its state's note
+/// first; one whose notes.json cannot be read has none (`check` says why).
 fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
     lines
         .iter()
-        .filter(|line| line.state.is_none())
-        .filter_map(|line| line.row.description())
+        .filter(|line| line.state.is_none() && !line.journey)
+        .map(|line| line.row.dir.as_path())
         .map(|dir| {
             let _ = notes::settle(dir);
             (dir.to_path_buf(), notes::read(dir).unwrap_or_default())
@@ -1529,6 +1529,14 @@ impl Gallery {
         self.lines.iter().position(|line| line.state.is_none() && line.row.description() == Some(dir))
     }
 
+    /// The line of the directory `dir`, holding no description, picked to
+    /// show its flow.
+    fn directory_line(&self, dir: &Path) -> Option<usize> {
+        self.lines.iter().position(|line| {
+            line.state.is_none() && !line.journey && line.row.description().is_none() && line.row.dir == dir
+        })
+    }
+
     /// The flow between the descriptions under `dir`, from the links `check
     /// <root>` reports, each box showing its description's first state.
     fn flow(&self, dir: &Path) -> Flow {
@@ -1550,7 +1558,7 @@ impl Gallery {
                 Screen::Undrawn(_) => Tile::Undrawn,
             })
             .collect();
-        Flow { map, tiles }
+        Flow { dir: dir.to_path_buf(), map, tiles }
     }
 
     /// The box of the description in `dir`: its first state at the phone's
@@ -1581,8 +1589,9 @@ impl Gallery {
     /// What ⌘C copies, and what the conversation in the sidebar is on: the
     /// node picked, as the description writes it, and the instance of it
     /// pointed at (in the picture it was picked in, or the first that has
-    /// it); or, with none picked, the state shown, or the whole screen whose
-    /// overview is shown; or the arrow picked in an overview or a flow.
+    /// it); or, with none picked, the state shown, the whole screen whose
+    /// overview is shown, or the screens under the directory whose flow is;
+    /// or the arrow picked in an overview or a flow.
     /// None where nothing is.
     fn reference(&self) -> Option<Reference> {
         let picked = match &self.picked {
@@ -1680,7 +1689,8 @@ impl Gallery {
             self.node_card()
                 .or_else(|| self.arrow_card())
                 .or_else(|| self.state_card())
-                .or_else(|| self.screen_card()),
+                .or_else(|| self.screen_card())
+                .or_else(|| self.screens_card()),
         );
         cards.extend(self.conversation_card());
         cards
@@ -1705,9 +1715,10 @@ impl Gallery {
         cards
     }
 
-    /// The descriptions whose inbox the sidebar shows: the one picked, or
-    /// whose state is, or each under the directory picked, in the order the
-    /// tree lists them. None while a node or an arrow is picked, or a
+    /// The descriptions and directories whose inbox the sidebar shows: the
+    /// description picked, or whose state is, or the directory picked and
+    /// each description and directory under it, in the order the tree
+    /// lists them. None while a node or an arrow is picked, or a
     /// journey played.
     fn inboxed(&self) -> Vec<PathBuf> {
         // The node picked is kept through an overview, for the next state:
@@ -1727,7 +1738,7 @@ impl Gallery {
         self.lines
             .iter()
             .filter(|line| line.state.is_none() && !line.journey)
-            .filter_map(|line| line.row.description())
+            .map(|line| line.row.dir.as_path())
             .filter(|dir| dir.starts_with(&line.row.dir))
             .map(Path::to_path_buf)
             .collect()
@@ -1866,7 +1877,8 @@ impl Gallery {
     /// state, its node picked; a note's state with its node picked, its
     /// description's overview with its transition picked, or with nothing
     /// picked for the whole screen, or the flow its navigate is drawn in
-    /// with that picked; and so its conversation in
+    /// with that picked, or a directory's flow, for the screens under it,
+    /// with nothing picked; and so its conversation in
     /// the sidebar. The state shown already is not drawn again. Whether
     /// there was anything to show.
     fn visit(&mut self, visit: Visit) -> bool {
@@ -1911,8 +1923,12 @@ impl Gallery {
                     );
                 }
             }
-            On::Screen { .. } => {
-                let Some(index) = self.description_line(&dir) else {
+            On::Whole { whole } => {
+                let line = match whole {
+                    Whole::Screen => self.description_line(&dir),
+                    Whole::Screens => self.directory_line(&dir),
+                };
+                let Some(index) = line else {
                     return false;
                 };
                 self.pick(index);
@@ -1926,14 +1942,7 @@ impl Gallery {
                     _ => dir
                         .ancestors()
                         .skip(1)
-                        .filter_map(|above| {
-                            self.lines.iter().position(|line| {
-                                line.state.is_none()
-                                    && !line.journey
-                                    && line.row.description().is_none()
-                                    && line.row.dir == above
-                            })
-                        })
+                        .filter_map(|above| self.directory_line(above))
                         .chain(self.description_line(&dir))
                         .collect(),
                 };
@@ -2411,6 +2420,19 @@ impl Gallery {
         Some(Card::new(say!(self.lang, whole_screen, screen), Vec::new()))
     }
 
+    /// The card of the directory picked, its flow shown with no arrow
+    /// picked: the directory's name, as the tree lists it, for the
+    /// conversation under it on the screens under it, as a group. None
+    /// where no flow is.
+    fn screens_card(&self) -> Option<Card<Do>> {
+        let Picture::Flow(flow) = &self.picture else {
+            return None;
+        };
+        let line = self.directory_line(&flow.dir).and_then(|index| self.lines.get(index));
+        let directory = line.map_or_else(|| gallery::within(&self.root, &flow.dir), |line| line.row.name.clone());
+        Some(Card::new(say!(self.lang, these_screens, directory), Vec::new()))
+    }
+
     /// The card of the node picked: what it is (its component), the
     /// operation it calls, what was assumed there, and a button that folds
     /// out its details: its id, and its label and box at each width. None
@@ -2455,9 +2477,10 @@ impl Gallery {
     }
 
     /// How many notes wait on the agent on the tree's line of `row` and
-    /// `state`: on the whole description, or on that state of it.
+    /// `state`: on the whole description, or on that state of it; or on
+    /// the screens under a directory, as a group.
     fn waiting_notes(&self, row: &Row, state: Option<&State>) -> usize {
-        let Some(notes) = row.description().and_then(|dir| self.notes.get(dir)) else {
+        let Some(notes) = self.notes.get(&row.dir) else {
             return 0;
         };
         let waiting = notes.iter().filter(|note| note.waits());
@@ -3074,7 +3097,6 @@ mod tests {
     use super::*;
     use crate::chrome::{CAPTION, MARGIN};
     use crate::chrome::{SIDEBAR, SIDEBAR_LEAST, TREE, TREE_LEAST};
-    use crate::reference::Whole;
 
     /// The drafts as git has them committed at `HEAD`, not as they stand in
     /// the working tree: a draft added, edited or noted on and not committed
@@ -3674,11 +3696,8 @@ mod tests {
         showing(&mut gallery, 0);
         assert_eq!(gallery.panes.pictures().x1, 1440.0 - SIDEBAR, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
-        assert_eq!(
-            shown.last().map(|card| card.title.as_str()),
-            Some("Nothing picked"),
-            "with nothing picked to talk about, a flow, it says what can be done, under the inbox"
-        );
+        assert!(shown[0].title.ends_with(" · these screens"), "a flow is talked about as a group");
+        assert!(shown.iter().all(|card| card.title != "Nothing picked"));
         showing(&mut gallery, listing);
         let shown = gallery.sidebar_cards();
         assert!(shown[0].title.ends_with(" · the whole screen"), "a description is talked about as a whole");
@@ -5157,7 +5176,7 @@ mod tests {
         type_text(&mut gallery, "this screen tries to do too much");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Screen { whole: Whole::Screen }));
+        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Whole { whole: Whole::Screen }));
         let file: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join(notes::NOTES)).unwrap()).unwrap();
         assert_eq!(file["notes"][0]["whole"], "screen", "kept in its notes.json");
@@ -5233,7 +5252,8 @@ mod tests {
         let root = root_of("notes-navigate", &[("orders", "app/orders")]);
         let mut gallery = opened(&root, (1440.0, 900.0));
         showing(&mut gallery, 0);
-        assert!(gallery.foot().is_none(), "nothing picked in a flow: nothing to talk about");
+        let screens = Reference { description: root.clone(), on: On::Whole { whole: Whole::Screens } };
+        assert_eq!(gallery.reference(), Some(screens), "nothing picked in a flow: the screens under it");
         let dir = root.join("app/orders");
         let link = flow_shown(&gallery).map.arrows[0].link.clone();
 
@@ -5264,6 +5284,64 @@ mod tests {
         assert!(!gallery.press() || gallery.arrow() == Some(0), "its pin keeps its arrow picked");
         let Line { row, state, .. } = &gallery.lines[line_of(&gallery, "orders")];
         assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its description");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_directory_picked_talks_about_the_screens_under_it() {
+        let root = root_of("notes-screens", &[("orders", "app/orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        let app = line_of(&gallery, "app");
+        showing(&mut gallery, app);
+        let Picture::Flow(_) = &gallery.picture else { panic!("not a flow") };
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "app · these screens", "the card names the directory: {panel:?}");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet");
+        let dir = root.join("app");
+        let line = format!("{} · these screens", dir.display());
+        assert_eq!(gallery.reference().unwrap().line(), line);
+        gallery.chord("c");
+        assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
+
+        gallery.acted = None;
+        type_text(&mut gallery, "these screens repeat the same header");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Whole { whole: Whole::Screens }));
+        assert!(!dir.join(crate::SCREEN).exists(), "the directory holds no description");
+        let file: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(notes::NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"][0]["whole"], "screens", "kept in the directory's own notes.json");
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "these screens repeat the same header", "waiting for the agent"]
+        );
+        let Line { row, state, .. } = &gallery.lines[app];
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its directory");
+
+        assert!(gallery.press_at(on_arrow(&gallery, 0)), "an arrow picked");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the navigate's own conversation");
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(gallery.arrow(), None);
+        assert_eq!(talk_shown(&gallery)[1], "these screens repeat the same header", "back to the group's");
+
+        showing(&mut gallery, 0);
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the root's note is its own");
+        type_text(&mut gallery, "the whole app needs a tab bar");
+        press_keys(&mut gallery, &["Enter"]);
+        let kept = notes::read(&root).unwrap();
+        assert_eq!((kept[0].id.as_str(), &kept[0].on), ("N1", &On::Whole { whole: Whole::Screens }));
+        assert!(
+            gallery.inboxed().contains(&dir),
+            "the root's inbox holds the directories under it: {:?}",
+            gallery.inboxed()
+        );
+
+        let orders = line_of(&gallery, "orders");
+        showing(&mut gallery, orders);
+        assert!(gallery.click(Do::Visit(Visit::Note(dir.clone(), "N1".into()))));
+        assert_eq!(gallery.line, Some(app), "its inbox item shows the directory's flow");
+        assert_eq!(talk_shown(&gallery)[1], "these screens repeat the same header");
         std::fs::remove_dir_all(root).unwrap();
     }
 

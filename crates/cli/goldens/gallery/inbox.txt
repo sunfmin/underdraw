@@ -32,6 +32,9 @@ picture
     AddressBook
     AddressForm
 sidebar
+  root · these screens
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
   waits on you · 6
     orders
     ? nav-export in default
@@ -47,7 +50,3 @@ sidebar
     This navigates to AddressForm, which no description under the root declares, so it is guessed that AddressForm is a screen not drawn yet
     ? card-number in no-address-new-card
     Card fields are drawn here
-  Nothing picked
-    Click a node, a state or an arrow to see it and talk about it.
-    ⌘-click a node to act on it, as a prototype.
-    ⌘C copies a reference · ⌘\ hides this sidebar

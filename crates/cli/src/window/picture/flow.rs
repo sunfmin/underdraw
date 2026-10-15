@@ -17,13 +17,16 @@ use crate::chrome::{self, ARROWS, MARGIN, MARK, PIN};
 use crate::flow::{self, Map, Screen};
 use crate::notes::Note;
 use crate::paint;
-use crate::reference::{Navigate, On, Reference};
+use crate::reference::{Navigate, On, Reference, Whole};
 use crate::text::Typesetter;
 use crate::window::{head, line, sheet, words};
 
 /// The flow between the screens under a directory: the map of them, and
 /// what each of its boxes shows.
 pub(crate) struct Flow {
+    /// The directory the screens are under: what a note on them, as a
+    /// group, is kept in.
+    pub dir: PathBuf,
     pub map: Map,
     /// One for each of the map's places, in their order.
     pub tiles: Vec<Tile>,
@@ -220,10 +223,16 @@ impl Shows for Flow {
         Vec::new()
     }
 
-    /// A navigate, in the description it is written in.
+    /// A navigate, in the description it is written in; or, with none
+    /// picked, the screens under the directory, as a group.
     fn reference(&self, target: &Target) -> Option<Reference> {
-        let Target::Arrow(arrow) = target else {
-            return None;
+        let arrow = match target {
+            Target::Arrow(arrow) => arrow,
+            Target::Caption => {
+                let on = On::Whole { whole: Whole::Screens };
+                return Some(Reference { description: self.dir.clone(), on });
+            }
+            Target::Node { .. } | Target::State(_) | Target::Pass { .. } | Target::Box(_) => return None,
         };
         let link = &self.map.arrows.get(*arrow)?.link;
         let navigate = Navigate { from: link.from.clone(), node: link.node.clone(), to: link.to.clone() };
@@ -263,7 +272,7 @@ mod tests {
             target: Some(PathBuf::from("shop/cart")),
         };
         let map = Map { places, arrows: vec![Arrow { from: 0, to: 1, link }], width: 500.0, height: 640.0 };
-        Flow { map, tiles: vec![Tile::Faulty(1), Tile::Faulty(2), Tile::Undrawn] }
+        Flow { dir: PathBuf::from("shop"), map, tiles: vec![Tile::Faulty(1), Tile::Faulty(2), Tile::Undrawn] }
     }
 
     #[test]
@@ -281,6 +290,8 @@ mod tests {
         assert_eq!(navigate.description, PathBuf::from("shop/home"), "where it is written");
         assert!(matches!(&navigate.on, On::Navigate { navigate } if navigate.node == "open-cart"));
         assert_eq!(flow.reference(&Target::Box(PathBuf::from("shop/home"))), None, "a box is not noted");
+        let screens = flow.reference(&Target::Caption).unwrap();
+        assert_eq!(screens.line(), "shop · these screens", "nothing picked: the screens as a group");
     }
 
     #[test]
