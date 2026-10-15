@@ -2,7 +2,7 @@
   "screen": "Tree",
   "title": "The gallery's tree, with journeys",
   "tokens": "tokens.json",
-  "$comment": "The tree with nothing picked. A journey is told apart from a screen and a state at a glance: under a journeys/ heading of its own, as on disk, with the route icon, how many steps, what it is about and the screens it passes through.",
+  "$comment": "The tree with nothing picked. A journey is told apart from a screen and a state at a glance: under a journeys/ heading of its own, as on disk, with the route icon, how many steps, what it is about and the screens it passes through. A directory or a description folds and unfolds by the arrow before it; a tap on its name still picks it. A folded row's children are left out of the list, and the window remembers which are folded.",
   "data": {
     "bar": {
       "type": "Bar",
@@ -15,6 +15,11 @@
       "derived": {
         "app": "journeys' length"
       }
+    },
+    "journeysOpen": {
+      "type": "bool = true",
+      "view": true,
+      "doc": "The journeys/ heading unfolded"
     }
   },
   "types": {},
@@ -26,6 +31,10 @@
     "sidebarShown": {
       "when": "bar.sidebarShown",
       "label": "The sidebar shown"
+    },
+    "journeysUnfolded": {
+      "when": "journeysOpen",
+      "label": "journeys/ unfolded"
     }
   },
   "fixtures": {
@@ -63,14 +72,16 @@
           "depth": 3,
           "kind": "description",
           "meta": "",
-          "picked": false
+          "picked": false,
+          "open": false
         },
         {
           "name": "OrderStatus",
           "depth": 3,
           "kind": "description",
           "meta": "",
-          "picked": false
+          "picked": false,
+          "open": false
         },
         {
           "name": "order",
@@ -185,6 +196,70 @@
         "sidebar": false,
         "back": false
       }
+    },
+    "folded": {
+      "$patch": "default",
+      "lines": [
+        {
+          "name": "root/",
+          "depth": 0,
+          "kind": "directory",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "shop/",
+          "depth": 1,
+          "kind": "directory",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "components/",
+          "depth": 2,
+          "kind": "directory",
+          "meta": "",
+          "picked": false,
+          "open": false
+        },
+        {
+          "name": "order",
+          "depth": 2,
+          "kind": "description",
+          "meta": "3 states",
+          "picked": false
+        },
+        {
+          "name": "open",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "shipped",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "cancelled",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "orders",
+          "depth": 2,
+          "kind": "description",
+          "meta": "2 states",
+          "picked": false,
+          "open": false
+        }
+      ],
+      "journeysOpen": false
     }
   },
   "root": {
@@ -226,7 +301,35 @@
                   "heading": "{item.heading}",
                   "phase": "{item.phase}",
                   "meta": "{item.meta}",
-                  "picked": "{item.picked}"
+                  "picked": "{item.picked}",
+                  "children": [
+                    {
+                      "id": "line-{index}-fold",
+                      "component": "Disclosure",
+                      "if": "item.heading",
+                      "open": {
+                        "cases": [
+                          {
+                            "if": "item.unfolded",
+                            "then": true
+                          },
+                          {
+                            "else": false
+                          }
+                        ]
+                      },
+                      "on": {
+                        "tap": {
+                          "toggle": "item.open"
+                        }
+                      }
+                    },
+                    {
+                      "id": "line-{index}-space",
+                      "component": "FoldSpace",
+                      "if": "!item.heading"
+                    }
+                  ]
                 }
               },
               {
@@ -238,13 +341,25 @@
                 "heading": true,
                 "phase": false,
                 "meta": "paths through shop",
-                "picked": false
+                "picked": false,
+                "children": [
+                  {
+                    "id": "journeys-fold",
+                    "component": "Disclosure",
+                    "open": "{journeysOpen}",
+                    "on": {
+                      "tap": {
+                        "toggle": "journeysOpen"
+                      }
+                    }
+                  }
+                ]
               },
               {
                 "id": "journeys",
                 "component": "List",
                 "gap": 0,
-                "if": "hasJourneys",
+                "if": "hasJourneys && journeysUnfolded",
                 "each": "journeys",
                 "item": {
                   "id": "journey-{index}",
@@ -344,5 +459,27 @@
         }
       }
     ]
-  }
+  },
+  "transitions": [
+    {
+      "from": "default",
+      "on": "line-{index}-fold.tap",
+      "to": "folded"
+    },
+    {
+      "from": "folded",
+      "on": "line-{index}-fold.tap",
+      "to": "default"
+    },
+    {
+      "from": "default",
+      "on": "journeys-fold.tap",
+      "to": "folded"
+    },
+    {
+      "from": "folded",
+      "on": "journeys-fold.tap",
+      "to": "default"
+    }
+  ]
 }

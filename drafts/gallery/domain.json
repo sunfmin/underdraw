@@ -54,7 +54,12 @@
       "depth": "int 0..4",
       "kind": "RowKind",
       "meta": "string = \"\"",
-      "picked": "bool = false"
+      "picked": "bool = false",
+      "open": {
+        "type": "bool = true",
+        "view": true,
+        "doc": "A directory or a description unfolded, its children listed under it; folded, they are left out of lines. The window remembers it per row."
+      }
     },
     "RowKind": "enum(directory, description, state, phase)",
     "Note": {
@@ -173,6 +178,14 @@
     "Bar.sidebarShown": {
       "when": "sidebar == true",
       "label": "The sidebar shown"
+    },
+    "TreeRow.unfolded": {
+      "when": "heading && open",
+      "label": "Unfolded"
+    },
+    "TreeRow.folded": {
+      "when": "heading && !open",
+      "label": "Folded"
     }
   }
 }

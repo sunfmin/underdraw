@@ -24,6 +24,11 @@
     "fault": {
       "type": "Fault?",
       "doc": "Where check finds the journey broken"
+    },
+    "journeysOpen": {
+      "type": "bool = true",
+      "view": true,
+      "doc": "The journeys/ heading unfolded"
     }
   },
   "types": {
@@ -1173,7 +1178,35 @@
                   "heading": "{item.heading}",
                   "phase": "{item.phase}",
                   "meta": "{item.meta}",
-                  "picked": false
+                  "picked": false,
+                  "children": [
+                    {
+                      "id": "line-{index}-fold",
+                      "component": "Disclosure",
+                      "if": "item.heading",
+                      "open": {
+                        "cases": [
+                          {
+                            "if": "item.unfolded",
+                            "then": true
+                          },
+                          {
+                            "else": false
+                          }
+                        ]
+                      },
+                      "on": {
+                        "tap": {
+                          "toggle": "item.open"
+                        }
+                      }
+                    },
+                    {
+                      "id": "line-{index}-space",
+                      "component": "FoldSpace",
+                      "if": "!item.heading"
+                    }
+                  ]
                 }
               },
               {
@@ -1184,7 +1217,19 @@
                 "heading": true,
                 "phase": false,
                 "meta": "paths through shop",
-                "picked": false
+                "picked": false,
+                "children": [
+                  {
+                    "id": "journeys-fold",
+                    "component": "Disclosure",
+                    "open": "{journeysOpen}",
+                    "on": {
+                      "tap": {
+                        "toggle": "journeysOpen"
+                      }
+                    }
+                  }
+                ]
               },
               {
                 "id": "journeys",

@@ -1,5 +1,5 @@
 {
-  "doc": "A line of the tree: indented by its depth, a directory or description in bold, a phase in gray.",
+  "doc": "A line of the tree: indented by its depth, the arrow it is given (a Disclosure, or a FoldSpace), a directory or description in bold, a phase in gray.",
   "params": [
     "name",
     "depth",
@@ -10,7 +10,7 @@
   ],
   "look": {
     "box": "row",
-    "gap": 6,
+    "gap": 4,
     "items": "center",
     "height": 26,
     "padding": {
@@ -19,7 +19,9 @@
           "if": "depth == 0",
           "then": [
             0,
-            12
+            12,
+            0,
+            8
           ]
         },
         {
@@ -28,7 +30,7 @@
             0,
             12,
             0,
-            24
+            20
           ]
         },
         {
@@ -37,7 +39,7 @@
             0,
             12,
             0,
-            36
+            32
           ]
         },
         {
@@ -45,12 +47,13 @@
             0,
             12,
             0,
-            48
+            44
           ]
         }
       ]
     },
     "children": [
+      "$children",
       {
         "text": "{name}",
         "grow": 1,

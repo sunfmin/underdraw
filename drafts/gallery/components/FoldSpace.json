@@ -1,0 +1,9 @@
+{
+  "doc": "The empty room a disclosure takes, before a state or a phase, so names at one depth line up.",
+  "params": [],
+  "look": {
+    "box": "row",
+    "size": 16,
+    "shrink": 0
+  }
+}
