@@ -275,11 +275,12 @@ impl Panes {
     }
 
     /// The line between two panes at `at`, a point in the window, near
-    /// enough to take hold of it.
+    /// enough to take hold of it; none above or below the panes.
     pub fn line_at(&self, at: (f64, f64)) -> Option<Edge> {
         [Edge::Tree, Edge::Side]
             .into_iter()
             .find(|&edge| self.line_x(edge).is_some_and(|x| (at.0 - x).abs() <= GRIP))
+            .filter(|_| (0.0..=self.window.1).contains(&at.1))
     }
 
     /// Whether the pointer at `at` grips: a line is held, or it is on one.
