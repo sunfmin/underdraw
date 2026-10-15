@@ -183,9 +183,15 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
 }
 
 fn check(path: &Path) -> anyhow::Result<Value> {
+    Ok(serde_json::to_value(check_at(path)?)?)
+}
+
+/// What `check` says of the description at `path` (a directory or its
+/// screen.json).
+fn check_at(path: &Path) -> anyhow::Result<underdraw_format::Checked> {
     let (screen, dir) = read(path)?;
     let kinds = read_kinds(&dir)?;
-    Ok(serde_json::to_value(checked(&screen, &dir, kinds.as_ref())?)?)
+    checked(&screen, &dir, kinds.as_ref())
 }
 
 /// Every fault in the description, overlays the picture would cut among

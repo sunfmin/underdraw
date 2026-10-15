@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use underdraw_layout::{Align, Draw, Font, Ink, Placed, Rect};
+use underdraw_format::Finding;
+use underdraw_layout::{Align, Draw, Font, Ink, Measure, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
@@ -41,6 +42,8 @@ const CAPTION: f64 = 26.0;
 const NOTCH: f64 = 40.0;
 /// One line of the panel of the node picked.
 const PANEL_LINE: f64 = 20.0;
+/// The space between one finding and the next.
+const GAP: f64 = 12.0;
 
 /// What a later run of the command over the same root asks of the window.
 struct ComeForward;
@@ -117,10 +120,11 @@ fn lines(root: &Path) -> Vec<Line> {
     let mut lines = Vec::new();
     for row in gallery::tree(root) {
         let states = row.description.as_deref().map(draw::states).and_then(Result::ok).unwrap_or_default();
-        let (depth, description) = (row.depth + 1, row.description.clone());
+        let (depth, description, faults) = (row.depth + 1, row.description.clone(), row.faults.clone());
         lines.push(Line { row, state: None });
         for state in states {
-            let row = Row { depth, name: state.name().to_string(), description: description.clone() };
+            let name = state.name().to_string();
+            let row = Row { depth, name, description: description.clone(), faults: faults.clone() };
             lines.push(Line { row, state: Some(state) });
         }
     }
@@ -138,8 +142,8 @@ struct Shown {
 enum Picture {
     /// One state at each of `WIDTHS`.
     Pages(Vec<Page>),
-    /// Why it cannot be drawn.
-    Faults(String),
+    /// Why it cannot be drawn: what `check` finds wrong with it.
+    Faults(Vec<Finding>),
 }
 
 /// One state drawn at one width, at one pixel per point.
@@ -179,7 +183,7 @@ impl Gallery {
             root: root.to_path_buf(),
             lines: lines(root),
             picked: None,
-            picture: Picture::Faults(String::new()),
+            picture: Picture::Faults(Vec::new()),
             node: None,
             scroll: 0.0,
             tree_scroll: 0.0,
@@ -246,9 +250,13 @@ impl Gallery {
         let Some(dir) = line.row.description.clone() else {
             return;
         };
-        let state = line.state.clone();
+        let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
         self.scroll = 0.0;
+        if !faults.is_empty() {
+            self.picture = Picture::Faults(faults);
+            return;
+        }
         let mut pages = Vec::new();
         for width in WIDTHS {
             let wanted = match &state {
@@ -269,7 +277,8 @@ impl Gallery {
                     });
                 }
                 Err(e) => {
-                    self.picture = Picture::Faults(format!("{e:#}"));
+                    let at = crate::SCREEN.to_string();
+                    self.picture = Picture::Faults(vec![Finding { at, problem: format!("{e:#}") }]);
                     return;
                 }
             }
@@ -394,14 +403,45 @@ impl Gallery {
     }
 
     /// How tall the pictures' pane is, all of it, in a pane `pane` wide.
-    fn pictures_height(&self, pane: f64) -> f64 {
+    fn pictures_height(&mut self, pane: f64) -> f64 {
         match &self.picture {
             Picture::Pages(pages) => {
                 let tallest = pages.iter().map(|p| p.height).fold(0.0, f64::max);
                 MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN + self.panel_height()
             }
-            Picture::Faults(_) => 0.0,
+            Picture::Faults(_) => self.faults(pane).1 + MARGIN,
         }
+    }
+
+    /// The picked description's faults listed in a pane `pane` wide, from
+    /// its top, unscrolled: a heading, then each finding as `check` names
+    /// it, where it is over what is wrong. How far down the list ends.
+    fn faults(&mut self, pane: f64) -> (Vec<Draw>, f64) {
+        let Picture::Faults(faults) = &self.picture else {
+            return (Vec::new(), 0.0);
+        };
+        let wide = pane - 2.0 * MARGIN;
+        let path = self.picked.and_then(|i| self.lines.get(i)?.row.description.clone()).unwrap_or_default();
+        let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
+        let heading = match faults.len() {
+            1 => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
+            n => format!("{within} has {n} faults, so it is not drawn: `underdraw check` it"),
+        };
+        let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, 600)];
+        let mut y = MARGIN + CAPTION + GAP;
+        for fault in faults {
+            list.push(words(rect(0.0, y, wide, 16.0), fault.at.clone(), Ink::Muted, 600));
+            y += 18.0;
+            let font = Font { size: 13.0, weight: 400, line_height: 16.0 };
+            let tall = f64::from(self.typesetter.text(&fault.problem, font, Some(wide as f32)).height);
+            let mut problem = words(rect(0.0, y, wide, tall), fault.problem.clone(), Ink::Text, 400);
+            if let Draw::Text { max_lines, .. } = &mut problem {
+                *max_lines = None;
+            }
+            list.push(problem);
+            y += tall + GAP;
+        }
+        (list, y)
     }
 
     /// The scrolls kept inside what there is to scroll.
@@ -436,10 +476,24 @@ impl Gallery {
                 (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
                 (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
-            list.push(words(rect(x, y + 5.0, TREE - x - 8.0, 16.0), name, ink, weight));
+            let mut right = TREE - 8.0;
+            if state.is_none() && !row.faults.is_empty() {
+                let mark = match row.faults.len() {
+                    1 => "1 fault".to_string(),
+                    n => format!("{n} faults"),
+                };
+                let mut tag = words(rect(x, y + 5.0, right - 4.0 - x, 16.0), mark, Ink::Strong, 600);
+                if let Draw::Text { align, .. } = &mut tag {
+                    *align = Align::End;
+                }
+                list.push(tag);
+                right -= 64.0;
+            }
+            list.push(words(rect(x, y + 5.0, right - x, 16.0), name, ink, weight));
         }
-        let mut pane = Vec::new();
         let left = TREE + MARGIN;
+        let (faults, _) = self.faults(width - TREE);
+        let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
         let zoom = self.zoom(width - TREE);
         let mut pages = Vec::new();
         let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
@@ -492,23 +546,7 @@ impl Gallery {
                     }
                 }
             }
-            Picture::Faults(why) => {
-                let path =
-                    self.picked.and_then(|i| self.lines.get(i)?.row.description.clone()).unwrap_or_default();
-                let heading =
-                    format!("{} cannot be drawn", path.strip_prefix(&self.root).unwrap_or(&path).display());
-                pane.push(words(rect(left, MARGIN, width - left - MARGIN, 18.0), heading, Ink::Text, 600));
-                let mut text = words(
-                    rect(left, MARGIN + CAPTION, width - left - MARGIN, height),
-                    why.clone(),
-                    Ink::Text,
-                    400,
-                );
-                if let Draw::Text { max_lines, .. } = &mut text {
-                    *max_lines = None;
-                }
-                pane.push(text);
-            }
+            Picture::Faults(_) => {}
         }
 
         let mut scene = Scene::new();
@@ -544,6 +582,15 @@ impl Gallery {
 
 fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
     Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
+}
+
+/// `draw`, a text, moved `dx` across and `dy` down.
+fn moved(mut draw: Draw, dx: f64, dy: f64) -> Draw {
+    if let Draw::Text { rect, .. } = &mut draw {
+        rect.x += dx as f32;
+        rect.y += dy as f32;
+    }
+    draw
 }
 
 /// `text` on one line in `rect`, in the interface's size.
@@ -854,8 +901,43 @@ mod tests {
         std::fs::create_dir_all(root.join("broken")).unwrap();
         std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let broken = &gallery.lines[0].row;
+        assert!(!broken.faults.is_empty(), "the tree marks it");
+        let found = broken.faults.clone();
         gallery.pick(0);
-        assert!(matches!(&gallery.picture, Picture::Faults(why) if why.contains("underdraw check")));
+        let Picture::Faults(shown) = &gallery.picture else {
+            panic!("a description with faults is not drawn")
+        };
+        assert_eq!(shown, &found, "each finding as `check` names it");
+        let (list, _) = gallery.faults(1440.0 - TREE);
+        let texts: Vec<&str> = list
+            .iter()
+            .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text.as_str()) } else { None })
+            .collect();
+        for fault in &found {
+            assert!(
+                texts.contains(&fault.at.as_str()) && texts.contains(&fault.problem.as_str()),
+                "{texts:?}"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_state_of_a_description_with_faults_shows_them_too() {
+        let root = std::env::temp_dir().join(format!("underdraw-window-state-faults-{}", std::process::id()));
+        let todo = Path::new(DRAFTS).join("todo");
+        std::fs::create_dir_all(root.join("todo")).unwrap();
+        let mut screen: Value =
+            serde_json::from_str(&std::fs::read_to_string(todo.join(crate::SCREEN)).unwrap()).unwrap();
+        screen["data"]["stray"] = json!("nonsense");
+        std::fs::write(root.join("todo").join(crate::SCREEN), screen.to_string()).unwrap();
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        assert!(!gallery.lines[0].row.faults.is_empty(), "the stray field is a fault");
+        assert!(gallery.lines[1].state.is_some(), "its states are still listed");
+        gallery.pick(1);
+        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

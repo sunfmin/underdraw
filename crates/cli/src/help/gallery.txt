@@ -29,13 +29,18 @@ DOES
   there (`assumed`), and its label and box at each width, as `render`
   reports them. Picking another state keeps that id picked while the state
   has it; clicking where no node is closes the panel. A description with
-  faults shows them instead of a picture: `underdraw check` it.
+  faults stays in the tree, marked with how many it has; picking it, or any
+  of its states, lists each finding as `underdraw check` names it (where,
+  then what is wrong) instead of a picture. Fix them and check it again.
 
 ANSWERS
   {
     "root":         the directory searched
     "descriptions": the directories holding a screen.json, relative to root,
                     in the order the tree lists them
+    "faults":       those of them `underdraw check` finds faults in, in the
+                    same order; [] when every one can be drawn. Run
+                    `underdraw check <root>/<each>` to read and fix them
     "opened":       true: a window was opened; false: the window over this
                     root was already open, and is brought forward
     "pid":          the window's process

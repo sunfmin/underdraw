@@ -21,19 +21,46 @@ fn underdraw(args: &[&str], env: &[&str]) -> (Value, i32) {
 
 #[test]
 fn opens_one_window_over_every_draft_and_answers_at_once() {
-    let (answer, code) = underdraw(&["gallery", DRAFTS], &[]);
-    if code == 2 {
-        // No display here (CI, SSH): that is the answer to expect.
-        assert!(answer["error"].as_str().unwrap().contains("display"), "{answer}");
-        return;
-    }
-    assert_eq!(code, 0, "{answer}");
-    assert_eq!(answer["opened"], true);
+    let Some(answer) = opened(DRAFTS) else { return };
+    assert_eq!(answer["faults"], serde_json::json!([]), "no draft has faults");
     let found: Vec<&str> =
         answer["descriptions"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
     assert!(found.contains(&"airbnb-listing") && found.contains(&"todo"), "{found:?}");
     assert!(!found.iter().any(|d| d.contains("platforms") || d.contains("captures")), "{found:?}");
     close(&answer);
+}
+
+#[test]
+fn names_the_descriptions_with_faults() {
+    let root = std::env::temp_dir().join(format!("underdraw-gallery-faults-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    for dir in ["fine", "broken"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    for file in ["screen.json", "tokens.json", "kinds.json"] {
+        std::fs::copy(format!("{DRAFTS}/todo/{file}"), root.join("fine").join(file)).unwrap();
+    }
+    std::fs::write(root.join("broken").join("screen.json"), "{}").unwrap();
+    if let Some(answer) = opened(root.to_str().unwrap()) {
+        assert_eq!(answer["descriptions"], serde_json::json!(["broken", "fine"]), "both are listed");
+        assert_eq!(answer["faults"], serde_json::json!(["broken"]));
+        close(&answer);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// The gallery's answer over `root` once its window opened; none where
+/// there is no display to open it on (CI, SSH), which is the answer to
+/// expect there.
+fn opened(root: &str) -> Option<Value> {
+    let (answer, code) = underdraw(&["gallery", root], &[]);
+    if code == 2 {
+        assert!(answer["error"].as_str().unwrap().contains("display"), "{answer}");
+        return None;
+    }
+    assert_eq!(code, 0, "{answer}");
+    assert_eq!(answer["opened"], true);
+    Some(answer)
 }
 
 /// The window's process `answer` names ended, as a crash would end it.
