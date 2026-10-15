@@ -9,6 +9,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use underdraw_format::Lang;
+
 use crate::draw::{Origin, Shown};
 
 /// What is picked in one description: the directory it is in, and what in it.
@@ -118,19 +120,41 @@ impl On {
         }
     }
 
-    /// What it is, as the panel says a note is on it: `on <id> in <state> at
-    /// <width>`, `on the whole of <state>`, `on transition …`, `on navigate …`.
-    pub fn said(&self) -> String {
-        match self {
-            On::Node { state, node } => {
+    /// What it is, as the gallery's sidebar says a note is on it, in
+    /// `lang`: `on <id> in <state> at <width>`, `on the whole of <state>`,
+    /// `on transition …`, `on navigate …`.
+    pub fn said(&self, lang: Lang) -> String {
+        match (self, lang) {
+            (On::Node { state, node }, Lang::En) => {
                 format!("on {} in {} at {}", node.origin.written, state.name(), node.width)
             }
-            On::Region { state, region } => {
+            (On::Node { state, node }, Lang::Zh) => {
+                format!("在 {}，{}，宽 {}", node.origin.written, state.name(), node.width)
+            }
+            (On::Region { state, region }, Lang::En) => {
                 format!("on {} in {} at {}", region.named(), state.name(), region.width)
             }
-            On::State { state } => format!("on the whole of {}", state.name()),
-            On::Transition { transition } => format!("on transition {}", transition.said()),
-            On::Navigate { navigate } => format!("on navigate {}", navigate.said()),
+            (On::Region { state, region }, Lang::Zh) => {
+                let Frame { x, y, width, height } = region.area;
+                let nodes = region.nodes.len();
+                format!(
+                    "在区域 {x}, {y} · {width} × {height}（覆盖 {nodes} 个节点），{}，宽 {}",
+                    state.name(),
+                    region.width
+                )
+            }
+            (On::State { state }, Lang::En) => format!("on the whole of {}", state.name()),
+            (On::State { state }, Lang::Zh) => format!("在整个 {}", state.name()),
+            (On::Transition { transition }, Lang::En) => format!("on transition {}", transition.said()),
+            (On::Transition { transition: t }, Lang::Zh) => {
+                let outcome =
+                    t.outcome.as_ref().map(|outcome| format!("，结果 {outcome}")).unwrap_or_default();
+                format!("在过渡上：从 {} 经 {}{outcome} 到 {}", t.from, t.on, t.to)
+            }
+            (On::Navigate { navigate }, Lang::En) => format!("on navigate {}", navigate.said()),
+            (On::Navigate { navigate: n }, Lang::Zh) => {
+                format!("在跳转上：从 {} 经 {} 到 {}", n.from, n.node, n.to)
+            }
         }
     }
 }

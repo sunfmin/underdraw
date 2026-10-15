@@ -15,6 +15,7 @@ mod notes;
 mod paint;
 mod project;
 mod reference;
+mod sidebar;
 mod text;
 mod window;
 
