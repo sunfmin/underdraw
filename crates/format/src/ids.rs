@@ -93,11 +93,12 @@ fn acted(description: &Value, shared: &Map<String, Value>) -> BTreeSet<String> {
     }
     let mut acted = BTreeSet::new();
     loop {
-        let found: Vec<String> = bodies
-            .iter()
-            .filter(|(name, root)| !acted.contains(*name) && acts(root, &acted))
-            .map(|(name, _)| (*name).clone())
-            .collect();
+        let mut found = Vec::new();
+        for (name, root) in &bodies {
+            if !acted.contains(*name) && acts(root, &acted) {
+                found.push((*name).clone());
+            }
+        }
         if found.is_empty() {
             return acted;
         }
@@ -243,20 +244,27 @@ impl Giving<'_> {
 /// case, joined by `-`; four hex digits of its hash when it has text but
 /// no such word; none when it is blank.
 fn words(shown: &str) -> Option<String> {
-    let words: Vec<String> = shown
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .take(WORDS)
-        .map(str::to_ascii_lowercase)
-        .collect();
+    let mut words = Vec::new();
+    let mut word = String::new();
+    for c in shown.chars().chain([' ']) {
+        if c.is_ascii_alphanumeric() {
+            word.push(c.to_ascii_lowercase());
+        } else if !word.is_empty() && words.len() < WORDS {
+            words.push(std::mem::take(&mut word));
+        } else {
+            word.clear();
+        }
+    }
     if !words.is_empty() {
         return Some(words.join("-"));
     }
     if shown.trim().is_empty() {
         return None;
     }
-    let hash =
-        shown.bytes().fold(0x811c_9dc5_u32, |hash, byte| (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193));
+    let mut hash = 0x811c_9dc5_u32;
+    for byte in shown.bytes() {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193);
+    }
     Some(format!("{:04x}", hash >> 16))
 }
 
