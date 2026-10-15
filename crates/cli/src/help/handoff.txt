@@ -1,0 +1,75 @@
+WHEN
+  Once the person has agreed to the description (`render`ed, discussed,
+  assumptions confirmed), before building the screen on one platform. Run it
+  once per platform.
+
+WHO
+  The agent that builds the real UI, on web, iOS or Android.
+
+READS
+  <path>/screen.json, with its project's domain.json, its tokens.json (the
+  nearest at or above <path>, as `underdraw --help` says), and platforms/<platform>.json: the
+  platform's mapping of each kind and action, its test-id form, and its token
+  naming ("tokenNaming": {"pattern": "Theme.{group}.{name}"}). Writes nothing.
+  Refuses a description `check` finds faults in.
+
+ANSWERS
+  {
+    "screen", "platform", "language"
+    "ok":         true when the mapping covers every kind and action used
+    "findings":   [{"at", "problem"}, …]: what the mapping is missing
+    "rules":      the platform's conventions: stack, testId, breakpoints, elementTree
+    "code":       {"file", "text"}: the view model's types and every condition,
+                  generated in the platform's language. Save it as is.
+    "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
+    "operations": [{"name", "does": "query" or "command", "doc", "params":
+                    {name: type, with " = default" when it has one}, "result",
+                    "requires", "fails": {name: when}, "fills": [path, …],
+                    "pages": "cursor" for a query that pages}, …]
+                  the queries and commands the screen calls. "fills": the
+                  fields of "data" a query's result lands in, "docs" or,
+                  through a wrapper type, "docs[].doc"; one field of the
+                  result lands as "result.next → next": map the answer there,
+                  and derive the rest of the view model in the app. A paged
+                  query's params include cursor and limit; a call with a
+                  cursor appends the page's rows, one with null replaces them.
+    "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
+    "nodes":      [{"id", "kind", "parent", "slot",
+                    "implement": how the platform builds this kind,
+                    "test_id": the test id as the platform writes it,
+                    "props": what the description says, as written,
+                    "shown": its if / only / each / limit,
+                    "events": [{"on", "action", "operation", "with", "implement"}, …],
+                      "operation": the one it calls, when the action is "call"
+                    "why", "assumed"}, …] in document order
+    "hidden":     [{"id", "why"}, …]: nodes this platform does not build
+    "states":     [{"state": {"fixture"} or {"phase"}, "breakpoint",
+                    "present": [id, …],
+                    "shows": {id: {"text", "label", "value", "disabled", …}},
+                    "calls": {id: [{"on", "operation", "with"}, …]}}, …]
+                  every fixture and phase at both breakpoints: what the real
+                  UI must show, to assert in its tests by test id; "calls" is
+                  the operation each node calls when acted on, with its
+                  arguments filled for that state (left out when none does)
+    "fixtures":   {name: data}: each fixture merged and defaulted, ready to
+                  decode into the generated model for previews and tests
+    "unconfirmed": [{"id", "assumed"}, …]: guesses the person has not confirmed
+  }
+
+HOW TO USE IT
+  - Save "code" as "code.file" and use its types and conditions; do not
+    rewrite a condition by hand.
+  - Build each node with "implement", give it "test_id", and wire each event
+    with its "implement"; an event with "operation" calls that operation,
+    given "with", through the app's data layer.
+  - Write one preview or test per state: load its fixture from "fixtures",
+    and assert every "present" id and every value in "shows". Act on each
+    node in "calls" and assert the app calls that operation with "with"
+    (`underdraw compare` checks both, from a capture).
+  - Ask the person about each "unconfirmed" item before building it.
+
+WHAT TRIPS YOU UP
+  - Texts in "props" are templates; "shows" has them filled for each state,
+    formatted as the description says (money ¥104,300, date 2026/11/12).
+  - A node with "each" stands for one node per item; its test id contains
+    {index}.
