@@ -191,6 +191,13 @@ An ordered choice of one value, ending in an `else`.
 
 ### Outputs
 
+**Inbox**:
+What waits on the person under what they picked, a description or a
+directory: each assumption not yet answered and each note the agent has
+answered, for them to close or reopen; and, apart, the notes still
+waiting on the agent.
+_Avoid_: to-do list, queue, notifications
+
 **Wireframe**:
 The screen drawn in grays (boxes, text and crossed-out images) so the
 discussion is about structure, not styling.
