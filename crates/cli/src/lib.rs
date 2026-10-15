@@ -5,6 +5,7 @@
 //! answer as one JSON object.
 
 mod draw;
+mod flow;
 mod gallery;
 mod gpu;
 mod links;

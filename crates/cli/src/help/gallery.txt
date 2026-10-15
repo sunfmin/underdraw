@@ -29,7 +29,18 @@ DOES
   `from` state and, for an event that calls an operation, the outcome
   ("4 · ok"); one that stays in its state loops back into it. A state no
   transition reaches or leaves is still shown. Clicking a state's picture
-  picks that state. Scroll a tall page with the mouse wheel or trackpad. Clicking a node in the picture
+  picks that state. Picking a directory draws the flow between the screens
+  under it: each description a box named as its directory, holding a small picture of its first state
+  at 390, and each navigate an arrow from the box of the description it is
+  in to the box of the screen it names, labelled with the node's id. The
+  arrows are the "links" `underdraw check <root>` reports, no other: a
+  navigate to a description outside the directory brings that box in too;
+  one to a screen no description under <root> declares, a screen not drawn
+  yet, ends at a dashed orange box marked "?" and named as the screen it
+  asks for, one for each such screen. A description with faults is a box
+  marked faulty, with how many, and no picture. Clicking a description's
+  box picks that description in the tree, showing its overview. Scroll a tall
+  page with the mouse wheel or trackpad. Clicking a node in the picture
   picks the innermost there, an overlay (a badge, a dialog, a sheet) before
   what it floats over, outlines it at both widths, and opens a panel with
   its id, kind, the operation it calls when acted on, what was assumed

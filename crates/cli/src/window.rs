@@ -1,7 +1,8 @@
 //! The gallery's window, run in a process of its own: the tree of
 //! descriptions and their states on the left and, for the state picked, its
 //! picture drawn at a phone and a desktop width side by side, where a node
-//! can be picked to read what it is. The tree and panels are drawn by hand,
+//! can be picked to read what it is; for a directory picked, the flow
+//! between the screens under it. The tree and panels are drawn by hand,
 //! in the inks a wireframe is drawn in. The window is drawn from the files
 //! as they now stand: as they change under its root, the tree and the state
 //! shown follow.
@@ -24,6 +25,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::window::{Window, WindowId};
 
 use crate::draw::{self, Shown as State, Wanted};
+use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::{gpu, links, paint, text};
 
@@ -53,6 +55,8 @@ const THUMB: f64 = 160.0;
 const THUMB_TALL: f64 = 320.0;
 /// The space between two states in the overview, where the arrows run.
 const SPACE: f64 = 72.0;
+/// How far apart the arrows leaving, or reaching, one box of the flow are.
+const ARROWS: f64 = 24.0;
 
 /// What the window is told from other threads.
 enum Told {
@@ -94,7 +98,8 @@ fn report(line: &Value) {
 struct Gallery {
     root: PathBuf,
     lines: Vec<Line>,
-    /// The line of the state shown, or of the description when it has none.
+    /// The line of the state shown, of the description when it has none, or
+    /// of the directory whose flow is shown.
     picked: Option<usize>,
     /// The description and state the person last picked, by name, so that
     /// the files changing keeps showing them, or shows them again once
@@ -138,22 +143,23 @@ struct Line {
 fn lines(root: &Path) -> Vec<Line> {
     let mut lines = Vec::new();
     for row in gallery::tree(root) {
-        let states = row.description.as_deref().map(draw::states).and_then(Result::ok).unwrap_or_default();
-        let (depth, description, faults) = (row.depth + 1, row.description.clone(), row.faults.clone());
+        let states = row.description().map(draw::states).and_then(Result::ok).unwrap_or_default();
+        let (depth, dir, faults) = (row.depth + 1, row.dir.clone(), row.faults.clone());
         lines.push(Line { row, state: None });
         for state in states {
             let name = state.name().to_string();
-            let row = Row { depth, name, description: description.clone(), faults: faults.clone() };
+            let row = Row { depth, name, dir: dir.clone(), described: true, faults: faults.clone() };
             lines.push(Line { row, state: Some(state) });
         }
     }
     lines
 }
 
-/// A line of the tree by name: its description, and its state's name.
+/// A line of the tree by name: its directory, a description's or not, and
+/// its state's name.
 #[derive(Clone)]
 struct Picked {
-    description: PathBuf,
+    dir: PathBuf,
     state: Option<String>,
 }
 
@@ -172,6 +178,26 @@ enum Picture {
     Overview(Overview),
     /// Why it cannot be drawn: what `check` finds wrong with it.
     Faults(Vec<Finding>),
+    /// For a directory picked: the flow between the screens under it.
+    Flow(Flow),
+}
+
+/// The flow between the screens under a directory: the map of them, and
+/// what each of its boxes shows.
+struct Flow {
+    map: Map,
+    /// One for each of the map's places, in their order.
+    cards: Vec<Card>,
+}
+
+/// What one box of the flow shows under its name.
+enum Card {
+    /// The description's first state, drawn at the phone's width.
+    Picture { scene: Box<Scene>, width: f64 },
+    /// A description that cannot be drawn: how many faults it has.
+    Faulty(usize),
+    /// A screen not drawn yet: a dashed box marked "?".
+    Undrawn,
 }
 
 /// One state drawn at one width, at one pixel per point.
@@ -269,10 +295,24 @@ impl Gallery {
         self.clamp();
     }
 
-    /// A press where the pointer is: on the tree, picks the state, or the
-    /// description, on the line under it; on the pictures, picks the node
-    /// under it, or none. Whether that changed what is shown.
+    /// A press where the pointer is: on the tree, picks the line under it;
+    /// on the pictures, picks the node under it, or none; on the flow, picks
+    /// the description whose box is under it. Whether that changed what is
+    /// shown.
     fn press(&mut self) -> bool {
+        if self.cursor.0 >= TREE
+            && let Picture::Flow(flow) = &self.picture
+        {
+            let at = self.in_flow(self.cursor);
+            let Some(Screen::Drawn(dir)) = flow.map.place_at(at).map(|place| &place.screen) else {
+                return false;
+            };
+            let Some(index) = self.description_line(dir) else {
+                return false;
+            };
+            self.pick(index);
+            return true;
+        }
         if self.cursor.0 >= TREE {
             if let Picture::Overview(_) = self.picture {
                 let Some(line) = self.state_at(self.cursor) else {
@@ -299,10 +339,10 @@ impl Gallery {
         }
     }
 
-    /// The line picking line `index` shows: a state's, or a description's,
-    /// own; nothing for a directory.
+    /// The line picking line `index` shows: its own, a directory's (its
+    /// flow), a description's (its overview) or a state's.
     fn shows(&self, index: usize) -> Option<usize> {
-        self.lines.get(index)?.row.description.as_ref()?;
+        self.lines.get(index)?;
         Some(index)
     }
 
@@ -316,16 +356,14 @@ impl Gallery {
         self.picked = None;
         self.picture = Picture::Faults(Vec::new());
         let named = |line: &Line, wanted: &Picked| {
-            line.row.description.as_ref() == Some(&wanted.description)
+            line.row.dir == wanted.dir
                 && line.state.as_ref().map(|state| state.name()) == wanted.state.as_deref()
         };
         let again = wanted.as_ref().and_then(|wanted| self.lines.iter().position(|line| named(line, wanted)));
         let description = wanted.as_ref().and_then(|wanted| {
-            self.lines.iter().position(|line| {
-                line.state.is_none() && line.row.description.as_ref() == Some(&wanted.description)
-            })
+            self.lines.iter().position(|line| line.state.is_none() && line.row.dir == wanted.dir)
         });
-        let first = self.lines.iter().position(|line| line.row.description.is_some());
+        let first = self.lines.iter().position(|line| line.row.description().is_some());
         if let Some(index) = again.or(description).or(first) {
             self.pick(index);
         }
@@ -337,21 +375,24 @@ impl Gallery {
         self.clamp();
     }
 
-    /// What picking line `index` shows: a state drawn at each of `WIDTHS`;
-    /// a description with states, its overview.
+    /// What picking line `index` shows: a state drawn at each of `WIDTHS`,
+    /// a description's overview, or a directory's flow.
     fn pick(&mut self, index: usize) {
         let Some(index) = self.shows(index) else {
             return;
         };
         let line = &self.lines[index];
-        let Some(dir) = line.row.description.clone() else {
-            return;
-        };
+        let (dir, described) = (line.row.dir.clone(), line.row.description().is_some());
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
         let name = state.as_ref().map(|state| state.name().to_string());
-        self.wanted = Some(Picked { description: dir.clone(), state: name });
+        self.wanted = Some(Picked { dir: dir.clone(), state: name });
         self.scroll = 0.0;
+        if !described {
+            self.node = None;
+            self.picture = Picture::Flow(self.flow(&dir));
+            return;
+        }
         if !faults.is_empty() {
             self.picture = Picture::Faults(faults);
             return;
@@ -527,8 +568,8 @@ impl Gallery {
             let (start, end, middle) = if arrow.from == arrow.to {
                 let top = y + 16.0 + before as f64 * 32.0;
                 let out = x + w + 20.0;
-                list.push(line((x + w, top), (out, top)));
-                list.push(line((out, top), (out, top + 18.0)));
+                list.push(line((x + w, top), (out, top), Ink::Text));
+                list.push(line((out, top), (out, top + 18.0), Ink::Text));
                 ((out, top + 18.0), (x + w + 2.0, top + 18.0), (out + 4.0 + arrow.wide / 2.0, top + 9.0))
             } else {
                 let to = cells[arrow.to];
@@ -544,13 +585,8 @@ impl Gallery {
                 let along = 0.3 + before as f64 * 0.15;
                 (start, end, (start.0 + (end.0 - start.0) * along, start.1 + (end.1 - start.1) * along))
             };
-            list.push(line(start, end));
-            let (dx, dy) = (end.0 - start.0, end.1 - start.1);
-            let angle = dy.atan2(dx);
-            for turn in [0.45_f64, -0.45] {
-                let back = (end.0 - 8.0 * (angle + turn).cos(), end.1 - 8.0 * (angle + turn).sin());
-                list.push(line(back, end));
-            }
+            list.push(line(start, end, Ink::Text));
+            list.extend(head(start, end, Ink::Text));
             let at = rect(middle.0 - arrow.wide / 2.0, middle.1 - 9.0, arrow.wide, 18.0);
             list.push(Draw::Box {
                 rect: at,
@@ -572,6 +608,68 @@ impl Gallery {
             list.push(label);
         }
         list
+    }
+
+    /// The line of the description in `dir`.
+    fn description_line(&self, dir: &Path) -> Option<usize> {
+        self.lines.iter().position(|line| line.state.is_none() && line.row.description() == Some(dir))
+    }
+
+    /// The flow between the descriptions under `dir`, from the links `check
+    /// <root>` reports, each box showing its description's first state.
+    fn flow(&self, dir: &Path) -> Flow {
+        let under: Vec<PathBuf> = self
+            .lines
+            .iter()
+            .filter(|line| line.state.is_none())
+            .filter_map(|line| line.row.description())
+            .filter(|description| description.starts_with(dir))
+            .map(Path::to_path_buf)
+            .collect();
+        let map = flow::map(&under, &links::links(&self.root));
+        let drawn = links::drawn(&self.root);
+        let cards = map
+            .places
+            .iter()
+            .map(|place| match &place.screen {
+                Screen::Drawn(dir) => self.card(dir, &drawn),
+                Screen::Undrawn(_) => Card::Undrawn,
+            })
+            .collect();
+        Flow { map, cards }
+    }
+
+    /// The box of the description in `dir`: its first state at the phone's
+    /// width, or how many faults keep it from being drawn.
+    fn card(&self, dir: &Path, drawn: &std::collections::BTreeSet<String>) -> Card {
+        let line = self.description_line(dir);
+        let faults = line.map_or(0, |index| self.lines[index].row.faults.len());
+        if faults > 0 {
+            return Card::Faulty(faults);
+        }
+        let first = line.and_then(|index| self.lines.get(index + 1)).and_then(|next| next.state.clone());
+        let wanted = match first {
+            Some(state) => state.wanted(WIDTHS[0], 1),
+            None => Wanted { fixture: None, phase: None, width: WIDTHS[0], scale: 1 },
+        };
+        match draw::lay_out(dir, &wanted, Some(drawn)) {
+            Ok(laid) => {
+                let drawing = laid.draw(1, u32::MAX);
+                Card::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
+            }
+            Err(_) => Card::Faulty(1),
+        }
+    }
+
+    /// Where the flow's top-left corner is in the window, in points.
+    fn flow_origin(&self) -> (f64, f64) {
+        (TREE + MARGIN, MARGIN - self.scroll)
+    }
+
+    /// `at`, a point in the window, in the flow's points.
+    fn in_flow(&self, at: (f64, f64)) -> (f64, f64) {
+        let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.size.0 - TREE));
+        ((at.0 - left) / zoom, (at.1 - top) / zoom)
     }
 
     /// Where each picture's top-left corner is in the window, in points.
@@ -683,6 +781,7 @@ impl Gallery {
                 ((pane - gaps) / wide).clamp(0.1, 1.0)
             }
             Picture::Overview(_) | Picture::Faults(_) => 1.0,
+            Picture::Flow(flow) => ((pane - 2.0 * MARGIN) / flow.map.width.max(1.0)).clamp(0.1, 1.0),
         }
     }
 
@@ -698,6 +797,7 @@ impl Gallery {
                 MARGIN + rows * (CAPTION + THUMB_TALL + SPACE) - SPACE + MARGIN
             }
             Picture::Faults(_) => self.faults(pane).1 + MARGIN,
+            Picture::Flow(flow) => MARGIN + flow.map.height * self.zoom(pane) + MARGIN,
         }
     }
 
@@ -709,7 +809,7 @@ impl Gallery {
             return (Vec::new(), 0.0);
         };
         let wide = pane - 2.0 * MARGIN;
-        let path = self.picked.and_then(|i| self.lines.get(i)?.row.description.clone()).unwrap_or_default();
+        let path = self.picked.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
         let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
         let heading = match faults.len() {
             1 => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
@@ -758,7 +858,7 @@ impl Gallery {
                 });
             }
             let x = 12.0 + row.depth as f64 * INDENT;
-            let (name, ink, weight) = match (&row.description, state) {
+            let (name, ink, weight) = match (row.description(), state) {
                 (None, _) => (format!("{}/", row.name), Ink::Muted, 600),
                 (Some(_), None) => (row.name.clone(), Ink::Text, 600),
                 (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
@@ -851,7 +951,7 @@ impl Gallery {
                 }
                 pane.extend(arrows);
             }
-            Picture::Faults(_) => {}
+            Picture::Faults(_) | Picture::Flow(_) => {}
         }
 
         let mut scene = Scene::new();
@@ -867,6 +967,22 @@ impl Gallery {
             scene.push_clip_layer(Fill::NonZero, at, &Area::new(x, y, x + w, y + h));
             scene.append(thumb, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
             scene.pop_layer();
+        }
+        if let Picture::Flow(flow) = &self.picture {
+            let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
+            for (place, card) in flow.map.places.iter().zip(&flow.cards) {
+                let Card::Picture { scene: picture, width } = card else { continue };
+                let (x, y) = (place.x, place.y + flow::TITLE);
+                scene.push_clip_layer(
+                    Fill::NonZero,
+                    at,
+                    &Area::new(x, y, x + flow::WIDE, place.y + flow::TALL),
+                );
+                let small = Affine::translate((x, y)) * Affine::scale(flow::WIDE / width);
+                scene.append(picture, Some(at * small));
+                scene.pop_layer();
+            }
+            paint::draws(&mut scene, at, &flow_draws(flow), &mut self.typesetter);
         }
         paint::draws(&mut scene, at, &pane, &mut self.typesetter);
         scene.pop_layer();
@@ -891,13 +1007,111 @@ impl Gallery {
     }
 }
 
-fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
-    Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
+/// The flow drawn, in its own points, but for the pictures in its boxes:
+/// each box with its name over it, and each navigate an arrow labelled with
+/// its node, in orange to a screen not drawn yet.
+fn flow_draws(flow: &Flow) -> Vec<Draw> {
+    let mut list = Vec::new();
+    let (places, arrows) = (&flow.map.places, &flow.map.arrows);
+    for (index, arrow) in arrows.iter().enumerate() {
+        let (from, to) = (&places[arrow.from], &places[arrow.to]);
+        let leaving = arrows[..index].iter().filter(|a| a.from == arrow.from).count() as f64;
+        let reaching = arrows[..index].iter().filter(|a| a.to == arrow.to).count() as f64;
+        let out = from.y + flow::TITLE + ARROWS + leaving * ARROWS;
+        let into = to.y + flow::TITLE + ARROWS + reaching * ARROWS;
+        let path = if arrow.from == arrow.to {
+            let (side, low) = (from.x + flow::WIDE, out + ARROWS / 2.0);
+            vec![(side, out), (side + 30.0, out), (side + 30.0, low), (side, low)]
+        } else if to.x > from.x {
+            vec![(from.x + flow::WIDE, out), (to.x, into)]
+        } else if to.x < from.x {
+            vec![(from.x, out), (to.x + flow::WIDE, into)]
+        } else if to.y > from.y {
+            vec![(from.x + flow::WIDE / 2.0, from.y + flow::TALL), (to.x + flow::WIDE / 2.0, to.y)]
+        } else {
+            vec![(from.x + flow::WIDE / 2.0, from.y), (to.x + flow::WIDE / 2.0, to.y + flow::TALL)]
+        };
+        let ink = if matches!(to.screen, Screen::Undrawn(_)) { Ink::Assumed } else { Ink::Muted };
+        for pair in path.windows(2) {
+            list.push(line(pair[0], pair[1], ink));
+        }
+        list.extend(head(path[path.len() - 2], path[path.len() - 1], ink));
+        // Named where it leaves its box, so that the arrows from one box,
+        // each leaving at its own height, are named apart.
+        let start = path[0];
+        let mut label = words(rect(start.0 + 6.0, start.1 - 17.0, 128.0, 16.0), arrow.node.clone(), ink, 400);
+        if let Draw::Text { align, rect, font, .. } = &mut label {
+            font.size = 11.0;
+            if path[1].0 < start.0 {
+                rect.x = (start.0 - 134.0) as f32;
+                *align = Align::End;
+            }
+        }
+        list.push(label);
+    }
+    for (place, card) in places.iter().zip(&flow.cards) {
+        let (x, y) = (place.x, place.y);
+        let (name, ink) = match &place.screen {
+            Screen::Drawn(dir) => {
+                let name =
+                    dir.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
+                (name, Ink::Text)
+            }
+            Screen::Undrawn(screen) => (screen.clone(), Ink::Assumed),
+        };
+        let undrawn = matches!(card, Card::Undrawn);
+        list.push(Draw::Box {
+            rect: rect(x, y, flow::WIDE, flow::TALL),
+            radius: 6.0,
+            fill: None,
+            stroke: Some(if undrawn { Ink::Assumed } else { Ink::Line }),
+            dashed: undrawn,
+        });
+        list.push(words(rect(x + 8.0, y + 4.0, flow::WIDE - 16.0, 16.0), name, ink, 600));
+        list.push(line((x, y + flow::TITLE), (x + flow::WIDE, y + flow::TITLE), Ink::Line));
+        let middle = (x + flow::WIDE / 2.0, y + (flow::TITLE + flow::TALL) / 2.0);
+        match card {
+            Card::Picture { .. } => {}
+            Card::Faulty(faults) => {
+                let mark = match faults {
+                    1 => "faulty: 1 fault, not drawn".to_string(),
+                    n => format!("faulty: {n} faults, not drawn"),
+                };
+                let mut said =
+                    words(rect(x + 8.0, middle.1 - 8.0, flow::WIDE - 16.0, 16.0), mark, Ink::Strong, 600);
+                if let Draw::Text { align, .. } = &mut said {
+                    *align = Align::Center;
+                }
+                list.push(said);
+            }
+            Card::Undrawn => list.push(Draw::Tag {
+                rect: rect(middle.0 - 14.0, middle.1 - 14.0, 28.0, 28.0),
+                text: "?".to_string(),
+                ink: Ink::Assumed,
+            }),
+        }
+    }
+    list
 }
 
-/// A line from `from` to `to`, in the ink text is drawn in.
-fn line(from: (f64, f64), to: (f64, f64)) -> Draw {
-    Draw::Line { from: [from.0 as f32, from.1 as f32], to: [to.0 as f32, to.1 as f32], ink: Ink::Text }
+/// A line from `from` to `to`.
+fn line(from: (f64, f64), to: (f64, f64), ink: Ink) -> Draw {
+    Draw::Line { from: [from.0 as f32, from.1 as f32], to: [to.0 as f32, to.1 as f32], ink }
+}
+
+/// The head of an arrow whose last stretch runs from `before` to `tip`.
+fn head(before: (f64, f64), tip: (f64, f64), ink: Ink) -> [Draw; 2] {
+    let (dx, dy) = (tip.0 - before.0, tip.1 - before.1);
+    let length = dx.hypot(dy).max(1.0);
+    let (ux, uy) = (dx / length, dy / length);
+    [-1.0, 1.0].map(|side| {
+        let wing = (tip.0 - 8.0 * ux - side * 4.0 * uy, tip.1 - 8.0 * uy + side * 4.0 * ux);
+        line(wing, tip, ink)
+    })
+}
+
+fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
+    Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
 }
 
 /// Where a way from `from`, inside `cell` (left, top, width, height), going
@@ -968,7 +1182,7 @@ impl ApplicationHandler<Told> for Gallery {
                 report(&json!({ "opened": true }));
                 self.reported = true;
                 // Drawn once the command has been told, so it answers at once.
-                if let Some(first) = self.lines.iter().position(|line| line.row.description.is_some()) {
+                if let Some(first) = self.lines.iter().position(|line| line.row.description().is_some()) {
                     self.pick(first);
                 }
                 shown.window.request_redraw();
@@ -1075,6 +1289,7 @@ mod tests {
             Picture::Pages(pages) => pages.iter().map(|page| page.caption.as_str()).collect(),
             Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
             Picture::Overview(_) => panic!("the overview, not a state"),
+            Picture::Flow(_) => panic!("no picture: a flow is shown"),
         }
     }
 
@@ -1373,6 +1588,7 @@ mod tests {
             Picture::Pages(pages) => pages.iter().map(|page| page.height).collect(),
             Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
             Picture::Overview(_) => panic!("the overview, not a state"),
+            Picture::Flow(_) => panic!("no picture: a flow is shown"),
         }
     }
 
@@ -1448,10 +1664,7 @@ mod tests {
         let typing = line_of(&gallery, "todo") + 2;
         assert_eq!(gallery.lines[typing].row.name, "typing");
         assert_eq!(gallery.picked, Some(typing), "still the state shown");
-        assert_eq!(
-            gallery.lines[gallery.picked.unwrap()].row.description.as_deref(),
-            Some(&*root.join("todo"))
-        );
+        assert_eq!(gallery.lines[gallery.picked.unwrap()].row.description(), Some(&*root.join("todo")));
 
         std::fs::remove_dir_all(root.join("todo")).unwrap();
         gallery.reload();
@@ -1520,6 +1733,173 @@ mod tests {
         assert!(gallery.lines[1].state.is_some(), "its states are still listed");
         gallery.pick(1);
         assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A root of its own named `name`, holding copies of the drafts `copied`
+    /// at the paths beside each.
+    fn root_of(name: &str, copied: &[(&str, &str)]) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (draft, at) in copied {
+            std::fs::create_dir_all(root.join(at)).unwrap();
+            for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+                let from = Path::new(DRAFTS).join(draft).join(file);
+                if from.is_file() {
+                    std::fs::copy(from, root.join(at).join(file)).unwrap();
+                }
+            }
+        }
+        root
+    }
+
+    /// The flow shown.
+    fn flow_shown(gallery: &Gallery) -> &Flow {
+        match &gallery.picture {
+            Picture::Flow(flow) => flow,
+            _ => panic!("no flow is shown"),
+        }
+    }
+
+    /// The texts drawn in the flow.
+    fn flow_texts(flow: &Flow) -> Vec<String> {
+        flow_draws(flow)
+            .into_iter()
+            .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text) } else { None })
+            .collect()
+    }
+
+    #[test]
+    fn picking_a_directory_draws_the_flow_between_its_screens() {
+        let root = root_of(
+            "flow",
+            &[("airbnb-listing", "shop/listing"), ("checkout", "shop/checkout"), ("todo", "todo")],
+        );
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let shop = gallery.lines.iter().position(|line| line.row.name == "shop").unwrap();
+        over_row(&mut gallery, shop);
+        assert!(gallery.press(), "a directory can be picked");
+        assert_eq!(gallery.picked, Some(shop));
+        let flow = flow_shown(&gallery);
+        let screens: Vec<&Screen> = flow.map.places.iter().map(|place| &place.screen).collect();
+        let undrawn = |name: &str| Screen::Undrawn(name.to_string());
+        assert_eq!(
+            screens,
+            [
+                &Screen::Drawn(root.join("shop/checkout")),
+                &Screen::Drawn(root.join("shop/listing")),
+                &undrawn("AddressBook"),
+                &undrawn("AddressForm"),
+                &undrawn("PhotoGallery"),
+                &undrawn("FullMap"),
+            ],
+            "its screens, todo not among them, and a box for each screen not drawn yet"
+        );
+        // From the links `check <root>` reports, each an arrow.
+        let reported: Vec<(PathBuf, String, Screen)> = links::links(&root)
+            .into_iter()
+            .filter(|link| link.description.starts_with(root.join("shop")))
+            .map(|link| {
+                (link.description, link.node, link.target.map_or(Screen::Undrawn(link.to), Screen::Drawn))
+            })
+            .collect();
+        let drawn: Vec<(PathBuf, String, Screen)> = flow
+            .map
+            .arrows
+            .iter()
+            .map(|arrow| {
+                let Screen::Drawn(from) = &flow.map.places[arrow.from].screen else {
+                    panic!("from a description")
+                };
+                (from.clone(), arrow.node.clone(), flow.map.places[arrow.to].screen.clone())
+            })
+            .collect();
+        assert_eq!(drawn, reported);
+        assert!(drawn.contains(&(
+            root.join("shop/listing"),
+            "reserve-button".to_string(),
+            Screen::Drawn(root.join("shop/checkout"))
+        )));
+        assert!(
+            matches!(flow.cards[..2], [Card::Picture { .. }, Card::Picture { .. }]),
+            "each with its first state"
+        );
+        assert!(flow.cards[2..].iter().all(|card| matches!(card, Card::Undrawn)));
+        let texts = flow_texts(flow);
+        for name in ["checkout", "listing", "PhotoGallery", "reserve-button", "photos-show-all"] {
+            assert!(texts.iter().any(|text| text == name), "{name} in {texts:?}");
+        }
+        let draws = flow_draws(flow);
+        let dashed = draws
+            .iter()
+            .filter(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(Ink::Assumed), .. }))
+            .count();
+        let marks = draws.iter().filter(|d| matches!(d, Draw::Tag { text, .. } if text == "?")).count();
+        assert_eq!((dashed, marks), (4, 4), "a dashed box marked \"?\" for each screen not drawn yet");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn clicking_a_box_of_the_flow_picks_its_description() {
+        let root =
+            root_of("flow-click", &[("airbnb-listing", "shop/listing"), ("checkout", "shop/checkout")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        showing(&mut gallery, 0);
+        let flow = flow_shown(&gallery);
+        let place =
+            flow.map.places.iter().find(|p| p.screen == Screen::Drawn(root.join("shop/listing"))).unwrap();
+        let ((left, top), zoom) = (gallery.flow_origin(), gallery.zoom(1440.0 - TREE));
+        let undrawn = flow.map.places.iter().find(|p| matches!(p.screen, Screen::Undrawn(_))).unwrap();
+        let on = |p: &flow::Place| (left + (p.x + 20.0) * zoom, top + (p.y + 40.0) * zoom);
+        let (on_listing, on_undrawn) = (on(place), on(undrawn));
+        gallery.cursor = on_undrawn;
+        assert!(!gallery.press(), "a screen not drawn yet has no description to pick");
+        gallery.cursor = on_listing;
+        assert!(gallery.press(), "its box picks the description");
+        let listing = line_of(&gallery, "listing");
+        assert_eq!(gallery.picked, Some(listing), "the description itself");
+        assert_eq!(overview(&gallery).0[0], "default", "showing its overview");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_with_faults_is_a_box_marked_faulty_without_a_picture() {
+        let root = root_of("flow-faulty", &[("todo", "flow/todo")]);
+        std::fs::create_dir_all(root.join("flow/broken")).unwrap();
+        std::fs::write(root.join("flow/broken").join(crate::SCREEN), "{}").unwrap();
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        showing(&mut gallery, 0);
+        let flow = flow_shown(&gallery);
+        let faults = gallery.lines[line_of(&gallery, "broken")].row.faults.len();
+        assert!(matches!(flow.cards[..], [Card::Faulty(n), Card::Picture { .. }] if n == faults));
+        let mark = if faults == 1 {
+            "faulty: 1 fault, not drawn".to_string()
+        } else {
+            format!("faulty: {faults} faults, not drawn")
+        };
+        assert!(flow_texts(flow).contains(&mark));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_flow_shown_is_drawn_again_as_the_files_change() {
+        let root = root_of("flow-reload", &[("orders", "app/orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        showing(&mut gallery, 0);
+        let undrawn = |gallery: &Gallery| {
+            flow_shown(gallery).cards.iter().filter(|c| matches!(c, Card::Undrawn)).count()
+        };
+        assert_eq!(undrawn(&gallery), 2, "OrderDetail and ExportDocuments are not drawn yet");
+        let export = root_of("flow-reload-export", &[("export", "export")]);
+        std::fs::rename(export.join("export"), root.join("app/export")).unwrap();
+        std::fs::remove_dir_all(export).unwrap();
+        gallery.reload();
+        assert_eq!(gallery.picked, Some(0), "the directory is still picked");
+        assert_eq!(undrawn(&gallery), 1, "ExportDocuments is drawn now");
         std::fs::remove_dir_all(root).unwrap();
     }
 }
