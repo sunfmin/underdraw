@@ -171,6 +171,7 @@ pub fn handoff(screen: &Screen, mapping: &Value, tokens: &Value) -> Result<Hando
         specs: Vec::new(),
         hidden: Vec::new(),
         findings: Vec::new(),
+        missing: Default::default(),
     };
     if let Some(root) = screen.description().get("root") {
         walk.node(root, None, "root");
