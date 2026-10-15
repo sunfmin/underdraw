@@ -130,9 +130,11 @@ CONDITIONS
     name as a string.
   - A condition may use others by name; no cycles.
   - Every condition must be true in one fixture and false in another.
-  A use site ("if", "disabled", a cases branch's "if") is only
-  !? <condition or Bool path>: "hasTodos", "!canAdd", "item.done".
-  Anything more is a named condition.
+  A use site ("if", "disabled", a cases branch's "if") is only terms
+  joined by &&, each !? <condition or Bool path>: "hasTodos", "!canAdd",
+  "item.done", "walks && !picked". It holds when every term does, and a
+  != null a condition in the chain makes reads the value under it, as in
+  a condition's own && chain. || and comparisons are a named condition.
   A condition on a type is named <Type>.<name>, and its "when" reads the
   type's own fields, never the screen's data:
     "Order.cancellable": { "when": "status == \"pending\"", "label": "Not shipped yet" }

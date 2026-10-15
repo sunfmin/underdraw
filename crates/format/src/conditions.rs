@@ -634,19 +634,40 @@ fn show(atom: &Atom) -> String {
     }
 }
 
-/// Equal as the format means it: numbers by value, whether written 5 or 5.0.
-/// Where a node or a branch asks a yes/no (`if`, `disabled`): `!` to turn
-/// it round, then a condition's name or a Bool path.
+/// Where a node or a branch asks a yes/no (`if`, `disabled`): terms joined
+/// by `&&`, each `!` to turn it round, then a condition's name or a Bool
+/// path. It holds when every term does.
 pub(crate) struct UseSite<'a> {
+    pub(crate) terms: Vec<Term<'a>>,
+}
+
+/// One term of a use site's `&&` chain.
+pub(crate) struct Term<'a> {
     pub(crate) negated: bool,
     pub(crate) name: &'a str,
 }
 
 impl<'a> UseSite<'a> {
     pub(crate) fn parse(used: &'a str) -> UseSite<'a> {
-        match used.strip_prefix('!') {
-            Some(name) => UseSite { negated: true, name },
-            None => UseSite { negated: false, name: used },
+        let terms = used
+            .split("&&")
+            .map(|term| {
+                let term = term.trim();
+                match term.strip_prefix('!') {
+                    Some(name) => Term { negated: true, name: name.trim_start() },
+                    None => Term { negated: false, name: term },
+                }
+            })
+            .collect();
+        UseSite { terms }
+    }
+
+    /// The one term, when the chain is just one `!`-turned term: where it
+    /// fails, that term holds.
+    pub(crate) fn only_negated(&self) -> Option<&'a str> {
+        match self.terms.as_slice() {
+            [Term { negated: true, name }] => Some(name),
+            _ => None,
         }
     }
 }
