@@ -61,6 +61,44 @@ pub struct Note {
     /// What the person wrote, then each reply and each line the person
     /// added on reopening it, in order.
     pub thread: Vec<Said>,
+    /// Where acting on the node should go, when the person proposed it
+    /// where nothing was declared: from `state`, on an event, to a state
+    /// or another screen. The agent declares it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposes: Option<Proposal>,
+}
+
+/// Where the person proposes acting on a node should go, where the
+/// description declares nothing: on `on`, the node's id as written and its
+/// event (`"cd-keep.tap"`), to a state of the same description, as a
+/// transition would, or to another screen, as a `navigate` would.
+/// Written as one object: `{"on", "to"}` or `{"on", "navigate"}`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Proposal {
+    pub on: String,
+    #[serde(flatten)]
+    pub goes: Goes,
+}
+
+/// Where a proposal goes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Goes {
+    /// A state, a fixture or a phase, by name.
+    To(String),
+    /// A screen, by the name its description declares.
+    Navigate(String),
+}
+
+impl Proposal {
+    /// The proposal as the person says it, from state `from`: the line a
+    /// note holding it starts its thread with.
+    pub fn says(&self, from: &str) -> String {
+        match &self.goes {
+            Goes::To(to) => format!("{} in {from} should go to {to}: declare the transition", self.on),
+            Goes::Navigate(screen) => format!("{} in {from} should navigate to {screen}", self.on),
+        }
+    }
 }
 
 impl Note {
@@ -82,6 +120,7 @@ impl Note {
             "id": self.id,
             "status": self.status,
             "thread": self.thread,
+            "proposes": self.proposes,
             "reference": self.reference(dir).line(),
         });
         if let (Some(answer), Ok(Value::Object(on))) =
@@ -158,7 +197,22 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
 /// A note the person wrote, `says`, on what `on` references, added to its
 /// description's notes: open, numbered after the last. Its id.
 pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
-    let says = said(says)?;
+    added(on, said(says)?, None)
+}
+
+/// A note proposing where acting on the node `on` references should go,
+/// `proposal`, added to its description's notes as [`add`] adds one, its
+/// thread saying the proposal. Its id.
+pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
+    let On::Node { state, .. } = &on.on else {
+        bail!("a proposal is on a node, where acting on it should go: pick one first");
+    };
+    added(on, proposal.says(state.name()), Some(proposal))
+}
+
+/// A note saying `says`, and proposing `proposes`, on what `on` references,
+/// added to its description's notes: open, numbered after the last. Its id.
+fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Result<String> {
     change(&on.description, |notes| {
         let last = notes.iter().filter_map(|note| note.id.strip_prefix('N')?.parse::<u32>().ok()).max();
         let id = format!("N{}", last.unwrap_or(0) + 1);
@@ -167,6 +221,7 @@ pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
             status: Status::Open,
             on: on.on.clone(),
             thread: vec![Said { by: By::Person, says }],
+            proposes,
         });
         Ok(id)
     })
@@ -409,6 +464,22 @@ mod tests {
                 "thread": [{ "by": "person", "says": "the price" }],
             }] })
         );
+        let proposal =
+            Proposal { on: "order-{index}.tap".into(), goes: Goes::Navigate("OrderDetail".into()) };
+        assert_eq!(propose(&on(&dir), proposal.clone()).unwrap(), "N2");
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"][0].get("proposes"), None, "a plain note proposes nothing");
+        assert_eq!(
+            file["notes"][1]["proposes"],
+            json!({ "on": "order-{index}.tap", "navigate": "OrderDetail" })
+        );
+        assert_eq!(
+            file["notes"][1]["thread"],
+            json!([{ "by": "person", "says": "order-{index}.tap in default should navigate to OrderDetail" }])
+        );
+        let to = Proposal { on: "cd-keep.tap".into(), goes: Goes::To("default".into()) };
+        assert_eq!(serde_json::to_value(&to).unwrap(), json!({ "on": "cd-keep.tap", "to": "default" }));
+        assert_eq!(read(&dir).unwrap()[1].proposes, Some(proposal), "read back as written");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
