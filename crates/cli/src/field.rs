@@ -12,7 +12,6 @@ use std::ops::Range;
 use parley::{PlainEditor, PlainEditorDriver};
 
 use crate::chrome::CARD_TEXT;
-use crate::sidebar::FIELD_WIDTH;
 use crate::text::Typesetter;
 
 /// What the person typed, where the caret is, what is selected, and what
@@ -64,13 +63,20 @@ pub struct Shown {
 }
 
 impl Field {
-    /// An empty field, its text set by `typesetter`'s fonts.
-    pub fn new(typesetter: &Typesetter) -> Field {
+    /// An empty field `width` wide, its text set by `typesetter`'s fonts.
+    pub fn new(typesetter: &Typesetter, width: f64) -> Field {
         let typesetter = typesetter.like();
-        let editor = typesetter.editor(CARD_TEXT, FIELD_WIDTH as f32);
+        let editor = typesetter.editor(CARD_TEXT, width as f32);
         let mut field = Field { editor, typesetter };
         field.drive(|_| {});
         field
+    }
+
+    /// Its lines broken again for a field `width` wide: the sidebar's
+    /// width changed.
+    pub fn fit(&mut self, width: f64) {
+        self.editor.set_width(Some(width as f32 + crate::text::HAIR));
+        self.drive(|_| {});
     }
 
     /// What was typed: what saving it saves. What is being composed is not.
@@ -194,7 +200,7 @@ mod tests {
     const RIGHT: Edit = Edit::Move(Motion::Right);
 
     fn field() -> Field {
-        Field::new(&Typesetter::new(None).unwrap())
+        Field::new(&Typesetter::new(None).unwrap(), crate::sidebar::field_width(crate::chrome::SIDEBAR))
     }
 
     #[test]
