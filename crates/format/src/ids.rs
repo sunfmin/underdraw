@@ -41,10 +41,18 @@ const WORDS: usize = 3;
 
 /// `description` with an id given to each node written without one: in
 /// its root and phases, which share one set of ids, and in each of its
-/// own components' nodes, each with its own. A node with on, bind or
-/// assumed and no id is a finding, and is given one all the same.
-pub(crate) fn give(description: &mut Value, findings: &mut Findings) {
-    let mut giving = Giving { taken: BTreeSet::new(), findings };
+/// own components' nodes, each with its own; and the components the
+/// project `shared` (each `components/<Name>.json` by its name) with
+/// theirs given, answered. A node with on, bind or assumed and no id is a
+/// finding, and so is an instance of a component holding one, whose nodes
+/// are named by the instance's id; each is given one all the same.
+pub(crate) fn give(
+    description: &mut Value,
+    shared: &Map<String, Value>,
+    findings: &mut Findings,
+) -> Map<String, Value> {
+    let acted = acted(description, shared);
+    let mut giving = Giving { taken: BTreeSet::new(), acted: &acted, findings };
     if let Some(root) = description.get("root") {
         written(root, &mut giving.taken);
     }
@@ -63,25 +71,58 @@ pub(crate) fn give(description: &mut Value, findings: &mut Findings) {
     }
     if let Some(Value::Object(components)) = description.get_mut(subtrees::KEY) {
         for (name, component) in components.iter_mut() {
-            nodes(component, &format!("{}.{name}", subtrees::KEY), giving.findings);
+            nodes(component, &format!("{}.{name}", subtrees::KEY), &acted, giving.findings);
         }
     }
-}
-
-/// The components the project shares, each `components/<Name>.json` by
-/// its name, with an id given to each node of theirs written without one.
-pub(crate) fn give_shared(components: &Map<String, Value>, findings: &mut Findings) -> Map<String, Value> {
-    let mut given = components.clone();
+    let mut given = shared.clone();
     for (name, component) in given.iter_mut() {
-        nodes(component, &format!("components/{name}.json"), findings);
+        nodes(component, &format!("components/{name}.json"), &acted, findings);
     }
     given
 }
 
+/// The components, the project's and the screen's own, whose nodes hold
+/// one a person acts on or answers about, there or in an instance of
+/// another such: an instance of one needs an id written by hand.
+fn acted(description: &Value, shared: &Map<String, Value>) -> BTreeSet<String> {
+    let mut bodies = Vec::new();
+    for (name, component) in shared.iter().chain(object(description, subtrees::KEY)) {
+        if let Some(root) = component.get("nodes") {
+            bodies.push((name, root));
+        }
+    }
+    let mut acted = BTreeSet::new();
+    loop {
+        let found: Vec<String> = bodies
+            .iter()
+            .filter(|(name, root)| !acted.contains(*name) && acts(root, &acted))
+            .map(|(name, _)| (*name).clone())
+            .collect();
+        if found.is_empty() {
+            return acted;
+        }
+        acted.extend(found);
+    }
+}
+
+/// Whether the tree `value` holds a node a person acts on or answers
+/// about, or an instance of one of the components `acted`.
+fn acts(value: &Value, acted: &BTreeSet<String>) -> bool {
+    match value {
+        Value::Array(items) => items.iter().any(|item| acts(item, acted)),
+        Value::Object(node) => {
+            NAMED.iter().any(|named| node.contains_key(*named))
+                || node.get("component").and_then(Value::as_str).is_some_and(|name| acted.contains(name))
+                || SLOTS.iter().any(|slot| node.get(*slot).is_some_and(|held| acts(held, acted)))
+        }
+        _ => false,
+    }
+}
+
 /// An id given to each node inside `component`'s nodes, its root apart,
 /// findings named under `at`.
-fn nodes(component: &mut Value, at: &str, findings: &mut Findings) {
-    let mut giving = Giving { taken: BTreeSet::new(), findings };
+fn nodes(component: &mut Value, at: &str, acted: &BTreeSet<String>, findings: &mut Findings) {
+    let mut giving = Giving { taken: BTreeSet::new(), acted, findings };
     if let Some(root) = component.get("nodes") {
         written(root, &mut giving.taken);
     }
@@ -115,6 +156,8 @@ fn written(value: &Value, taken: &mut BTreeSet<String>) {
 struct Giving<'f> {
     /// Every id written in the tree, and each given so far.
     taken: BTreeSet<String>,
+    /// The components an instance of which needs an id written by hand.
+    acted: &'f BTreeSet<String>,
     findings: &'f mut Findings,
 }
 
@@ -142,10 +185,16 @@ impl Giving<'_> {
         let id = match node.get("id").and_then(Value::as_str) {
             Some(id) => id.to_string(),
             None => {
+                let component = node.get("component").and_then(Value::as_str).unwrap_or_default();
                 if NAMED.iter().any(|named| node.contains_key(*named)) {
                     self.findings.add(
                         at,
                         "a node with on, bind or assumed is one a person acts on or answers about, and transitions, journeys and notes name it by its id: give it an \"id\"",
+                    );
+                } else if self.acted.contains(component) {
+                    self.findings.add(
+                        at,
+                        &format!("{component} holds a node with on, bind or assumed, named by this instance's id joined to its own: give the instance an \"id\""),
                     );
                 }
                 let id = self.given(node, parent, key == "item");
@@ -220,7 +269,7 @@ mod tests {
     /// `description` with its ids given, and what giving them found.
     fn given(mut description: Value) -> (Value, Vec<String>) {
         let mut findings = Findings::default();
-        give(&mut description, &mut findings);
+        give(&mut description, &Map::new(), &mut findings);
         (description, findings.0.into_iter().map(|finding| finding.at).collect())
     }
 
@@ -283,6 +332,26 @@ mod tests {
             { "component": "Text", "text": "Fine" },
         ])));
         assert_eq!(findings, ["root.children.0", "root.children.1", "root.children.2"]);
+    }
+
+    #[test]
+    fn an_instance_of_a_component_holding_a_node_a_person_acts_on_still_needs_an_id() {
+        let mut description = page(json!([
+            { "component": "Row" },
+            { "component": "Wrap" },
+            { "component": "Plain" },
+            { "id": "row", "component": "Row" },
+        ]));
+        description["components"] = json!({
+            "Wrap": { "nodes": { "component": "Stack", "children": [{ "id": "row", "component": "Row" }] } },
+            "Plain": { "nodes": { "component": "Stack", "children": [{ "component": "Text", "text": "Hi" }] } },
+        });
+        let shared =
+            json!({ "Row": { "nodes": { "component": "Card", "on": { "tap": { "back": true } } } } });
+        let mut findings = Findings::default();
+        give(&mut description, shared.as_object().unwrap(), &mut findings);
+        let at: Vec<&str> = findings.0.iter().map(|finding| finding.at.as_str()).collect();
+        assert_eq!(at, ["root.children.0", "root.children.1"], "Row's root acts, and Wrap holds a Row");
     }
 
     #[test]

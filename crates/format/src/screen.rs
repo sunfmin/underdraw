@@ -62,9 +62,9 @@ impl Screen {
     pub fn read(description: &Value, shared: Shared) -> Screen {
         let mut findings = Findings::default();
         let mut description = domain::expand(description, shared.domain, &mut findings);
-        ids::give(&mut description, &mut findings);
         let none = Map::new();
-        let shared_components = ids::give_shared(shared.components.unwrap_or(&none), &mut findings);
+        let shared_components =
+            ids::give(&mut description, shared.components.unwrap_or(&none), &mut findings);
         let components = Components::read(&description, &shared_components, &mut findings);
         let schema = Schema::read(&description, &mut findings);
         let mut fixtures = fixture::read(&description, &schema, &mut findings);
