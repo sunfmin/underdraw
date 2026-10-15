@@ -10,7 +10,7 @@ use anyhow::{Context, bail};
 use serde_json::{Value, json};
 
 use crate::gallery::{self, within};
-use crate::{SCREEN, read};
+use crate::{SCREEN, notes, read};
 
 /// The screens the descriptions under `root` declare, by name: each one's
 /// "screen", read without checking it. One that cannot be read declares
@@ -56,8 +56,12 @@ pub fn check_root(root: &Path) -> anyhow::Result<Value> {
 
     let mut ok = true;
     let mut descriptions = Vec::new();
+    let mut counts = notes::Counts::default();
     for (dir, checked) in dirs.iter().zip(checked.into_iter().flatten()) {
         ok &= checked.ok;
+        let counted = notes::counted(dir);
+        let count = |status: &str| counted[status].as_u64().unwrap_or(0) as usize;
+        counts = counts.add(notes::Counts { open: count("open"), answered: count("answered") });
         descriptions.push(json!({
             "description": within(&root, dir),
             "screen": checked.screen,
@@ -66,6 +70,7 @@ pub fn check_root(root: &Path) -> anyhow::Result<Value> {
             "phases": checked.phases,
             "conditions": checked.conditions,
             "findings": checked.findings,
+            "notes": counted,
         }));
     }
     let links: Vec<Value> = between(&dirs, &screens)
@@ -80,7 +85,7 @@ pub fn check_root(root: &Path) -> anyhow::Result<Value> {
             })
         })
         .collect();
-    Ok(json!({ "root": root, "ok": ok, "descriptions": descriptions, "links": links }))
+    Ok(json!({ "root": root, "ok": ok, "descriptions": descriptions, "links": links, "notes": counts }))
 }
 
 /// One `navigate` from a description under a root to the screen it names.

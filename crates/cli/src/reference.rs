@@ -4,6 +4,8 @@
 
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 use crate::draw::{Origin, Shown};
 
 /// A state of one description and, when one is picked, a node in it.
@@ -17,8 +19,10 @@ pub struct Reference {
 
 /// A node as the description writes it, and the one instance of it the
 /// person pointed at: which data showed it, its label, and the width.
-#[derive(Clone, Debug, PartialEq)]
+/// Written as one object: `{"id", "at", "instance", "label", "width"}`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pointed {
+    #[serde(flatten)]
     pub origin: Origin,
     pub label: Option<u32>,
     pub width: u32,

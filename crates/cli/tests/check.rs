@@ -195,5 +195,9 @@ fn one_description_says_nothing_of_where_it_navigates() {
     assert_eq!((code, &answer["ok"]), (0, &json!(true)), "{answer:#}");
     let mut keys: Vec<&str> = answer.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort();
-    assert_eq!(keys, ["conditions", "findings", "fixtures", "ok", "phases", "screen"], "as before");
+    assert_eq!(
+        keys,
+        ["conditions", "findings", "fixtures", "notes", "ok", "phases", "screen"],
+        "and its notes"
+    );
 }

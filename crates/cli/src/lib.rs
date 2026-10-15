@@ -10,6 +10,7 @@ mod flow;
 mod gallery;
 mod gpu;
 mod links;
+mod notes;
 mod paint;
 mod reference;
 mod text;
@@ -91,6 +92,27 @@ enum Command {
         #[arg(long, hide = true)]
         window: bool,
     },
+    /// The person's open notes on the descriptions under a directory, each with where it is pinned; or one answered
+    #[command(after_long_help = include_str!("help/notes.txt"))]
+    Notes {
+        /// A description's directory, or a directory of them at any depth
+        path: PathBuf,
+        /// The note to answer, by its id (N3), in the description at <path>
+        #[arg(long, value_name = "ID", requires = "reply")]
+        answer: Option<String>,
+        /// The answer: one line saying what was done, or why not
+        #[arg(long, value_name = "LINE")]
+        reply: Option<String>,
+        /// Refused: the person writes notes, in the gallery
+        #[arg(long, hide = true, alias = "add", num_args = 0..=1, default_missing_value = "")]
+        create: Option<String>,
+        /// Refused: the person closes a note, in the gallery
+        #[arg(long, hide = true, num_args = 0..=1, default_missing_value = "")]
+        close: Option<String>,
+        /// Refused: the person reopens a note, in the gallery
+        #[arg(long, hide = true, num_args = 0..=1, default_missing_value = "")]
+        reopen: Option<String>,
+    },
     /// The view model as a JSON Schema, to validate API responses and other data against
     #[command(after_long_help = include_str!("help/schema.txt"))]
     Schema {
@@ -162,6 +184,12 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Command::Gallery { root, window: false } => gallery::gallery(&root),
+        Command::Notes { create: Some(_), .. }
+        | Command::Notes { close: Some(_), .. }
+        | Command::Notes { reopen: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
+        Command::Notes { path, answer, reply, .. } => {
+            notes::notes(&path, answer.as_deref(), reply.as_deref())
+        }
         Command::Check { path } => check(&path),
         Command::Render { path, fixture, phase, width, scale, out, root } => {
             render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref())
@@ -194,7 +222,10 @@ fn check(path: &Path) -> anyhow::Result<Value> {
     if path.is_dir() && !path.join(SCREEN).is_file() {
         return links::check_root(path);
     }
-    Ok(serde_json::to_value(check_at(path)?)?)
+    let mut answer = serde_json::to_value(check_at(path)?)?;
+    let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
+    answer["notes"] = notes::counted(dir);
+    Ok(answer)
 }
 
 /// What `check` says of the description at `path` (a directory or its
