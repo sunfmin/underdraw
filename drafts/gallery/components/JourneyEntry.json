@@ -1,0 +1,173 @@
+{
+  "$comment": "A journey's line: what it is (a path, by the route icon), its name, how long it is, what it is about, and the screens it walks; a broken one says where it breaks instead.",
+  "params": {
+    "journey": "Journey",
+    "picked": {
+      "type": "bool = false",
+      "doc": "The journey picked, so played"
+    }
+  },
+  "nodes": {
+    "component": "Stack",
+    "gap": 2,
+    "padding": [
+      6,
+      12,
+      6,
+      36
+    ],
+    "on": {
+      "tap": {
+        "navigate": "Play"
+      }
+    },
+    "children": [
+      {
+        "id": "head",
+        "component": "Row",
+        "gap": 6,
+        "children": [
+          {
+            "id": "icon",
+            "component": "Glyph",
+            "icon": "route",
+            "size": 16
+          },
+          {
+            "id": "name",
+            "component": "Text",
+            "text": "{journey.name}",
+            "font": "font.subhead",
+            "maxLines": 1
+          },
+          {
+            "id": "steps",
+            "component": "Text",
+            "if": "!journey.broken",
+            "text": "{journey.steps} steps",
+            "font": "font.caption",
+            "color": "color.textSecondary"
+          }
+        ]
+      },
+      {
+        "id": "breaks",
+        "component": "Text",
+        "if": "journey.broken",
+        "text": "breaks at step {journey.brokenAt}",
+        "font": "font.caption",
+        "color": "color.primary"
+      },
+      {
+        "id": "about",
+        "component": "Text",
+        "if": "journey.told",
+        "text": "{journey.about}",
+        "font": "font.caption",
+        "color": "color.textSecondary",
+        "maxLines": 2
+      },
+      {
+        "id": "route-line",
+        "component": "Row",
+        "gap": 8,
+        "if": "!journey.broken",
+        "children": [
+          {
+            "id": "route",
+            "component": "Text",
+            "text": "{journey.route}",
+            "font": "font.caption"
+          },
+          {
+            "id": "playing",
+            "component": "Badge",
+            "if": "picked",
+            "text": "playing"
+          }
+        ]
+      }
+    ],
+    "radius": 6
+  },
+  "fixtures": {
+    "walks": {
+      "journey": {
+        "name": "cancel-an-order",
+        "about": "The person opens an order from the list and cancels it before it ships.",
+        "steps": 3,
+        "route": "orders › order",
+        "brokenAt": null,
+        "stops": [
+          {
+            "number": 1,
+            "screen": "orders",
+            "state": "default"
+          },
+          {
+            "number": 2,
+            "screen": "order",
+            "state": "open"
+          },
+          {
+            "number": 3,
+            "screen": "order",
+            "state": "cancelled",
+            "last": true
+          }
+        ]
+      }
+    },
+    "broken": {
+      "journey": {
+        "name": "refund-a-cancelled-order",
+        "about": "",
+        "steps": 2,
+        "route": "order",
+        "brokenAt": 2,
+        "stops": [
+          {
+            "number": 1,
+            "screen": "order",
+            "state": "cancelled"
+          },
+          {
+            "number": 2,
+            "screen": "order",
+            "state": "refunded",
+            "last": true,
+            "broken": true
+          }
+        ]
+      }
+    },
+    "picked": {
+      "journey": {
+        "name": "cancel-an-order",
+        "about": "The person opens an order from the list and cancels it before it ships.",
+        "steps": 3,
+        "route": "orders › order",
+        "brokenAt": null,
+        "stops": [
+          {
+            "number": 1,
+            "screen": "orders",
+            "state": "default"
+          },
+          {
+            "number": 2,
+            "screen": "order",
+            "state": "open"
+          },
+          {
+            "number": 3,
+            "screen": "order",
+            "state": "cancelled",
+            "last": true
+          }
+        ]
+      },
+      "picked": true
+    }
+  }
+}
