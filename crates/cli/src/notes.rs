@@ -1034,11 +1034,7 @@ mod tests {
         let person = |says: &str| Said::talk(By::Person, says);
         let agent = |says: &str| Said::talk(By::Agent, says);
         let line = |says: &str| Said::talk(By::Underdraw, says);
-        let note = |id: &str, on: On, messages: Vec<Said>| Note {
-            id: id.into(),
-            on,
-            messages,
-        };
+        let note = |id: &str, on: On, messages: Vec<Said>| Note { id: id.into(), on, messages };
         let kept = vec![
             note("N1", node("default", "price"), vec![person("there")]),
             note("N2", transition("empty"), vec![person("there")]),

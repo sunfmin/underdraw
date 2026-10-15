@@ -78,7 +78,8 @@ its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, and is answered while the agent did; it is never
 closed. Confirming (✓) or rejecting (✗, saying what is right) an
-**Assumption** is a message in its node's note.
+**Assumption**, and proposing where acting on a node should go, are
+messages in its node's note, marked as such.
 _Avoid_: comment, feedback, chat, thread
 
 ### Data and decisions

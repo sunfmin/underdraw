@@ -156,8 +156,9 @@ DOES
     transition from <state> on <node id as written>.tap · should go to:"),
     then lists the description's states and, as "navigate to <screen>",
     the screens the other descriptions under <root> declare. Click one to
-    propose it: the window writes a note on the node holding the proposal
-    (`underdraw notes --help`), and the agent declares it, in the
+    propose it: the window adds a message saying it to the node's note,
+    marked as that proposal (`underdraw notes --help`), and the agent
+    declares it, in the
     description's `transitions` (`underdraw check --help`, FORMAT) or as
     a `navigate`. The window still never writes the description.
   The sidebar says what each act came to, in a card above the node's.
@@ -210,8 +211,10 @@ DOES
   bubbles on the right, and what the agent said, in bubbles outlined green
   on the left, in the order said ("note · nothing said yet" before
   anything is). A node's note runs on whichever instance of it is picked,
-  and holds the notes that answer its assumption or propose where acting
-  on it goes. At the sidebar's foot, fixed there while the cards scroll, a
+  and holds your answers to its assumption and your proposals of where
+  acting on it goes, each a message under a gray line saying which ("✗
+  wrong, answering the assumption"; "proposes where acting on it goes").
+  At the sidebar's foot, fixed there while the cards scroll, a
   box to write in and a Send button under it: Enter or Send sends what the
   box holds, Shift+Enter breaks the line. While the box is empty, Send is
   gray and Enter does nothing. Sending adds what you wrote to the thing's
@@ -232,9 +235,8 @@ DOES
   before it becomes 汉字) is shown underlined at the caret, its
   candidates beside it, and only what it commits is typed: Enter and the
   other keys are its own while it composes, so the Enter that confirms a
-  candidate sends nothing. Esc lets go of the node or arrow picked. While
-  a ✗ is written (below), its field takes the keys and the box is not
-  shown.
+  candidate sends nothing. Esc takes back a ✗ clicked (below), else lets
+  go of the node or arrow picked.
   A note is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references
   it: the node as written, the state, and the instance pointed at; the
@@ -257,28 +259,31 @@ DOES
   went, is read as on its whole state.
 
   Answer an assumption: click its orange "?" (or the node it is on). The
-  sidebar shows, in a card of its own, what was guessed, in large type,
-  what else it could be below it ("or else", what the assumption says
-  after its first ";"), and two buttons:
+  sidebar shows, in a card of its own above the node's conversation, what
+  was guessed, in large type, what else it could be below it ("or else",
+  what the assumption says after its first ";"), two buttons, and what
+  each means. Each answer is a message in the node's note, marked as
+  answering the assumption:
   - [✓ right, keep it]: the guess was right. It is written to notes.json
     only after 5 seconds, in which the sidebar counts down and [undo]
     takes it back with nothing written, so an agent waiting with
     `underdraw notes --wait` never acts on an answer taken back; closing
-    the window within them writes it at once. The note says so; the agent
-    takes the guess out of the description (a screen not drawn yet: draws
-    it), and answers it.
-  - [✗ wrong…]: opens a focused field in place of the buttons, for what
-    is right; Enter sends it as a note on the node, and it is not sent
-    empty. The agent changes the description and answers it, as any note.
-  The sidebar lists the notes that answer it already ("N3 answers it ✗
-  wrong · answered"). The window writes
+    the window within them writes it at once. The message says so; the
+    agent takes the guess out of the description (a screen not drawn yet:
+    draws it), and answers.
+  - [✗ wrong…]: puts the caret in the box at the sidebar's foot, which
+    asks "what is right?", in place of the buttons; Enter or Send sends
+    what it holds as the ✗, and an empty box is refused, as ✗ must say
+    what is right. Esc takes the ✗ back. The agent changes the description
+    and answers, as in any note.
+  The window writes
   notes.json, and only the person's acts; it never writes a description:
   the agent makes every change. Commit notes.json with the description.
 
   The inbox: with a description, one of its states, or a directory (the
   root's line too) picked, and no node or arrow, the sidebar lists
   what waits on you there, in a card "waits on you · <how many>", one box
-  an item: each assumption no note answers yet, marked with an orange "?"
+  an item: each assumption no message answers yet, marked with an orange "?"
   ("<node id as written> in <state>", what was guessed under it), then each
   note the agent has answered, marked with its blue id ("N2", what it is
   on, and "agent: <what it said last>" under it in green), for you to

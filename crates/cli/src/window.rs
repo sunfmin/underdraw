@@ -5314,7 +5314,11 @@ mod tests {
         assert!(!gallery.panel().iter().any(|line| line == "✓ right, keep it"), "one ✓ at a time");
         assert!(click_panel_line(&mut gallery, "undo"));
         assert!(!gallery.confirm(Instant::now() + UNDO * 2), "undone: nothing waits");
-        assert_eq!(notes::read(&dir).unwrap()[0].messages.len(), 3, "an undone ✓ leaves notes.json as it was");
+        assert_eq!(
+            notes::read(&dir).unwrap()[0].messages.len(),
+            3,
+            "an undone ✓ leaves notes.json as it was"
+        );
 
         assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
         assert!(!gallery.confirm(Instant::now() + UNDO - Duration::from_secs(1)), "it can still be undone");

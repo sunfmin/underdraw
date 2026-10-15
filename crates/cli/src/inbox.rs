@@ -90,7 +90,8 @@ mod tests {
     fn note(id: &str, written: &str, answered: bool, answers: bool) -> Note {
         let mut messages = vec![json!({ "by": "person", "says": "this" })];
         if answers {
-            messages[0]["answers"] = json!({ "assumed": "a guess; or not", "guess": "author", "answer": "wrong" });
+            messages[0]["answers"] =
+                json!({ "assumed": "a guess; or not", "guess": "author", "answer": "wrong" });
         }
         if answered {
             messages.push(json!({ "by": "agent", "says": "done" }));
