@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
 use crate::components::{Components, Declared, track_faults};
-use crate::conditions::{Conditions, UseSite};
+use crate::conditions::{Conditions, Term, UseSite};
 use crate::expand::{Frame, Instances, Met};
 use crate::field::{Base, Field};
 use crate::instance::build;
@@ -513,8 +513,7 @@ impl<'a> Walk<'a> {
                     // may read what it guards.
                     let mut enabled = known.clone();
                     if let Some(Value::String(used)) = object.get("disabled") {
-                        let UseSite { negated, name } = UseSite::parse(used);
-                        if negated {
+                        if let Some(name) = UseSite::parse(used).only_negated() {
                             enabled.extend(self.held(name, scope));
                         }
                     }
@@ -1183,14 +1182,29 @@ impl<'a> Walk<'a> {
         None
     }
 
-    /// A yes/no at `at`: `!`, then a condition's name or a Bool path. What it
-    /// guarantees when it holds: the paths not null, and the conditions true.
+    /// A yes/no at `at`: terms joined by `&&`, each `!`, then a condition's
+    /// name or a Bool path. What it guarantees when it holds: what each term
+    /// does, the paths not null and the conditions true.
     fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> Known {
-        let UseSite { negated, name } = UseSite::parse(used);
-        if !name.split('.').all(crate::field::is_identifier) {
-            self.findings.add(at, &format!("{used:?}: here goes !? and a condition's name or a Bool path; name anything more in conditions"));
+        let UseSite { terms } = UseSite::parse(used);
+        if !terms.iter().all(|term| term.name.split('.').all(crate::field::is_identifier)) {
+            self.findings.add(
+                at,
+                &format!(
+                    "{used:?}: here go conditions' names or Bool paths, each with an optional !, joined by &&; name ||, comparisons and anything more in conditions"
+                ),
+            );
             return Known::default();
         }
+        let mut known = Known::default();
+        for Term { negated, name } in terms {
+            known.extend(self.use_term(negated, name, scope, at));
+        }
+        known
+    }
+
+    /// One term of a use site at `at`: what it guarantees when it holds.
+    fn use_term(&mut self, negated: bool, name: &str, scope: &Scope, at: &str) -> Known {
         if self.conditions.is_on_type(name) {
             let problem = self.schema.misused(scope, name).unwrap_or_default();
             self.findings.add(at, &problem);

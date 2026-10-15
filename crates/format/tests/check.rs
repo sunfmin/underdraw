@@ -67,7 +67,28 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             r#""text": "清除日期", "if": "hasDates""#,
             r#""text": "清除日期", "if": "booking.nights > 0""#,
             "calendar-clear.if",
-            "name anything more in conditions",
+            "comparisons and anything more in conditions",
+        ),
+        (
+            "or-at-use-site",
+            r#""text": "清除日期", "if": "hasDates""#,
+            r#""text": "清除日期", "if": "hasDates || listing.isSaved""#,
+            "calendar-clear.if",
+            "name ||, comparisons and anything more in conditions",
+        ),
+        (
+            "comparison-in-a-chain",
+            r#""text": "清除日期", "if": "hasDates""#,
+            r#""text": "清除日期", "if": "hasDates && booking.nights > 0""#,
+            "calendar-clear.if",
+            "name ||, comparisons and anything more in conditions",
+        ),
+        (
+            "negated-guard-in-a-chain",
+            r#""component": "Link", "if": "hasDates", "font": "font.caption""#,
+            r#""component": "Link", "if": "booking.available && !hasDates", "font": "font.caption""#,
+            "bar-dates.text",
+            "may be null",
         ),
         (
             "cases-without-else",
@@ -238,6 +259,20 @@ fn each_planted_fault_is_found_where_it_was_planted() {
 }
 
 /// The draft with `own` among its own components, over any of the same name.
+#[test]
+fn a_use_site_takes_conditions_joined_by_and() {
+    // hasDates in the chain makes the dates it tests != null readable under it.
+    for chain in ["booking.available && hasDates", "!listing.isSaved && hasDates && booking.available"] {
+        let screen = planted(
+            chain,
+            r#""component": "Link", "if": "hasDates", "font": "font.caption""#,
+            &format!(r#""component": "Link", "if": "{chain}", "font": "font.caption""#),
+        );
+        let checked = check(&screen);
+        assert!(checked.ok, "{chain}: {:#?}", checked.findings);
+    }
+}
+
 fn with_own(own: Value) -> Value {
     let mut draft = draft();
     for (name, component) in own.as_object().unwrap() {
