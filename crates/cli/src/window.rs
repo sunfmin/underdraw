@@ -307,14 +307,18 @@ struct Pin {
     region: Option<Rect>,
 }
 
-/// Every description's notes on the lines of the tree, by its directory;
-/// one whose notes.json cannot be read has none (`check` says why).
+/// Every description's notes on the lines of the tree, by its directory,
+/// each on what is gone joined its state's note first; one whose
+/// notes.json cannot be read has none (`check` says why).
 fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
     lines
         .iter()
         .filter(|line| line.state.is_none())
         .filter_map(|line| line.row.description())
-        .map(|dir| (dir.to_path_buf(), notes::read(dir).unwrap_or_default()))
+        .map(|dir| {
+            let _ = notes::settle(dir);
+            (dir.to_path_buf(), notes::read(dir).unwrap_or_default())
+        })
         .collect()
 }
 
@@ -5625,7 +5629,7 @@ mod tests {
     }
 
     #[test]
-    fn a_note_whose_node_is_renamed_is_never_closed() {
+    fn a_note_whose_node_is_renamed_joins_its_states_note_and_is_shown_there() {
         let root = root_of("notes-gone", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
@@ -5645,9 +5649,16 @@ mod tests {
             std::fs::read_to_string(&file).unwrap().replace("\"id\": \"export\"", "\"id\": \"download\"");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
-        assert_eq!(std::fs::read_to_string(dir.join(notes::NOTES)).unwrap(), before, "nothing closes it");
+        assert_ne!(std::fs::read_to_string(dir.join(notes::NOTES)).unwrap(), before, "it joined");
         let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!((note.stands(), note.messages.len()), (Stands::Answered, 2));
+        assert_eq!(note.on, On::State { state: State::Fixture("default".into()) });
+        assert_eq!((note.stands(), note.messages.len()), (Stands::Answered, 3), "never closed: {note:?}");
+        assert_eq!(note.messages[0].says, "on `nav-export`, now gone");
+        gallery.cursor = on_pin(&gallery, "N1");
+        gallery.press();
+        let panel = gallery.panel();
+        assert!(panel[0].starts_with("N1 · ") && panel[0].contains("default"), "{panel:?}");
+        assert!(panel.iter().any(|line| line == "on `nav-export`, now gone"), "{panel:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -6370,7 +6381,16 @@ mod tests {
         let renamed = std::fs::read_to_string(&file).unwrap().replace(r#""id": "cancel""#, r#""id": "drop""#);
         std::fs::write(&file, renamed).unwrap();
         gallery.reload();
-        assert_eq!(notes::read(&dir).unwrap(), [note], "its node renamed, the note is never closed");
+        let joined = notes::read(&dir).unwrap();
+        assert_eq!(joined.len(), 1, "its node renamed, the note is never closed: {joined:?}");
+        assert_eq!(joined[0].id, note.id, "it keeps its id");
+        assert_eq!(joined[0].on, On::State { state: State::Fixture("pending".into()) }, "the state's note now");
+        let said: Vec<(notes::By, &str)> =
+            joined[0].messages.iter().map(|said| (said.by, said.says.as_str())).collect();
+        assert_eq!(said, [(notes::By::Underdraw, "on `order-row-cancel`, now gone"), (notes::By::Person, "say which order")]);
+        assert_eq!(gallery.notes[&dir], joined, "the gallery shows it joined");
+        gallery.reload();
+        assert_eq!(notes::read(&dir).unwrap(), joined, "read again, nothing moves twice");
         std::fs::remove_dir_all(root).unwrap();
     }
 

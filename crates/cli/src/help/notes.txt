@@ -57,8 +57,19 @@ DOES
   It is added to the conversation as the agent's message, and the note is
   answered: its pin turns green in the window. Answering again with the
   same text as the agent's last message changes nothing more; with other
-  text, it is one more message. A note whose node or arrow is gone from
-  the description stays as it was.
+  text, it is one more message.
+
+  A note whose node, region, state or arrow is gone from the description
+  (removed or renamed) joins its state's note the next time notes are
+  read, so nothing said is lost: its messages go into the note on the
+  whole state it was in (a transition's: the state it is from), after a
+  line by "underdraw" saying where they were ("on `price`, now gone"),
+  and before what the person said there since the agent last spoke. A
+  state with no note gets the gone note itself, with the same id; when
+  the state is gone too, or for a navigate, the description's first
+  fixture's note takes them. Nothing moves while the description has
+  findings, and reading again moves nothing twice. The joined note waits
+  on the agent while the person spoke last, like any other.
 
     underdraw notes <dir> --answer N3 --reply "Made the price wrap.
     Should the date wrap too, or be cut?"
@@ -140,7 +151,10 @@ ANSWERS
                   "messages":    [{"by": "person" or "agent", "says"}, …],
                                  the conversation, in the order said, the
                                  person's first; "says" as many lines as
-                                 were written
+                                 were written; "by": "underdraw" is the
+                                 line saying where the messages after it
+                                 were, in a note now gone, and is neither
+                                 person's nor agent's
                   "proposes":    null, or, where acting on the node found
                                  nothing declared and the person chose
                                  where it should go: {"on": "<node id as

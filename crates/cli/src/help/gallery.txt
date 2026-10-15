@@ -241,6 +241,9 @@ DOES
   in its title (waiting on the agent while you spoke last, answered once
   the agent did), then what you wrote, in blue bubbles on the right, and
   what the agent said, in bubbles outlined green on the left, in order.
+  A note whose node or arrow is gone (removed or renamed) joins the note
+  on its whole state, after a gray line saying where it was ("on `price`,
+  now gone"): carry on there.
 
   Answer an assumption: click its orange "?" (or the node it is on). The
   sidebar shows, in a card of its own, what was guessed, in large type,
