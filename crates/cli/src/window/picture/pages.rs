@@ -173,8 +173,11 @@ impl Pages {
                     Draw::Tag { rect, text, ink: Ink::Label } if *text == label.to_string() => Some(*rect),
                     _ => None,
                 });
-                let mut covered: Vec<Area> =
-                    label.into_iter().chain(node.guess_tag).map(|r| Self::tag_spot(r, at, zoom)).collect();
+                let mut covered: Vec<Area> = label
+                    .map(|r| Self::tag_spot(r, Ink::Label, at, zoom))
+                    .into_iter()
+                    .chain(node.guess_tag.map(|r| Self::tag_spot(r, Ink::Assumed, at, zoom)))
+                    .collect();
                 covered.sort_by(|a, b| a.x0.total_cmp(&b.x0));
                 let (right, top) = (x + w - 2.0, y + 2.0);
                 let mut badge =
@@ -197,13 +200,20 @@ impl Pages {
         if seen.marks || seen.lit { self.leading(pane) } else { Vec::new() }
     }
 
-    /// A tag at `r`, in the page at `at` drawn at `zoom`, in window points:
-    /// where the page puts it, scaled with it, but at its own size.
-    fn tag_spot(r: Rect, (left, top): (f64, f64), zoom: f64) -> Area {
-        let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
-        let (x, y) = (left + middle.0 * zoom, top + middle.1 * zoom);
+    /// A tag at `r` in `ink`, in the page at `at` drawn at `zoom`, in
+    /// window points: where the page puts it, scaled with it, but at its own
+    /// size. A label is held by its top-right corner, which the page puts by
+    /// its node's top-left, so that it stays off the node at any scale;
+    /// another tag by its middle.
+    fn tag_spot(r: Rect, ink: Ink, (left, top): (f64, f64), zoom: f64) -> Area {
         let (w, h) = (f64::from(r.width), f64::from(r.height));
-        Area::new(x - w / 2.0, y - h / 2.0, x + w / 2.0, y + h / 2.0)
+        let (x, y) = (f64::from(r.x), f64::from(r.y));
+        let (held, offset) = match ink {
+            Ink::Label => ((x + w, y), (-w, 0.0)),
+            _ => ((x + w / 2.0, y + h / 2.0), (-w / 2.0, -h / 2.0)),
+        };
+        let (x, y) = (left + held.0 * zoom + offset.0, top + held.1 * zoom + offset.1);
+        Area::new(x, y, x + w, y + h)
     }
 
     /// Where the buttons floating beside node `id` are, each as wide as
@@ -274,7 +284,7 @@ impl Pages {
             for tag in &page.tags {
                 labels.push(match tag {
                     Draw::Tag { rect: r, text, ink } => {
-                        let at = Self::tag_spot(*r, (left, top), zoom);
+                        let at = Self::tag_spot(*r, *ink, (left, top), zoom);
                         Draw::Tag {
                             rect: rect(at.x0, at.y0, at.width(), at.height()),
                             text: text.clone(),

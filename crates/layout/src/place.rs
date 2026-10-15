@@ -609,10 +609,15 @@ fn along(edge: Edge, start: f32, length: f32, size: f32, inset: f32) -> f32 {
     }
 }
 
-/// Where the number of a node laid out at `rect` goes: over its top-left
-/// corner, kept on `page`.
+/// Where the number of a node laid out at `rect` goes: left of it, level
+/// with its top, so that whatever the node shows at its top-left stays
+/// whole and the number sits by the node it names; where `page` has no
+/// room there, off its top-left corner, the circle touching the corner from
+/// outside; kept on `page`.
 fn number_tag(rect: Rect, page: Rect) -> Rect {
-    tag(rect.x - 6.0, rect.y - 6.0, page)
+    let (size, gap, margin) = (18.0, 1.0, 1.0);
+    let left = rect.x - gap - size;
+    if left >= page.x + margin { tag(left, rect.y, page) } else { tag(rect.x - 16.0, rect.y - 16.0, page) }
 }
 
 /// A tag's circle at `x`, `y`, moved in as far as it takes to be wholly on
