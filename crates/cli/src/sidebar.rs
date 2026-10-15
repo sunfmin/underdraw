@@ -1,4 +1,4 @@
-//! The galleself.laid.field.map(|self.laid.caret.map(|r| shifted(r, self.left, 0.0))| shifted(r, self.left, 0.0))y's sidebar: what the person reads about what is picked, and
+//! The gallery's sidebar: what the person reads about what is picked, and
 //! what they can do with it, on the right of the window. It is made of
 //! cards, each a title over blocks of text and buttons, outlined in its
 //! title's ink: who it is from (the person's cobalt, the agent's green, the
@@ -284,10 +284,16 @@ impl<'a, A> Placed<'a, A> {
     }
 
     /// What to draw: the cards, cut at [`Placed::foot`], and the box at
-    /// the foot, over them.
-    pub fn draws(&self) -> (Vec<Draw>, Vec<Draw>) {
+    /// the foot, over them, its caret only where `caret` shows it: the
+    /// caret blinks without the sidebar being laid out again.
+    pub fn draws(&self, caret: bool) -> (Vec<Draw>, Vec<Draw>) {
         let cards = self.laid.draws.iter().map(|draw| moved(draw, self.left, self.top)).collect();
-        (cards, self.laid.foot_draws.iter().map(|draw| moved(draw, self.left, 0.0)).collect())
+        let mut foot: Vec<Draw> =
+            self.laid.foot_draws.iter().map(|draw| moved(draw, self.left, 0.0)).collect();
+        if let Some(at) = self.caret().filter(|_| caret) {
+            foot.push(Draw::Line { from: [at.x, at.y], to: [at.x, at.y + at.height], ink: Ink::Note });
+        }
+        (cards, foot)
     }
 
     /// Each button: where it is, what it says, and what it does.
@@ -648,8 +654,8 @@ fn bubble(
 }
 
 /// The field being written in, a card's text wide, from `(x, y)`,
-/// outlined as focused: its text, what is composed in it underlined, the
-/// caret, and what is selected shaded; `empty` in gray while it holds
+/// outlined as focused: its text, what is composed in it underlined, and
+/// what is selected shaded, the caret left to [`Placed::draws`]; `empty` in gray while it holds
 /// nothing. How tall, where its caret is, and where its text is.
 fn field(
     draws: &mut Vec<Draw>,
@@ -699,11 +705,6 @@ fn field(
         .spans(&shown.text, BODY, inner as f32, shown.caret..shown.caret)
         .first()
         .map_or(rect(left, top, 1.0, f64::from(BODY.line_height)), |span| moved(*span));
-    draws.push(Draw::Line {
-        from: [caret.x, caret.y],
-        to: [caret.x, caret.y + caret.height],
-        ink: Ink::Note,
-    });
     (box_tall, caret, rect(left, top, inner, tall))
 }
 
