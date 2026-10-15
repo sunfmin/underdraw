@@ -1,0 +1,102 @@
+underdraw — describe a screen once, as JSON, then check it, show it to a
+person, and hand it off to web, iOS and Android.
+
+A screen description is a directory holding screen.json (the screen: its
+view model, fixtures, conditions, node tree and its own components), usually
+beside platforms/*.json. How to write each file, every component and every
+rule: `underdraw check --help`, FORMAT.
+
+A screen is in a project: one app's screens under one directory, sharing
+one design language and one domain. Every command finds it the same way:
+  project root  the nearest directory at or above the screen holding
+                domain.json; with none, the screen's own directory
+  domain        domain.json at the project root: the types, conditions and
+                operations every screen of the project uses by name, read
+                by every command as if each screen declared them; a screen
+                may add its own, never one of a name the domain declares
+                (`underdraw check --help`, DOMAIN.JSON)
+  components    components/<Name>.json at the project root: each a
+                component every screen of the project uses by its name, as
+                if it declared it in its own "components"; a screen may add
+                its own, never one of a name the project shares
+                (`underdraw check --help`, COMPONENTS)
+  tokens        tokens.json in the nearest directory at or above the
+                screen that has one, so a screen's own tokens.json wins
+                over one above it, and screens with none beside them share
+                the one above; with none anywhere, no tokens
+  `underdraw render` answers which root and tokens.json it took.
+
+NEEDS
+  System fonts to check a description; to render one or open the gallery,
+  also a GPU (Metal on macOS, Vulkan or DirectX 12 elsewhere): `underdraw
+  doctor` says. The gallery also needs a display.
+
+START HERE
+  underdraw check <dir>      read the description and name every fault
+  underdraw check <root>     every description under <root>, and where each
+                             navigate goes: one to a screen none of them
+                             declares is an assumption, a screen not drawn
+                             yet, not a fault; and every journey under it
+                             (<dir>/journeys/<name>.json) walked
+  underdraw gallery <root>   then show it to the person: a window over every
+                             description under <root>, drawn as it now stands
+  underdraw notes <root>     what the person said there: each open note, pinned
+                             to a node, a state or an arrow; act on it, then answer it with
+                             `underdraw notes <dir> --answer N1 --reply "…"`;
+                             `underdraw notes <root> --wait` in the background
+                             answers when the person writes the next one
+  underdraw handoff <dir> --platform ios
+                             once agreed: what to build, and what to test it against
+  underdraw compare <dir> --platform ios --capture c.json
+                             once built: how the running UI differs from it
+  underdraw cli <dir>        the same operations as a command-line interface,
+                             with the golden output of each fixture
+
+WHAT A COMMAND ANSWERS
+  One JSON object on stdout. The exit code says which answer it is:
+    0  the answer, and nothing is wrong
+    1  the answer names faults ("ok": false); it is printed in full
+    2  the command could not do its work: {"error": "…"}, saying what fixes it
+  So a gate can run `underdraw check <dir>` and stop on any non-zero exit.
+  Exceptions: --help and --version print text.
+
+COMMANDS
+  For the agent writing a description:
+    underdraw check <dir>    every fault, and which fixtures each condition holds in;
+                             given a directory of descriptions, every one of them,
+                             and each navigate resolved to the screen it names
+    underdraw gallery <root> a window for the person: every description under
+                             <root>, each drawn at a phone and a desktop width,
+                             where they write notes on its nodes, states and arrows,
+                             and play each journey under it step by step
+    underdraw notes <root>   the person's open notes, each with where it is pinned;
+                             with --answer <id> --reply "…", one answered;
+                             with --wait, once one is open
+    underdraw render <dir>   a wireframe PNG of one state, and where each node went,
+                             for the agent to read the node boxes
+  For the agent building the screen on a platform:
+    underdraw schema <dir>   the view model as a JSON Schema, to validate API data against
+    underdraw handoff <dir> --platform <name>
+                             model code, tokens, every node as the platform builds it,
+                             and what each state must show
+    underdraw compare <dir> --platform <name> --capture <file>
+                             how the running UI, captured in one state, differs
+  For the agent building a CLI from the same operations:
+    underdraw cli <dir>      one command per operation: arguments, stdout schema,
+                             exit codes, a help draft, and golden outputs
+    underdraw compare <dir> --capture <file> --fixture <name>
+                             how the running CLI's stdout and exit code, for one
+                             command in one fixture, differ from the golden output
+  For whoever installs underdraw:
+    underdraw doctor         what underdraw depends on, and the fix of each finding
+
+RULES TO KNOW FIRST
+  - Strings only interpolate: {path} or {path|format}. Every decision is a
+    named condition; a choice between values is "cases", ending in "else".
+  - No truthiness: a date or a number is not a condition; write != null, > 0.
+  - Every condition must be true in one fixture and false in another, so every
+    state can be shown. `check` reports one that is not.
+  - A condition shared by the domain is declared on a type
+    ("Order.cancellable") and used through a value of it
+    ("if": "item.cancellable"); one over a screen's data stays the screen's.
+  - Loading and error are "phases", trees that read no data.
