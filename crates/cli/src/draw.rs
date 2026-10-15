@@ -1,0 +1,160 @@
+//! One state of a screen description drawn: read, checked, laid out at a
+//! width and built into a scene with its nodes, apart from what is done with
+//! the pixels: `render` writes them to a PNG.
+
+use std::path::{Path, PathBuf};
+
+use anyhow::bail;
+use serde_json::Value;
+use underdraw_format::{Breakpoint, State};
+use underdraw_layout::Page;
+use vello::Scene;
+
+use crate::{checked, paint, pick, read, read_kinds, read_tokens, text};
+
+/// The state to draw, and at what size.
+pub struct Wanted {
+    /// The fixture whose data to show; the first fixture when neither this
+    /// nor `phase` is given.
+    pub fixture: Option<String>,
+    /// A phase to show instead of data.
+    pub phase: Option<String>,
+    /// The page width in points.
+    pub width: u32,
+    /// Pixels per point, at most.
+    pub scale: u32,
+}
+
+/// The state that was drawn.
+pub enum Shown {
+    Fixture(String),
+    Phase(String),
+}
+
+impl Shown {
+    /// The fixture's or phase's name.
+    pub fn name(&self) -> &str {
+        match self {
+            Shown::Fixture(name) | Shown::Phase(name) => name,
+        }
+    }
+}
+
+/// One state laid out, the scene not built yet: everything that can be
+/// wrong with the description is found by here, before a GPU is needed.
+pub struct Laid {
+    /// The directory the description is in.
+    pub dir: PathBuf,
+    pub shown: Shown,
+    pub breakpoint: Breakpoint,
+    /// The page, which holds where each node went.
+    pub page: Page,
+    typesetter: text::Typesetter,
+}
+
+/// One state drawn: its page, and the scene of it at `scale`.
+pub struct Drawing {
+    pub dir: PathBuf,
+    pub shown: Shown,
+    pub breakpoint: Breakpoint,
+    /// The page, which holds where each node went.
+    pub page: Page,
+    pub scene: Scene,
+    /// Pixels per point: the one asked for, or less when the page would be
+    /// taller than the GPU draws.
+    pub scale: f64,
+    /// The scene's width and height in pixels.
+    pub pixels: [u32; 2],
+}
+
+/// The state `wanted` names of the description at `path` (a directory or its
+/// screen.json), laid out; refused when the description has findings, since
+/// a picture of it would mislead.
+pub fn lay_out(path: &Path, wanted: &Wanted) -> anyhow::Result<Laid> {
+    let (screen, dir) = read(path)?;
+    let tokens = read_tokens(&dir)?;
+    let kinds = read_kinds(&dir)?;
+    let checked = checked(&screen, &dir, kinds.as_ref())?;
+    if !checked.ok {
+        bail!(
+            "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        );
+    }
+    let (state, name) = pick(&checked, &wanted.fixture, &wanted.phase)?;
+    let shown = match state {
+        State::Fixture(_) => Shown::Fixture(name),
+        State::Phase(_) => Shown::Phase(name),
+    };
+    let breakpoint = Breakpoint::for_width(&tokens, wanted.width);
+    let root = underdraw_format::instantiate(&screen, state, breakpoint).map_err(anyhow::Error::msg)?;
+    let locale = screen.get("locale").and_then(Value::as_str);
+    let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
+    let page = underdraw_layout::layout(&root, &tokens, kinds.as_ref(), wanted.width as f32, &mut typesetter)
+        .map_err(anyhow::Error::msg)?;
+    Ok(Laid { dir, shown, breakpoint, page, typesetter })
+}
+
+impl Laid {
+    /// The scene of the page at `scale` pixels per point, or less when that
+    /// would make a side longer than `max_side` pixels: a long page is drawn
+    /// at a lower scale rather than not at all.
+    pub fn draw(mut self, scale: u32, max_side: u32) -> Drawing {
+        let page = &self.page;
+        let tallest = f64::from(max_side) / f64::from(page.height.max(page.width).max(1.0));
+        let scale = f64::from(scale).min(tallest);
+        let pixels_wide = (f64::from(page.width) * scale).ceil() as u32;
+        let pixels_high = (f64::from(page.height) * scale).ceil() as u32;
+        let scene = paint::scene(page, &mut self.typesetter, scale);
+        Drawing {
+            dir: self.dir,
+            shown: self.shown,
+            breakpoint: self.breakpoint,
+            page: self.page,
+            scene,
+            scale,
+            pixels: [pixels_wide, pixels_high],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
+
+    fn wanted(width: u32) -> Wanted {
+        Wanted { fixture: None, phase: None, width, scale: 2 }
+    }
+
+    #[test]
+    fn draws_a_state_without_a_gpu_or_a_file() {
+        let drawing = lay_out(Path::new(DRAFT), &wanted(390)).unwrap().draw(2, 16384);
+        assert_eq!(drawing.shown.name(), "default");
+        assert!(matches!(drawing.shown, Shown::Fixture(_)));
+        assert_eq!(drawing.breakpoint, Breakpoint::Compact);
+        assert_eq!(drawing.page.width, 390.0);
+        assert_eq!(drawing.scale, 2.0);
+        assert_eq!(drawing.pixels, [780, (drawing.page.height * 2.0).ceil() as u32]);
+        assert!(!drawing.scene.encoding().is_empty(), "the page is painted");
+        assert!(drawing.page.nodes.iter().any(|n| n.id == "reserve-button"), "the nodes are placed");
+    }
+
+    #[test]
+    fn a_page_taller_than_the_gpu_draws_is_drawn_smaller() {
+        let laid = lay_out(Path::new(DRAFT), &wanted(390)).unwrap();
+        let side = laid.page.height.max(laid.page.width);
+        let drawing = laid.draw(2, side as u32);
+        assert_eq!(drawing.scale, 1.0, "one pixel per point fits");
+        assert!(drawing.pixels[0].max(drawing.pixels[1]) <= side.ceil() as u32);
+    }
+
+    #[test]
+    fn a_phase_is_shown_by_name() {
+        let wanted = Wanted { phase: Some("loading".into()), ..wanted(390) };
+        let laid = lay_out(Path::new(DRAFT), &wanted).unwrap();
+        assert!(matches!(laid.shown, Shown::Phase(ref name) if name == "loading"));
+    }
+}
