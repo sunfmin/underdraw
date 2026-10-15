@@ -41,7 +41,6 @@ pub fn check_root(root: &Path) -> anyhow::Result<Value> {
         }
     });
     let screens = screens(&dirs);
-    let drawn: BTreeSet<String> = screens.iter().flatten().filter_map(declares).collect();
 
     let mut ok = true;
     let mut descriptions = Vec::new();
@@ -57,27 +56,80 @@ pub fn check_root(root: &Path) -> anyhow::Result<Value> {
             "findings": checked.findings,
         }));
     }
+    let links: Vec<Value> = between(&dirs, &screens)
+        .into_iter()
+        .map(|link| {
+            json!({
+                "description": within(&root, &link.description),
+                "from": link.from,
+                "node": link.node,
+                "to": link.to,
+                "resolved": link.target.is_some(),
+            })
+        })
+        .collect();
+    Ok(json!({ "root": root, "ok": ok, "descriptions": descriptions, "links": links }))
+}
+
+/// One `navigate` from a description under a root to the screen it names.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Link {
+    /// The directory of the description the navigate is in.
+    pub description: PathBuf,
+    /// The screen that description declares.
+    pub from: String,
+    /// The node the navigate is on, by its id as written.
+    pub node: String,
+    /// The screen it names.
+    pub to: String,
+    /// The directory of the description that declares `to`, the first in
+    /// the tree's order; none for a screen not drawn yet.
+    pub target: Option<PathBuf>,
+}
+
+/// Every navigate of the descriptions under `root`, resolved: what `check
+/// <root>` reports as its "links", description by description in the
+/// tree's order.
+pub fn links(root: &Path) -> Vec<Link> {
+    let dirs = description_dirs(root);
+    between(&dirs, &screens(&dirs))
+}
+
+/// The navigates of the descriptions in `dirs`, each read as `screens`
+/// holds it, resolved among them.
+fn between(dirs: &[PathBuf], screens: &[Option<Value>]) -> Vec<Link> {
+    let mut declared: Vec<(String, &PathBuf)> = Vec::new();
+    for (dir, screen) in dirs.iter().zip(screens) {
+        if let Some(name) = screen.as_ref().and_then(declares) {
+            declared.push((name, dir));
+        }
+    }
     let mut links = Vec::new();
-    for (dir, screen) in dirs.iter().zip(&screens) {
+    for (dir, screen) in dirs.iter().zip(screens) {
         let Some(screen) = screen else { continue };
         let from = declares(screen).unwrap_or_default();
         for navigate in underdraw_format::navigates(screen) {
-            links.push(json!({
-                "description": within(&root, dir),
-                "from": from,
-                "node": navigate.node,
-                "to": navigate.to,
-                "resolved": drawn.contains(&navigate.to),
-            }));
+            let target =
+                declared.iter().find(|(name, _)| *name == navigate.to).map(|(_, dir)| (*dir).clone());
+            links.push(Link {
+                description: dir.clone(),
+                from: from.clone(),
+                node: navigate.node,
+                to: navigate.to,
+                target,
+            });
         }
     }
-    Ok(json!({ "root": root, "ok": ok, "descriptions": descriptions, "links": links }))
+    links
 }
 
 /// The directories of the descriptions under `root`, as the gallery lists
 /// them.
 fn description_dirs(root: &Path) -> Vec<PathBuf> {
-    gallery::descriptions(root).into_iter().filter_map(|row| row.description).collect()
+    gallery::descriptions(root)
+        .into_iter()
+        .filter_map(|row| row.description().map(Path::to_path_buf))
+        .collect()
 }
 
 /// Each description in `dirs` read, or `None` where it cannot be.

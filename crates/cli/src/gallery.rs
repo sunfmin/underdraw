@@ -40,11 +40,20 @@ pub struct Row {
     pub depth: usize,
     /// The directory's own name.
     pub name: String,
-    /// The description's directory, when this directory holds one.
-    pub description: Option<PathBuf>,
+    /// The directory.
+    pub dir: PathBuf,
+    /// Whether the directory holds a description.
+    pub described: bool,
     /// What `check` finds wrong with the description: none when it can be
     /// drawn.
     pub faults: Vec<Finding>,
+}
+
+impl Row {
+    /// The description's directory, when this directory holds one.
+    pub fn description(&self) -> Option<&Path> {
+        self.described.then_some(self.dir.as_path())
+    }
 }
 
 /// What `check` finds wrong with the description in `dir`; where it cannot
@@ -74,8 +83,8 @@ pub fn checked(dir: &Path) -> Checked {
 pub fn tree(root: &Path) -> Vec<Row> {
     let mut rows = descriptions(root);
     std::thread::scope(|scope| {
-        for Row { description, faults: found, .. } in &mut rows {
-            if let Some(dir) = description {
+        for Row { dir, described, faults: found, .. } in &mut rows {
+            if *described {
                 scope.spawn(move || *found = faults(dir));
             }
         }
@@ -89,7 +98,7 @@ pub fn descriptions(root: &Path) -> Vec<Row> {
     let mut rows = Vec::new();
     if root.join(SCREEN).is_file() {
         let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
-        rows.push(Row { depth: 0, name, description: Some(root.to_path_buf()), faults: Vec::new() });
+        rows.push(Row { depth: 0, name, dir: root.to_path_buf(), described: true, faults: Vec::new() });
         walk(root, 1, &mut rows);
     } else {
         walk(root, 0, &mut rows);
@@ -110,11 +119,10 @@ pub fn within(root: &Path, dir: &Path) -> String {
 fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
     for (name, path) in children(dir) {
         let at = rows.len();
-        let description = path.join(SCREEN).is_file().then(|| path.clone());
-        let holds_one = description.is_some();
-        rows.push(Row { depth, name, description, faults: Vec::new() });
+        let described = path.join(SCREEN).is_file();
+        rows.push(Row { depth, name, dir: path.clone(), described, faults: Vec::new() });
         walk(&path, depth + 1, rows);
-        if !holds_one && rows.len() == at + 1 {
+        if !described && rows.len() == at + 1 {
             rows.pop();
         }
     }
@@ -196,11 +204,11 @@ pub fn gallery(root: &Path) -> anyhow::Result<Value> {
     let root = root.canonicalize().with_context(|| format!("cannot read {}", root.display()))?;
     let (mut descriptions, mut faulty) = (Vec::new(), Vec::new());
     for row in tree(&root) {
-        let Some(dir) = row.description else { continue };
+        let Some(dir) = row.description() else { continue };
         if !row.faults.is_empty() {
-            faulty.push(within(&root, &dir));
+            faulty.push(within(&root, dir));
         }
-        descriptions.push(within(&root, &dir));
+        descriptions.push(within(&root, dir));
     }
     if descriptions.is_empty() {
         bail!(
@@ -367,7 +375,14 @@ mod tests {
     fn rows(root: &Path) -> Vec<(usize, String, Option<PathBuf>, bool)> {
         tree(root)
             .into_iter()
-            .map(|row| (row.depth, row.name, row.description, !row.faults.is_empty()))
+            .map(|row| {
+                (
+                    row.depth,
+                    row.name.clone(),
+                    row.description().map(Path::to_path_buf),
+                    !row.faults.is_empty(),
+                )
+            })
             .collect()
     }
 
