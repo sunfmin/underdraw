@@ -1,0 +1,1278 @@
+{
+  "$comment": "A state picked in the tree: where the person spends their time. The two pictures in the middle, and the sidebar where they inspect a node, answer what was assumed and talk to the agent.",
+  "screen": "State",
+  "title": "A state",
+  "tokens": "tokens.json",
+  "data": {
+    "bar": {
+      "type": "Bar",
+      "view": true
+    },
+    "lines": "TreeRow[]",
+    "shown": "Shown",
+    "picked": {
+      "type": "Picked?",
+      "view": true,
+      "doc": "The node clicked in a picture"
+    },
+    "focus": {
+      "type": "string?",
+      "view": true,
+      "doc": "What the person last clicked to pick: a node's id as written, or an inbox item"
+    },
+    "inbox": "Inbox",
+    "note": {
+      "type": "Note?",
+      "doc": "The note on what is picked: the node, or else the whole state"
+    },
+    "faults": "Fault[]",
+    "act": {
+      "type": "Act?",
+      "view": true,
+      "doc": "What clicking a node in Play came to, when it went nowhere"
+    },
+    "draft": {
+      "type": "Draft",
+      "view": true
+    }
+  },
+  "types": {
+    "Shown": {
+      "description": "string 1..",
+      "state": "string 1..",
+      "pin": {
+        "type": "string = \"\"",
+        "doc": "The id of the note on the whole state, drawn at its caption: N3"
+      },
+      "faults": {
+        "type": "int 0..",
+        "derived": {
+          "app": "faults' length"
+        }
+      }
+    },
+    "Picked": {
+      "id": {
+        "type": "string 1..",
+        "doc": "As written: order-{index}-cancel"
+      },
+      "component": "string 1..",
+      "label": "int?",
+      "calls": {
+        "type": "string = \"\"",
+        "doc": "The operation acting on it calls"
+      },
+      "goes": {
+        "type": "Go[]",
+        "doc": "Where acting on it goes from the state shown"
+      },
+      "goCount": {
+        "type": "int 0..",
+        "derived": {
+          "app": "goes' length"
+        }
+      },
+      "assumption": "Assumption?",
+      "details": {
+        "type": "bool = false",
+        "doc": "▸ details unfolded"
+      }
+    },
+    "Go": {
+      "text": {
+        "type": "string 1..",
+        "doc": "→ cancel-dialog, → open · ok, ↗ Go to OrderDetail, ← Back"
+      },
+      "drawn": {
+        "type": "bool = true",
+        "doc": "false: a navigate to a screen not drawn yet"
+      }
+    },
+    "Assumption": {
+      "guess": "string 1..",
+      "orElse": {
+        "type": "string = \"\"",
+        "doc": "What it says after its first ;"
+      },
+      "answer": "AssumptionAnswer?",
+      "keepIn": {
+        "type": "int 0..5 = 5",
+        "doc": "Seconds before ✓ is written, while it can be undone"
+      }
+    },
+    "AssumptionAnswer": "enum(keeping, wrong, sent)",
+    "Inbox": {
+      "items": "InboxItem[]",
+      "count": {
+        "type": "int 0..",
+        "derived": {
+          "app": "items' length"
+        }
+      },
+      "withAgent": {
+        "type": "int 0..",
+        "doc": "Notes the person spoke last in, folded"
+      }
+    },
+    "InboxItem": {
+      "kind": "InboxKind",
+      "title": {
+        "type": "string 1..",
+        "doc": "price in default; N2 · on cancel"
+      },
+      "detail": "string 1.."
+    },
+    "InboxKind": "enum(assumption, answer)",
+    "Act": {
+      "node": "string 1..",
+      "state": "string 1..",
+      "choices": {
+        "type": "Choice[] 1..",
+        "doc": "The description's states, then navigate to each screen drawn"
+      }
+    },
+    "Draft": {
+      "text": "string ..2000 = \"\""
+    },
+    "Choice": {
+      "text": "string 1.."
+    }
+  },
+  "conditions": {
+    "hasPicked": {
+      "when": "picked != null",
+      "label": "A node picked"
+    },
+    "nothingPicked": {
+      "when": "picked == null",
+      "label": "No node picked"
+    },
+    "calls": {
+      "when": "picked != null && picked.calls != \"\"",
+      "label": "The node calls an operation"
+    },
+    "goes": {
+      "when": "picked != null && picked.goCount > 0",
+      "label": "Acting on it goes somewhere"
+    },
+    "assumes": {
+      "when": "picked != null && picked.assumption != null",
+      "label": "The node is assumed"
+    },
+    "unanswered": {
+      "when": "assumes && picked.assumption.answer == null",
+      "label": "Not answered yet"
+    },
+    "keeping": {
+      "when": "assumes && picked.assumption.answer == \"keeping\"",
+      "label": "✓ counting down"
+    },
+    "wrong": {
+      "when": "assumes && picked.assumption.answer == \"wrong\"",
+      "label": "✗ asking what is right"
+    },
+    "drawn": {
+      "when": "shown.faults == 0",
+      "label": "The description can be drawn"
+    },
+    "faulty": {
+      "when": "shown.faults > 0",
+      "label": "The description has faults"
+    },
+    "pinned": {
+      "when": "shown.pin != \"\"",
+      "label": "The state has a note"
+    },
+    "hasInbox": {
+      "when": "inbox.count > 0",
+      "label": "Something waits on the person"
+    },
+    "inboxShown": {
+      "when": "hasInbox && (nothingPicked || bar.inboxOpen)",
+      "label": "The inbox in the sidebar"
+    },
+    "folded": {
+      "when": "inbox.withAgent > 0",
+      "label": "Notes waiting on the agent"
+    },
+    "stateCard": {
+      "when": "nothingPicked && drawn",
+      "label": "The whole state's card"
+    },
+    "talked": {
+      "when": "note != null",
+      "label": "Something said"
+    },
+    "silent": {
+      "when": "note == null",
+      "label": "Nothing said yet"
+    },
+    "taken": {
+      "when": "note != null && note.taken",
+      "label": "The agent is changing it"
+    },
+    "queued": {
+      "when": "note != null && note.queued",
+      "label": "No agent has it yet"
+    },
+    "unheard": {
+      "when": "queued && !bar.listening",
+      "label": "No agent is listening"
+    },
+    "acted": {
+      "when": "act != null",
+      "label": "An act went nowhere"
+    },
+    "hasDraft": {
+      "when": "draft.text != \"\"",
+      "label": "Something typed"
+    },
+    "sidebarShown": {
+      "when": "bar.sidebarShown",
+      "label": "The sidebar shown"
+    },
+    "InboxItem.asks": {
+      "when": "kind == \"assumption\"",
+      "label": "An assumption to answer"
+    },
+    "Note.waiting": {
+      "when": "stands == \"waiting\"",
+      "label": "Waits on the agent"
+    },
+    "Note.taken": {
+      "when": "waiting && handed",
+      "label": "The agent is changing it"
+    },
+    "Note.queued": {
+      "when": "waiting && !handed",
+      "label": "No agent has taken it yet"
+    },
+    "sent": {
+      "when": "assumes && picked.assumption.answer == \"sent\"",
+      "label": "✗ sent, waiting on the agent"
+    }
+  },
+  "operations": {
+    "sendMessage": {
+      "command": "Adds what the person wrote to the note on what is picked, starting the note when it has none; after ✗, as the answer to the assumption",
+      "params": {
+        "about": "string 1..",
+        "text": "string 1..2000"
+      }
+    },
+    "propose": {
+      "command": "Adds to a node's note where acting on it should go",
+      "params": {
+        "node": "string 1..",
+        "to": "string 1.."
+      }
+    }
+  },
+  "components": {
+    "StatePicture": {
+      "doc": "A state at one width, as the gallery draws it: the node picked washed and outlined in purple, here a strong pill naming it.",
+      "params": [
+        "aspect",
+        "picked"
+      ],
+      "look": {
+        "box": "column",
+        "aspect": "{aspect}",
+        "stroke": "line",
+        "cross": "line",
+        "children": [
+          {
+            "if": "picked != \"\"",
+            "box": "row",
+            "pin": {
+              "x": "center",
+              "y": "center"
+            },
+            "padding": [
+              4,
+              10
+            ],
+            "radius": 6,
+            "stroke": "strong",
+            "fill": "paper",
+            "children": [
+              {
+                "text": "{picked}",
+                "font": "font.caption"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Composer": {
+      "doc": "The box at the sidebar's foot to write in: what is typed, or what to write, in gray.",
+      "params": [
+        "value",
+        "placeholder"
+      ],
+      "look": {
+        "box": "column",
+        "padding": [
+          8,
+          10
+        ],
+        "radius": 8,
+        "stroke": "line",
+        "height": 64,
+        "children": [
+          {
+            "if": "value != \"\"",
+            "text": "{value}",
+            "font": "font.body"
+          },
+          {
+            "if": "value == \"\"",
+            "text": "{placeholder}",
+            "font": "font.body",
+            "ink": "muted"
+          }
+        ]
+      }
+    }
+  },
+  "root": {
+    "id": "screen",
+    "component": "Screen",
+    "gap": 0,
+    "children": [
+      {
+        "id": "toolbar",
+        "component": "Toolbar",
+        "with": {
+          "bar": "{bar}"
+        }
+      },
+      {
+        "id": "window",
+        "component": "Window",
+        "with": {
+          "sidebar": "{sidebarShown}"
+        },
+        "children": [
+          {
+            "id": "tree",
+            "component": "Stack",
+            "gap": 0,
+            "padding": [
+              8,
+              0
+            ],
+            "only": "regular",
+            "border": "color.border",
+            "children": [
+              {
+                "id": "lines",
+                "component": "List",
+                "gap": 0,
+                "each": "lines",
+                "item": {
+                  "id": "line-{index}",
+                  "component": "TreeLine",
+                  "name": "{item.name}",
+                  "depth": "{item.depth}",
+                  "heading": "{item.heading}",
+                  "phase": "{item.phase}",
+                  "meta": "{item.meta}",
+                  "picked": "{item.picked}",
+                  "on": {
+                    "tap": {
+                      "set": "focus",
+                      "to": "{item.name}"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "pictures",
+            "component": "Stack",
+            "gap": 12,
+            "padding": 16,
+            "children": [
+              {
+                "id": "caption",
+                "component": "Row",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "caption-text",
+                    "component": "Text",
+                    "font": "font.heading",
+                    "text": "{shown.description} · {shown.state}"
+                  },
+                  {
+                    "id": "caption-pin",
+                    "component": "Badge",
+                    "if": "pinned",
+                    "text": "{shown.pin}"
+                  }
+                ]
+              },
+              {
+                "id": "pics",
+                "component": "Columns",
+                "if": "drawn",
+                "gap": 24,
+                "columns": {
+                  "compact": [
+                    "1fr"
+                  ],
+                  "regular": [
+                    "1fr",
+                    "2.4fr"
+                  ]
+                },
+                "children": [
+                  {
+                    "id": "at-390",
+                    "component": "Stack",
+                    "gap": 6,
+                    "children": [
+                      {
+                        "id": "cap-390",
+                        "component": "Text",
+                        "font": "font.caption",
+                        "color": "color.textSecondary",
+                        "text": "390 · phone"
+                      },
+                      {
+                        "id": "pic-390",
+                        "component": "StatePicture",
+                        "aspect": "9:16",
+                        "picked": {
+                          "cases": [
+                            {
+                              "if": "hasPicked",
+                              "then": "{picked.id}"
+                            },
+                            {
+                              "else": ""
+                            }
+                          ]
+                        },
+                        "on": {
+                          "tap": {
+                            "set": "focus",
+                            "to": "price"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "at-1120",
+                    "component": "Stack",
+                    "gap": 6,
+                    "only": "regular",
+                    "children": [
+                      {
+                        "id": "cap-1120",
+                        "component": "Text",
+                        "font": "font.caption",
+                        "color": "color.textSecondary",
+                        "text": "1120 · desktop"
+                      },
+                      {
+                        "id": "pic-1120",
+                        "component": "StatePicture",
+                        "aspect": "16:10",
+                        "picked": {
+                          "cases": [
+                            {
+                              "if": "hasPicked",
+                              "then": "{picked.id}"
+                            },
+                            {
+                              "else": ""
+                            }
+                          ]
+                        },
+                        "on": {
+                          "tap": {
+                            "set": "focus",
+                            "to": "price"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "fault-card",
+                "component": "Card",
+                "if": "faulty",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "fault-title",
+                    "component": "Text",
+                    "font": "font.heading",
+                    "text": "{shown.faults} faults · nothing can be drawn until they are fixed"
+                  },
+                  {
+                    "id": "fault-list",
+                    "component": "List",
+                    "gap": 4,
+                    "each": "faults",
+                    "item": {
+                      "id": "fault-{index}",
+                      "component": "ListItem",
+                      "title": "{item.at}",
+                      "detail": "{item.problem}"
+                    }
+                  },
+                  {
+                    "id": "fault-fix",
+                    "component": "Text",
+                    "color": "color.textSecondary",
+                    "text": "The agent fixes them and runs underdraw check; the picture comes back by itself."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "sidebar",
+            "component": "Stack",
+            "if": "sidebarShown",
+            "gap": 12,
+            "padding": 12,
+            "border": "color.border",
+            "children": [
+              {
+                "id": "act-card",
+                "component": "Card",
+                "if": "acted",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "act-title",
+                    "component": "Text",
+                    "font": "font.subhead",
+                    "text": "Clicking {act.node} goes nowhere from {act.state}. Where should it go?"
+                  },
+                  {
+                    "id": "act-choices",
+                    "component": "Stack",
+                    "gap": 6,
+                    "each": "act.choices",
+                    "item": {
+                      "id": "act-choice-{index}",
+                      "component": "Button",
+                      "size": "small",
+                      "text": "{item.text}",
+                      "on": {
+                        "tap": {
+                          "call": "propose",
+                          "with": {
+                            "node": "{act.node}",
+                            "to": "{item.text}"
+                          }
+                        }
+                      },
+                      "variant": "secondary"
+                    }
+                  },
+                  {
+                    "id": "act-hint",
+                    "component": "Text",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "Your pick goes to the agent as a note on the node; it adds the transition."
+                  }
+                ]
+              },
+              {
+                "id": "node-card",
+                "component": "Card",
+                "if": "hasPicked",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "nc-title",
+                    "component": "Text",
+                    "font": "font.heading",
+                    "text": "{picked.component}"
+                  },
+                  {
+                    "id": "nc-id",
+                    "component": "Text",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "{picked.id}"
+                  },
+                  {
+                    "id": "nc-calls",
+                    "component": "Text",
+                    "if": "calls",
+                    "text": "calls {picked.calls}"
+                  },
+                  {
+                    "id": "nc-goes",
+                    "component": "Stack",
+                    "if": "goes",
+                    "gap": 6,
+                    "each": "picked.goes",
+                    "item": {
+                      "id": "nc-go-{index}",
+                      "component": "Button",
+                      "size": "small",
+                      "text": "{item.text}",
+                      "disabled": "!item.drawn",
+                      "on": {
+                        "tap": {
+                          "set": "focus",
+                          "to": "{item.text}"
+                        }
+                      },
+                      "variant": "secondary"
+                    }
+                  },
+                  {
+                    "id": "nc-hint",
+                    "component": "Text",
+                    "if": "goes",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "or click the node in Play"
+                  },
+                  {
+                    "id": "nc-details",
+                    "component": "Link",
+                    "text": "▸ details",
+                    "on": {
+                      "tap": {
+                        "toggle": "picked.details"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "assume-card",
+                "component": "Card",
+                "if": "assumes",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "as-label",
+                    "component": "Text",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "guessed"
+                  },
+                  {
+                    "id": "as-guess",
+                    "component": "Text",
+                    "font": "font.price",
+                    "text": "{picked.assumption.guess}"
+                  },
+                  {
+                    "id": "as-else",
+                    "component": "Text",
+                    "color": "color.textSecondary",
+                    "text": "or else: {picked.assumption.orElse}"
+                  },
+                  {
+                    "id": "as-buttons",
+                    "component": "Row",
+                    "if": "unanswered",
+                    "gap": 8,
+                    "children": [
+                      {
+                        "id": "as-right",
+                        "component": "Button",
+                        "variant": "primary",
+                        "text": "✓ right, keep it",
+                        "on": {
+                          "tap": {
+                            "set": "picked.assumption.answer",
+                            "to": "keeping"
+                          }
+                        }
+                      },
+                      {
+                        "id": "as-wrong",
+                        "component": "Button",
+                        "variant": "secondary",
+                        "text": "✗ wrong…",
+                        "on": {
+                          "tap": {
+                            "set": "picked.assumption.answer",
+                            "to": "wrong"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "as-counting",
+                    "component": "Row",
+                    "if": "keeping",
+                    "gap": 8,
+                    "children": [
+                      {
+                        "id": "as-count",
+                        "component": "Text",
+                        "text": "kept in {picked.assumption.keepIn}s"
+                      },
+                      {
+                        "id": "as-undo",
+                        "component": "Button",
+                        "size": "small",
+                        "text": "undo",
+                        "on": {
+                          "tap": {
+                            "set": "picked.assumption.answer",
+                            "to": null
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "as-asking",
+                    "component": "Text",
+                    "if": "wrong",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "Say what is right in the box below. Esc takes the ✗ back."
+                  },
+                  {
+                    "id": "as-sent",
+                    "component": "Text",
+                    "if": "sent",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "You answered ✗. The agent changes the description; the guess goes once it agrees."
+                  }
+                ]
+              },
+              {
+                "id": "state-card",
+                "component": "Card",
+                "if": "stateCard",
+                "gap": 4,
+                "children": [
+                  {
+                    "id": "sc-title",
+                    "component": "Text",
+                    "font": "font.heading",
+                    "text": "{shown.state} · the whole state"
+                  },
+                  {
+                    "id": "sc-hint",
+                    "component": "Text",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "Click a node to talk about it, or Play to click through."
+                  }
+                ]
+              },
+              {
+                "id": "inbox-card",
+                "component": "Card",
+                "if": "inboxShown",
+                "gap": 4,
+                "children": [
+                  {
+                    "id": "ib-title",
+                    "component": "Text",
+                    "font": "font.subhead",
+                    "text": "waits on you · {inbox.count}"
+                  },
+                  {
+                    "id": "ib-items",
+                    "component": "List",
+                    "gap": 0,
+                    "each": "inbox.items",
+                    "item": {
+                      "id": "inbox-{index}",
+                      "component": "ListItem",
+                      "title": "{item.title}",
+                      "detail": "{item.detail}",
+                      "leadingIcon": {
+                        "cases": [
+                          {
+                            "if": "item.asks",
+                            "then": "help"
+                          },
+                          {
+                            "else": "mark_chat_unread"
+                          }
+                        ]
+                      },
+                      "on": {
+                        "tap": {
+                          "set": "focus",
+                          "to": "{item.title}"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "id": "ib-agent",
+                    "component": "Link",
+                    "if": "folded",
+                    "text": "▸ waiting on the agent · {inbox.withAgent}"
+                  }
+                ]
+              },
+              {
+                "id": "talk",
+                "component": "Stack",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "talk-title",
+                    "component": "Text",
+                    "font": "font.subhead",
+                    "text": {
+                      "cases": [
+                        {
+                          "if": "taken",
+                          "then": "{note.id} · waiting on the agent"
+                        },
+                        {
+                          "if": "queued",
+                          "then": "{note.id} · waiting on the agent"
+                        },
+                        {
+                          "if": "talked",
+                          "then": "{note.id} · answered"
+                        },
+                        {
+                          "else": "note · nothing said yet"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "talk-messages",
+                    "component": "List",
+                    "if": "talked",
+                    "gap": 6,
+                    "each": "note.messages",
+                    "item": {
+                      "id": "message-{index}",
+                      "component": "Bubble",
+                      "text": "{item.text}",
+                      "mine": "{item.mine}"
+                    }
+                  },
+                  {
+                    "id": "talk-taken",
+                    "component": "Text",
+                    "if": "taken",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "the agent is changing it ({note.seconds}s)"
+                  },
+                  {
+                    "id": "talk-queued",
+                    "component": "Text",
+                    "if": "queued",
+                    "font": "font.caption",
+                    "color": "color.textSecondary",
+                    "text": "waiting for the agent"
+                  },
+                  {
+                    "id": "talk-unheard",
+                    "component": "Text",
+                    "if": "unheard",
+                    "font": "font.caption",
+                    "text": "No agent is listening: ask yours to run underdraw notes --wait.",
+                    "assumed": "没有 agent 在听时，在对话下面直说该怎么办（让 agent 跑 notes --wait）；也可以不提示，只靠工具栏上的状态。"
+                  }
+                ]
+              },
+              {
+                "id": "composer",
+                "component": "Stack",
+                "gap": 8,
+                "padding": [
+                  8,
+                  0,
+                  0,
+                  0
+                ],
+                "children": [
+                  {
+                    "id": "write",
+                    "component": "Composer",
+                    "bind": "draft.text",
+                    "placeholder": {
+                      "cases": [
+                        {
+                          "if": "wrong",
+                          "then": "what is right?"
+                        },
+                        {
+                          "else": "say something about this…"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "send",
+                    "component": "Button",
+                    "variant": "primary",
+                    "text": "Send",
+                    "disabled": "!hasDraft",
+                    "on": {
+                      "tap": {
+                        "call": "sendMessage",
+                        "with": {
+                          "about": "{shown.state}",
+                          "text": "{draft.text}"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "fixtures": {
+    "shown": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › order › open",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
+      "lines": [
+        {
+          "name": "shop/",
+          "depth": 0,
+          "kind": "directory"
+        },
+        {
+          "name": "order",
+          "depth": 1,
+          "kind": "description",
+          "meta": "1 note"
+        },
+        {
+          "name": "open",
+          "depth": 2,
+          "kind": "state",
+          "picked": true
+        },
+        {
+          "name": "cancel-dialog",
+          "depth": 2,
+          "kind": "state"
+        },
+        {
+          "name": "shipped",
+          "depth": 2,
+          "kind": "state"
+        },
+        {
+          "name": "loading",
+          "depth": 2,
+          "kind": "phase"
+        },
+        {
+          "name": "orders",
+          "depth": 1,
+          "kind": "description",
+          "meta": "2 states"
+        }
+      ],
+      "shown": {
+        "description": "shop/order",
+        "state": "open",
+        "faults": 0
+      },
+      "picked": null,
+      "focus": null,
+      "inbox": {
+        "items": [
+          {
+            "kind": "assumption",
+            "title": "price in open",
+            "detail": "The total includes tax; or it is shown before tax"
+          },
+          {
+            "kind": "answer",
+            "title": "N2 · on cancel",
+            "detail": "agent: It is a secondary button now."
+          }
+        ],
+        "count": 2,
+        "withAgent": 1
+      },
+      "note": null,
+      "faults": [],
+      "act": null,
+      "draft": {}
+    },
+    "node-picked": {
+      "$patch": "shown",
+      "focus": "cancel",
+      "picked": {
+        "id": "cancel",
+        "component": "Button",
+        "label": 4,
+        "calls": "",
+        "goes": [
+          {
+            "text": "→ cancel-dialog"
+          }
+        ],
+        "goCount": 1
+      }
+    },
+    "assumption": {
+      "$patch": "shown",
+      "focus": "price",
+      "picked": {
+        "id": "price",
+        "component": "Metric",
+        "label": 2,
+        "goes": [],
+        "goCount": 0,
+        "assumption": {
+          "guess": "The total includes tax",
+          "orElse": "it is shown before tax, with tax on the next line"
+        }
+      }
+    },
+    "keeping": {
+      "$patch": "assumption",
+      "bar": {
+        "waitingOnYou": 1
+      },
+      "picked": {
+        "assumption": {
+          "answer": "keeping",
+          "keepIn": 4
+        }
+      }
+    },
+    "wrong": {
+      "$patch": "assumption",
+      "picked": {
+        "assumption": {
+          "answer": "wrong"
+        }
+      },
+      "draft": {
+        "text": "Before tax; tax on its own line under it"
+      }
+    },
+    "waiting": {
+      "$patch": "wrong",
+      "bar": {
+        "waitingOnYou": 1
+      },
+      "draft": {
+        "text": ""
+      },
+      "note": {
+        "id": "N3",
+        "stands": "waiting",
+        "handed": true,
+        "seconds": 23,
+        "messages": [
+          {
+            "who": "person",
+            "text": "✗ Before tax; tax on its own line under it"
+          }
+        ]
+      },
+      "picked": {
+        "assumption": {
+          "answer": "sent"
+        }
+      }
+    },
+    "answered": {
+      "$patch": "assumption",
+      "bar": {
+        "waitingOnYou": 1
+      },
+      "shown": {
+        "pin": "N1"
+      },
+      "note": {
+        "id": "N3",
+        "stands": "answered",
+        "messages": [
+          {
+            "who": "person",
+            "text": "✗ Before tax; tax on its own line under it"
+          },
+          {
+            "who": "agent",
+            "text": "The total is before tax now, with “+ ¥1,850 tax” under it. The guess is gone."
+          }
+        ]
+      }
+    },
+    "unheard": {
+      "$patch": "node-picked",
+      "bar": {
+        "agent": "away",
+        "waitingOnYou": 0
+      },
+      "note": {
+        "id": "N4",
+        "stands": "waiting",
+        "messages": [
+          {
+            "who": "person",
+            "text": "Pay should stand out more than cancel"
+          }
+        ]
+      },
+      "inbox": {
+        "items": [],
+        "count": 0,
+        "withAgent": 0
+      },
+      "picked": {
+        "id": "pay",
+        "component": "Button",
+        "label": 5,
+        "calls": "payOrder",
+        "goes": [
+          {
+            "text": "→ open · ok"
+          },
+          {
+            "text": "→ open · declined"
+          }
+        ],
+        "goCount": 2
+      },
+      "focus": "pay"
+    },
+    "nowhere": {
+      "$patch": "shown",
+      "bar": {
+        "mode": "play",
+        "crumbs": "drafts › shop › order › open",
+        "back": false,
+        "forward": true
+      },
+      "act": {
+        "node": "track",
+        "state": "open",
+        "choices": [
+          {
+            "text": "→ cancel-dialog"
+          },
+          {
+            "text": "→ shipped"
+          },
+          {
+            "text": "↗ navigate to Tracking"
+          }
+        ]
+      }
+    },
+    "inbox-open": {
+      "$patch": "node-picked",
+      "bar": {
+        "inboxOpen": true
+      }
+    },
+    "faulty": {
+      "$patch": "shown",
+      "shown": {
+        "faults": 2
+      },
+      "faults": [
+        {
+          "at": "root.children.2.text",
+          "problem": "{order.total} is money: write {order.total|money}",
+          "file": "shop/order/screen.json"
+        },
+        {
+          "at": "conditions.paid",
+          "problem": "never false: add a fixture where order.paid is false",
+          "file": "shop/order/screen.json"
+        }
+      ]
+    },
+    "sidebar-hidden": {
+      "$patch": "node-picked",
+      "bar": {
+        "sidebar": false
+      }
+    }
+  },
+  "transitions": [
+    {
+      "from": "shown",
+      "on": "pic-390.tap",
+      "to": "node-picked"
+    },
+    {
+      "from": "shown",
+      "on": "inbox-{index}.tap",
+      "to": "assumption"
+    },
+    {
+      "from": "assumption",
+      "on": "as-right.tap",
+      "to": "keeping"
+    },
+    {
+      "from": "assumption",
+      "on": "as-wrong.tap",
+      "to": "wrong"
+    },
+    {
+      "from": "keeping",
+      "on": "as-undo.tap",
+      "to": "assumption"
+    },
+    {
+      "from": "wrong",
+      "on": "send.tap",
+      "outcome": "ok",
+      "to": "waiting"
+    },
+    {
+      "from": "node-picked",
+      "on": "toolbar-inbox.tap",
+      "to": "inbox-open"
+    },
+    {
+      "from": "node-picked",
+      "on": "toolbar-sidebar.tap",
+      "to": "sidebar-hidden"
+    },
+    {
+      "from": "sidebar-hidden",
+      "on": "toolbar-sidebar.tap",
+      "to": "node-picked"
+    },
+    {
+      "from": "shown",
+      "on": "toolbar-play.tap",
+      "to": "nowhere"
+    },
+    {
+      "from": "nowhere",
+      "on": "toolbar-inspect.tap",
+      "to": "shown"
+    }
+  ]
+}
