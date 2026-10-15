@@ -21,13 +21,36 @@ fn underdraw(args: &[&str], env: &[&str]) -> (Value, i32) {
 
 #[test]
 fn opens_one_window_over_every_draft_and_answers_at_once() {
-    let Some(answer) = opened(DRAFTS) else { return };
+    // A copy of its own: over `drafts` itself, a window the person has open
+    // there would be brought forward instead.
+    let root = std::env::temp_dir().join(format!("underdraw-gallery-drafts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    copy_dir(DRAFTS.as_ref(), &root);
+    let Some(answer) = opened(root.to_str().unwrap()) else {
+        std::fs::remove_dir_all(root).unwrap();
+        return;
+    };
     assert_eq!(answer["faults"], serde_json::json!([]), "no draft has faults");
     let found: Vec<&str> =
         answer["descriptions"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
     assert!(found.contains(&"airbnb-listing") && found.contains(&"todo"), "{found:?}");
     assert!(!found.iter().any(|d| d.contains("platforms") || d.contains("captures")), "{found:?}");
     close(&answer);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Copies the directory `from` and everything under it to `to`.
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
 }
 
 #[test]
