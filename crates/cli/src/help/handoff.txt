@@ -46,11 +46,32 @@ ANSWERS
     "states":     [{"state": {"fixture"} or {"phase"}, "breakpoint",
                     "present": [id, …],
                     "shows": {id: {"text", "label", "value", "disabled", …}},
-                    "calls": {id: [{"on", "operation", "with"}, …]}}, …]
+                    "calls": {id: [{"on", "operation", "with"}, …]},
+                    "expressions": [{"node", "at", "expression", "branch",
+                                     "value"}, …]}, …]
                   every fixture and phase at both breakpoints: what the real
                   UI must show, to assert in its tests by test id; "calls" is
                   the operation each node calls when acted on, with its
-                  arguments filled for that state (left out when none does)
+                  arguments filled for that state (left out when none does).
+                  "expressions": every expression as that state decides it,
+                  in the order the tree is built, the values render drew
+                  from:
+                    {"at": "conditions.hasDates", "expression": "hasDates",
+                     "value": true}                 a condition over the data
+                                                    (a fixture only)
+                    {"node": "save", "at": "disabled", "expression":
+                     "!canSave", "value": true}     a use site: a node's "if"
+                                                    (a node hidden by it too),
+                                                    a bool prop, "with.<param>"
+                    {"node": "note-0", "at": "text.cases[0].if", …}
+                                                    a cases branch tested
+                    {"node": "note-0", "at": "text.cases", "expression":
+                     "item.done" or "else", "branch": 0, "value": "Eggs ✓"}
+                                                    the branch chosen, its
+                                                    value filled
+                  "node" is the test id's id; inside a component, the
+                  instance's, and the names are its params. A node this
+                  platform does not build ("hidden") is left out
     "fixtures":   {name: data}: each fixture merged and defaulted, ready to
                   decode into the generated model for previews and tests
     "unconfirmed": [{"id", "assumed"}, …]: guesses the person has not confirmed
@@ -66,6 +87,13 @@ HOW TO USE IT
     and assert every "present" id and every value in "shows". Act on each
     node in "calls" and assert the app calls that operation with "with"
     (`underdraw compare` checks both, from a capture).
+  - "expressions" is the test oracle for the code behind the views: write
+    one unit test per fixture that decodes its data into the generated
+    model and asserts each value. A condition is the generated function of
+    its name; a use site, a bool param and a chosen branch are what the
+    view decides at that node: the same value, or the platform build reads
+    the description differently from the reference, whatever its pictures
+    look like.
   - Ask the person about each "unconfirmed" item before building it.
 
 WHAT TRIPS YOU UP
