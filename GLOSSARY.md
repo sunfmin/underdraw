@@ -163,10 +163,16 @@ _Avoid_: mockup, screenshot
 
 **Gallery**:
 Every screen description under one directory, arranged as its directories
-are, where a person picks one, and then one of its states, to see its
-wireframe drawn from the description as it now stands; or picks a
-directory, to see the **flow** between the screens under it.
+are, where a person picks one, to see its **overview**, and then one of its
+states, to see its wireframe drawn from the description as it now stands;
+or picks a directory, to see the **flow** between the screens under it.
 _Avoid_: mockup viewer, preview
+
+**Overview**:
+Every state of one description, small, in the order the tree lists them,
+and each transition it declares an arrow from its `from` state to its `to`,
+labelled with the label of the node acted on and, for a call, the outcome.
+_Avoid_: state machine, storyboard
 
 **Flow**:
 The screens under one directory as boxes, and each `navigate` between them
