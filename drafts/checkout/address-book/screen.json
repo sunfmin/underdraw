@@ -186,10 +186,16 @@
                       "text": "{item.address.name}  {item.address.phone}"
                     },
                     {
-                      "id": "address-{index}-default",
-                      "component": "Badge",
+                      "id": "address-{index}-default-wrap",
+                      "component": "Row",
                       "if": "item.address.isDefault",
-                      "text": "默认"
+                      "children": [
+                        {
+                          "id": "address-{index}-default",
+                          "component": "Badge",
+                          "text": "默认"
+                        }
+                      ]
                     }
                   ],
                   "trailing": [
