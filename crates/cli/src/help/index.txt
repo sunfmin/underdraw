@@ -1,0 +1,31 @@
+FIND IT
+  What you want to do, and the section of `underdraw check --help` that says
+  how (FORMAT, the reference for writing a description, and check's own):
+    lay out a description's files, or a project's           FILES
+    start a screen.json: its name, title, locale            SCREEN.JSON
+    see one whole screen that passes check                  A WHOLE SCREEN
+    declare what a screen shows, and the shape of each      DATA AND TYPES
+    give each state its data                                FIXTURES
+    open a screen with an id, or navigate with one          PARAMS
+    name a decision, show or hide a node                    CONDITIONS
+    put a value in a string, a date, money, a plural        TEMPLATES AND FORMATS
+    choose a property's value per state                     CASES
+    write the node tree, an id, a list of items             NODES
+    mark a guess for the person to confirm                  ASSUMED
+    space, align, size or scroll a node                     LAYOUT ON A NODE
+    act on a tap: navigate, open, set, call                 ACTIONS
+    load, save, delete, a confirmed or bulk or long one     OPERATIONS
+    a list that pages                                       PAGING
+    make a component, for one screen or shared              COMPONENTS
+    draw a component as boxes and text                      LOOKS
+    pick a built-in component and its props                 BUILT-IN COMPONENTS
+    a popup: a dialog, a sheet, a menu                      POPUPS
+    show loading or an error                                PHASES
+    say which state an act leads to, for the gallery        TRANSITIONS
+    a journey across screens                                JOURNEYS
+    a phone and a desktop layout                            RESPONSIVE
+    share types, conditions, operations between screens     DOMAIN.JSON
+    colors, spacing, type sizes, widths                     TOKENS.JSON
+    what check reads and answers                            READS, ANSWERS
+    a finding you do not understand                         WHAT TRIPS YOU UP
+

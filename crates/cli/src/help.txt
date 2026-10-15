@@ -1,6 +1,3 @@
-underdraw — describe a screen once, as JSON, then check it, show it to a
-person, and hand it off to web, iOS and Android.
-
 A screen description is a directory holding screen.json (the screen: its
 view model, fixtures, conditions, node tree and its own components), usually
 beside platforms/*.json. How to write each file, every component and every
