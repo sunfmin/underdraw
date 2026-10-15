@@ -348,11 +348,63 @@ fn open(root: &Path, lang: Lang) -> anyhow::Result<u32> {
 /// writes it and removes it on closing; one left by a window that crashed
 /// names a port nothing answers on, or something else does.
 fn address(root: &Path) -> PathBuf {
-    // FNV-1a: the same name from every build, unlike std's hasher.
-    let hash = root.as_os_str().as_encoded_bytes().iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, &byte| {
+    std::env::temp_dir().join(format!("underdraw-gallery-{:016x}.port", hashed(root)))
+}
+
+/// `path` hashed, the same from every build, unlike std's hasher: FNV-1a.
+fn hashed(path: &Path) -> u64 {
+    path.as_os_str().as_encoded_bytes().iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, &byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+/// How long after `notes --wait` last said it waits an agent is still
+/// taken to: it says so far more often.
+const HEARD_WITHIN: Duration = Duration::from_secs(2);
+
+/// Where `notes --wait` on `dir`, which is canonical, says that it still
+/// waits: a file in the temporary directory named for `dir`, written again
+/// each time it says so. Nothing removes it: one not written for
+/// [`HEARD_WITHIN`] says no one waits.
+fn heartbeat(dir: &Path) -> PathBuf {
+    std::env::temp_dir().join(format!("underdraw-listening-{:016x}", hashed(dir)))
+}
+
+/// Said by `notes --wait` on `dir` while it waits: an agent listens to the
+/// notes under it. A file that cannot be written leaves the window saying
+/// no one does.
+pub fn beat(dir: &Path) {
+    let _ = std::fs::write(heartbeat(dir), std::process::id().to_string());
+}
+
+/// Whether an agent waits with `notes --wait` on `root`, which is
+/// canonical, or a directory above it, and so hears the notes under it.
+pub fn listening(root: &Path) -> bool {
+    root.ancestors().any(|dir| {
+        std::fs::metadata(heartbeat(dir))
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|at| at.elapsed().is_ok_and(|ago| ago < HEARD_WITHIN))
+    })
+}
+
+/// Tells `heard` whether an agent listens on `root` ([`listening`]), on a
+/// thread of its own, each time that changes; until it answers false, as
+/// once the window has closed.
+pub fn hear(root: &Path, heard: impl Fn(bool) -> bool + Send + 'static) {
+    let root = root.to_path_buf();
+    std::thread::spawn(move || {
+        let mut last = false;
+        loop {
+            let now = listening(&root);
+            if now != last {
+                if !heard(now) {
+                    return;
+                }
+                last = now;
+            }
+            std::thread::sleep(WATCHING);
+        }
     });
-    std::env::temp_dir().join(format!("underdraw-gallery-{hash:016x}.port"))
 }
 
 /// The open window over `root` asked to come forward; its pid, when there

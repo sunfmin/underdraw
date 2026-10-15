@@ -607,6 +607,9 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
         bail!("--reply answers a note: give the note with --answer <note>, as the listing names it");
     }
     loop {
+        if wait {
+            crate::gallery::beat(&path);
+        }
         let (waiting, counts) = listed(&path, wait)?;
         if !wait || counts.waiting > 0 {
             return Ok(json!({

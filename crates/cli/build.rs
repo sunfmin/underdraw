@@ -10,6 +10,7 @@ use std::process::Command;
 const PACKAGE: &str = "crates/cli/";
 
 fn main() {
+    embed_gallery();
     let release = env!("CARGO_PKG_VERSION");
     let described = checkout().then(describe).flatten();
     println!("cargo:rustc-env=UNDERDRAW_VERSION={}", built_from(release, described.as_deref()));
@@ -80,4 +81,39 @@ fn watched() -> Option<Vec<String>> {
     let tracked = git(&["ls-tree", "--name-only", "--full-tree", "HEAD"])?;
     paths.extend(tracked.lines().map(|entry| format!("{root}/{entry}")));
     Some(paths)
+}
+
+/// Where the gallery's own project is in the checkout, from this package:
+/// the description of underdraw's own UI.
+const GALLERY: &str = "../../drafts/gallery";
+
+/// `$OUT_DIR/gallery.rs`: the gallery's own project built into the binary,
+/// as the text of its domain, its tokens and every component it shares, so
+/// the window draws what that project says (ADR 0024), and a component
+/// added there needs no edit here.
+fn embed_gallery() {
+    use std::path::Path;
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    let root = Path::new(&manifest).join(GALLERY);
+    let components = root.join("components");
+    println!("cargo:rerun-if-changed={}", components.display());
+    let mut names: Vec<String> = std::fs::read_dir(&components)
+        .expect("drafts/gallery/components is in the checkout")
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().to_str()?.strip_suffix(".json").map(str::to_string))
+        .collect();
+    names.sort();
+    let text = |path: &Path| {
+        println!("cargo:rerun-if-changed={}", path.display());
+        format!("include_str!({:?})", path.display().to_string())
+    };
+    let mut out = format!("pub const DOMAIN: &str = {};\n", text(&root.join("domain.json")));
+    out.push_str(&format!("pub const TOKENS: &str = {};\n", text(&root.join("tokens.json"))));
+    out.push_str("pub const COMPONENTS: &[(&str, &str)] = &[\n");
+    for name in &names {
+        out.push_str(&format!("    ({name:?}, {}),\n", text(&components.join(format!("{name}.json")))));
+    }
+    out.push_str("];\n");
+    let dest = Path::new(&std::env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join("gallery.rs");
+    std::fs::write(dest, out).expect("OUT_DIR is writable");
 }
