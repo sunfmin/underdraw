@@ -606,8 +606,9 @@ POPUPS
     Screen, the middle and the bottom are those of the whole page, which
     is as tall as its content. A sheet's look leaves out "width".
   - The page is only as tall as its content: an overlay taller than that
-    runs off it and is cut. check finds it, in each state at widths 390
-    and 1120; give the fixture that opens it more content behind it.
+    runs off it and is cut. check finds it, in each state at each of the
+    project's widths (TOKENS.JSON); give the fixture that opens it more
+    content behind it.
   - "backdrop": true dims the screen behind it; what is behind gets no
     number, since nothing there can be acted on while it is open.
 
@@ -761,8 +762,14 @@ TOKENS.JSON
     "font":       { "body":    { "size": 16, "weight": 400, "lineHeight": 22 },
                     "caption": { "size": 14, "weight": 400, "lineHeight": 18 }, … },
     "elevation":  { "card": { "y": 2, "blur": 8, "color": "#0000001A" } },
-    "breakpoint": { "compact": [0, 743], "regular": [744, null] }
+    "breakpoint": { "compact": [0, 743], "regular": [744, null] },
+    "widths":     [390, 1440]
   }
+  "widths" are the widths in points the project's descriptions are drawn
+  and checked at, each a whole number from 200 to 4000: check lays every
+  state out at each, the gallery draws a state at each side by side, in
+  the order named, and `render` draws at the first unless given --width.
+  With no "widths", 390 (a phone) and 1120 (a desktop).
   A token is named by its dotted path: "space.4", "radius.md", "font.body",
   "color.textSecondary", "elevation.card". A length is a number or a token
   naming one. Groups and names are the project's; a platform file names
