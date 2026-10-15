@@ -7,20 +7,11 @@
 
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
-/// How wide the sidebar is, in points.
-pub const WIDTH: f64 = 360.0;
-/// The space around the cards, and between them.
-const GUTTER: f64 = 12.0;
-/// The space inside a card, around what it holds.
-const PADDING: f64 = 12.0;
-/// The space between one block of a card and the next.
-const BETWEEN: f64 = 6.0;
-/// How much taller than its text a button is.
-const BUTTON_PAD: f64 = 7.0;
-
-const TITLE: Font = Font { size: 13.0, weight: 600, line_height: 18.0 };
-const BODY: Font = Font { size: 13.0, weight: 400, line_height: 18.0 };
-const BUTTON: Font = Font { size: 13.0, weight: 600, line_height: 16.0 };
+pub use crate::chrome::SIDEBAR as WIDTH;
+use crate::chrome::{
+    BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
+    CARD_TEXT as BODY, CARD_TITLE as TITLE, GUTTER,
+};
 
 /// One card: a title, and the blocks under it.
 pub struct Card<A> {
@@ -101,7 +92,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, measure: &mut d
                     let around = rect(x, y, inner, tall);
                     inside.push(Draw::Box {
                         rect: around,
-                        radius: 6.0,
+                        radius: BUTTON_RADIUS,
                         fill: Some(Ink::Paper),
                         stroke: Some(Ink::Muted),
                         dashed: false,
@@ -117,7 +108,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, measure: &mut d
         y += PADDING;
         draws.push(Draw::Box {
             rect: rect(left + GUTTER, card_top, WIDTH - 2.0 * GUTTER, y - card_top),
-            radius: 8.0,
+            radius: CARD_RADIUS,
             fill: Some(Ink::Paper),
             stroke: Some(Ink::Line),
             dashed: false,
