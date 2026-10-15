@@ -180,7 +180,7 @@ pub(crate) fn check(screen: &Value, schema: &Schema, findings: &mut Findings) {
 
 /// Every key of the instance `instance` that it may not hold: what it would
 /// say of the subtree is a param, given in `with`.
-pub(crate) fn reached_into<'v>(instance: &'v Map<String, Value>) -> Vec<&'v String> {
+pub(crate) fn reached_into(instance: &Map<String, Value>) -> Vec<&String> {
     let mut reached = Vec::new();
     for key in instance.keys() {
         let slot = SLOTS.contains(&key.as_str()) && key != "item";
