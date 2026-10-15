@@ -4497,7 +4497,7 @@ mod tests {
             panic!("no picture: it has faults")
         };
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
-        let r = node.guess_tag().expect("it is guessed");
+        let r = node.guess_tag.expect("it is guessed");
         let (left, top) = origins(gallery)[page];
         let zoom = zoom(gallery);
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
