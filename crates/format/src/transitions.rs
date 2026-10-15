@@ -206,6 +206,12 @@ impl Effect {
     }
 }
 
+/// Whether `screen` writes a node with the id `id`, as written (a template
+/// inside an item), in its trees, phases or components.
+pub fn writes(screen: &Value, id: &str) -> bool {
+    written(screen).contains_key(id)
+}
+
 /// Every node the description writes, in its trees, phases and components,
 /// by its id as written.
 fn written(screen: &Value) -> BTreeMap<&str, &Map<String, Value>> {
