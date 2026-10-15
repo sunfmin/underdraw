@@ -5,7 +5,7 @@
 //! the gallery draws it, and pins notes on its nodes, as it does a
 //! screen's.
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 /// The key a showcase holds the name of the component it shows under: it
 /// declares no screen a navigate can reach.
@@ -15,9 +15,11 @@ pub const KEY: &str = "$showcase";
 /// holds `component`, in each of its fixtures: one instance of it, named
 /// as its name is in kebab case (`OrderRow` is `order-row`, so its
 /// `cancel` is `order-row-cancel`), given each param from the fixture.
-/// A typed param (`{"order": "Order"}`) is a field of that type; a look's
-/// param (`["status"]`) takes text, a number or true or false, as the
-/// first fixture to give it does.
+/// A typed param (`{"order": "Order"}`) is a field of that type, held as
+/// view state: a component's set or toggle on a param acts on what was
+/// passed, and here the showcase alone holds it. A look's param
+/// (`["status"]`) takes text, a number or true or false, as the first
+/// fixture to give it does.
 pub fn showcase(name: &str, component: &Value) -> Value {
     let fixtures = component.get("fixtures").cloned().unwrap_or_else(|| Value::Object(Map::new()));
     let mut data = Map::new();
@@ -28,7 +30,7 @@ pub fn showcase(name: &str, component: &Value) -> Value {
         Some(Value::Object(params)) => {
             let mut with = Map::new();
             for (param, field) in params {
-                data.insert(param.clone(), field.clone());
+                data.insert(param.clone(), held(field));
                 with.insert(param.clone(), Value::String(format!("{{{param}}}")));
             }
             instance.insert("with".to_string(), Value::Object(with));
@@ -59,6 +61,21 @@ pub fn showcase(name: &str, component: &Value) -> Value {
 /// showcase.
 pub fn shows(screen: &Value) -> Option<&str> {
     screen.get(KEY).and_then(Value::as_str)
+}
+
+/// The param `field` as a field of the showcase's data, marked view
+/// state. One that says it is filled or derived is left as written, so its
+/// own finding is not joined by another.
+fn held(field: &Value) -> Value {
+    match field {
+        Value::String(_) => json!({ "type": field, "view": true }),
+        Value::Object(object) if !object.contains_key("from") && !object.contains_key("derived") => {
+            let mut object = object.clone();
+            object.insert("view".to_string(), Value::Bool(true));
+            Value::Object(object)
+        }
+        _ => field.clone(),
+    }
 }
 
 /// The type of what the first of `fixtures` to give the look's param
@@ -96,8 +113,6 @@ fn kebab(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
 
     #[test]
@@ -105,7 +120,7 @@ mod tests {
         let row = json!({ "params": { "order": "Order" }, "fixtures": { "pending": { "order": {} } }, "nodes": {} });
         let shown = showcase("OrderRow", &row);
         assert_eq!(shows(&shown), Some("OrderRow"));
-        assert_eq!(shown["data"], json!({ "order": "Order" }));
+        assert_eq!(shown["data"], json!({ "order": { "type": "Order", "view": true } }));
         assert_eq!(shown["fixtures"], row["fixtures"]);
         assert_eq!(
             shown["root"]["children"][0],

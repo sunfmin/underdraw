@@ -818,6 +818,22 @@ impl<'a> Walk<'a> {
                     self.findings
                         .add(&at, &format!("{name} writes a field of the view model, and {path} is not one"));
                 } else if !self.schema.in_view_state(scope, path) {
+                    // Inside a component, the path is a param's: the screen
+                    // passed what it writes, and holds the way out.
+                    if let Some(frame) = self.instances.innermost() {
+                        let param = path.split('.').next().unwrap_or(path);
+                        let given = match paths(frame).into_iter().find(|(name, _)| name == param) {
+                            Some((_, given)) => format!("is given {{{given}}}, which is domain data"),
+                            None => "is given no field of the screen's".to_string(),
+                        };
+                        self.findings.add(
+                            &at,
+                            &format!(
+                                "{name} writes {path}, and {param} {given}: a component's set and toggle act on what was passed, so pass {param} a field of the screen's data marked \"view\": true; or change it with a command, called with \"call\""
+                            ),
+                        );
+                        continue;
+                    }
                     self.findings.add(
                         &at,
                         &format!(
