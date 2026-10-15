@@ -191,7 +191,7 @@ impl Catalog<'_> {
         self.style(object, scope, &mut style);
         let mut gap = self.tokens.find_length(&get("gap"));
         let mut radius = self.tokens.find_length(&get("radius")).unwrap_or(0.0);
-        let mut stroke = ink(&self.tokens, &get("stroke"));
+        let mut stroke = ink(self.tokens, &get("stroke"));
         let mut clip = None;
         if get("frame") == Value::Bool(true) {
             let [padding, framed_gap, framed_radius, border, elevation] =
@@ -217,14 +217,14 @@ impl Catalog<'_> {
             style.gap = taffy::Size { width: length(gap), height: length(gap) };
         }
         let mut elem = Elem::new(style);
-        let fill = ink(&self.tokens, &get("fill"));
+        let fill = ink(self.tokens, &get("fill"));
         if fill.is_some() || stroke.is_some() {
             elem = elem.with(Look::Box { radius, fill, stroke, dashed: get("dashed") == Value::Bool(true) });
         }
-        if let Some(cross) = ink(&self.tokens, &get("cross")) {
+        if let Some(cross) = ink(self.tokens, &get("cross")) {
             elem = elem.with(Look::Cross(cross));
         }
-        if let Some(line) = ink(&self.tokens, &get("topLine")) {
+        if let Some(line) = ink(self.tokens, &get("topLine")) {
             elem = elem.with(Look::TopLine(line));
         }
         let mut children = Vec::new();
@@ -258,7 +258,7 @@ impl Catalog<'_> {
             font.weight = weight.min(1000) as u16;
         }
         let mut words =
-            Words::new(said(&get("text")), font, ink(&self.tokens, &get("ink")).unwrap_or(Ink::Text));
+            Words::new(said(&get("text")), font, ink(self.tokens, &get("ink")).unwrap_or(Ink::Text));
         words.max_lines = get("maxLines").as_u64().map(|n| n.min(100) as u32);
         words.align =
             get("align").as_str().and_then(look::TextAlign::read).map(text_align).unwrap_or(Align::Start);
