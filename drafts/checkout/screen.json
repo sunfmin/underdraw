@@ -1,0 +1,514 @@
+{
+  "screen": "Checkout",
+  "title": "确认订单",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "$comment": "The last step before paying: where it goes, how fast, how it is paid, what it costs. Phone: one column with a sticky total. Desktop: the order on the left, the summary card on the right.",
+
+  "data": {
+    "cart": { "type": "Cart", "from": "getCart" },
+    "address": { "type": "Address?", "from": "getAddress" },
+    "delivery": { "type": "DeliveryRow[] 1..4", "from": "listDeliveryOptions" },
+    "promo": { "type": "Promo", "from": "getPromo" },
+    "promoCode": { "type": "string ..20 = \"\"", "view": true, "doc": "The code being typed, before it is applied" },
+    "payment": "Payment",
+    "summary": { "type": "Summary", "from": "getSummary" }
+  },
+  "types": {
+    "Cart": {
+      "items": "CartItem[] 1..50",
+      "itemCount": { "type": "int 1..", "derived": { "server": "sum of the items' quantities" } },
+      "unavailableCount": { "type": "int 0..", "derived": { "server": "items that are out of stock" } }
+    },
+    "CartItem": {
+      "id": "string",
+      "name": "string 1..60",
+      "variant": "string ..40",
+      "image": "image",
+      "price": "money",
+      "quantity": "int 1..10",
+      "lineTotal": { "type": "money", "derived": { "server": "price × quantity" } },
+      "inStock": "bool = true"
+    },
+    "Address": {
+      "name": "string 1..20",
+      "phone": "string",
+      "line": { "type": "string 1..120", "doc": "Province, city, district and street, as one line" }
+    },
+    "DeliveryRow": {
+      "option": "DeliveryOption",
+      "free": { "type": "bool = false", "derived": { "app": "the option's price is zero" } }
+    },
+    "DeliveryOption": {
+      "id": "string",
+      "label": "string",
+      "eta": { "type": "string", "doc": "When it arrives, in words: 预计 10月16日 送达" },
+      "price": "money",
+      "selected": { "type": "bool = false", "doc": "The option the order will ship with; chooseDelivery changes it" }
+    },
+    "Promo": {
+      "code": "string ..20 = \"\"",
+      "status": "PromoStatus",
+      "discount": { "type": "money?", "doc": "Only when the code is applied" },
+      "message": { "type": "string?", "doc": "Why the code was refused" }
+    },
+    "PromoStatus": "enum(none, applied, invalid)",
+    "Payment": {
+      "method": { "type": "PayMethod", "view": true, "doc": "The method chosen on this screen, passed to placeOrder" },
+      "options": "PaymentOption[] 1..",
+      "cardLast4": { "type": "string?", "doc": "The saved card; null when none is saved" }
+    },
+    "PayMethod": "enum(card, alipay, wechat)",
+    "PaymentOption": {
+      "id": "string",
+      "label": "string",
+      "icon": "icon",
+      "selected": { "type": "bool = false", "derived": { "app": "method is this option" } }
+    },
+    "Summary": {
+      "subtotal": "money",
+      "shipping": "money",
+      "total": { "type": "money", "derived": { "server": "subtotal + shipping − discount" } }
+    },
+    "PlacedOrder": {
+      "id": "string",
+      "total": "money"
+    }
+  },
+
+  "conditions": {
+    "hasAddress": { "when": "address != null", "label": "Has a delivery address" },
+    "hasUnavailable": { "when": "cart.unavailableCount > 0", "label": "Some items are out of stock" },
+    "promoApplied": { "when": "promo.status == \"applied\" && promo.discount != null", "label": "Promo code applied" },
+    "promoInvalid": { "when": "promo.status == \"invalid\" && promo.message != null", "label": "Promo code refused" },
+    "hasCode": { "when": "promoCode != \"\"", "label": "A promo code is typed" },
+    "payByCard": { "when": "payment.method == \"card\"", "label": "Paying by card" },
+    "cardSaved": { "when": "payByCard && payment.cardLast4 != null", "label": "Paying with a saved card" },
+    "newCard": { "when": "payByCard && payment.cardLast4 == null", "label": "Paying with a new card" },
+    "canPlace": { "when": "hasAddress && !hasUnavailable", "label": "Order can be placed" }
+  },
+
+  "operations": {
+    "getCart":    { "query": "The items in the person's cart, with what each costs and how many are out of stock; the screen loads with it, so loading it again loads the whole screen",
+                    "result": "Cart",
+                    "fails": { "offline": "the server cannot be reached" } },
+    "getAddress": { "query": "The address the order ships to; null when the person has none yet",
+                    "result": "Address?" },
+    "listDeliveryOptions": { "query": "The ways the cart can ship, the one the order ships with selected",
+                    "result": "DeliveryOption[] 1..4" },
+    "getPromo":   { "query": "The promo code on the order: none, applied, or the last one refused and why",
+                    "result": "Promo" },
+    "getSummary": { "query": "What the order costs: subtotal, shipping, and the total after any discount",
+                    "result": "Summary" },
+    "chooseDelivery": { "command": "Ships the order with this delivery option, which changes its shipping cost",
+                    "params": { "id": "string" },
+                    "fails": { "unavailable": "the option no longer ships to the address" } },
+    "setQuantity": { "command": "Sets how many of an item the order holds",
+                    "params": { "id": "string", "quantity": "int 1..10" },
+                    "fails": { "notFound": "the item is no longer in the cart",
+                               "outOfStock": "not that many are in stock" } },
+    "removeItem": { "command": "Takes an item out of the cart",
+                    "params": { "id": "string" },
+                    "fails": { "notFound": "the item is no longer in the cart" } },
+    "applyPromo": { "command": "Applies the promo code the person typed to the order",
+                    "params": { "code": "string 1..20" },
+                    "fails": { "invalid": "no promo code is called that, or it has expired; getPromo says why" } },
+    "removePromo": { "command": "Takes the applied promo code off the order" },
+    "placeOrder": { "command": "Places the order and charges it to the chosen payment method",
+                    "params": { "method": "PayMethod" },
+                    "result": "PlacedOrder",
+                    "requires": "canPlace",
+                    "fails": { "declined": "the payment was declined",
+                               "priceChanged": "a price changed since the summary was read; read it again" } }
+  },
+
+  "fixtures": {
+    "default": {
+      "cart": {
+        "itemCount": 4,
+        "unavailableCount": 0,
+        "items": [
+          { "id": "p1", "name": "无线降噪耳机 Pro", "variant": "午夜黑", "image": "headphones.jpg",
+            "price": { "amount": 1299, "currency": "CNY" }, "quantity": 1,
+            "lineTotal": { "amount": 1299, "currency": "CNY" } },
+          { "id": "p2", "name": "皮质耳机收纳包", "variant": "焦糖棕", "image": "case.jpg",
+            "price": { "amount": 199, "currency": "CNY" }, "quantity": 1,
+            "lineTotal": { "amount": 199, "currency": "CNY" } },
+          { "id": "p3", "name": "USB-C 快充线 1m", "variant": "白色", "image": "cable.jpg",
+            "price": { "amount": 49, "currency": "CNY" }, "quantity": 2,
+            "lineTotal": { "amount": 98, "currency": "CNY" } }
+        ]
+      },
+      "address": { "name": "孙小明", "phone": "138 **** 5678", "line": "上海市 徐汇区 漕溪北路 88 号 2 栋 1203 室" },
+      "delivery": [
+        { "free": true,
+          "option": { "id": "standard", "label": "标准配送", "eta": "预计 10月18日 送达",
+                      "price": { "amount": 0, "currency": "CNY" }, "selected": true } },
+        { "option": { "id": "express", "label": "次日达", "eta": "预计 10月15日 送达",
+                      "price": { "amount": 18, "currency": "CNY" } } }
+      ],
+      "promo": { "code": "", "status": "none" },
+      "payment": {
+        "method": "card",
+        "cardLast4": "4242",
+        "options": [
+          { "id": "card", "label": "银行卡", "icon": "credit_card", "selected": true },
+          { "id": "alipay", "label": "支付宝", "icon": "account_balance_wallet" },
+          { "id": "wechat", "label": "微信支付", "icon": "chat" }
+        ]
+      },
+      "summary": {
+        "subtotal": { "amount": 1596, "currency": "CNY" },
+        "shipping": { "amount": 0, "currency": "CNY" },
+        "total": { "amount": 1596, "currency": "CNY" }
+      }
+    },
+    "express-alipay": {
+      "$patch": "default",
+      "delivery": [
+        { "free": true,
+          "option": { "id": "standard", "label": "标准配送", "eta": "预计 10月18日 送达",
+                      "price": { "amount": 0, "currency": "CNY" } } },
+        { "option": { "id": "express", "label": "次日达", "eta": "预计 10月15日 送达",
+                      "price": { "amount": 18, "currency": "CNY" }, "selected": true } }
+      ],
+      "payment": {
+        "method": "alipay",
+        "options": [
+          { "id": "card", "label": "银行卡", "icon": "credit_card" },
+          { "id": "alipay", "label": "支付宝", "icon": "account_balance_wallet", "selected": true },
+          { "id": "wechat", "label": "微信支付", "icon": "chat" }
+        ]
+      },
+      "summary": {
+        "shipping": { "amount": 18, "currency": "CNY" },
+        "total": { "amount": 1614, "currency": "CNY" }
+      }
+    },
+    "promo-applied": {
+      "$patch": "default",
+      "promo": { "code": "SAVE50", "status": "applied", "discount": { "amount": 50, "currency": "CNY" } },
+      "summary": { "total": { "amount": 1546, "currency": "CNY" } }
+    },
+    "promo-invalid": {
+      "$patch": "default",
+      "promo": { "code": "FALL2025", "status": "invalid", "message": "优惠码已过期" },
+      "promoCode": "FALL2025"
+    },
+    "no-address-new-card": {
+      "$patch": "default",
+      "address": null,
+      "payment": { "cardLast4": null }
+    },
+    "out-of-stock": {
+      "$patch": "default",
+      "cart": {
+        "unavailableCount": 1,
+        "items": [
+          { "id": "p1", "name": "无线降噪耳机 Pro", "variant": "午夜黑", "image": "headphones.jpg",
+            "price": { "amount": 1299, "currency": "CNY" }, "quantity": 1,
+            "lineTotal": { "amount": 1299, "currency": "CNY" } },
+          { "id": "p2", "name": "皮质耳机收纳包", "variant": "焦糖棕", "image": "case.jpg",
+            "price": { "amount": 199, "currency": "CNY" }, "quantity": 1,
+            "lineTotal": { "amount": 199, "currency": "CNY" }, "inStock": false },
+          { "id": "p3", "name": "USB-C 快充线 1m", "variant": "白色", "image": "cable.jpg",
+            "price": { "amount": 49, "currency": "CNY" }, "quantity": 2,
+            "lineTotal": { "amount": 98, "currency": "CNY" } }
+        ]
+      }
+    }
+  },
+
+  "components": {
+    "Nav": {
+      "nodes": {
+        "component": "NavBar",
+        "leading": { "id": "back", "component": "IconButton", "icon": "arrow_back", "on": { "tap": { "back": true } } },
+        "children": { "id": "title", "component": "Text", "text": "确认订单", "font": "font.subhead" },
+        "trailing": { "id": "secure", "component": "Glyph", "icon": "lock", "font": "font.caption" }
+      }
+    },
+    "PlaceOrder": {
+      "params": { "total": "money", "method": "PayMethod", "canPlace": "bool" },
+      "nodes": {
+        "component": "Button", "variant": "primary",
+        "text": "提交订单 · {total|money}",
+        "disabled": "!canPlace",
+        "on": { "tap": { "call": "placeOrder", "with": { "method": "{method}" } } }
+      }
+    },
+    "PlaceHint": {
+      "params": { "canPlace": "bool", "hasAddress": "bool" },
+      "nodes": {
+        "component": "Text", "if": "!canPlace", "font": "font.caption", "color": "color.danger",
+        "text": { "cases": [
+          { "if": "!hasAddress", "then": "请先添加收货地址" },
+          { "else": "有商品缺货，移除后才能提交" }
+        ] }
+      }
+    },
+    "Summary": {
+      "params": { "summary": "Summary", "cart": "Cart", "promo": "Promo", "promoApplied": "bool" },
+      "nodes": {
+        "component": "Section", "title": "订单金额", "gap": "space.3",
+        "children": [
+          { "id": "subtotal", "component": "SummaryLine", "label": "商品小计（{cart.itemCount} 件）", "value": "{summary.subtotal|money}" },
+          { "id": "shipping", "component": "SummaryLine", "label": "运费", "value": "{summary.shipping|money}" },
+          { "id": "discount", "component": "SummaryLine", "if": "promoApplied", "label": "优惠码 {promo.code}", "value": "−{promo.discount|money}" },
+          { "id": "divider", "component": "Divider" },
+          { "id": "total", "component": "SummaryLine", "strong": true, "label": "应付合计", "value": "{summary.total|money}" }
+        ]
+      }
+    },
+    "Thumb": {
+      "doc": "A product photo as a fixed square.",
+      "params": [],
+      "look": { "size": 64, "radius": 8, "stroke": "line", "cross": "line" }
+    },
+    "SummaryLine": {
+      "doc": "One line of the order summary: name at the start, amount at the end; strong for the total.",
+      "params": ["strong", "label", "value"],
+      "look": {
+        "box": "row", "justify": "between", "items": "center",
+        "children": [
+          { "cases": [
+            { "if": "strong", "then": { "text": "{label}", "font": "font.subhead" } },
+            { "else": { "text": "{label}", "ink": "muted" } }
+          ] },
+          { "cases": [
+            { "if": "strong", "then": { "text": "{value}", "font": "font.price" } },
+            { "else": { "text": "{value}" } }
+          ] }
+        ]
+      }
+    },
+    "TextField": {
+      "doc": "A one-line text input: label above, placeholder until filled, error below.",
+      "params": ["label", "value", "placeholder", "error"],
+      "look": {
+        "box": "column", "gap": 6, "grow": 1,
+        "children": [
+          { "if": "label", "text": "{label}", "font": "font.caption", "ink": "muted" },
+          { "box": "row", "padding": [12, 12], "radius": 8, "stroke": "line",
+            "children": [
+              { "cases": [
+                { "if": "value && value != \"\"", "then": { "text": "{value}" } },
+                { "else": { "text": "{placeholder}", "ink": "muted" } }
+              ] }
+            ] },
+          { "if": "error", "text": "{error}", "font": "font.caption", "ink": "strong" }
+        ]
+      }
+    },
+    "OptionRow": {
+      "doc": "One choice of a single-choice group (delivery, payment): a radio, an optional icon, title and detail, and a price at the end. Outlined strong when selected.",
+      "params": ["selected", "icon", "title", "detail", "price"],
+      "look": {
+        "box": "row", "gap": 12, "padding": [12, 12], "radius": 12, "items": "center",
+        "stroke": { "cases": [ { "if": "selected", "then": "strong" }, { "else": "line" } ] },
+        "children": [
+          { "cases": [
+            { "if": "selected", "then": { "component": "Glyph", "icon": "radio_button_checked" } },
+            { "else": { "component": "Glyph", "icon": "radio_button_unchecked" } }
+          ] },
+          { "if": "icon", "component": "Glyph", "icon": "{icon}" },
+          { "box": "column", "gap": 2, "grow": 1,
+            "children": [
+              { "text": "{title}", "font": "font.subhead" },
+              { "if": "detail", "text": "{detail}", "font": "font.caption", "ink": "muted" }
+            ] },
+          { "if": "price", "text": "{price}" }
+        ]
+      }
+    }
+  },
+
+  "root": {
+    "id": "checkout", "component": "Screen",
+    "children": [
+      { "id": "nav", "component": "Nav" },
+      {
+        "id": "body", "component": "Columns", "padding": "space.4",
+        "columns": { "compact": ["1fr"], "regular": ["62%", "1fr"] },
+        "children": [
+          {
+            "id": "main", "component": "Stack", "gap": "space.6",
+            "children": [
+              {
+                "id": "sec-address", "component": "Section", "title": "收货地址", "gap": "space.2",
+                "children": [
+                  { "id": "address", "component": "ListItem", "if": "hasAddress",
+                    "leadingIcon": "location_on",
+                    "title": "{address.name}  {address.phone}",
+                    "detail": "{address.line}",
+                    "trailingIcon": "chevron_right",
+                    "on": { "tap": { "navigate": "AddressBook" } } },
+                  { "id": "address-add", "component": "ListItem", "if": "!hasAddress",
+                    "leadingIcon": "add_location_alt",
+                    "title": "添加收货地址",
+                    "detail": "下单前需要一个收货地址",
+                    "trailingIcon": "chevron_right",
+                    "on": { "tap": { "navigate": "AddressForm" } } }
+                ]
+              },
+              {
+                "id": "sec-items", "component": "Section", "title": "商品（{cart.itemCount} 件）", "gap": "space.3",
+                "children": [
+                  { "id": "stock-warning", "component": "ListItem", "if": "hasUnavailable",
+                    "leadingIcon": "warning",
+                    "title": "{cart.unavailableCount} 件商品缺货",
+                    "detail": "移除后即可提交订单" },
+                  {
+                    "id": "items", "component": "List", "gap": "space.4", "each": "cart.items",
+                    "item": {
+                      "id": "item-{index}", "component": "Row", "gap": "space.3",
+                      "children": [
+                        { "id": "item-{index}-photo", "component": "Thumb", "image": "{item.image}" },
+                        { "id": "item-{index}-info", "component": "Stack", "gap": "space.1",
+                          "children": [
+                            { "id": "item-{index}-name", "component": "Text", "text": "{item.name}", "maxLines": 2 },
+                            { "id": "item-{index}-variant", "component": "Text", "text": "{item.variant}", "font": "font.caption", "color": "color.textSecondary" },
+                            { "id": "item-{index}-price", "component": "Text", "text": "{item.lineTotal|money}", "font": "font.subhead" },
+                            { "id": "item-{index}-oos", "component": "Badge", "if": "!item.inStock", "text": "缺货" }
+                          ] }
+                      ],
+                      "trailing": [
+                        { "id": "item-{index}-qty", "component": "Stepper", "if": "item.inStock", "bind": "item.quantity",
+                          "on": { "change": { "call": "setQuantity", "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } },
+                        { "id": "item-{index}-remove", "component": "Button", "if": "!item.inStock", "variant": "secondary", "size": "small", "text": "移除",
+                          "on": { "tap": { "call": "removeItem", "with": { "id": "{item.id}" } } } }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "sec-delivery", "component": "Section", "title": "配送方式", "gap": "space.2",
+                "children": [
+                  {
+                    "id": "delivery", "component": "List", "gap": "space.2", "each": "delivery",
+                    "item": {
+                      "id": "delivery-{index}", "component": "OptionRow",
+                      "selected": "{item.option.selected}",
+                      "title": "{item.option.label}",
+                      "detail": "{item.option.eta}",
+                      "price": { "cases": [
+                        { "if": "item.free", "then": "免运费" },
+                        { "else": "{item.option.price|money}" }
+                      ] },
+                      "on": { "tap": { "call": "chooseDelivery", "with": { "id": "{item.option.id}" } } }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "sec-promo", "component": "Section", "title": "优惠码", "gap": "space.2",
+                "children": [
+                  { "id": "promo-entry", "component": "Row", "if": "!promoApplied", "gap": "space.2",
+                    "children": [
+                      { "id": "promo-code", "component": "TextField", "bind": "promoCode", "placeholder": "输入优惠码",
+                        "error": { "cases": [
+                          { "if": "promoInvalid", "then": "{promo.message}" },
+                          { "else": null }
+                        ] } },
+                      { "id": "promo-apply", "component": "Button", "variant": "secondary", "text": "使用", "disabled": "!hasCode",
+                        "on": { "tap": { "call": "applyPromo", "with": { "code": "{promoCode}" } } } }
+                    ] },
+                  { "id": "promo-applied", "component": "ListItem", "if": "promoApplied",
+                    "leadingIcon": "sell",
+                    "title": "{promo.code} 已使用",
+                    "detail": "立减 {promo.discount|money}",
+                    "trailingIcon": "close",
+                    "on": { "tap": { "call": "removePromo" } } }
+                ]
+              },
+              {
+                "id": "sec-payment", "component": "Section", "title": "支付方式", "gap": "space.2",
+                "children": [
+                  {
+                    "id": "payment", "component": "List", "gap": "space.2", "each": "payment.options",
+                    "item": {
+                      "id": "pay-{index}", "component": "OptionRow",
+                      "selected": "{item.selected}",
+                      "icon": "{item.icon}",
+                      "title": "{item.label}",
+                      "on": { "tap": { "set": "payment.method", "to": "{item.id}" } }
+                    }
+                  },
+                  { "id": "card-saved", "component": "ListItem", "if": "cardSaved",
+                    "leadingIcon": "credit_card",
+                    "title": "Visa •••• {payment.cardLast4}",
+                    "detail": "已保存的卡",
+                    "trailingIcon": "chevron_right",
+                    "on": { "tap": { "open": "sheet-cards" } } },
+                  { "id": "card-form", "component": "FieldGroup", "if": "newCard", "gap": "space.2",
+                    "children": [
+                      { "id": "card-number", "component": "TextField", "label": "卡号", "placeholder": "1234 5678 9012 3456",
+                        "assumed": "Card fields are drawn here; the real build may use the payment provider's hosted fields" },
+                      { "id": "card-row", "component": "Row", "gap": "space.2",
+                        "children": [
+                          { "id": "card-expiry", "component": "TextField", "label": "有效期", "placeholder": "MM / YY" },
+                          { "id": "card-cvc", "component": "TextField", "label": "安全码", "placeholder": "CVC" }
+                        ] }
+                    ] }
+                ]
+              },
+              {
+                "id": "summary-compact", "component": "Stack", "only": "compact",
+                "children": [ { "id": "summary", "component": "Summary", "with": { "summary": "{summary}", "cart": "{cart}", "promo": "{promo}", "promoApplied": "{promoApplied}" } } ]
+              }
+            ]
+          },
+          {
+            "id": "aside", "component": "Card", "only": "regular", "padding": "space.5", "radius": "radius.md",
+            "border": "color.border", "elevation": "elevation.card", "gap": "space.4",
+            "sticky": true,
+            "children": [
+              { "id": "summary", "component": "Summary", "with": { "summary": "{summary}", "cart": "{cart}", "promo": "{promo}", "promoApplied": "{promoApplied}" } },
+              { "id": "place-order", "component": "PlaceOrder", "with": { "total": "{summary.total}", "method": "{payment.method}", "canPlace": "{canPlace}" } },
+              { "id": "place-hint", "component": "PlaceHint", "with": { "canPlace": "{canPlace}", "hasAddress": "{hasAddress}" } },
+              { "id": "aside-terms", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
+                "text": "提交即表示同意《购买须知》，7 天无理由退货" }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "bar", "component": "StickyBar", "only": "compact", "padding": [12, 16],
+        "children": [
+          { "id": "bar-total", "component": "Stack", "gap": 0,
+            "children": [
+              { "id": "bar-label", "component": "Text", "text": "应付合计", "font": "font.caption", "color": "color.textSecondary" },
+              { "id": "bar-amount", "component": "Text", "text": "{summary.total|money}", "font": "font.price" },
+              { "id": "place-hint", "component": "PlaceHint", "with": { "canPlace": "{canPlace}", "hasAddress": "{hasAddress}" } }
+            ] },
+          { "id": "bar-submit", "component": "Button", "variant": "primary", "text": "提交订单",
+            "disabled": "!canPlace",
+            "on": { "tap": { "call": "placeOrder", "with": { "method": "{payment.method}" } } } }
+        ]
+      }
+    ]
+  },
+
+  "phases": {
+    "loading": {
+      "id": "loading", "component": "Screen", "children": [
+        { "id": "nav", "component": "Nav" },
+        { "id": "loading-body", "component": "Stack", "padding": "space.4", "gap": "space.6", "children": [
+          { "id": "sk-address", "component": "Skeleton", "shape": ["line 40%", "line 90%"] },
+          { "id": "sk-items", "component": "Skeleton", "shape": ["line 30%", "line 80%", "line 80%", "line 80%"] },
+          { "id": "sk-delivery", "component": "Skeleton", "shape": ["line 30%", "line 90%", "line 90%"] }
+        ] }
+      ]
+    },
+    "error": {
+      "id": "error", "component": "Screen", "children": [
+        { "id": "nav", "component": "Nav" },
+        { "id": "error-state", "component": "EmptyState", "icon": "cloud_off",
+          "title": "订单信息加载失败", "detail": "请检查网络后重试",
+          "action": { "id": "error-retry", "component": "Button", "variant": "primary", "text": "重试",
+                      "on": { "tap": { "call": "getCart" } } } }
+      ]
+    }
+  }
+}
