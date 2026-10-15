@@ -10,6 +10,7 @@ use crate::conditions::{Conditions, UseSite};
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::instance::{State, build};
+use crate::domain;
 use crate::jobs;
 use crate::kinds::{Kinds, track_faults};
 use crate::operations::{BulkOf, Operation, Operations};
@@ -79,7 +80,7 @@ impl Findings {
 /// defines, and the project's looks are checked too.
 pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     let mut findings = Findings::default();
-    let screen = &jobs::expand(screen, &mut findings);
+    let screen = &domain::expand(screen, &mut findings);
     let known = Kinds::read(kinds);
     known.check(kinds, &mut findings);
     let schema = Schema::read(screen, &mut findings);
