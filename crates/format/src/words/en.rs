@@ -92,6 +92,8 @@ pub(super) const WORDS: Words = Words {
     faulty_many: "faulty: {n} faults, not drawn",
     status_waiting: "waiting on the agent",
     status_answered: "answered",
+    waiting_for_agent: "waiting for the agent",
+    agent_changing: "the agent is changing it ({since})",
     window_title: "underdraw gallery — {root}",
     details: "details",
     node_label: "label {n}",

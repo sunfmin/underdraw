@@ -92,6 +92,8 @@ pub(super) const WORDS: Words = Words {
     faulty_many: "エラーあり：{n} 件、描画なし",
     status_waiting: "エージェントの回答待ち",
     status_answered: "回答済み",
+    waiting_for_agent: "エージェントの受け取り待ち",
+    agent_changing: "エージェントが変更中（{since}）",
     window_title: "underdraw ギャラリー — {root}",
     details: "詳細",
     node_label: "番号 {n}",
