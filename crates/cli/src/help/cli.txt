@@ -9,7 +9,8 @@ WHO
 
 READS
   <path>/screen.json: its "operations", "types", "conditions", "fixtures" and
-  each query's "from". Writes nothing. Refuses a description `check` finds
+  each query's "from", with those its project's domain.json declares, as
+  if the screen declared them (`underdraw --help`). Writes nothing. Refuses a description `check` finds
   faults in.
 
 HOW EACH OPERATION BECOMES A COMMAND

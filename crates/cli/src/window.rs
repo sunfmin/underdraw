@@ -32,7 +32,7 @@ use crate::act::{self, Act};
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
-use crate::notes::{self, By, Note, Status};
+use crate::notes::{self, By, Goes, Note, Proposal, Status};
 use crate::reference::{Pointed, Reference};
 use crate::{gpu, links, paint, text};
 
@@ -188,8 +188,12 @@ enum Writing {
 /// What a click on a line of the panel does.
 #[derive(Clone, Debug, PartialEq)]
 enum Do {
-    /// Chooses the outcome at this place among the last act's.
-    Choose(usize),
+    /// Chooses the outcome the last act's operation answered with: the
+    /// state it goes to shown.
+    Choose { outcome: String, to: String },
+    /// Writes a note on the node acted on, proposing where acting on it
+    /// should go.
+    Propose(Proposal),
     /// Starts writing a note on the node picked.
     Write,
     /// Closes the note picked, of this id.
@@ -248,9 +252,11 @@ fn lines(root: &Path) -> Vec<Line> {
 /// What an act on a node came to, as the panel says it at its top.
 struct Acted {
     says: String,
-    /// The outcomes the person chooses from, each with the state it goes
-    /// to; none once the act has gone somewhere, or where it goes nowhere.
-    choices: Vec<(String, String)>,
+    /// What the person chooses from, each a line of the panel and what a
+    /// click on it does: the outcomes an operation can answer with, or,
+    /// where nothing is declared, where acting should go; none once the
+    /// act has gone somewhere.
+    choices: Vec<(String, Do)>,
 }
 
 /// A line of the tree by name: its directory, a description's or not, and
@@ -558,6 +564,10 @@ impl Gallery {
             }
             Act::Choose(choices) => {
                 let says = format!("{on} in {state} calls {}: click how it answered", calls.join(", "));
+                let choices = choices
+                    .into_iter()
+                    .map(|(outcome, to)| (format!("    {outcome} → {to}"), Do::Choose { outcome, to }))
+                    .collect();
                 self.acted = Some(Acted { says, choices });
             }
             Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
@@ -584,16 +594,43 @@ impl Gallery {
                     "{on} goes back, but no act led here: back returns along the path taken by acting"
                 )),
             },
-            Act::Nothing => self.say(format!("no transition from {state} on {on}")),
+            Act::Nothing => {
+                let says = format!("no transition from {state} on {on} · should go to:");
+                let choices = self.proposals(&here.dir, &on);
+                self.acted = Some(Acted { says, choices });
+            }
         }
         true
+    }
+
+    /// Where acting on `on`, a node's id as written and its event, could be
+    /// proposed to go from a state of the description in `dir`: each state
+    /// of it, as the tree lists them, then each screen another description
+    /// under the root declares, as a navigate; each a line of the panel.
+    fn proposals(&self, dir: &Path, on: &str) -> Vec<(String, Do)> {
+        let propose = |goes| Do::Propose(Proposal { on: on.to_string(), goes });
+        let states = self
+            .lines
+            .iter()
+            .filter(|line| line.row.dir == dir)
+            .filter_map(|line| line.state.as_ref())
+            .map(|state| (format!("    {}", state.name()), propose(Goes::To(state.name().to_string()))));
+        let screens = links::declared(&self.root)
+            .into_iter()
+            .filter(|(_, declared)| declared != dir)
+            .map(|(screen, _)| (format!("    navigate to {screen}"), propose(Goes::Navigate(screen))));
+        states.chain(screens).collect()
     }
 
     /// What line `line` of the panel does, done. Whether there was anything
     /// to do there.
     fn click_panel(&mut self, line: usize) -> bool {
         match self.panel_rows().into_iter().nth(line).and_then(|(_, does)| does) {
-            Some(Do::Choose(at)) => self.choose(at),
+            Some(Do::Choose { outcome, to }) => self.choose(outcome, to),
+            Some(Do::Propose(proposal)) => {
+                self.propose(proposal);
+                true
+            }
             Some(Do::Write) => {
                 self.write();
                 true
@@ -610,16 +647,33 @@ impl Gallery {
         }
     }
 
-    /// The outcome at place `at` among the last act's chosen: the state it
-    /// goes to shown. Whether there was one there.
-    fn choose(&mut self, at: usize) -> bool {
-        let chosen = self.acted.as_ref().and_then(|acted| acted.choices.get(at)).cloned();
-        let (Some((outcome, to)), Some(here)) = (chosen, self.wanted.clone()) else {
+    /// The outcome the last act's operation answered with chosen: the
+    /// state `to` it goes to shown. Whether a state was shown to go from.
+    fn choose(&mut self, outcome: String, to: String) -> bool {
+        let Some(here) = self.wanted.clone() else {
             return false;
         };
         let state = here.state.clone().unwrap_or_default();
         self.go(Picked { dir: here.dir, state: Some(to.clone()) }, format!("{outcome} in {state} → {to}"));
         true
+    }
+
+    /// A note written on the node acted on, at the instance pointed at,
+    /// holding `proposal`, for the agent to declare; the panel says so, or
+    /// why it was not. The window writes the note only, never the
+    /// description.
+    fn propose(&mut self, proposal: Proposal) {
+        let Some(on) = self.reference().filter(|on| on.node.is_some()) else {
+            return self.say("a proposal is a note on a node: act on one first".to_string());
+        };
+        match notes::propose(&on, proposal) {
+            Ok(id) => {
+                self.notes = notes_of(&self.lines);
+                self.say(format!("{id} saved, proposing it for the agent: `underdraw notes` lists it"));
+                self.note = Some((on.description, id));
+            }
+            Err(e) => self.say(format!("not saved: {e:#}")),
+        }
     }
 
     /// The state `to` names shown, or its description's first state when
@@ -1100,9 +1154,7 @@ impl Gallery {
         let mut rows = Vec::new();
         if let Some(Acted { says, choices }) = &self.acted {
             rows.push((says.clone(), None));
-            for (at, (outcome, to)) in choices.iter().enumerate() {
-                rows.push((format!("    {outcome} → {to}"), Some(Do::Choose(at))));
-            }
+            rows.extend(choices.iter().map(|(line, does)| (line.clone(), Some(does.clone()))));
         }
         if let Some(draft) = &self.draft {
             let keys = "Enter saves, Shift+Enter breaks a line, Esc cancels";
@@ -2698,8 +2750,17 @@ mod tests {
         show(&mut gallery, "orders", "cancel-unpaid");
         act_on(&mut gallery, "cd-keep");
         assert_eq!(shown(&gallery), "orders · cancel-unpaid", "nothing declared: it stays");
-        assert_eq!(gallery.panel()[0], "no transition from cancel-unpaid on cd-keep.tap");
-        assert_eq!(gallery.panel()[1], "id  cd-keep", "and the node is picked");
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "no transition from cancel-unpaid on cd-keep.tap · should go to:");
+        let ids = panel.iter().position(|line| line == "id  cd-keep").expect("and the node is picked");
+        let offered: Vec<&str> = panel[1..ids].iter().map(|line| line.trim()).collect();
+        assert_eq!(offered[0], "default", "the description's states, as the tree lists them: {offered:?}");
+        assert!(offered.contains(&"cancel-unpaid") && offered.contains(&"loading"), "{offered:?}");
+        assert!(
+            offered.contains(&"navigate to ExportDocuments"),
+            "and the screens under the root: {offered:?}"
+        );
+        assert!(!offered.iter().any(|line| line.ends_with("OrderList")), "but not its own: {offered:?}");
         act_on(&mut gallery, "nav-export");
         let todo = line_of(&gallery, "todo");
         over_row(&mut gallery, todo);
@@ -2708,6 +2769,63 @@ mod tests {
             gallery.history.is_empty() && gallery.acted.is_none(),
             "picking in the tree starts a new path"
         );
+    }
+
+    #[test]
+    fn choosing_where_nothing_declared_should_go_writes_a_note_and_never_the_description() {
+        let root = root_of("propose", &[("orders", "orders"), ("export", "export")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let dir = root.join("orders");
+        let screen = std::fs::read_to_string(dir.join(crate::SCREEN)).unwrap();
+        show(&mut gallery, "orders", "cancel-unpaid");
+        act_on(&mut gallery, "cd-keep");
+        assert!(click_panel_line(&mut gallery, "default"), "a state chosen");
+        assert_eq!(
+            shown(&gallery),
+            "orders · cancel-unpaid",
+            "a proposal goes nowhere: the agent declares it"
+        );
+        assert!(gallery.panel()[0].starts_with("N1 saved"), "{:?}", gallery.panel());
+        act_on(&mut gallery, "cd-keep");
+        assert!(click_panel_line(&mut gallery, "navigate to ExportDocuments"), "a screen chosen");
+
+        let written = notes::read(&dir).unwrap();
+        let proposed: Vec<(&str, Option<&Proposal>, &str)> = written
+            .iter()
+            .map(|note| (note.node.origin.written.as_str(), note.proposes.as_ref(), note.state.name()))
+            .collect();
+        let on = "cd-keep.tap".to_string();
+        assert_eq!(
+            proposed,
+            [
+                (
+                    "cd-keep",
+                    Some(&Proposal { on: on.clone(), goes: Goes::To("default".into()) }),
+                    "cancel-unpaid"
+                ),
+                (
+                    "cd-keep",
+                    Some(&Proposal { on, goes: Goes::Navigate("ExportDocuments".into()) }),
+                    "cancel-unpaid"
+                ),
+            ]
+        );
+        assert_eq!(
+            written[0].thread[0].says,
+            "cd-keep.tap in cancel-unpaid should go to default: declare the transition"
+        );
+        let listed = notes::notes(&root, None, None, false).unwrap();
+        assert_eq!(
+            listed["notes"][1]["proposes"],
+            json!({ "on": "cd-keep.tap", "navigate": "ExportDocuments" })
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(crate::SCREEN)).unwrap(),
+            screen,
+            "screen.json untouched"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// A root of its own named `name`, holding copies of the drafts `copied`

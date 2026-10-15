@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
 use crate::conditions::{Conditions, UseSite};
+use crate::domain;
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::instance::{State, build};
@@ -89,7 +90,7 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
 /// not in `others` is held to nothing.
 pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams) -> Checked {
     let mut findings = Findings::default();
-    let screen = &jobs::expand(screen, &mut findings);
+    let screen = &domain::expand(screen, &mut findings);
     let known = Kinds::read(kinds);
     known.check(kinds, &mut findings);
     let schema = Schema::read(screen, &mut findings);
