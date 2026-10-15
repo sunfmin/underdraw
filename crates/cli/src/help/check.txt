@@ -21,9 +21,12 @@ READS
   and resolves to the description under the root whose "screen" is that
   name. A navigate to a screen no description declares is not a fault: it
   is an assumption, a screen not drawn yet, for the person to confirm;
-  `render --root` and the gallery draw its node with the orange "?". One
-  description checked alone cannot see the others, so it says nothing of
-  where it navigates.
+  `render --root` and the gallery draw its node with the orange "?". A
+  navigate to a screen that is drawn and declares "params" gives each of
+  them, of its type, in "with", and nothing else: a finding on the node
+  that navigates, at "<node>.on.<event>.with" or ".with.<param>"
+  (PARAMS below). One description checked alone cannot see the others, so
+  it says nothing of where it navigates, nor of what it gives.
 
 ANSWERS
   {

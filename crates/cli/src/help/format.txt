@@ -21,6 +21,7 @@ SCREEN.JSON
     "title":      "My todos",          what a person calls it
     "locale":     "zh-CN",             optional BCP 47 tag: glyph forms, line breaks
     "tokens":     "tokens.json",
+    "params":     ["orderId"],         what it is opened with: fields of data (PARAMS)
     "data":       {…}, "types": {…},   the view model
     "fixtures":   {…},                 sample view models, one state each
     "conditions": {…},                 every yes/no the screen decides, named
@@ -89,6 +90,20 @@ FIXTURES
   may leave out only fields with a default; no unknown fields; types and
   ranges hold. Use real sample values. The first fixture is the default
   for `render`.
+
+PARAMS
+  What the screen is opened with: a list naming fields of "data".
+    "params": ["orderId"],
+    "data":   { "orderId": "string 1..", "order": {"type": "Order", "from": "getOrder"} }
+  Every fixture gives each param itself, or through its "$patch", even one
+  that is nullable or has a default. A param is not view state, not filled
+  by a query ("from") and not derived: what opens the screen gives it.
+  Each "navigate" to the screen gives each param, of its type, in "with",
+  and nothing else; "params": [] says it is opened with nothing, so a
+  navigate to it gives no "with". With no "params", nothing a navigate
+  gives it is checked. `check <root>` holds every navigate to a screen
+  under the root to its params; a navigate to a screen not drawn yet is
+  an assumption, its "with" unchecked.
 
 CONDITIONS
   Every decision is named once, and used by name:
@@ -214,6 +229,7 @@ ACTIONS
   filter it applies), marking a todo done. Everything else is UI-only,
   what the screen does by itself, and is one of these:
     navigate   go to a screen    "navigate": "Checkout", "with": {"id": "{listing.id}"}
+                                 "with" gives each of its params (PARAMS)
     back       go back           "back": true
     open       show a popup      "open": "cancel-dialog", "with": {"id": "{item.id}"}
     close      hide it           "close": "cancel-dialog"
