@@ -21,8 +21,15 @@ DOES
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
   at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
-  labels them; picking a description picks its first state. Scroll a tall
-  page with the mouse wheel or trackpad. Clicking a node in the picture
+  labels them. Picking a description shows its overview: every state, small
+  and captioned with its name, in a grid in the order the tree lists them,
+  tall ones cut at the foot, and each transition the description declares
+  (`transitions` in screen.json) as an arrow from its `from` state to its
+  `to`, labelled with the number the node acted on is tagged with in the
+  `from` state and, for an event that calls an operation, the outcome
+  ("4 · ok"); one that stays in its state loops back into it. A state no
+  transition reaches or leaves is still shown. Clicking a state's picture
+  picks that state. Scroll a tall page with the mouse wheel or trackpad. Clicking a node in the picture
   picks the innermost there, an overlay (a badge, a dialog, a sheet) before
   what it floats over, outlines it at both widths, and opens a panel with
   its id, kind, the operation it calls when acted on, what was assumed
@@ -42,7 +49,8 @@ DOES
   forward; a description that gains faults shows them, and its
   picture again once they are fixed. A description directory added under
   <root> comes into the tree, and one removed leaves it. When the state
-  shown goes, its description's first state is shown instead.
+  shown goes, its description's overview is shown instead. The window
+  opens on the first description's overview.
 
 ANSWERS
   {

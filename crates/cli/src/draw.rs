@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::bail;
 use serde_json::Value;
-use underdraw_format::{Breakpoint, Node, State};
+use underdraw_format::{Breakpoint, Model, Node, State, Transition};
 use underdraw_layout::Page;
 use vello::Scene;
 
@@ -62,6 +62,9 @@ pub struct Laid {
     pub page: Page,
     /// The operations each node calls when acted on, by id.
     pub calls: BTreeMap<String, Vec<String>>,
+    /// The id each node is first given in this state, by its id as the
+    /// description writes it: a transition names a node so.
+    pub written: BTreeMap<String, String>,
     typesetter: text::Typesetter,
 }
 
@@ -74,6 +77,8 @@ pub struct Drawing {
     pub page: Page,
     /// The operations each node calls when acted on, by id.
     pub calls: BTreeMap<String, Vec<String>>,
+    /// The id each node is first given in this state, by its id as written.
+    pub written: BTreeMap<String, String>,
     pub scene: Scene,
     /// Pixels per point: the one asked for, or less when the page would be
     /// taller than the GPU draws.
@@ -125,7 +130,34 @@ pub fn lay_out(path: &Path, wanted: &Wanted, drawn: Option<&BTreeSet<String>>) -
         .map_err(anyhow::Error::msg)?;
     let mut calls = BTreeMap::new();
     called(&root, &mut calls);
-    Ok(Laid { dir, shown, breakpoint, page, calls, typesetter })
+    let mut written = BTreeMap::new();
+    ids(&root, &mut written);
+    Ok(Laid { dir, shown, breakpoint, page, calls, written, typesetter })
+}
+
+/// The transitions the description at `path` declares, in the order
+/// written; refused when the description has findings.
+pub fn transitions(path: &Path) -> anyhow::Result<Vec<Transition>> {
+    let (screen, dir) = read(path)?;
+    let kinds = read_kinds(&dir)?;
+    let checked = checked(&screen, &dir, kinds.as_ref())?;
+    match Model::read(&screen, checked) {
+        Ok(model) => Ok(model.transitions),
+        Err(checked) => bail!(
+            "the description has {} finding(s): run `underdraw check {}` and fix them first",
+            checked.findings.len(),
+            path.display()
+        ),
+    }
+}
+
+/// The id `node` and each node in it are given, added to `written` by the
+/// id as written, where none was added before.
+fn ids(node: &Node, written: &mut BTreeMap<String, String>) {
+    written.entry(node.written_id.clone()).or_insert_with(|| node.id.clone());
+    for child in &node.children {
+        ids(child, written);
+    }
 }
 
 /// The operations `node` and each node in it call, added to `calls` by id.
@@ -156,6 +188,7 @@ impl Laid {
             breakpoint: self.breakpoint,
             page: self.page,
             calls: self.calls,
+            written: self.written,
             scene,
             scale,
             pixels: [pixels_wide, pixels_high],

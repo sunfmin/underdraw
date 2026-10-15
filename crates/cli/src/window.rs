@@ -46,6 +46,13 @@ const NOTCH: f64 = 40.0;
 const PANEL_LINE: f64 = 20.0;
 /// The space between one finding and the next.
 const GAP: f64 = 12.0;
+/// The width each state is drawn at in a description's overview, and how
+/// wide and, at most, how tall its picture there is.
+const OVERVIEW: u32 = 390;
+const THUMB: f64 = 160.0;
+const THUMB_TALL: f64 = 320.0;
+/// The space between two states in the overview, where the arrows run.
+const SPACE: f64 = 72.0;
 
 /// What the window is told from other threads.
 enum Told {
@@ -161,6 +168,8 @@ struct Shown {
 enum Picture {
     /// One state at each of `WIDTHS`.
     Pages(Vec<Page>),
+    /// Every state of the description, small, and its transitions.
+    Overview(Overview),
     /// Why it cannot be drawn: what `check` finds wrong with it.
     Faults(Vec<Finding>),
 }
@@ -177,6 +186,38 @@ struct Page {
     /// The operations each node calls when acted on, by id.
     calls: BTreeMap<String, Vec<String>>,
 }
+
+/// A description's overview: each of its states, in the order the tree
+/// lists them, and each transition it declares as an arrow between two.
+struct Overview {
+    thumbs: Vec<Thumb>,
+    arrows: Vec<Arrow>,
+}
+
+/// One state in the overview, drawn at `OVERVIEW` at one pixel per point.
+struct Thumb {
+    name: String,
+    phase: bool,
+    /// The tree's line of the state.
+    line: usize,
+    scene: Scene,
+    width: f64,
+    height: f64,
+}
+
+/// One transition: from one state to another, by their places in
+/// [`Overview::thumbs`], labelled with the label of the node acted on and,
+/// for a call, the outcome.
+struct Arrow {
+    from: usize,
+    to: usize,
+    label: String,
+    /// How wide the label is set, in points.
+    wide: f64,
+}
+
+/// The font the overview's arrows are labelled in.
+const ARROW_FONT: Font = Font { size: 12.0, weight: 600, line_height: 16.0 };
 
 impl Page {
     /// The node that a press at `at`, in the page's points, is on: the
@@ -233,6 +274,13 @@ impl Gallery {
     /// under it, or none. Whether that changed what is shown.
     fn press(&mut self) -> bool {
         if self.cursor.0 >= TREE {
+            if let Picture::Overview(_) = self.picture {
+                let Some(line) = self.state_at(self.cursor) else {
+                    return false;
+                };
+                self.pick(line);
+                return true;
+            }
             let node = self.node_at(self.cursor);
             let changed = node != self.node;
             self.node = node;
@@ -251,20 +299,17 @@ impl Gallery {
         }
     }
 
-    /// The line whose picture picking line `index` shows: a state's own; a
-    /// description's first state, the line under it, or the description
-    /// itself when it has none; nothing for a directory.
+    /// The line picking line `index` shows: a state's, or a description's,
+    /// own; nothing for a directory.
     fn shows(&self, index: usize) -> Option<usize> {
-        let line = self.lines.get(index)?;
-        line.row.description.as_ref()?;
-        let first = self.lines.get(index + 1).filter(|next| line.state.is_none() && next.state.is_some());
-        Some(if first.is_some() { index + 1 } else { index })
+        self.lines.get(index)?.row.description.as_ref()?;
+        Some(index)
     }
 
     /// The tree read again from the files as they now stand, and the state
-    /// shown drawn again from them, scrolled as it was. Where that state
-    /// went, its description's first state is shown; where its description
-    /// went too, the first description's.
+    /// or overview shown drawn again from them, scrolled as it was. Where
+    /// that state went, its description's overview is shown; where its
+    /// description went too, the first description's.
     fn reload(&mut self) {
         let (wanted, scroll) = (self.wanted.take(), self.scroll);
         self.lines = lines(&self.root);
@@ -292,7 +337,8 @@ impl Gallery {
         self.clamp();
     }
 
-    /// What picking line `index` shows drawn at each of `WIDTHS`.
+    /// What picking line `index` shows: a state drawn at each of `WIDTHS`;
+    /// a description with states, its overview.
     fn pick(&mut self, index: usize) {
         let Some(index) = self.shows(index) else {
             return;
@@ -313,6 +359,16 @@ impl Gallery {
         // The screens drawn under the root as they now stand: a navigate to
         // any other is a screen not drawn yet.
         let drawn = links::drawn(&self.root);
+        if state.is_none() && self.lines.get(index + 1).is_some_and(|next| next.state.is_some()) {
+            self.picture = match self.overview(index, &dir, &drawn) {
+                Ok(overview) => Picture::Overview(overview),
+                Err(e) => Picture::Faults(vec![Finding {
+                    at: crate::SCREEN.to_string(),
+                    problem: format!("{e:#}"),
+                }]),
+            };
+            return;
+        }
         let mut pages = Vec::new();
         for width in WIDTHS {
             let wanted = match &state {
@@ -344,6 +400,178 @@ impl Gallery {
             self.node = None;
         }
         self.picture = Picture::Pages(pages);
+    }
+
+    /// The overview of the description on line `index`, in `dir`: its states
+    /// on the lines under it, each drawn at `OVERVIEW`, and its transitions.
+    fn overview(
+        &mut self,
+        index: usize,
+        dir: &Path,
+        drawn: &std::collections::BTreeSet<String>,
+    ) -> anyhow::Result<Overview> {
+        let states: Vec<(usize, &State)> = self
+            .lines
+            .iter()
+            .enumerate()
+            .skip(index + 1)
+            .map_while(|(line, Line { state, .. })| Some((line, state.as_ref()?)))
+            .collect();
+        // Each state laid out on a thread of its own, all at once.
+        let drawings: Vec<anyhow::Result<draw::Drawing>> = std::thread::scope(|scope| {
+            let laying: Vec<_> = states
+                .iter()
+                .map(|(_, state)| {
+                    scope.spawn(move || {
+                        Ok(draw::lay_out(dir, &state.wanted(OVERVIEW, 1), Some(drawn))?.draw(1, u32::MAX))
+                    })
+                })
+                .collect();
+            laying.into_iter().map(|laid| laid.join().expect("laying out a state panicked")).collect()
+        });
+        let mut thumbs = Vec::new();
+        // For each state, the label of each node by its id as written.
+        let mut labels = Vec::new();
+        for ((line, state), drawing) in states.into_iter().zip(drawings) {
+            let drawing = drawing?;
+            let labelled: BTreeMap<String, u32> = drawing
+                .written
+                .iter()
+                .filter_map(|(written, id)| {
+                    let label = drawing.page.nodes.iter().find(|node| &node.id == id)?.label?;
+                    Some((written.clone(), label))
+                })
+                .collect();
+            labels.push(labelled);
+            thumbs.push(Thumb {
+                name: state.name().to_string(),
+                phase: matches!(state, State::Phase(_)),
+                line,
+                width: f64::from(drawing.page.width),
+                height: f64::from(drawing.page.height),
+                scene: drawing.scene,
+            });
+        }
+        let at = |name: &str| thumbs.iter().position(|thumb| thumb.name == name);
+        let mut arrows = Vec::new();
+        for transition in draw::transitions(dir)? {
+            let (Some(from), Some(to)) = (at(&transition.from), at(&transition.to)) else { continue };
+            let node = match labels[from].get(&transition.node) {
+                Some(label) => label.to_string(),
+                None => transition.node.clone(),
+            };
+            let label = match &transition.outcome {
+                Some(outcome) => format!("{node} · {outcome}"),
+                None => node,
+            };
+            let wide = f64::from(self.typesetter.text(&label, ARROW_FONT, None).width) + 10.0;
+            arrows.push(Arrow { from, to, label, wide });
+        }
+        Ok(Overview { thumbs, arrows })
+    }
+
+    /// How many states a row of the overview holds in a pane `pane` wide.
+    fn columns(pane: f64) -> usize {
+        ((pane - 2.0 * MARGIN + SPACE) / (THUMB + SPACE)).floor().max(1.0) as usize
+    }
+
+    /// Where each state's picture is in the overview, in window points:
+    /// its left, top, width and height, the height no more than
+    /// `THUMB_TALL`.
+    fn cells(&self) -> Vec<(f64, f64, f64, f64)> {
+        let Picture::Overview(overview) = &self.picture else {
+            return Vec::new();
+        };
+        let columns = Self::columns(self.size.0 - TREE);
+        overview
+            .thumbs
+            .iter()
+            .enumerate()
+            .map(|(index, thumb)| {
+                let (column, row) = ((index % columns) as f64, (index / columns) as f64);
+                let x = TREE + MARGIN + column * (THUMB + SPACE);
+                let y = MARGIN - self.scroll + CAPTION + row * (CAPTION + THUMB_TALL + SPACE);
+                (x, y, THUMB, (thumb.height * THUMB / thumb.width).min(THUMB_TALL))
+            })
+            .collect()
+    }
+
+    /// The tree's line of the state whose picture in the overview is under
+    /// `at`, a point in the window.
+    fn state_at(&self, at: (f64, f64)) -> Option<usize> {
+        let Picture::Overview(overview) = &self.picture else {
+            return None;
+        };
+        let cells = self.cells();
+        let index = cells
+            .iter()
+            .position(|&(x, y, w, h)| (x..=x + w).contains(&at.0) && (y - CAPTION..=y + h).contains(&at.1))?;
+        Some(overview.thumbs[index].line)
+    }
+
+    /// The overview's arrows and their labels, in window points. An arrow
+    /// runs from the edge of one picture to the edge of the other, each to
+    /// the right of its way, so that two between the same states, either
+    /// way, run apart, and is labelled nearer where it starts, so that their
+    /// labels do too; one that stays in its state loops out of its right.
+    fn arrows(&self) -> Vec<Draw> {
+        let Picture::Overview(overview) = &self.picture else {
+            return Vec::new();
+        };
+        let cells = self.cells();
+        let mut list = Vec::new();
+        for (index, arrow) in overview.arrows.iter().enumerate() {
+            let before =
+                overview.arrows[..index].iter().filter(|a| (a.from, a.to) == (arrow.from, arrow.to)).count();
+            let (x, y, w, h) = cells[arrow.from];
+            let (start, end, middle) = if arrow.from == arrow.to {
+                let top = y + 16.0 + before as f64 * 32.0;
+                let out = x + w + 20.0;
+                list.push(line((x + w, top), (out, top)));
+                list.push(line((out, top), (out, top + 18.0)));
+                ((out, top + 18.0), (x + w + 2.0, top + 18.0), (out + 4.0 + arrow.wide / 2.0, top + 9.0))
+            } else {
+                let to = cells[arrow.to];
+                let (from_middle, to_middle) =
+                    ((x + w / 2.0, y + h / 2.0), (to.0 + to.2 / 2.0, to.1 + to.3 / 2.0));
+                let (dx, dy) = (to_middle.0 - from_middle.0, to_middle.1 - from_middle.1);
+                let length = dx.hypot(dy).max(1.0);
+                let way = (dx / length, dy / length);
+                let off = 6.0 + before as f64 * 20.0;
+                let right = (-way.1 * off, way.0 * off);
+                let start = edge((x, y, w, h), (from_middle.0 + right.0, from_middle.1 + right.1), way, 3.0);
+                let end = edge(to, (to_middle.0 + right.0, to_middle.1 + right.1), (-way.0, -way.1), 3.0);
+                let along = 0.3 + before as f64 * 0.15;
+                (start, end, (start.0 + (end.0 - start.0) * along, start.1 + (end.1 - start.1) * along))
+            };
+            list.push(line(start, end));
+            let (dx, dy) = (end.0 - start.0, end.1 - start.1);
+            let angle = dy.atan2(dx);
+            for turn in [0.45_f64, -0.45] {
+                let back = (end.0 - 8.0 * (angle + turn).cos(), end.1 - 8.0 * (angle + turn).sin());
+                list.push(line(back, end));
+            }
+            let at = rect(middle.0 - arrow.wide / 2.0, middle.1 - 9.0, arrow.wide, 18.0);
+            list.push(Draw::Box {
+                rect: at,
+                radius: 9.0,
+                fill: Some(Ink::Paper),
+                stroke: Some(Ink::Text),
+                dashed: false,
+            });
+            let label = Draw::Text {
+                rect: rect(middle.0 - arrow.wide / 2.0, middle.1 - 8.0, arrow.wide, 16.0),
+                text: arrow.label.clone(),
+                font: ARROW_FONT,
+                ink: Ink::Text,
+                max_lines: Some(1),
+                align: Align::Center,
+                underline: false,
+                strike: false,
+            };
+            list.push(label);
+        }
+        list
     }
 
     /// Where each picture's top-left corner is in the window, in points.
@@ -454,7 +682,7 @@ impl Gallery {
                 let gaps = MARGIN * (pages.len() + 1) as f64;
                 ((pane - gaps) / wide).clamp(0.1, 1.0)
             }
-            Picture::Faults(_) => 1.0,
+            Picture::Overview(_) | Picture::Faults(_) => 1.0,
         }
     }
 
@@ -464,6 +692,10 @@ impl Gallery {
             Picture::Pages(pages) => {
                 let tallest = pages.iter().map(|p| p.height).fold(0.0, f64::max);
                 MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN + self.panel_height()
+            }
+            Picture::Overview(overview) => {
+                let rows = overview.thumbs.len().div_ceil(Self::columns(pane)) as f64;
+                MARGIN + rows * (CAPTION + THUMB_TALL + SPACE) - SPACE + MARGIN
             }
             Picture::Faults(_) => self.faults(pane).1 + MARGIN,
         }
@@ -552,7 +784,9 @@ impl Gallery {
         let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
         let zoom = self.zoom(width - TREE);
         let mut pages = Vec::new();
+        let mut thumbs = Vec::new();
         let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
+        let (cells, arrows) = (self.cells(), self.arrows());
         match &self.picture {
             Picture::Pages(shots) => {
                 for (shot, at) in shots.iter().zip(origins) {
@@ -602,6 +836,21 @@ impl Gallery {
                     }
                 }
             }
+            Picture::Overview(overview) => {
+                for (thumb, (x, y, w, h)) in overview.thumbs.iter().zip(cells) {
+                    let ink = if thumb.phase { Ink::Muted } else { Ink::Text };
+                    pane.push(words(rect(x, y - CAPTION, w, 16.0), thumb.name.clone(), ink, 600));
+                    pane.push(Draw::Box {
+                        rect: rect(x - 0.5, y - 0.5, w + 1.0, h + 1.0),
+                        radius: 0.0,
+                        fill: None,
+                        stroke: Some(Ink::Line),
+                        dashed: false,
+                    });
+                    thumbs.push(((x, y, w, h), w / thumb.width, &thumb.scene));
+                }
+                pane.extend(arrows);
+            }
             Picture::Faults(_) => {}
         }
 
@@ -612,6 +861,12 @@ impl Gallery {
         scene.push_clip_layer(Fill::NonZero, at, &Area::new(TREE, 0.0, width, height));
         for ((x, y), page) in pages {
             scene.append(page, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
+        }
+        // A tall state is cut at the foot of its picture.
+        for ((x, y, w, h), zoom, thumb) in thumbs {
+            scene.push_clip_layer(Fill::NonZero, at, &Area::new(x, y, x + w, y + h));
+            scene.append(thumb, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
+            scene.pop_layer();
         }
         paint::draws(&mut scene, at, &pane, &mut self.typesetter);
         scene.pop_layer();
@@ -638,6 +893,28 @@ impl Gallery {
 
 fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
     Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
+}
+
+/// A line from `from` to `to`, in the ink text is drawn in.
+fn line(from: (f64, f64), to: (f64, f64)) -> Draw {
+    Draw::Line { from: [from.0 as f32, from.1 as f32], to: [to.0 as f32, to.1 as f32], ink: Ink::Text }
+}
+
+/// Where a way from `from`, inside `cell` (left, top, width, height), going
+/// `way` (of length 1) leaves it, `gap` further on.
+fn edge(cell: (f64, f64, f64, f64), from: (f64, f64), way: (f64, f64), gap: f64) -> (f64, f64) {
+    let (x, y, w, h) = cell;
+    let across = |at: f64, low: f64, high: f64, by: f64| {
+        if by > 0.0 {
+            (high - at) / by
+        } else if by < 0.0 {
+            (low - at) / by
+        } else {
+            f64::INFINITY
+        }
+    };
+    let t = across(from.0, x, x + w, way.0).min(across(from.1, y, y + h, way.1)).max(0.0) + gap;
+    (from.0 + way.0 * t, from.1 + way.1 * t)
 }
 
 /// `draw`, a text, moved `dx` across and `dy` down.
@@ -797,6 +1074,7 @@ mod tests {
         match &gallery.picture {
             Picture::Pages(pages) => pages.iter().map(|page| page.caption.as_str()).collect(),
             Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+            Picture::Overview(_) => panic!("the overview, not a state"),
         }
     }
 
@@ -829,31 +1107,98 @@ mod tests {
     }
 
     #[test]
-    fn picking_a_description_picks_its_first_state_at_both_widths() {
+    fn picking_a_state_draws_it_at_both_widths() {
         let mut gallery = gallery();
         let docs = line_of(&gallery, "docs");
-        over_row(&mut gallery, docs + 2);
-        assert!(gallery.press(), "a later state is picked");
-        over_row(&mut gallery, docs);
-        assert!(gallery.press(), "the description's line is picked");
-        assert_eq!(gallery.picked, Some(docs + 1), "its first state, the line under it");
+        over_row(&mut gallery, docs + 1);
+        assert!(gallery.press(), "the state is picked");
+        assert_eq!(gallery.picked, Some(docs + 1));
         let Picture::Pages(pages) = &gallery.picture else { panic!("docs has no faults") };
         let widths: Vec<f64> = pages.iter().map(|page| page.width).collect();
         assert_eq!(widths, vec![390.0, 1120.0]);
         assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
         assert!(!gallery.press(), "picking it again changes nothing");
-        over_row(&mut gallery, docs + 1);
-        assert!(!gallery.press(), "nor does picking the state it shows");
         gallery.cursor = (TREE + 100.0, 100.0);
         gallery.press();
         assert_eq!(gallery.picked, Some(docs + 1), "a press on the pictures leaves the state picked");
+    }
+
+    /// The overview shown: each state's name, and each arrow as (from, to,
+    /// label).
+    fn overview(gallery: &Gallery) -> (Vec<&str>, Vec<(&str, &str, &str)>) {
+        let Picture::Overview(overview) = &gallery.picture else { panic!("not an overview") };
+        let names = overview.thumbs.iter().map(|thumb| thumb.name.as_str()).collect();
+        let arrows = overview
+            .arrows
+            .iter()
+            .map(|arrow| {
+                let name = |index: usize| overview.thumbs[index].name.as_str();
+                (name(arrow.from), name(arrow.to), arrow.label.as_str())
+            })
+            .collect();
+        (names, arrows)
+    }
+
+    #[test]
+    fn picking_a_description_shows_every_state_and_the_transitions_between_them() {
+        let mut gallery = gallery();
+        let orders = line_of(&gallery, "orders");
+        over_row(&mut gallery, orders);
+        assert!(gallery.press(), "the description is picked");
+        assert_eq!(gallery.picked, Some(orders), "the description itself, not a state of it");
+        let listed: Vec<&str> = gallery.lines[orders + 1..]
+            .iter()
+            .take_while(|line| line.state.is_some())
+            .map(|line| line.row.name.as_str())
+            .collect();
+        let (names, arrows) = overview(&gallery);
+        assert_eq!(names, listed, "every state, in the order the tree lists them");
+        assert!(names.contains(&"loading"), "a state no transition reaches or leaves is still shown");
+        let screen: Value = serde_json::from_str(
+            &std::fs::read_to_string(Path::new(DRAFTS).join("orders/screen.json")).unwrap(),
+        )
+        .unwrap();
+        let declared = screen["transitions"].as_array().unwrap();
+        assert_eq!(arrows.len(), declared.len(), "an arrow for each transition declared");
+        for ((from, to, label), declared) in arrows.iter().zip(declared) {
+            assert_eq!((*from, *to), (declared["from"].as_str().unwrap(), declared["to"].as_str().unwrap()));
+            let (number, outcome) = label.split_once(" · ").map_or((*label, None), |(n, o)| (n, Some(o)));
+            assert!(number.parse::<u32>().is_ok(), "labelled with the node's label: {label}");
+            assert_eq!(outcome, declared["outcome"].as_str(), "and, for a call, the outcome");
+        }
+        assert!(
+            arrows.iter().any(|(from, to, label)| (*from, *to) == ("cancel-ready", "cancel-ready")
+                && label.ends_with(" · shipped")),
+            "one that stays in its state too: {arrows:?}"
+        );
+
+        // Each label is the one the node is tagged with in its from state.
+        let Picture::Overview(shown) = &gallery.picture else { unreachable!() };
+        let retry = shown.arrows.iter().find(|arrow| shown.thumbs[arrow.from].name == "error").unwrap();
+        let error = orders + 1 + names.iter().position(|name| *name == "error").unwrap();
+        let drawing = draw::lay_out(
+            &Path::new(DRAFTS).join("orders"),
+            &gallery.lines[error].state.as_ref().unwrap().wanted(OVERVIEW, 1),
+            None,
+        )
+        .unwrap();
+        let label = drawing.page.nodes.iter().find(|node| node.id == "retry").unwrap().label.unwrap();
+        assert_eq!(retry.label, format!("{label} · ok"));
+
+        let cells = gallery.cells();
+        assert_eq!(cells.len(), names.len(), "each state has its picture");
+        let error_cell = cells[error - orders - 1];
+        gallery.cursor = (error_cell.0 + 10.0, error_cell.1 + 10.0);
+        assert!(gallery.press(), "clicking a state's picture picks it");
+        assert_eq!(gallery.picked, Some(error));
+        assert_eq!(captions(&gallery), ["error · 390", "error · 1120"]);
     }
 
     #[test]
     fn a_tall_page_scrolls_as_far_as_its_end() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        over_row(&mut gallery, listing);
+        over_row(&mut gallery, listing + 1);
         gallery.press();
         let end = gallery.pictures_height(1440.0 - TREE) - 900.0;
         assert!(end > 0.0, "the listing is taller than the window");
@@ -893,7 +1238,7 @@ mod tests {
     fn a_node_picked_in_the_picture_is_outlined_and_says_what_it_is() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing);
+        showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         assert!(gallery.press(), "a node is picked");
         assert_eq!(gallery.node.as_deref(), Some("nav-save"), "the innermost, not the bar it sits in");
@@ -933,7 +1278,7 @@ mod tests {
     fn an_overlay_is_picked_before_what_it_floats_over() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing);
+        showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 1, "photos-show-all");
         gallery.press();
         assert_eq!(gallery.node.as_deref(), Some("photos-show-all"), "not the photos under it");
@@ -943,7 +1288,7 @@ mod tests {
     fn switching_state_keeps_the_node_picked_while_the_state_has_it() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing);
+        showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-back");
         gallery.press();
         showing(&mut gallery, listing + 2);
@@ -961,7 +1306,7 @@ mod tests {
     fn a_press_where_no_node_is_clears_the_pick() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing);
+        showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
         let (left, top) = gallery.origins()[1];
@@ -1027,6 +1372,7 @@ mod tests {
         match &gallery.picture {
             Picture::Pages(pages) => pages.iter().map(|page| page.height).collect(),
             Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+            Picture::Overview(_) => panic!("the overview, not a state"),
         }
     }
 
@@ -1072,9 +1418,9 @@ mod tests {
         write_todo_screen(&root, &screen);
         gallery.reload();
         let todo = line_of(&gallery, "todo");
-        assert_eq!(gallery.picked, Some(todo + 1), "a state gone: its description's first state");
-        assert_eq!(captions(&gallery), ["first · 390", "first · 1120"]);
-        assert_eq!(gallery.scroll, 0.0, "another state, from its top");
+        assert_eq!(gallery.picked, Some(todo), "a state gone: its description's overview");
+        assert!(matches!(gallery.picture, Picture::Overview(_)));
+        assert_eq!(gallery.scroll, 0.0, "from its top");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1116,8 +1462,8 @@ mod tests {
             .map(|line| line.row.name.as_str())
             .collect();
         assert_eq!(names, ["a-flow", "sign-in"], "the removed one has left");
-        assert_eq!(gallery.picked, Some(2), "its description gone: the first description's first state");
-        assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
+        assert_eq!(gallery.picked, Some(1), "its description gone: the first description's overview");
+        assert_eq!(overview(&gallery).0[0], "default");
 
         std::fs::remove_dir_all(root.join("a-flow")).unwrap();
         gallery.reload();
