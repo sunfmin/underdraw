@@ -4,7 +4,8 @@
 //! can be picked to read what it is, or acted on to follow what the
 //! description says happens, as a prototype; for a directory picked, the
 //! flow between the screens under it. The person writes notes on its nodes
-//! (ADR 0019), each drawn as a numbered pin where it was written; the
+//! and on regions dragged over it (ADR 0019), each drawn as a numbered pin
+//! where it was written; the
 //! window writes nothing else. The tree and panels are drawn by hand, in
 //! the inks a wireframe is drawn in. The window is drawn from the files as
 //! they now stand: as they change under its root, the tree, the state shown
@@ -33,7 +34,7 @@ use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::notes::{self, By, Goes, Note, Proposal, Status};
-use crate::reference::{Pointed, Reference};
+use crate::reference::{self, Frame, On, Pointed, Reference, Region};
 use crate::{gpu, links, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
@@ -68,6 +69,9 @@ const ARROWS: f64 = 24.0;
 /// how wide each is.
 const PIN: f64 = 22.0;
 const DOT: f64 = 8.0;
+/// How far the pointer moves, held down, before a press is a drag over a
+/// region rather than a click.
+const DRAG: f64 = 6.0;
 
 /// What the window is told from other threads.
 enum Told {
@@ -123,6 +127,12 @@ struct Gallery {
     /// The id of the node picked in the picture, kept from state to state
     /// while the state shown has it.
     node: Option<String>,
+    /// The region dragged over a picture and picked, in place of a node,
+    /// while the same state is shown.
+    region: Option<Region>,
+    /// Where the left button went down on a picture, while it is held: a
+    /// drag from there picks a region.
+    held: Option<(f64, f64)>,
     /// The picture, of those at each of `WIDTHS`, the node was picked in:
     /// the instance the person pointed at.
     pointed: usize,
@@ -158,7 +168,8 @@ struct Gallery {
     /// Every description's notes, by its directory, as notes.json now
     /// holds them.
     notes: BTreeMap<PathBuf, Vec<Note>>,
-    /// Whether the next click on a node starts a note on it: N was pressed.
+    /// Whether the next click on a node, or drag over a region, starts a
+    /// note on it: N was pressed.
     noting: bool,
     /// The note being written, while it is.
     draft: Option<Draft>,
@@ -178,7 +189,7 @@ struct Draft {
 
 /// What a note being written is for.
 enum Writing {
-    /// A new note, on the node this references.
+    /// A new note, on the node or region this references.
     On(Reference),
     /// The line that reopens the note of this id, in the state shown's
     /// description.
@@ -194,7 +205,7 @@ enum Do {
     /// Writes a note on the node acted on, proposing where acting on it
     /// should go.
     Propose(Proposal),
-    /// Starts writing a note on the node picked.
+    /// Starts writing a note on the node or region picked.
     Write,
     /// Closes the note picked, of this id.
     Close(String),
@@ -203,13 +214,17 @@ enum Do {
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
-/// a faint dot, in another state or width that holds its node.
+/// a faint dot, in another state or width that holds its node, or the
+/// nodes its region covers.
 struct Pin {
     id: String,
     /// Where it is, in window points.
     rect: Rect,
     ink: Ink,
     faint: bool,
+    /// For a pin on a region, where it was written: the region, as it is
+    /// now drawn, in window points.
+    region: Option<Rect>,
 }
 
 /// Every description's notes on the lines of the tree, by its directory;
@@ -368,6 +383,40 @@ impl Page {
     fn has(&self, id: &str) -> bool {
         self.nodes.iter().any(|node| node.id == id)
     }
+
+    /// The node written where `origin` says, for the same instance, as it
+    /// is placed here.
+    fn placed(&self, origin: &Origin) -> Option<&Placed> {
+        let id = self.origins.iter().find_map(|(id, at)| {
+            (at.written == origin.written && at.instance == origin.instance).then_some(id)
+        })?;
+        self.nodes.iter().find(|node| &node.id == id)
+    }
+
+    /// Where `region` is drawn here: around the nodes it covers that are
+    /// here, as the layout now places them; where none of them is, at its
+    /// box, in a picture of the width it was dragged at; elsewhere, nowhere.
+    fn region(&self, region: &Region) -> Option<Rect> {
+        let found: Vec<Rect> =
+            region.nodes.iter().filter_map(|origin| Some(self.placed(origin)?.rect)).collect();
+        let Some(first) = found.first() else {
+            let Frame { x, y, width, height } = region.area;
+            let here = self.width as u32 == region.width;
+            return here.then_some(Rect {
+                x: x as f32,
+                y: y as f32,
+                width: width as f32,
+                height: height as f32,
+            });
+        };
+        let (mut x, mut y) = (first.x, first.y);
+        let (mut right, mut bottom) = (first.x + first.width, first.y + first.height);
+        for r in &found {
+            (x, y) = (x.min(r.x), y.min(r.y));
+            (right, bottom) = (right.max(r.x + r.width), bottom.max(r.y + r.height));
+        }
+        Some(Rect { x, y, width: right - x, height: bottom - y })
+    }
 }
 
 impl Gallery {
@@ -383,6 +432,8 @@ impl Gallery {
             wanted: None,
             picture: Picture::Faults(Vec::new()),
             node: None,
+            region: None,
+            held: None,
             pointed: 0,
             scroll: 0.0,
             tree_scroll: 0.0,
@@ -448,11 +499,15 @@ impl Gallery {
                 self.pick(line);
                 return true;
             }
-            if self.noting {
-                return self.note_where_pressed();
-            }
             if self.acting {
                 return self.act();
+            }
+            if self.on_picture(self.cursor).is_some() && self.pin_at(self.cursor).is_none() {
+                self.held = Some(self.cursor);
+            }
+            if self.noting {
+                // A click or a drag: the release says which.
+                return false;
             }
             if let Some(id) = self.pin_at(self.cursor) {
                 let note = self.wanted.as_ref().map(|wanted| (wanted.dir.clone(), id));
@@ -465,12 +520,16 @@ impl Gallery {
                 Some((pointed, _, node)) => (Some(node.id.clone()), pointed),
                 None => (None, 0),
             };
-            let changed =
-                node != self.node || pointed != self.pointed || self.acted.is_some() || self.note.is_some();
+            let changed = node != self.node
+                || pointed != self.pointed
+                || self.acted.is_some()
+                || self.note.is_some()
+                || self.region.is_some();
             self.node = node;
             self.pointed = pointed;
             self.acted = None;
             self.note = None;
+            self.region = None;
             return changed;
         }
         let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
@@ -486,6 +545,58 @@ impl Gallery {
             }
             _ => false,
         }
+    }
+
+    /// The left button let go: after a drag over a picture, the region
+    /// dragged picked, and while N is pressed a note started on it; after a
+    /// click while N is pressed, a note started on the node clicked.
+    /// Whether that changed what is shown.
+    fn release(&mut self) -> bool {
+        let Some(from) = self.held.take() else {
+            return false;
+        };
+        let moved = (self.cursor.0 - from.0).hypot(self.cursor.1 - from.1);
+        if moved < DRAG {
+            return self.noting && self.note_where_pressed();
+        }
+        let Some((pointed, region)) = self.region_between(from, self.cursor) else {
+            return false;
+        };
+        self.node = None;
+        self.pointed = pointed;
+        self.region = Some(region);
+        self.acted = None;
+        self.note = None;
+        if self.noting {
+            self.noting = false;
+            self.write();
+        }
+        true
+    }
+
+    /// The region between `from` and `to`, points in the window, on the
+    /// picture `from` is on, cut at its edges: its box in that picture's
+    /// points, and the outermost nodes wholly inside it, in the order laid
+    /// out. With the picture's place among them.
+    fn region_between(&self, from: (f64, f64), to: (f64, f64)) -> Option<(usize, Region)> {
+        let (pointed, page, start) = self.on_picture(from)?;
+        let (left, top) = self.origins()[pointed];
+        let zoom = self.zoom(self.size.0 - TREE);
+        let end =
+            (((to.0 - left) / zoom).clamp(0.0, page.width), ((to.1 - top) / zoom).clamp(0.0, page.height));
+        let (x, y) = (start.0.min(end.0).round(), start.1.min(end.1).round());
+        let (right, bottom) = (start.0.max(end.0).round(), start.1.max(end.1).round());
+        let area = Frame { x: x as i32, y: y as i32, width: (right - x) as u32, height: (bottom - y) as u32 };
+        let dragged =
+            Rect { x: x as f32, y: y as f32, width: (right - x) as f32, height: (bottom - y) as f32 };
+        let mut kept: Vec<&Placed> = Vec::new();
+        for node in page.nodes.iter().filter(|node| within(node.rect, dragged)) {
+            if !kept.iter().any(|outer| within(node.rect, outer.rect)) {
+                kept.push(node);
+            }
+        }
+        let nodes = kept.iter().filter_map(|node| page.origins.get(&node.id).cloned()).collect();
+        Some((pointed, Region { area, width: page.width as u32, nodes }))
     }
 
     /// The line picking line `index` shows: its own, a directory's (its
@@ -551,6 +662,7 @@ impl Gallery {
         };
         self.node = Some(id);
         self.pointed = pointed;
+        self.region = None;
         let Some(here) = self.wanted.clone() else {
             return true;
         };
@@ -663,7 +775,7 @@ impl Gallery {
     /// why it was not. The window writes the note only, never the
     /// description.
     fn propose(&mut self, proposal: Proposal) {
-        let Some(on) = self.reference().filter(|on| on.node.is_some()) else {
+        let Some(on) = self.reference().filter(|on| matches!(on.on, Some(On::Node(_)))) else {
             return self.say("a proposal is a note on a node: act on one first".to_string());
         };
         match notes::propose(&on, proposal) {
@@ -725,6 +837,9 @@ impl Gallery {
             self.note = None;
         }
         let name = state.as_ref().map(|state| state.name().to_string());
+        if self.wanted.as_ref().is_none_or(|was| was.dir != dir || was.state != name) {
+            self.region = None;
+        }
         self.wanted = Some(Picked { dir: dir.clone(), state: name });
         self.scroll = 0.0;
         if !described {
@@ -1037,26 +1152,32 @@ impl Gallery {
     /// in, with its place among them; none off the pictures or where no
     /// node is.
     fn hit(&self, at: (f64, f64)) -> Option<(usize, &Page, &Placed)> {
+        let (index, page, at) = self.on_picture(at)?;
+        page.node_at(at).map(|node| (index, page, node))
+    }
+
+    /// The picture under `at`, a point in the window, with its place among
+    /// them and `at` in its points; none off the pictures.
+    fn on_picture(&self, at: (f64, f64)) -> Option<(usize, &Page, (f64, f64))> {
         let Picture::Pages(pages) = &self.picture else {
             return None;
         };
         let zoom = self.zoom(self.size.0 - TREE);
-        pages
-            .iter()
-            .zip(self.origins())
-            .enumerate()
-            .find_map(|(index, (page, (left, top)))| {
-                let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
-                ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y))
-                    .then(|| page.node_at((x, y)).map(|node| (index, page, node)))
-            })
-            .flatten()
+        pages.iter().zip(self.origins()).enumerate().find_map(|(index, (page, (left, top)))| {
+            let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
+            ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y)).then_some((
+                index,
+                page,
+                (x, y),
+            ))
+        })
     }
 
-    /// What ⌘C copies: the node picked, as the description writes it, and
-    /// the instance of it pointed at (in the picture it was picked in, or
-    /// the first that has it); or, with no node picked, the state shown.
-    /// None where no state is shown.
+    /// What ⌘C copies: the region picked, its box and the nodes it covers;
+    /// or the node picked, as the description writes it, and the instance
+    /// of it pointed at (in the picture it was picked in, or the first that
+    /// has it); or, with neither picked, the state shown. None where no
+    /// state is shown.
     fn reference(&self) -> Option<Reference> {
         let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
             return None;
@@ -1067,16 +1188,17 @@ impl Gallery {
             let page = pages.get(self.pointed).filter(has).or_else(|| pages.iter().find(has))?;
             let placed = page.nodes.iter().find(|node| &node.id == id)?;
             let origin = page.origins.get(id)?.clone();
-            Some(Pointed { origin, label: placed.label, width: page.width as u32 })
+            Some(On::Node(Pointed { origin, label: placed.label, width: page.width as u32 }))
         });
-        Some(Reference { description: wanted.dir.clone(), state, node })
+        let on = self.region.clone().map(On::Region).or(node);
+        Some(Reference { description: wanted.dir.clone(), state, on })
     }
 
     /// The reference to what is picked put on the clipboard, and the panel
     /// says so; or says why nothing was.
     fn copy(&mut self) {
         let Some(reference) = self.reference() else {
-            return self.say("nothing to copy: pick a state, or a node in it, first".to_string());
+            return self.say("nothing to copy: pick a state, or a node or region in it, first".to_string());
         };
         let line = reference.line();
         let copied = match self.clipboard() {
@@ -1138,6 +1260,30 @@ impl Gallery {
             .collect()
     }
 
+    /// The dashed boxes over the pictures, in window points: the region
+    /// picked, where it is now drawn, and the one being dragged, from where
+    /// the button went down to the pointer.
+    fn regions(&self) -> Vec<Rect> {
+        let mut boxes = Vec::new();
+        if let (Some(region), Picture::Pages(pages)) = (&self.region, &self.picture) {
+            let zoom = self.zoom(self.size.0 - TREE);
+            for (page, (left, top)) in pages.iter().zip(self.origins()) {
+                if let Some(r) = page.region(region) {
+                    let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
+                    boxes.push(rect(x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom));
+                }
+            }
+        }
+        if let Some(from) = self.held {
+            let to = self.cursor;
+            if (to.0 - from.0).hypot(to.1 - from.1) >= DRAG {
+                let (x, y) = (from.0.min(to.0), from.1.min(to.1));
+                boxes.push(rect(x, y, (to.0 - from.0).abs(), (to.1 - from.1).abs()));
+            }
+        }
+        boxes
+    }
+
     /// What the panel says, one line each.
     fn panel(&self) -> Vec<String> {
         self.panel_rows().into_iter().map(|(line, _)| line).collect()
@@ -1160,10 +1306,13 @@ impl Gallery {
             let keys = "Enter saves, Shift+Enter breaks a line, Esc cancels";
             rows.push((
                 match &draft.on {
-                    Writing::On(on) => match &on.node {
-                        Some(Pointed { origin, width, .. }) => {
-                            format!("note on {} in {} at {width} · {keys}", origin.written, on.state.name())
-                        }
+                    Writing::On(on) => match &on.on {
+                        Some(pinned) => format!(
+                            "note on {} in {} at {} · {keys}",
+                            pinned.named(),
+                            on.state.name(),
+                            pinned.width()
+                        ),
                         None => format!("note · {keys}"),
                     },
                     Writing::Reopening(id) => format!("reopening {id}: say what is still to do · {keys}"),
@@ -1176,10 +1325,14 @@ impl Gallery {
                 rows.push((format!("    {line}{caret}"), None));
             }
         } else if self.noting {
-            rows.push(("write a note: click the node it is on · Esc cancels".to_string(), None));
+            rows.push((
+                "write a note: click the node it is on, or drag over the region · Esc cancels".to_string(),
+                None,
+            ));
         }
         rows.extend(self.note_panel());
-        let node = self.node_panel();
+        let mut node = self.node_panel();
+        node.extend(self.region_panel());
         let writable = !node.is_empty() && self.draft.is_none() && !self.noting;
         rows.extend(node.into_iter().map(|line| (line, None)));
         if writable {
@@ -1205,14 +1358,13 @@ impl Gallery {
             Status::Answered => "answered",
             Status::Closed => "closed",
         };
-        let node = &note.node;
         let mut rows = vec![(
             format!(
                 "{} · {status} · on {} in {} at {}",
                 note.id,
-                node.origin.written,
+                note.on.named(),
                 note.state.name(),
-                node.width
+                note.on.width()
             ),
             None,
         )];
@@ -1267,15 +1419,16 @@ impl Gallery {
         true
     }
 
-    /// A note started on the node picked, at the instance pointed at.
+    /// A note started on the region picked, or the node picked, at the
+    /// instance pointed at.
     fn write(&mut self) {
         match self.reference() {
-            Some(on) if on.node.is_some() => {
+            Some(on) if on.on.is_some() => {
                 self.acted = None;
                 self.note = None;
                 self.draft = Some(Draft { on: Writing::On(on), text: String::new() });
             }
-            _ => self.say("a note is on a node: click one first".to_string()),
+            _ => self.say("a note is on a node or a region: click one, or drag over one, first".to_string()),
         }
     }
 
@@ -1341,9 +1494,10 @@ impl Gallery {
             return true;
         }
         match key {
-            Key::Named(NamedKey::Escape) if self.noting || self.note.is_some() => {
+            Key::Named(NamedKey::Escape) if self.noting || self.note.is_some() || self.region.is_some() => {
                 self.noting = false;
                 self.note = None;
+                self.region = None;
                 true
             }
             Key::Character(c) if c.eq_ignore_ascii_case("n") => self.start_noting(),
@@ -1362,10 +1516,11 @@ impl Gallery {
     }
 
     /// The notes on the state shown, drawn on its pictures: each, not
-    /// closed, a numbered pin at the top-right corner of its node in the
-    /// picture of the state and width it was written in, and a faint dot
-    /// on that node in every other that holds it; blue while open, green
-    /// once answered.
+    /// closed, a numbered pin at the top-right corner of its node, or of
+    /// its region as it now is, in the picture of the state and width it
+    /// was written in, and a faint dot there in every other that holds the
+    /// node, or a node the region covers; blue while open, green once
+    /// answered.
     fn pins(&self) -> Vec<Pin> {
         let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
             return Vec::new();
@@ -1381,19 +1536,25 @@ impl Gallery {
         for (page, (left, top)) in pages.iter().zip(self.origins()) {
             // How many pins and dots each node has had so far, to set the
             // next one beside them.
-            let mut on: BTreeMap<&str, usize> = BTreeMap::new();
+            let mut on: BTreeMap<String, usize> = BTreeMap::new();
             for note in notes.iter().filter(|note| note.status != Status::Closed) {
-                let written = &note.node.origin;
-                let Some(id) = page.origins.iter().find_map(|(id, origin)| {
-                    (origin.written == written.written && origin.instance == written.instance).then_some(id)
-                }) else {
-                    continue;
+                let (r, key) = match &note.on {
+                    On::Node(pointed) => {
+                        let Some(placed) = page.placed(&pointed.origin) else { continue };
+                        (placed.rect, placed.id.clone())
+                    }
+                    On::Region(region) => {
+                        let Some(r) = page.region(region) else { continue };
+                        (r, format!("{} {}", r.x + r.width, r.y))
+                    }
                 };
-                let Some(placed) = page.nodes.iter().find(|node| &node.id == id) else { continue };
-                let r = placed.rect;
                 let corner = (left + f64::from(r.x + r.width) * zoom, top + f64::from(r.y) * zoom);
-                let before = on.entry(id.as_str()).or_default();
-                let faint = note.state != state || page.width as u32 != note.node.width;
+                let before = on.entry(key).or_default();
+                let faint = note.state != state || page.width as u32 != note.on.width();
+                let region = (matches!(note.on, On::Region(_)) && !faint).then(|| {
+                    let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
+                    rect(x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom)
+                });
                 let side = if faint { DOT } else { PIN };
                 let x = corner.0 - side / 2.0 - *before as f64 * (side + 2.0);
                 *before += 1;
@@ -1403,6 +1564,7 @@ impl Gallery {
                     rect: rect(x, corner.1 - side / 2.0, side, side),
                     ink,
                     faint,
+                    region,
                 });
             }
         }
@@ -1419,6 +1581,23 @@ impl Gallery {
                 (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1);
             (over && !pin.faint).then_some(pin.id)
         })
+    }
+
+    /// What the panel says of the region picked: its box and width, then
+    /// each node it covers, as written. Nothing when none is.
+    fn region_panel(&self) -> Vec<String> {
+        let Some(region) = &self.region else {
+            return Vec::new();
+        };
+        let Frame { x, y, width, height } = region.area;
+        let mut lines = vec![format!("region  {x}, {y} · {width} × {height} at {}", region.width)];
+        if region.nodes.is_empty() {
+            lines.push("covers  no node".to_string());
+        }
+        for origin in &region.nodes {
+            lines.push(format!("covers  {}{}", origin.written, reference::instance(&origin.instance)));
+        }
+        lines
     }
 
     /// What the panel says of the node picked: nothing when none is.
@@ -1474,6 +1653,15 @@ impl Gallery {
         let picked = self.picked_note().map(|note| note.id.as_str());
         let mut list = Vec::new();
         for pin in self.pins() {
+            if let Some(around) = pin.region {
+                list.push(Draw::Box {
+                    rect: around,
+                    radius: 0.0,
+                    fill: None,
+                    stroke: Some(pin.ink),
+                    dashed: true,
+                });
+            }
             if pin.faint {
                 let radius = pin.rect.width / 2.0;
                 list.push(Draw::Box {
@@ -1675,6 +1863,7 @@ impl Gallery {
         let mut pages = Vec::new();
         let mut thumbs = Vec::new();
         let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
+        let regions = self.regions();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let (cells, arrows) = (self.cells(), self.arrows());
         match &self.picture {
@@ -1702,6 +1891,15 @@ impl Gallery {
                         fill: None,
                         stroke: Some(Ink::Strong),
                         dashed: false,
+                    });
+                }
+                for around in regions {
+                    pane.push(Draw::Box {
+                        rect: around,
+                        radius: 0.0,
+                        fill: None,
+                        stroke: Some(Ink::Strong),
+                        dashed: true,
                     });
                 }
                 pane.extend(pins);
@@ -2026,7 +2224,7 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
                 let window = shown.window.clone();
-                if self.hover() {
+                if self.hover() || self.held.is_some() {
                     window.request_redraw();
                 }
             }
@@ -2075,6 +2273,12 @@ impl ApplicationHandler<Told> for Gallery {
                     window.request_redraw();
                 }
             }
+            WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
+                let window = shown.window.clone();
+                if self.release() {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::RedrawRequested => self.redraw(),
             _ => {}
         }
@@ -2083,6 +2287,14 @@ impl ApplicationHandler<Told> for Gallery {
             shown.window.set_ime_allowed(self.draft.is_some());
         }
     }
+}
+
+/// Whether `inner` lies wholly within `outer`, edges included.
+fn within(inner: Rect, outer: Rect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x + inner.width <= outer.x + outer.width
+        && inner.y + inner.height <= outer.y + outer.height
 }
 
 /// Whether `event` is the C key pressed: ⌘C (Ctrl+C) copies, on any
@@ -2343,7 +2555,7 @@ mod tests {
         let reference = gallery.reference().unwrap();
         assert_eq!(reference.description, Path::new(DRAFTS).join("orders"));
         assert_eq!(reference.state, State::Fixture("default".into()));
-        let node = reference.node.clone().unwrap();
+        let Some(On::Node(node)) = reference.on.clone() else { panic!("no node referenced") };
         assert_eq!(node.origin.written, "order-{index}-cancel", "the template, not {id}");
         assert_eq!(node.origin.instance.len(), 1, "one each around it");
         assert_eq!(id, format!("order-{}-cancel", node.origin.instance[0]), "the row pointed at");
@@ -2372,7 +2584,7 @@ mod tests {
         let orders = line_of(&gallery, "orders");
         assert!(gallery.reference().is_none(), "an overview is no state");
         gallery.copy();
-        assert_eq!(gallery.panel()[0], "nothing to copy: pick a state, or a node in it, first");
+        assert_eq!(gallery.panel()[0], "nothing to copy: pick a state, or a node or region in it, first");
         let loading = state_of_in(&gallery, orders, "loading");
         showing(&mut gallery, loading);
         let Picture::Pages(_) = &gallery.picture else { panic!("no picture") };
@@ -2381,7 +2593,7 @@ mod tests {
         gallery.cursor = (left + 4.0, top - CAPTION / 2.0);
         gallery.press();
         let reference = gallery.reference().unwrap();
-        assert_eq!(reference.node, None);
+        assert_eq!(reference.on, None);
         assert_eq!(
             reference.line(),
             format!("{} · phase loading", Path::new(DRAFTS).join("orders").display())
@@ -2791,21 +3003,19 @@ mod tests {
         assert!(click_panel_line(&mut gallery, "navigate to ExportDocuments"), "a screen chosen");
 
         let written = notes::read(&dir).unwrap();
-        let proposed: Vec<(&str, Option<&Proposal>, &str)> = written
-            .iter()
-            .map(|note| (note.node.origin.written.as_str(), note.proposes.as_ref(), note.state.name()))
-            .collect();
+        let proposed: Vec<(String, Option<&Proposal>, &str)> =
+            written.iter().map(|note| (note.on.named(), note.proposes.as_ref(), note.state.name())).collect();
         let on = "cd-keep.tap".to_string();
         assert_eq!(
             proposed,
             [
                 (
-                    "cd-keep",
+                    "cd-keep".to_string(),
                     Some(&Proposal { on: on.clone(), goes: Goes::To("default".into()) }),
                     "cancel-unpaid"
                 ),
                 (
-                    "cd-keep",
+                    "cd-keep".to_string(),
                     Some(&Proposal { on, goes: Goes::Navigate("ExportDocuments".into()) }),
                     "cancel-unpaid"
                 ),
@@ -3060,11 +3270,15 @@ mod tests {
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
         press_keys(&mut gallery, &["n"]);
-        assert_eq!(gallery.panel()[0], "write a note: click the node it is on · Esc cancels");
+        assert_eq!(
+            gallery.panel()[0],
+            "write a note: click the node it is on, or drag over the region · Esc cancels"
+        );
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
         let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
         gallery.cursor = on_node(&gallery, 1, &id);
-        assert!(gallery.press(), "the node clicked is the one the note is on");
+        gallery.press();
+        assert!(gallery.release(), "the node clicked is the one the note is on");
         assert_eq!(
             gallery.panel()[0],
             "note on order-{index}-cancel in default at 1120 · Enter saves, Shift+Enter breaks a line, Esc cancels"
@@ -3085,8 +3299,9 @@ mod tests {
         assert_eq!(note.state, State::Fixture("default".into()));
         let reference = gallery.reference().unwrap();
         assert_eq!(note.reference(&root.join("orders")), reference, "pinned as ⌘C references it");
-        assert_eq!(note.node.origin.written, "order-{index}-cancel");
-        assert_eq!(note.node.width, 1120);
+        let On::Node(node) = &note.on else { panic!("not on a node") };
+        assert_eq!(node.origin.written, "order-{index}-cancel");
+        assert_eq!(node.width, 1120);
 
         assert_eq!(
             pins_shown(&gallery),
@@ -3123,6 +3338,7 @@ mod tests {
         gallery.cursor = on_node(&gallery, 0, "nav-export");
         press_keys(&mut gallery, &["n"]);
         gallery.press();
+        gallery.release();
         press_keys(&mut gallery, &["Enter"]);
         assert!(gallery.panel()[0].starts_with("not saved: a note says something"), "{:?}", gallery.panel());
         assert!(gallery.draft.is_some(), "an empty note stays to be written");
@@ -3139,6 +3355,7 @@ mod tests {
             press_keys(&mut gallery, &["n"]);
             gallery.cursor = on_node(&gallery, 0, id);
             gallery.press();
+            gallery.release();
             type_text(&mut gallery, says);
             press_keys(&mut gallery, &["Enter"]);
         }
@@ -3191,6 +3408,7 @@ mod tests {
         press_keys(&mut gallery, &["n"]);
         gallery.cursor = on_node(&gallery, 0, "order-0-cancel");
         gallery.press();
+        gallery.release();
         type_text(&mut gallery, "too red");
         press_keys(&mut gallery, &["Enter"]);
         show(&mut gallery, "orders", "cancel-dialog");
@@ -3202,6 +3420,144 @@ mod tests {
         assert_eq!(gallery.open_notes(row, state.as_ref()), 0, "a state counts the notes written in it");
         show(&mut gallery, "orders", "loading");
         assert!(pins_shown(&gallery).is_empty(), "loading has no rows");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// `at`, a point in picture `page`'s points, in the window.
+    fn on_page(gallery: &Gallery, page: usize, at: (f64, f64)) -> (f64, f64) {
+        let (left, top) = gallery.origins()[page];
+        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        (left + at.0 * zoom, top + at.1 * zoom)
+    }
+
+    /// Whether two points in the window are the same, but for rounding.
+    fn near(a: (f64, f64), b: (f64, f64)) -> bool {
+        (a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01
+    }
+
+    /// The left button pressed at `from` and let go at `to`, points in
+    /// picture `page`'s points. Whether letting go changed what is shown.
+    fn drag(gallery: &mut Gallery, page: usize, from: (f64, f64), to: (f64, f64)) -> bool {
+        gallery.cursor = on_page(gallery, page, from);
+        gallery.press();
+        gallery.cursor = on_page(gallery, page, to);
+        gallery.release()
+    }
+
+    #[test]
+    fn dragging_in_note_mode_writes_a_region_note_with_its_box_and_the_nodes_it_covered() {
+        let root = root_of("notes-region", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        press_keys(&mut gallery, &["n"]);
+        assert!(drag(&mut gallery, 0, (10.0, 145.0), (380.0, 175.0)), "a drag picks a region");
+        assert!(!gallery.regions().is_empty() && gallery.node.is_none(), "drawn dashed, and no node picked");
+        assert!(
+            gallery.panel()[0]
+                .starts_with("note on region 10, 145 · 370 × 30 covering 1 node in default at 390"),
+            "{:?}",
+            gallery.panel()
+        );
+        type_text(&mut gallery, "too much air");
+        press_keys(&mut gallery, &["Enter"]);
+        let dir = root.join("orders");
+        let note = notes::read(&dir).unwrap().remove(0);
+        let On::Region(region) = &note.on else { panic!("not on a region: {:?}", note.on) };
+        assert_eq!(region.area, Frame { x: 10, y: 145, width: 370, height: 30 });
+        assert_eq!(region.width, 390);
+        let covered: Vec<&str> = region.nodes.iter().map(|origin| origin.written.as_str()).collect();
+        assert_eq!(covered, ["match-count"], "only the node wholly inside");
+        assert_eq!(region.nodes[0].at, "/root/children/1/children/2");
+        let shown = pins_shown(&gallery);
+        assert_eq!(
+            shown,
+            [("N1".to_string(), 0, Ink::Note, false), ("N1".to_string(), 1, Ink::Note, true)],
+            "a pin where it was dragged, and a faint dot over its node at 1120"
+        );
+        let pin = gallery.pins().into_iter().find(|pin| !pin.faint).unwrap();
+        let around = pin.region.expect("its region is outlined where it was written");
+        let at = on_page(&gallery, 0, (16.0, 152.0));
+        assert!(near((f64::from(around.x), f64::from(around.y)), at), "around the node it covered");
+        gallery.cursor = on_pin(&gallery, "N1");
+        assert!(gallery.press(), "its pin picks it");
+        assert_eq!(
+            gallery.panel()[0],
+            "N1 · open, for the agent to answer · on region 10, 145 · 370 × 30 covering 1 node in default at 390"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn after_a_relayout_a_region_follows_its_nodes_and_one_over_nothing_stays_put() {
+        let root = root_of("notes-region-move", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        for (from, to, says) in
+            [((10.0, 145.0), (380.0, 175.0), "too much air"), ((2.0, 575.0), (12.0, 590.0), "too empty")]
+        {
+            press_keys(&mut gallery, &["n"]);
+            drag(&mut gallery, 0, from, to);
+            type_text(&mut gallery, says);
+            press_keys(&mut gallery, &["Enter"]);
+        }
+        let dir = root.join("orders");
+        let empty = &notes::read(&dir).unwrap()[1];
+        let On::Region(region) = &empty.on else { panic!("not on a region") };
+        assert!(region.nodes.is_empty(), "over nothing: {:?}", region.nodes);
+        let corner = |gallery: &Gallery, id: &str| {
+            let pin = gallery.pins().into_iter().find(|pin| pin.id == id && !pin.faint).unwrap();
+            let r = pin.region.unwrap();
+            (f64::from(r.x), f64::from(r.y))
+        };
+        let (before, still) = (corner(&gallery, "N1"), corner(&gallery, "N2"));
+        assert!(near(still, on_page(&gallery, 0, (2.0, 575.0))), "at its box");
+
+        // The search field taken out: what was under it moves up.
+        let file = dir.join(crate::SCREEN);
+        let mut screen: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        screen.pointer_mut("/root/children/1/children").unwrap().as_array_mut().unwrap().remove(0);
+        std::fs::write(&file, screen.to_string()).unwrap();
+        gallery.reload();
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: {:?}", gallery.panel()) };
+        let count = pages[0].nodes.iter().find(|node| node.id == "match-count").unwrap().rect;
+        let after = corner(&gallery, "N1");
+        assert!(after.1 < before.1, "the region moved up with its node: {before:?} → {after:?}");
+        assert!(near(after, on_page(&gallery, 0, (f64::from(count.x), f64::from(count.y)))));
+        assert_eq!(corner(&gallery, "N2"), still, "a region over nothing stays at its box");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_region_dragged_is_picked_and_copied_as_its_reference() {
+        let root = root_of("region-copy", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        gallery.press();
+        assert!(!gallery.release(), "a click is no drag");
+        assert_eq!(gallery.node.as_deref(), Some("nav-export"));
+        assert!(drag(&mut gallery, 0, (0.0, 0.0), (390.0, 56.0)));
+        assert_eq!(gallery.node, None, "a region is picked in place of the node");
+        let Some(Reference { on: Some(On::Region(region)), .. }) = gallery.reference() else {
+            panic!("no region referenced")
+        };
+        let covered: Vec<&str> = region.nodes.iter().map(|origin| origin.written.as_str()).collect();
+        assert_eq!(covered, ["nav"], "the outermost: the nodes in it are in it already");
+        assert!(gallery.panel().contains(&"covers  nav".to_string()), "{:?}", gallery.panel());
+        gallery.copy();
+        let line = gallery.reference().unwrap().line();
+        assert!(
+            line.ends_with("· region 0, 0 · 390 × 56 at width 390 · covering nav at /components/nav"),
+            "{line}"
+        );
+        assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
+        assert!(click_panel_line(&mut gallery, "write a note on it  (N)"), "and a note can be written on it");
+        assert!(gallery.panel()[0].starts_with("note on region 0, 0 · 390 × 56 covering 1 node"));
+        press_keys(&mut gallery, &["Esc", "Esc"]);
+        assert!(gallery.region.is_none() && gallery.regions().is_empty(), "Esc lets it go");
         std::fs::remove_dir_all(root).unwrap();
     }
 }

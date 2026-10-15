@@ -1,6 +1,7 @@
 //! What the person says of a description, pinned where they said it
 //! (ADR 0019): kept in notes.json beside its screen.json, meant to be
-//! committed. The person writes a note in the gallery, on a node; the agent
+//! committed. The person writes a note in the gallery, on a node or a
+//! region; the agent
 //! answers it with one line; the person closes it, or reopens it with a
 //! line added. The agent never creates, closes or reopens one: what it
 //! wants to ask is an assumption. Each change is read from the file as it
@@ -15,7 +16,7 @@ use serde_json::{Value, json};
 
 use crate::SCREEN;
 use crate::draw::Shown;
-use crate::reference::{Pointed, Reference};
+use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json.
 pub const NOTES: &str = "notes.json";
@@ -45,8 +46,9 @@ pub struct Said {
     pub says: String,
 }
 
-/// One note, pinned to a node of one state as ⌘C references it: the node
-/// as the description writes it and the instance the person pointed at.
+/// One note, pinned to a node or a region of one state as ⌘C references
+/// it: the node as the description writes it and the instance the person
+/// pointed at, or the box dragged and the nodes it covered.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     /// `N1`, `N2`…: numbered in the order written, within the description.
@@ -54,8 +56,9 @@ pub struct Note {
     pub status: Status,
     /// The state it was written in.
     pub state: Shown,
-    /// The node it is on, and the instance pointed at.
-    pub node: Pointed,
+    /// What it is on: written as `"node"` or `"region"`.
+    #[serde(flatten)]
+    pub on: On,
     /// What the person wrote, then each reply and each line the person
     /// added on reopening it, in order.
     pub thread: Vec<Said>,
@@ -102,7 +105,7 @@ impl Proposal {
 impl Note {
     /// The reference to what the note is on, in the description in `dir`.
     pub fn reference(&self, dir: &Path) -> Reference {
-        Reference { description: dir.to_path_buf(), state: self.state.clone(), node: Some(self.node.clone()) }
+        Reference { description: dir.to_path_buf(), state: self.state.clone(), on: Some(self.on.clone()) }
     }
 
     /// The agent's last reply, once it has answered.
@@ -113,16 +116,20 @@ impl Note {
     /// The note as the `notes` command answers it: with the description it
     /// is in and its reference as one line.
     pub fn answer(&self, root: &Path, dir: &Path) -> Value {
-        json!({
+        let mut answer = json!({
             "description": crate::gallery::within(root, dir),
             "id": self.id,
             "status": self.status,
             "state": self.state,
-            "node": self.node,
             "thread": self.thread,
             "proposes": self.proposes,
             "reference": self.reference(dir).line(),
-        })
+        });
+        if let (Value::Object(answer), Ok(Value::Object(on))) = (&mut answer, serde_json::to_value(&self.on))
+        {
+            answer.extend(on);
+        }
+        answer
     }
 }
 
@@ -188,8 +195,9 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
     Ok(answer)
 }
 
-/// A note the person wrote, `says`, on the node `on` references, added to
-/// its description's notes: open, numbered after the last. Its id.
+/// A note the person wrote, `says`, on the node or region `on`
+/// references, added to its description's notes: open, numbered after the
+/// last. Its id.
 pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
     added(on, said(says)?, None)
 }
@@ -201,12 +209,12 @@ pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
     added(on, proposal.says(on.state.name()), Some(proposal))
 }
 
-/// A note saying `says`, and proposing `proposes`, on the node `on`
-/// references, added to its description's notes: open, numbered after the
-/// last. Its id.
+/// A note saying `says`, and proposing `proposes`, on the node or region
+/// `on` references, added to its description's notes: open, numbered
+/// after the last. Its id.
 fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Result<String> {
-    let Some(node) = on.node.clone() else {
-        bail!("a note is pinned to a node: pick one first");
+    let Some(pinned) = on.on.clone() else {
+        bail!("a note is pinned to a node or a region: pick one first");
     };
     change(&on.description, |notes| {
         let last = notes.iter().filter_map(|note| note.id.strip_prefix('N')?.parse::<u32>().ok()).max();
@@ -215,7 +223,7 @@ fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Re
             id: id.clone(),
             status: Status::Open,
             state: on.state.clone(),
-            node,
+            on: pinned,
             thread: vec![Said { by: By::Person, says }],
             proposes,
         });
@@ -374,6 +382,7 @@ pub fn counted(dir: &Path) -> Value {
 mod tests {
     use super::*;
     use crate::draw::Origin;
+    use crate::reference::{Frame, Pointed, Region};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -390,7 +399,7 @@ mod tests {
         Reference {
             description: dir.to_path_buf(),
             state: Shown::Fixture("default".into()),
-            node: Some(Pointed { origin, label: Some(4), width: 390 }),
+            on: Some(On::Node(Pointed { origin, label: Some(4), width: 390 })),
         }
     }
 
@@ -475,6 +484,35 @@ mod tests {
         assert_eq!(read(&dir).unwrap()[1].proposes, Some(proposal), "read back as written");
         std::fs::write(dir.join(NOTES), "{").unwrap();
         assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_region_note_keeps_its_box_and_the_nodes_it_covered() {
+        let dir = dir("region");
+        let covered =
+            Origin { written: "nav-export".into(), at: "/root/children/0".into(), instance: vec![] };
+        let region =
+            Region { area: Frame { x: 8, y: 40, width: 200, height: 60 }, width: 390, nodes: vec![covered] };
+        let on = Reference { on: Some(On::Region(region)), ..on(&dir) };
+        assert_eq!(add(&on, "too busy").unwrap(), "N1");
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        assert_eq!(
+            file["notes"][0]["region"],
+            json!({
+                "box": { "x": 8, "y": 40, "width": 200, "height": 60 },
+                "width": 390,
+                "nodes": [{ "id": "nav-export", "at": "/root/children/0", "instance": [] }],
+            })
+        );
+        assert!(file["notes"][0].get("node").is_none(), "a region note is on no one node");
+        let note = read(&dir).unwrap().remove(0);
+        assert_eq!(note.reference(&dir), on, "read back as written");
+        let answered = note.answer(&dir, &dir);
+        assert_eq!(answered["region"], file["notes"][0]["region"], "`notes` lists its box and nodes");
+        assert!(answered["reference"].as_str().unwrap().contains("region 8, 40 · 200 × 60"));
+        let state = Reference { on: None, ..on };
+        assert!(add(&state, "x").unwrap_err().to_string().contains("a node or a region"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

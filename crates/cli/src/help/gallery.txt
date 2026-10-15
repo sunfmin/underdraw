@@ -78,15 +78,23 @@ DOES
     a `navigate`. The window still never writes the description.
   The panel says what each act came to, above what it says of the node.
 
+  Drag over a picture to pick a region of it, in place of a node: a dashed
+  box, and a panel with its box, its width and the outermost nodes wholly
+  inside it ("covers"); a node inside another is in it already.
+
   Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
-  and Windows) puts one line on the clipboard naming the node picked as the
-  description writes it, or, with no node picked (click a picture's
-  caption, or where no node is), the state shown; the panel says
-  "copied" and the line. For a node:
+  and Windows) puts one line on the clipboard naming the region picked,
+  or the node picked as the description writes it, or, with neither
+  picked (click a picture's caption, or where no node is), the state
+  shown; the panel says "copied" and the line. For a node:
     <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
   e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
   /root/children/2/children/0/children/1/item/children in screen.json ·
   pointed at [2], label 7, width 390. For a state: `<description dir> · phase loading`.
+  For a region:
+    <description dir> · fixture <name> · region <x>, <y> · <w> × <h> at width <w> · covering <id as written> at <JSON Pointer> [<i>], …
+  its box in the picture's points, then each node it covers, as for a
+  node; "covering no node" when it covers none.
   The id is the one written, a template inside a repeat (`order-{index}`),
   never the id one row was given; the JSON Pointer (RFC 6901) is where that
   node is written in <description dir>/screen.json, under /root, a phase
@@ -96,14 +104,19 @@ DOES
   outermost first), its label and the width it was drawn at, which say
   which data showed what they mean; it is not where to edit.
 
-  Write a note, for the agent, on a node: press N, then click the node (or
-  pick the node and click "write a note on it" in its panel), and type.
-  Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V pastes. It is
-  kept in notes.json beside the description's screen.json, pinned as ⌘C
-  references it: the node as written, the state, and the instance pointed
-  at. A blue pin numbered N1, N2… is drawn at the node's top-right corner,
-  in the state and at the width it was written in; every other state and
-  width that holds that node shows a faint dot there. The tree shows how
+  Write a note, for the agent, on a node or a region: press N, then click
+  the node, or drag over the region (or pick the node or region and click
+  "write a note on it" in its panel), and type. Enter saves it,
+  Shift+Enter breaks a line, Esc drops it; ⌘V pastes. It is kept in
+  notes.json beside the description's screen.json, pinned as ⌘C references
+  it: the node as written, the state, and the instance pointed at; or the
+  region's box and the nodes it covered. A blue pin numbered N1, N2… is
+  drawn at the node's top-right corner, in the state and at the width it
+  was written in; every other state and width that holds that node shows a
+  faint dot there. A region's pin is drawn the same way at the corner of a
+  dashed box around the nodes it covered, where the layout now puts them,
+  so it follows them as the description changes; a region that covered no
+  node stays at the box dragged, at that width only. The tree shows how
   many notes are open on each description and each state ("2 notes").
   The agent reads them with `underdraw notes <root>` and answers one with a
   line of reply: its pin turns green, and the pointer over it shows the
