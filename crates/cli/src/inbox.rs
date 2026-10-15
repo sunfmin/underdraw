@@ -1,12 +1,12 @@
 //! The inbox: what waits on the person in one description. Each assumption
-//! not yet answered, and each note the agent has answered, for the person
-//! to read and say more in, are theirs; the notes the person spoke last in
+//! not yet answered, and each note the agent has answered that the person
+//! has not read yet, for them to read and say more in, are theirs; the notes the person spoke last in
 //! wait on the agent, and are kept apart. Worked out from the description's
 //! assumptions, as its states lay them out, and its notes as notes.json now
 //! holds them, so an item answered leaves it as the files change.
 
 use crate::draw::Shown;
-use crate::notes::Note;
+use crate::notes::{Note, Stands};
 use crate::reference::On;
 
 /// An assumption on a node, where it is first seen: the state, in the order
@@ -27,15 +27,17 @@ pub struct Guessed {
 pub enum Item<'a> {
     /// An assumption no note answers yet.
     Guess(&'a Guessed),
-    /// A note the agent has answered: the person reads it, and may say more.
-    Answered(&'a Note),
+    /// A note the agent has answered, not read yet: the person reads it,
+    /// and may say more.
+    Unread(&'a Note),
 }
 
 /// The inbox of one description.
 #[derive(Debug, PartialEq)]
 pub struct Inbox<'a> {
     /// What waits on the person: each assumption not yet answered, as
-    /// `guessed` lists them, then each note answered, in the order written.
+    /// `guessed` lists them, then each note answered and unread, in the
+    /// order written.
     pub yours: Vec<Item<'a>>,
     /// The notes waiting on the agent, the person having spoken last, in
     /// the order written.
@@ -57,7 +59,7 @@ impl<'a> Inbox<'a> {
             })
         };
         let guesses = guessed.iter().filter(|guess| !answers(guess)).map(Item::Guess);
-        let answered = notes.iter().filter(|note| !note.waits()).map(Item::Answered);
+        let answered = notes.iter().filter(|note| note.stands() == Stands::Unread).map(Item::Unread);
         Inbox {
             yours: guesses.chain(answered).collect(),
             agents: notes.iter().filter(|note| note.waits()).collect(),
@@ -85,11 +87,11 @@ mod tests {
     }
 
     /// A note on node `written`, the agent having spoken last when
-    /// `answered`, answering its assumption when `answers`.
+    /// `answered`, not read yet, answering its assumption when `answers`.
     fn note(id: &str, written: &str, answered: bool, answers: bool) -> Note {
         let mut messages = vec![json!({ "by": "person", "says": "this" })];
         if answered {
-            messages.push(json!({ "by": "agent", "says": "done" }));
+            messages.push(json!({ "by": "agent", "says": "done", "unread": true }));
         }
         let mut note = json!({
             "id": id,
@@ -110,7 +112,7 @@ mod tests {
         let inbox = Inbox::of(&guessed, &notes);
         assert_eq!(
             inbox.yours,
-            [Item::Guess(&guessed[0]), Item::Guess(&guessed[1]), Item::Answered(&notes[0])]
+            [Item::Guess(&guessed[0]), Item::Guess(&guessed[1]), Item::Unread(&notes[0])]
         );
         assert_eq!(inbox.agents, [&notes[1]], "the person spoke last: it waits on the agent");
     }
@@ -121,12 +123,26 @@ mod tests {
         let answering = [note("N1", "card", false, true)];
         assert!(Inbox::of(&guessed, &answering).yours.is_empty(), "answered, waiting on the agent");
         let answered = [note("N1", "card", true, true)];
-        assert_eq!(Inbox::of(&guessed, &answered).yours, [Item::Answered(&answered[0])]);
+        assert_eq!(Inbox::of(&guessed, &answered).yours, [Item::Unread(&answered[0])]);
         let plain = [note("N1", "card", false, false)];
         assert_eq!(
             Inbox::of(&guessed, &plain).yours,
             [Item::Guess(&guessed[0])],
             "a note that answers nothing"
         );
+    }
+
+    #[test]
+    fn a_note_answered_and_read_leaves_the_inbox() {
+        let mut read = note("N1", "title", true, false);
+        for said in &mut read.messages {
+            said.unread = false;
+        }
+        let mut taken = note("N2", "title", false, false);
+        taken.messages[0].taken = Some(1_000);
+        let notes = [read, taken];
+        let inbox = Inbox::of(&[], &notes);
+        assert!(inbox.yours.is_empty(), "read: nothing waits on the person");
+        assert_eq!(inbox.agents, [&notes[1]], "taken, it still waits on the agent");
     }
 }

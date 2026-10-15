@@ -92,6 +92,8 @@ pub(super) const WORDS: Words = Words {
     faulty_many: "有错：{n} 个错误，没有画",
     status_waiting: "等待代理",
     status_answered: "已回答",
+    waiting_for_agent: "等代理接手",
+    agent_changing: "代理正在修改（{since}）",
     window_title: "underdraw 画廊 — {root}",
     details: "详情",
     node_label: "编号 {n}",

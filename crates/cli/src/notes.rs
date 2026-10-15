@@ -6,7 +6,10 @@
 //! person starts one, in the gallery, and says more in it there; the agent answers in it, at any length, and may
 //! ask back. It is never closed: while the person spoke last it waits on
 //! the agent, and once the agent did it is answered; that is read from
-//! the messages, never stored. What the agent wants to ask unprompted is
+//! the messages, never stored. What is stored is what tells the window
+//! more: when `--wait` handed the person's message to the agent (it is
+//! taken), and whether the person has seen the agent's answer (until then
+//! it is unread). What the agent wants to ask unprompted is
 //! an assumption. An assumption is answered with a note on its node: ✓
 //! says the guess was right; ✗ says it was wrong, with what is right. A
 //! note whose node or arrow is gone joins its state's note ([`settle`]).
@@ -28,14 +31,22 @@ use crate::reference::{On, Reference};
 /// shared component's, in `components/<Name>/notes.json`.
 pub const NOTES: &str = "notes.json";
 
-/// Where a conversation stands, read from who spoke last: never stored.
+/// Where a conversation stands, read from who spoke last and what was
+/// marked on that message: never stored itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Stands {
-    /// The person spoke last: it waits on the agent.
+    /// The person spoke last, and `--wait` has not handed it to the agent
+    /// yet: it waits on the agent.
     Waiting,
-    /// The agent spoke last.
-    Answered,
+    /// The person spoke last, and `--wait` handed it to the agent, which
+    /// is changing it: it still waits on the agent.
+    Taken,
+    /// The agent spoke last, and the person has not seen the conversation
+    /// since.
+    Unread,
+    /// The agent spoke last, and the person has seen it.
+    Read,
 }
 
 /// Who said a message of a note.
@@ -56,6 +67,26 @@ pub enum By {
 pub struct Said {
     pub by: By,
     pub says: String,
+    /// When `--wait` handed the person's message to the agent, in seconds
+    /// since 1970: none until then, and on any other's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taken: Option<u64>,
+    /// Whether the agent's message is yet to be seen by the person: from
+    /// when the agent says it until the gallery shows its conversation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unread: bool,
+}
+
+impl Said {
+    /// `says`, said by `by`: not taken, not unread.
+    pub fn new(by: By, says: impl Into<String>) -> Said {
+        Said { by, says: says.into(), taken: None, unread: false }
+    }
+}
+
+/// The time now, in seconds since 1970, as a message is marked taken.
+pub fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs())
 }
 
 /// One note, a conversation, pinned as ⌘C references what it is on: a node as the
@@ -183,17 +214,27 @@ impl Note {
     }
 
     /// Where the conversation stands: waiting on the agent while the
-    /// person spoke last, answered once the agent did.
+    /// person spoke last, taken once `--wait` handed that message over;
+    /// answered once the agent spoke, unread until the person has seen it.
     pub fn stands(&self) -> Stands {
         match self.messages.iter().rev().find(|said| said.by != By::Underdraw) {
-            Some(Said { by: By::Agent, .. }) => Stands::Answered,
+            Some(Said { by: By::Agent, unread: true, .. }) => Stands::Unread,
+            Some(Said { by: By::Agent, .. }) => Stands::Read,
+            Some(Said { taken: Some(_), .. }) => Stands::Taken,
             _ => Stands::Waiting,
         }
     }
 
-    /// Whether it waits on the agent: the person spoke last.
+    /// Whether it waits on the agent: the person spoke last, taken or not.
     pub fn waits(&self) -> bool {
-        self.stands() == Stands::Waiting
+        matches!(self.stands(), Stands::Waiting | Stands::Taken)
+    }
+
+    /// When the person's last message was handed to the agent, in seconds
+    /// since 1970, while the agent is changing it ([`Stands::Taken`]).
+    pub fn taken(&self) -> Option<u64> {
+        let last = self.messages.iter().rev().find(|said| said.by != By::Underdraw)?;
+        if last.by == By::Person { last.taken } else { None }
     }
 
     /// What the agent said last, once it has answered.
@@ -321,7 +362,7 @@ pub fn say(on: &Reference, says: &str) -> anyhow::Result<String> {
     let found = change(&on.description, |notes| {
         let note = notes.iter_mut().rev().find(|note| note.on.same(&on.on));
         Ok(note.map(|note| {
-            note.messages.push(Said { by: By::Person, says: says.clone() });
+            note.messages.push(Said::new(By::Person, says.clone()));
             note.id.clone()
         }))
     })?;
@@ -375,7 +416,7 @@ fn added(
         notes.push(Note {
             id: id.clone(),
             on: on.on.clone(),
-            messages: vec![Said { by: By::Person, says }],
+            messages: vec![Said::new(By::Person, says)],
             proposes,
             answers,
         });
@@ -384,9 +425,10 @@ fn added(
 }
 
 /// Note `id` of the description in `dir` answered by the agent with
-/// `reply`, as many lines as it takes, kept as written but for its ends.
-/// The note as it now stands, and whether that changed it: the same reply
-/// as the agent's last message, given again, changes nothing.
+/// `reply`, as many lines as it takes, kept as written but for its ends,
+/// unread until the person has seen it. The note as it now stands, and
+/// whether that changed it: the same reply as the agent's last message,
+/// given again, changes nothing.
 pub fn answer(dir: &Path, id: &str, reply: &str) -> anyhow::Result<(Note, bool)> {
     let reply = reply.trim();
     if reply.is_empty() {
@@ -394,12 +436,57 @@ pub fn answer(dir: &Path, id: &str, reply: &str) -> anyhow::Result<(Note, bool)>
     }
     change(dir, |notes| {
         let note = find(notes, dir, id)?;
-        let said = Said { by: By::Agent, says: reply.to_string() };
-        let changed = note.messages.last() != Some(&said);
+        let last = note.messages.last();
+        let changed = !last.is_some_and(|last| last.by == By::Agent && last.says == reply);
         if changed {
-            note.messages.push(said);
+            note.messages.push(Said { unread: true, ..Said::new(By::Agent, reply) });
         }
         Ok((note.clone(), changed))
+    })
+}
+
+/// Each of `notes` that waits on the agent marked taken at `now`: each
+/// message the person said since the agent last spoke, not taken yet.
+/// Whether any was.
+fn take(notes: &mut [Note], now: u64) -> bool {
+    let mut taken = false;
+    for note in notes.iter_mut().filter(|note| note.waits()) {
+        let since = note.messages.iter().rposition(|said| said.by == By::Agent).map_or(0, |at| at + 1);
+        for said in &mut note.messages[since..] {
+            if said.by == By::Person && said.taken.is_none() {
+                said.taken = Some(now);
+                taken = true;
+            }
+        }
+    }
+    taken
+}
+
+/// The notes of the description in `dir` that wait on the agent handed to
+/// it at `now`, in seconds since 1970: each marked taken ([`take`]).
+/// Written only when that changes any; whether it did.
+pub fn hand_over(dir: &Path, now: u64) -> anyhow::Result<bool> {
+    if !read(dir)?.iter().any(|note| note.stands() == Stands::Waiting) {
+        return Ok(false);
+    }
+    change(dir, |notes| Ok(take(notes, now)))
+}
+
+/// The notes `ids` of the description in `dir` seen by the person: each
+/// message of the agent's in them read. Written only when that changes
+/// any; whether it did.
+pub fn seen(dir: &Path, ids: &[String]) -> anyhow::Result<bool> {
+    let unread = |note: &Note| ids.contains(&note.id) && note.messages.iter().any(|said| said.unread);
+    if !read(dir)?.iter().any(unread) {
+        return Ok(false);
+    }
+    change(dir, |notes| {
+        for note in notes.iter_mut().filter(|note| ids.contains(&note.id)) {
+            for said in &mut note.messages {
+                said.unread = false;
+            }
+        }
+        Ok(true)
     })
 }
 
@@ -432,8 +519,9 @@ const WAIT_BETWEEN: std::time::Duration = std::time::Duration::from_millis(200);
 /// reference; or, given `answer`, that note of the description at `path`
 /// answered with `reply`. With `wait`, the waiting notes once there is
 /// any: at once when some wait already, else as soon as the person says
-/// something. Nothing is kept between runs; the files are read again each
-/// time.
+/// something; each message handed over is marked taken, so the window
+/// tells the person the agent is changing it. Nothing is kept between
+/// runs; the files are read again each time.
 pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool) -> anyhow::Result<Value> {
     if !path.is_dir() {
         bail!("{} is not a directory: pass a description's directory, or a root of them", path.display());
@@ -462,7 +550,7 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
         bail!("--reply answers a note: give the note with --answer <id>");
     }
     loop {
-        let (waiting, counts) = listed(&path)?;
+        let (waiting, counts) = listed(&path, wait)?;
         if !wait || counts.waiting > 0 {
             return Ok(json!({
                 "root": path,
@@ -478,8 +566,9 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
 /// The notes of every description under `root` that wait on the agent, as
 /// `notes` answers each, and how many there are waiting and answered: read
 /// from the files as they now stand, descriptions added since included,
-/// each note on what is gone joined its state's first ([`settle`]).
-fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
+/// each note on what is gone joined its state's first ([`settle`]); given
+/// `take`, each marked taken now, unless it was already.
+fn listed(root: &Path, take: bool) -> anyhow::Result<(Vec<Value>, Counts)> {
     let dirs: Vec<PathBuf> = crate::gallery::descriptions(root)
         .into_iter()
         .filter_map(|row| row.description().map(Path::to_path_buf))
@@ -487,6 +576,9 @@ fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
     let (mut waiting, mut counts) = (Vec::new(), Counts::default());
     for dir in &dirs {
         settle(dir)?;
+        if take {
+            hand_over(dir, now())?;
+        }
         let notes = read(dir)?;
         counts = counts.add(Counts::of(&notes));
         waiting.extend(notes.iter().filter(|note| note.waits()).map(|note| note.answer(root, dir)));
@@ -590,7 +682,7 @@ fn join(notes: &mut Vec<Note>, screen: &Value, states: &[Shown]) -> bool {
         };
         joined = true;
         let whole = On::State { state };
-        let line = Said { by: By::Underdraw, says: was };
+        let line = Said::new(By::Underdraw, was);
         let home = (0..notes.len()).find(|&home| home != i && !gone_from[home] && notes[home].on == whole);
         match home {
             Some(home) => {
@@ -688,7 +780,7 @@ mod tests {
         assert_eq!(say(&whole, "and the date").unwrap(), "N2", "numbered after the last");
         let notes = read(&dir).unwrap();
         assert_eq!(notes[0].stands(), Stands::Waiting, "the person spoke last");
-        assert_eq!(notes[0].messages, [Said { by: By::Person, says: "the price is cut".into() }]);
+        assert_eq!(notes[0].messages, [Said::new(By::Person, "the price is cut")]);
         assert_eq!(notes[0].reference(&dir), on(&dir), "pinned as ⌘C references it");
         assert_eq!(Counts::of(&notes), Counts { waiting: 2, answered: 0 });
 
@@ -696,7 +788,7 @@ mod tests {
         assert!(changed);
         assert_eq!(
             (note.stands(), note.reply()),
-            (Stands::Answered, Some("made it wrap")),
+            (Stands::Unread, Some("made it wrap")),
             "the agent spoke last"
         );
         let before = std::fs::read_to_string(dir.join(NOTES)).unwrap();
@@ -705,13 +797,50 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join(NOTES)).unwrap(), before);
         let (note, changed) = answer(&dir, "N1", "should it wrap at 1120 too?").unwrap();
         assert!(changed && note.messages.len() == 3, "the agent may say more, and ask back");
-        assert_eq!(note.stands(), Stands::Answered);
+        assert_eq!(note.stands(), Stands::Unread);
 
         let file: Value = serde_json::from_str(&before).unwrap();
         for key in ["status", "closed_because", "thread"] {
             assert!(file["notes"][0].get(key).is_none(), "{key} is not stored: {file}");
         }
         assert_eq!(Counts::of(&read(&dir).unwrap()), Counts { waiting: 1, answered: 1 });
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_message_is_waiting_then_taken_then_answered_unread_then_read() {
+        let dir = dir("stands");
+        say(&on(&dir), "the price is cut").unwrap();
+        let stands = || read(&dir).unwrap()[0].stands();
+        assert_eq!(stands(), Stands::Waiting, "not handed to the agent yet");
+        assert_eq!(read(&dir).unwrap()[0].taken(), None);
+
+        let mut notes = read(&dir).unwrap();
+        assert!(take(&mut notes, 1_000), "handed over");
+        assert!(!take(&mut notes, 2_000), "taken once: the time it was first handed over stays");
+        write(&dir, notes).unwrap();
+        assert_eq!(stands(), Stands::Taken);
+        assert!(read(&dir).unwrap()[0].waits(), "taken, it still waits on the agent");
+        assert_eq!(read(&dir).unwrap()[0].taken(), Some(1_000));
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"][0]["messages"][0]["taken"], 1_000, "kept in notes.json");
+
+        say(&on(&dir), "and the date").unwrap();
+        assert_eq!(stands(), Stands::Waiting, "said more since: that is not handed over yet");
+
+        answer(&dir, "N1", "made it wrap").unwrap();
+        assert_eq!(stands(), Stands::Unread, "the agent spoke last, not seen yet");
+        assert_eq!(read(&dir).unwrap()[0].taken(), None, "answered: nothing is being changed");
+        let (_, changed) = answer(&dir, "N1", "made it wrap").unwrap();
+        assert!(!changed, "the same reply again: nothing more");
+
+        assert!(!seen(&dir, &["N9".into()]).unwrap(), "another note seen: nothing written");
+        assert!(seen(&dir, &["N1".into()]).unwrap());
+        assert_eq!(stands(), Stands::Read, "kept read in notes.json, for the window opened again");
+        let before = std::fs::read_to_string(dir.join(NOTES)).unwrap();
+        assert!(!seen(&dir, &["N1".into()]).unwrap(), "seen again: nothing written");
+        assert_eq!(std::fs::read_to_string(dir.join(NOTES)).unwrap(), before);
+        assert!(!before.contains("unread"), "a read message says nothing of it: {before}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -761,7 +890,7 @@ mod tests {
         assert!(judge(&state, answers(Answer::Right), "").is_err(), "an assumption is on a node");
 
         let notes = read(&dir).unwrap();
-        assert_eq!(notes[0].messages, [Said { by: By::Person, says: RIGHT.into() }], "✓ needs no line");
+        assert_eq!(notes[0].messages, [Said::new(By::Person, RIGHT)], "✓ needs no line");
         assert_eq!(notes[1].messages[0].says, "hosted fields");
         let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
         assert_eq!(
@@ -969,9 +1098,9 @@ mod tests {
         let navigate = |to: &str| On::Navigate {
             navigate: Navigate { from: "Orders".into(), node: "go".into(), to: to.into() },
         };
-        let person = |says: &str| Said { by: By::Person, says: says.into() };
-        let agent = |says: &str| Said { by: By::Agent, says: says.into() };
-        let line = |says: &str| Said { by: By::Underdraw, says: says.into() };
+        let person = |says: &str| Said::new(By::Person, says);
+        let agent = |says: &str| Said::new(By::Agent, says);
+        let line = |says: &str| Said::new(By::Underdraw, says);
         let note = |id: &str, on: On, messages: Vec<Said>| Note {
             id: id.into(),
             on,
@@ -1015,7 +1144,7 @@ mod tests {
             ),
             "a state with no note gets the gone one, keeping its id, proposing nothing"
         );
-        assert_eq!(notes[1].stands(), Stands::Answered, "read past underdraw's line");
+        assert_eq!(notes[1].stands(), Stands::Read, "read past underdraw's line");
         assert_eq!(notes.len(), 3, "the rest joined default's: {notes:#?}");
         assert_eq!(notes[2], kept[0], "what is there stays");
         assert_eq!(
