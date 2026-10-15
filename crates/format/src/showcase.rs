@@ -5,7 +5,7 @@
 //! the gallery draws it, and pins notes on its nodes, as it does a
 //! screen's.
 
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 /// The key a showcase holds the name of the component it shows under: it
 /// declares no screen a navigate can reach.
@@ -67,15 +67,19 @@ pub fn shows(screen: &Value) -> Option<&str> {
 /// state. One that says it is filled or derived is left as written, so its
 /// own finding is not joined by another.
 fn held(field: &Value) -> Value {
-    match field {
-        Value::String(_) => json!({ "type": field, "view": true }),
-        Value::Object(object) if !object.contains_key("from") && !object.contains_key("derived") => {
-            let mut object = object.clone();
-            object.insert("view".to_string(), Value::Bool(true));
-            Value::Object(object)
+    let mut object = match field {
+        Value::String(_) => {
+            let mut object = Map::new();
+            object.insert("type".to_string(), field.clone());
+            object
         }
-        _ => field.clone(),
-    }
+        Value::Object(object) if !object.contains_key("from") && !object.contains_key("derived") => {
+            object.clone()
+        }
+        _ => return field.clone(),
+    };
+    object.insert("view".to_string(), Value::Bool(true));
+    Value::Object(object)
 }
 
 /// The type of what the first of `fixtures` to give the look's param
@@ -113,6 +117,8 @@ fn kebab(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
