@@ -21,7 +21,7 @@ use crate::template::{self, Format};
 use crate::transitions;
 
 /// What `check` makes of a screen description.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Checked {
     /// The screen's name, as `screen` gives it.
     pub screen: String,
