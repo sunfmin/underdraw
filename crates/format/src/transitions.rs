@@ -156,19 +156,24 @@ fn outcome(
         }
     }
     let called = calls.join(", ");
-    match given {
-        None if calls.is_empty() => {}
-        None => findings.add(
-            at,
-            &format!("the event calls {called}: say which outcome this is, one of {}", outcomes.join(", ")),
-        ),
-        Some(_) if calls.is_empty() => {
-            findings.add(at, "the event calls no operation, so it has no outcome: take outcome out")
+    let Some(given) = given else {
+        if !calls.is_empty() {
+            findings.add(
+                at,
+                &format!(
+                    "the event calls {called}: say which outcome this is, one of {}",
+                    outcomes.join(", ")
+                ),
+            );
         }
-        Some(Value::String(said)) if outcomes.contains(said) => {}
-        Some(said) => {
-            findings.add(at, &format!("{said} is not an outcome of {called}: one of {}", outcomes.join(", ")))
-        }
+        return;
+    };
+    if calls.is_empty() {
+        return findings.add(at, "the event calls no operation, so it has no outcome: take outcome out");
+    }
+    let known = given.as_str().is_some_and(|said| outcomes.iter().any(|outcome| outcome == said));
+    if !known {
+        findings.add(at, &format!("{given} is not an outcome of {called}: one of {}", outcomes.join(", ")));
     }
 }
 
