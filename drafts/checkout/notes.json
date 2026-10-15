@@ -1,0 +1,29 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "promo-invalid"
+      },
+      "node": {
+        "id": "promo-apply",
+        "at": "/root/children/1/children/0/children/3/children/0/children/1",
+        "instance": [],
+        "label": 9,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "这个 9 和 8 没有对齐，要顶部对齐。",
+          "taken": 1792063871
+        },
+        {
+          "by": "agent",
+          "says": "改好了：8 和 9 现在顶部对齐（都在 y=722）。原因是输入框下面多了一行错误提示，整体变高 70，而这一行默认垂直居中，按钮就往下掉了 11。新加了一个 FieldRow（输入框 + 按钮并排、顶部对齐），优惠码这一行用它；以后报错也不会再错位。",
+          "unread": true
+        }
+      ]
+    }
+  ]
+}
