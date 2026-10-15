@@ -4205,7 +4205,11 @@ mod tests {
         showing(&mut gallery, listing + 1);
         assert_eq!(gallery.pane_right(), 1440.0 - sidebar::WIDTH, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
-        assert_eq!(shown[0].title, "Nothing picked", "with nothing picked, it says what can be done");
+        assert_eq!(
+            shown.last().map(|card| card.title.as_str()),
+            Some("Nothing picked"),
+            "with nothing picked, it says what can be done, under the inbox"
+        );
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
         let narrow = gallery.zoom(gallery.pane());
