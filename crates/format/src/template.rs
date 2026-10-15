@@ -121,6 +121,16 @@ fn placeholder(inside: &str) -> Result<Placeholder, String> {
     Ok(Placeholder { path: path.to_string(), format })
 }
 
+/// The path `text` is when it is one whole placeholder, with no format:
+/// `"{item}"`, which gives the value itself.
+pub(crate) fn whole(text: &str) -> Option<String> {
+    let found = placeholders(text).ok()?;
+    match found.as_slice() {
+        [only] if only.format.is_none() && text == format!("{{{}}}", only.path) => Some(only.path.clone()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

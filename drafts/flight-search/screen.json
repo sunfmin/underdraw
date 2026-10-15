@@ -171,13 +171,13 @@
   "phases": {
     "loading": {
       "id": "results-loading", "component": "Screen", "children": [
-        { "id": "nav-loading", "component": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ], "children": [
+        { "id": "nav-loading", "component": "NavBar", "only": "compact", "leading": [ { "id": "nav-back", "component": "NavBack" } ], "children": [
           { "id": "nav-loading-title", "component": "Text", "text": "正在搜索航班…", "font": "font.subhead" } ] },
         { "id": "loading-skeleton", "component": "Skeleton",
           "shape": ["line 100%", "line 60%", "line 90%", "line 90%", "line 40%", "line 90%", "line 90%", "line 40%"] } ] },
     "error": {
       "id": "results-error", "component": "Screen", "children": [
-        { "id": "nav-error", "component": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ] },
+        { "id": "nav-error", "component": "NavBar", "only": "compact", "leading": [ { "id": "nav-back", "component": "NavBack" } ] },
         { "id": "error-state", "component": "EmptyState", "icon": "warning", "title": "航班搜索失败", "detail": "请检查网络后重试。",
           "children": [ { "id": "error-retry", "component": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "call": "searchFlights" } } } ] } ] }
   },
@@ -187,7 +187,7 @@
     "children": [
 
       { "id": "nav", "component": "NavBar", "only": "compact",
-        "leading": [ { "ref": "nav-back" } ],
+        "leading": [ { "id": "nav-back", "component": "NavBack" } ],
         "trailing": [ { "id": "nav-edit", "component": "Button", "variant": "secondary", "size": "small", "text": "修改",
                         "on": { "tap": { "open": "sheet-search" } } } ],
         "children": [
@@ -260,7 +260,7 @@
                 "text": "共 {results.total} 个航班 · 价格为每位成人含税" },
 
               { "id": "flight-list", "component": "List", "if": "!noResults", "gap": "space.3", "each": "results.flights",
-                "item": { "ref": "flight-card" } },
+                "item": { "id": "flight-{index}", "component": "FlightCard", "with": { "flight": "{item}" } } },
 
               { "id": "no-results", "component": "EmptyState", "if": "noResults", "icon": "flight",
                 "title": "没有符合筛选条件的航班", "detail": "试试放宽经停、航空公司或起飞时间。",
@@ -269,6 +269,33 @@
   },
 
   "components": {
+    "NavBack": {
+      "nodes": { "component": "IconButton", "icon": "arrow_back", "label": "返回", "on": { "tap": { "back": true } } }
+    },
+    "FlightCard": {
+      "params": { "flight": "Flight" },
+      "nodes": {
+        "component": "Card", "padding": "space.4", "gap": "space.3", "border": "color.border", "radius": "radius.md",
+        "on": { "tap": { "navigate": "FlightDetail", "with": { "flight": "{flight.id}" } } },
+        "children": [
+          { "id": "head", "component": "Row", "gap": "space.2", "children": [
+            { "id": "logo", "component": "Avatar", "image": "{flight.logo}", "size": 20 },
+            { "id": "airline", "component": "Text", "text": "{flight.airline} · {flight.flightNo}", "font": "font.caption",
+              "color": "color.textSecondary" },
+            { "id": "cheapest", "component": "Tag", "if": "flight.isCheapest", "text": "最便宜" },
+            { "id": "fastest", "component": "Tag", "if": "flight.isFastest", "text": "最快" } ] },
+          { "id": "main", "component": "Row", "gap": "space.3", "children": [
+            { "id": "route", "component": "Route", "depart": "{flight.depart}", "departCode": "{flight.departCode}",
+              "arrive": "{flight.arrive}", "arriveCode": "{flight.arriveCode}", "nextDay": "{flight.nextDay}",
+              "duration": "{flight.duration}", "stops": "{flight.stopsText}", "nonstop": "{flight.nonstop}" },
+            { "id": "price", "component": "Stack", "gap": "space.1", "children": [
+              { "id": "amount", "component": "Text", "text": "{flight.price|money}", "font": "font.price", "align": "end" },
+              { "id": "seats", "component": "Text", "if": "flight.fewSeats", "text": "仅剩 {flight.seatsLeft} 座",
+                "font": "font.caption", "align": "end" } ] } ] },
+          { "id": "bag", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
+            "text": { "cases": [ { "if": "flight.includesBag", "then": "含 20kg 托运行李" }, { "else": "不含托运行李，可加购" } ] } } ]
+      }
+    },
     "SearchField": {
       "doc": "One part of the search on a desktop: a small label over what was searched; it shares the row with the others.",
       "params": ["label", "value"],
@@ -644,129 +671,6 @@
         "frame": true,
         "children": [
           "$children"
-        ]
-      }
-    },
-    "nav-back": {
-      "nodes": {
-        "id": "nav-back",
-        "component": "IconButton",
-        "icon": "arrow_back",
-        "label": "返回",
-        "on": {
-          "tap": {
-            "back": true
-          }
-        }
-      }
-    },
-    "flight-card": {
-      "nodes": {
-        "id": "flight-{index}",
-        "component": "Card",
-        "padding": "space.4",
-        "gap": "space.3",
-        "border": "color.border",
-        "radius": "radius.md",
-        "on": {
-          "tap": {
-            "navigate": "FlightDetail",
-            "with": {
-              "flight": "{item.id}"
-            }
-          }
-        },
-        "children": [
-          {
-            "id": "flight-{index}-head",
-            "component": "Row",
-            "gap": "space.2",
-            "children": [
-              {
-                "id": "flight-{index}-logo",
-                "component": "Avatar",
-                "image": "{item.logo}",
-                "size": 20
-              },
-              {
-                "id": "flight-{index}-airline",
-                "component": "Text",
-                "text": "{item.airline} · {item.flightNo}",
-                "font": "font.caption",
-                "color": "color.textSecondary"
-              },
-              {
-                "id": "flight-{index}-cheapest",
-                "component": "Tag",
-                "if": "item.isCheapest",
-                "text": "最便宜"
-              },
-              {
-                "id": "flight-{index}-fastest",
-                "component": "Tag",
-                "if": "item.isFastest",
-                "text": "最快"
-              }
-            ]
-          },
-          {
-            "id": "flight-{index}-main",
-            "component": "Row",
-            "gap": "space.3",
-            "children": [
-              {
-                "id": "flight-{index}-route",
-                "component": "Route",
-                "depart": "{item.depart}",
-                "departCode": "{item.departCode}",
-                "arrive": "{item.arrive}",
-                "arriveCode": "{item.arriveCode}",
-                "nextDay": "{item.nextDay}",
-                "duration": "{item.duration}",
-                "stops": "{item.stopsText}",
-                "nonstop": "{item.nonstop}"
-              },
-              {
-                "id": "flight-{index}-price",
-                "component": "Stack",
-                "gap": "space.1",
-                "children": [
-                  {
-                    "id": "flight-{index}-amount",
-                    "component": "Text",
-                    "text": "{item.price|money}",
-                    "font": "font.price",
-                    "align": "end"
-                  },
-                  {
-                    "id": "flight-{index}-seats",
-                    "component": "Text",
-                    "if": "item.fewSeats",
-                    "text": "仅剩 {item.seatsLeft} 座",
-                    "font": "font.caption",
-                    "align": "end"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "id": "flight-{index}-bag",
-            "component": "Text",
-            "font": "font.caption",
-            "color": "color.textSecondary",
-            "text": {
-              "cases": [
-                {
-                  "if": "item.includesBag",
-                  "then": "含 20kg 托运行李"
-                },
-                {
-                  "else": "不含托运行李，可加购"
-                }
-              ]
-            }
-          }
         ]
       }
     }

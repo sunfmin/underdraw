@@ -552,6 +552,27 @@
     }
   },
   "components": {
+    "Nav": {
+      "nodes": {
+        "component": "NavBar",
+        "children": {
+          "id": "title",
+          "component": "Text",
+          "text": "团队文档",
+          "font": "font.heading"
+        },
+        "trailing": {
+          "id": "new",
+          "component": "IconButton",
+          "icon": "add",
+          "on": {
+            "tap": {
+              "call": "newDocument"
+            }
+          }
+        }
+      }
+    },
     "SortButton": {
     "doc": "The sort control: the current order and a chevron; it opens the sort menu.",
     "params": ["text", "trailingIcon"],
@@ -596,37 +617,13 @@
     "MenuDivider": {
     "doc": "A line between groups of menu items.",
     "params": [],
-    "look": { "box": "row", "height": 1, "margin": [4, 0], "fill": "line" } },
-    "nav": {
-      "nodes": {
-        "id": "nav",
-        "component": "NavBar",
-        "children": {
-          "id": "nav-title",
-          "component": "Text",
-          "text": "团队文档",
-          "font": "font.heading"
-        },
-        "trailing": {
-          "id": "nav-new",
-          "component": "IconButton",
-          "icon": "add",
-          "on": {
-            "tap": {
-              "call": "newDocument"
-            }
-          }
-        }
-      }
-    }
+    "look": { "box": "row", "height": 1, "margin": [4, 0], "fill": "line" } }
   },
   "root": {
     "id": "docs",
     "component": "Screen",
     "children": [
-      {
-        "ref": "nav"
-      },
+      { "id": "nav", "component": "Nav" },
       {
         "id": "toolbar",
         "component": "Row",
@@ -993,9 +990,7 @@
       "id": "loading",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "sk",
           "component": "Stack",
@@ -1022,9 +1017,7 @@
       "id": "error",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "err",
           "component": "EmptyState",

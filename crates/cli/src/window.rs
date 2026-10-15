@@ -3411,7 +3411,7 @@ mod tests {
         .unwrap();
         let written =
             screen.pointer(&node.origin.at).unwrap_or_else(|| panic!("{} names nothing", node.origin.at));
-        assert_eq!(written["id"], "order-{index}-cancel", "the pointer names that node in screen.json");
+        assert_eq!(written["id"], "cancel", "the pointer names that node in screen.json, inside OrderRow");
         let line = reference.line();
         assert!(
             line.contains(&format!("order-{{index}}-cancel at {} in screen.json", node.origin.at)),
@@ -4264,7 +4264,8 @@ mod tests {
         notes::answer(&dir, "N1", "it says Export").unwrap();
 
         let file = dir.join(crate::SCREEN);
-        let screen = std::fs::read_to_string(&file).unwrap().replace("\"nav-export\"", "\"nav-download\"");
+        let screen =
+            std::fs::read_to_string(&file).unwrap().replace("\"id\": \"export\"", "\"id\": \"download\"");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
         assert_eq!(
@@ -4728,7 +4729,7 @@ mod tests {
         gallery.copy();
         let line = gallery.reference().unwrap().line();
         assert!(
-            line.ends_with("· region 0, 0 · 390 × 56 at width 390 · covering nav at /components/nav/nodes"),
+            line.ends_with("· region 0, 0 · 390 × 56 at width 390 · covering nav at /components/Nav/nodes"),
             "{line}"
         );
         assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());

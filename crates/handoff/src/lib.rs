@@ -164,7 +164,7 @@ pub fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handof
         });
     }
 
-    let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
+    let components = underdraw_format::Subtrees::read(screen);
     let mut walk = nodes::Walk {
         platform: &platform,
         mapping,
@@ -174,11 +174,11 @@ pub fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handof
         findings: Vec::new(),
     };
     if let Some(root) = screen.get("root") {
-        walk.node(root, None, "root");
+        walk.node(root, None, "root", None);
     }
     for phase in &model.checked.phases {
         if let Some(tree) = screen.pointer(&format!("/phases/{phase}")) {
-            walk.node(tree, None, "phase");
+            walk.node(tree, None, "phase", None);
         }
     }
     findings.append(&mut walk.findings);

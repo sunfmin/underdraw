@@ -1,7 +1,10 @@
 //! A screen in one state: the description with one fixture's data (or one
 //! phase) filled in, at one breakpoint. Conditions are decided, `cases`
-//! chosen, templates filled, `each` expanded, `ref`s inlined and `only`
-//! applied, so what remains is a plain tree for layout.
+//! chosen, templates filled, `each` expanded, each instance of a component
+//! built from its nodes and `only` applied, so what remains is a plain tree
+//! for layout.
+
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -12,6 +15,7 @@ use crate::conditions::{Conditions, UseSite};
 use crate::domain;
 use crate::fixture;
 use crate::schema::{Schema, object};
+use crate::subtrees::{self, Subtrees};
 use crate::template::{self, Decimals, Format};
 
 /// Which state of the screen to show.
@@ -28,12 +32,13 @@ pub enum State<'a> {
 pub struct Node {
     pub id: String,
     /// Its id as the description writes it: a template inside an item
-    /// (`order-{index}-cancel`), what a transition names it by.
+    /// (`order-{index}-cancel`), joined to its instance's inside a
+    /// component, what a transition names it by.
     #[serde(skip)]
     pub written_id: String,
     /// Where it is written in screen.json, as a JSON Pointer (RFC 6901):
-    /// `/root/children/1/item`, or under `/components/<name>/nodes` for one
-    /// a `ref` brings in.
+    /// `/root/children/1/item`, or `/components/OrderRow/nodes/…` for one
+    /// of a component's nodes.
     #[serde(skip)]
     pub written_at: String,
     /// Which element of each `each` it was made for, the outermost first:
@@ -84,7 +89,7 @@ pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", 
 
 /// Keys that only steer how the tree is built.
 const STRUCTURE: [&str; 11] =
-    ["id", "component", "ref", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
+    ["id", "component", "with", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
 
 /// The screen `screen` in `state`, at `breakpoint`. The description is
 /// expected to have passed `check`; what it cannot make sense of is an error.
@@ -129,13 +134,13 @@ pub(crate) fn build(
             (found.ok_or_else(|| format!("there is no phase {name}"))?, Value::Object(Map::new()))
         }
     };
-    let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
+    let components = Subtrees::read(screen);
     let fill = Fill { conditions, components: &components, breakpoint };
     let at = match state {
         State::Fixture(_) => "/root".to_string(),
         State::Phase(name) => format!("/phases/{}", escaped(name)),
     };
-    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new() })?;
+    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new() }, None)?;
     built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
 }
 
@@ -164,39 +169,186 @@ fn escaped(key: &str) -> String {
 
 struct Fill<'a> {
     conditions: &'a Conditions,
-    components: &'a Map<String, Value>,
+    components: &'a Subtrees<'a>,
     breakpoint: Breakpoint,
+}
+
+/// The instance of a component whose nodes are being built.
+struct Inside<'i> {
+    /// The component's name.
+    name: &'i str,
+    /// The instance's id, and its id as written: what each node inside is
+    /// named by, joined to its own.
+    id: String,
+    written_id: String,
+    /// The path each param was given, where it was given one whole: what a
+    /// `set` or `toggle` on the param acts on.
+    paths: BTreeMap<String, String>,
+    /// The instance, where it is written, and the scope it is in: what a
+    /// `{"slot": …}` node inside stands for is built there.
+    instance: &'i Map<String, Value>,
+    at: &'i Written,
+    scope: &'i Value,
+    /// The instance it is itself inside, if any.
+    outer: Option<&'i Inside<'i>>,
 }
 
 impl Fill<'_> {
     /// The nodes `written` becomes in `scope`: none when it is hidden, one
-    /// otherwise.
-    /// `written` is where it is written.
-    fn node(&self, written: &Value, scope: &Value, slot: &str, at: &Written) -> Result<Vec<Node>, String> {
+    /// otherwise, or what an instance gives in a slot.
+    /// `at` is where it is written, and `inside` the instance it is in.
+    fn node(
+        &self,
+        written: &Value,
+        scope: &Value,
+        slot: &str,
+        at: &Written,
+        inside: Option<&Inside>,
+    ) -> Result<Vec<Node>, String> {
         let Some(object) = written.as_object() else {
             return Err(format!("expected a node, found {written}"));
         };
-        if let Some(Value::String(name)) = object.get("ref") {
-            let nodes = self.components.get(name).and_then(|component| component.get("nodes"));
-            let nodes = nodes.ok_or_else(|| format!("no component {name} whose body is nodes"))?;
-            let at =
-                Written { at: format!("/components/{}/nodes", escaped(name)), instance: at.instance.clone() };
-            return self.node(nodes, scope, slot, &at);
+        if object.contains_key("ref") {
+            return Err(
+                "ref is gone: use the component, {\"id\": …, \"component\": \"<Name>\", \"with\": {…}}"
+                    .to_string(),
+            );
         }
-        if let Some(Value::String(only)) = object.get("only")
-            && Breakpoint::parse(only) != Some(self.breakpoint)
+        if let Some(inside) = inside
+            && subtrees::is_slot(object)
         {
-            return Ok(Vec::new());
+            let Some(given) = subtrees::slotted(object, inside.instance) else {
+                return Ok(Vec::new());
+            };
+            let key = object.get("slot").and_then(Value::as_str).unwrap_or_default();
+            return self.slot(given, inside.scope, key, inside.at, inside.outer);
         }
-        if let Some(Value::String(used)) = object.get("if")
-            && !self.holds(used, scope)
-        {
+        if !self.shown(object, scope) {
             return Ok(Vec::new());
         }
         let (id, written_id) = match object.get("id") {
-            Some(Value::String(id)) => (self.text(id, scope)?, id.clone()),
+            Some(Value::String(id)) => (
+                subtrees::join(inside.map(|inside| inside.id.as_str()), &self.text(id, scope)?),
+                subtrees::join(inside.map(|inside| inside.written_id.as_str()), id),
+            ),
             _ => return Err(format!("a node has no id: {written}")),
         };
+        if let Some(component) = self.components.of(object) {
+            let mut outer = inside;
+            while let Some(around) = outer {
+                if around.name == component.name {
+                    return Err(format!("component {} uses itself", component.name));
+                }
+                outer = around.outer;
+            }
+            let mut params = Map::new();
+            let mut paths = BTreeMap::new();
+            for (name, field) in &component.params {
+                let given = object.get("with").and_then(|with| with.get(name));
+                let value = match given {
+                    Some(given) => self.argument(given, scope)?,
+                    None => field.default.clone().unwrap_or(Value::Null),
+                };
+                params.insert(name.clone(), value);
+                if let Some(path) = given.and_then(Value::as_str).and_then(template::whole) {
+                    paths.insert(
+                        name.clone(),
+                        inside.map_or(path.clone(), |inside| through(&path, &inside.paths)),
+                    );
+                }
+            }
+            let root = component.nodes;
+            let params = Value::Object(params);
+            if !self.shown(root, &params) {
+                return Ok(Vec::new());
+            }
+            let inner = Inside {
+                name: component.name,
+                id,
+                written_id,
+                paths,
+                instance: object,
+                at,
+                scope,
+                outer: inside,
+            };
+            let at = Written {
+                at: format!("/{}/{}/nodes", subtrees::KEY, escaped(component.name)),
+                instance: at.instance.clone(),
+            };
+            let mut node = self.build(
+                root,
+                &params,
+                slot,
+                &at,
+                Some(&inner),
+                inner.id.clone(),
+                inner.written_id.clone(),
+            )?;
+            if let Some(Value::String(assumed)) = object.get("assumed") {
+                node.assumed = Some(assumed.clone());
+            }
+            return Ok(vec![node]);
+        }
+        Ok(vec![self.build(object, scope, slot, at, inside, id, written_id)?])
+    }
+
+    /// What an instance gives in the slot `key`, `given`, built in the
+    /// instance's scope, `scope`, where it is written, `at`.
+    fn slot(
+        &self,
+        given: &Value,
+        scope: &Value,
+        key: &str,
+        at: &Written,
+        inside: Option<&Inside>,
+    ) -> Result<Vec<Node>, String> {
+        let mut nodes = Vec::new();
+        match given {
+            Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    nodes.append(&mut self.node(child, scope, key, &at.under(key, Some(index)), inside)?);
+                }
+            }
+            one => nodes.append(&mut self.node(one, scope, key, &at.under(key, None), inside)?),
+        }
+        Ok(nodes)
+    }
+
+    /// Whether the node `object` is shown in `scope`, at this breakpoint.
+    fn shown(&self, object: &Map<String, Value>, scope: &Value) -> bool {
+        if let Some(Value::String(only)) = object.get("only")
+            && Breakpoint::parse(only) != Some(self.breakpoint)
+        {
+            return false;
+        }
+        !matches!(object.get("if"), Some(Value::String(used)) if !self.holds(used, scope))
+    }
+
+    /// What a param is given in `with`, read in the instance's scope: a
+    /// condition's name in braces gives whether it holds.
+    fn argument(&self, given: &Value, scope: &Value) -> Result<Value, String> {
+        match given.as_str().and_then(template::whole) {
+            Some(name) if self.conditions.contains(&name) => {
+                Ok(Value::Bool(self.conditions.holds(&name, scope)))
+            }
+            _ => self.value(given, scope),
+        }
+    }
+
+    /// The node `object`, named `id` (and `written_id` as written), with
+    /// what it holds.
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        &self,
+        object: &Map<String, Value>,
+        scope: &Value,
+        slot: &str,
+        at: &Written,
+        inside: Option<&Inside>,
+        id: String,
+        written_id: String,
+    ) -> Result<Node, String> {
         let component = object.get("component").and_then(Value::as_str).unwrap_or_default().to_string();
         let mut node = Node {
             id,
@@ -223,22 +375,14 @@ impl Fill<'_> {
                     let scope = with(scope, item, index);
                     let mut at = at.under(key, None);
                     at.instance.push(index);
-                    node.children.append(&mut self.node(value, &scope, "item", &at)?);
+                    node.children.append(&mut self.node(value, &scope, "item", &at, inside)?);
                 }
             } else if SLOTS.contains(&key.as_str()) {
-                match value {
-                    Value::Array(items) => {
-                        for (index, child) in items.iter().enumerate() {
-                            node.children.append(&mut self.node(
-                                child,
-                                scope,
-                                key,
-                                &at.under(key, Some(index)),
-                            )?);
-                        }
-                    }
-                    one => node.children.append(&mut self.node(one, scope, key, &at.under(key, None))?),
-                }
+                node.children.append(&mut self.slot(value, scope, key, at, inside)?);
+            } else if let ("on", Some(inside)) = (key.as_str(), inside) {
+                let mut on = self.value(value, scope)?;
+                repath(&mut on, &inside.paths);
+                node.props.insert(key.clone(), on);
             } else if let ("disabled", Value::String(used)) = (key.as_str(), value) {
                 node.props.insert(key.clone(), Value::Bool(self.holds(used, scope)));
             } else {
@@ -266,7 +410,7 @@ impl Fill<'_> {
         {
             node.props.insert("items".to_string(), Value::Array(items));
         }
-        Ok(vec![node])
+        Ok(node)
     }
 
     /// The elements `path` holds, at most `limit` of them: a count, or one
@@ -385,6 +529,47 @@ impl Fill<'_> {
             }
         }
         Ok(out)
+    }
+}
+
+/// `path`, read inside an instance whose params were given `paths`, as
+/// the path it is where the instance is: a param given a path whole
+/// stands for that path.
+fn through(path: &str, paths: &BTreeMap<String, String>) -> String {
+    let (first, rest) = path.split_once('.').map_or((path, None), |(first, rest)| (first, Some(rest)));
+    match (paths.get(first), rest) {
+        (Some(given), Some(rest)) => format!("{given}.{rest}"),
+        (Some(given), None) => given.clone(),
+        (None, _) => path.to_string(),
+    }
+}
+
+/// The handlers `on`, inside a component, with each path a `set` or
+/// `toggle` writes through a param made the path the param was given:
+/// a component holds no view state, and acts on what was passed in.
+fn repath(on: &mut Value, paths: &BTreeMap<String, String>) {
+    match on {
+        Value::Object(object) => {
+            for (key, value) in object.iter_mut() {
+                match (key.as_str(), value) {
+                    ("set" | "toggle", Value::String(path)) => *path = through(path, paths),
+                    ("set", Value::Object(written)) => {
+                        let mut renamed = Map::new();
+                        for (path, value) in std::mem::take(written) {
+                            renamed.insert(through(&path, paths), value);
+                        }
+                        *written = renamed;
+                    }
+                    (_, value) => repath(value, paths),
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                repath(item, paths);
+            }
+        }
+        _ => {}
     }
 }
 

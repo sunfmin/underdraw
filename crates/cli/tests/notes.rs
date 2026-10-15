@@ -302,11 +302,7 @@ fn a_note_whose_node_is_renamed_closes_itself_saying_why_and_is_listed_with_clos
     // description half edited closes nothing.
     let file = dir.join("screen.json");
     let whole = std::fs::read_to_string(&file).unwrap();
-    std::fs::write(
-        &file,
-        whole.replacen("\"id\": \"order-{index}-cancel\"", "\"id\": \"order-{index}-void\"", 1),
-    )
-    .unwrap();
+    std::fs::write(&file, whole.replacen("\"id\": \"cancel\"", "\"id\": \"void\"", 1)).unwrap();
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
     assert_eq!((code, &answer["open"]), (0, &json!(2)), "{answer}");
 

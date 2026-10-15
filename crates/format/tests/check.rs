@@ -189,8 +189,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "cases-in-a-slot",
-            r#""leading":  [ { "ref": "nav-back" } ]"#,
-            r#""leading": { "cases": [ { "if": "hasDates", "then": { "ref": "nav-back" } }, { "else": { "ref": "nav-back" } } ] }"#,
+            r#""leading":  [ { "id": "nav-back", "component": "NavBack" } ]"#,
+            r#""leading": { "cases": [ { "if": "hasDates", "then": { "id": "nav-back", "component": "NavBack" } }, { "else": { "id": "nav-back", "component": "NavBack" } } ] }"#,
             "nav.leading",
             "a slot holds nodes, not cases",
         ),
@@ -254,10 +254,10 @@ fn underdraws_own_components_pass_as_a_screens() {
 #[test]
 fn a_component_has_a_look_or_nodes_never_both() {
     let checked = check(&with_own(json!({
-        "Both": { "params": [], "look": { "box": "row" }, "nodes": { "id": "both", "component": "Row" } },
+        "Both": { "params": [], "look": { "box": "row" }, "nodes": { "component": "Row" } },
         "Neither": { "params": [], "doc": "forgot its body" },
         "Look": { "params": [], "look": { "box": "row" } },
-        "Nodes": { "nodes": { "id": "nodes", "component": "Row" } }
+        "Nodes": { "nodes": { "component": "Row" } }
     })));
     assert!(found(&checked, "components.Both", "a look or nodes, never both"), "{:#?}", checked.findings);
     assert!(found(&checked, "components.Neither", "needs a body"), "{:#?}", checked.findings);

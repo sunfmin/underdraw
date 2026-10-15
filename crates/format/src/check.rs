@@ -1,6 +1,6 @@
 //! Reads a whole screen description and names every fault in it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -17,6 +17,7 @@ use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
 use crate::params::{self, ScreenParams};
 use crate::schema::{Schema, Scope, object};
+use crate::subtrees::{self, Subtrees};
 use crate::template::{self, Format};
 use crate::transitions;
 
@@ -100,7 +101,18 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
     conditions.fill(&schema, &mut fixtures);
     let operations = Operations::read(screen, &schema, &conditions, &mut findings);
     jobs::check(&operations, &schema, &fixtures, &mut findings);
-    let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
+    subtrees::check(screen, &schema, &mut findings);
+    let components = Subtrees::read(screen);
+    for (name, declared) in object(screen, subtrees::KEY) {
+        if declared.get("nodes").is_some() && known.has(name) {
+            findings.add(
+                &format!("{}.{name}", subtrees::KEY),
+                &format!(
+                    "{name} is underdraw's own component: give the screen's whose body is nodes its own name"
+                ),
+            );
+        }
+    }
     let mut opened = BTreeSet::new();
     collect_opened(screen, &mut opened);
     let mut walk = Walk {
@@ -111,6 +123,7 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
         operations: &operations,
         components: &components,
         known: &known,
+        frames: Vec::new(),
         findings: &mut findings,
     };
     match screen.get("root") {
@@ -154,6 +167,9 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
             }
         }
     }
+    // A component's fault is found at each instance of it: say it once.
+    let mut said = BTreeSet::new();
+    findings.0.retain(|finding| said.insert((finding.at.clone(), finding.problem.clone())));
 
     let mut table = Vec::new();
     if findings.0.is_empty() {
@@ -214,8 +230,8 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
 /// format rules. Anything else given exactly one placeholder takes the value.
 const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
-const INERT: [&str; 10] =
-    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "only", "each", "if"];
+const INERT: [&str; 11] =
+    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "with", "only", "each", "if"];
 
 /// The actions that only move the UI and touch no data. With `set` and
 /// `toggle` on view state, they are all a screen does by itself.
@@ -271,10 +287,29 @@ struct Walk<'a> {
     schema: &'a Schema,
     conditions: &'a Conditions,
     operations: &'a Operations,
-    components: &'a Map<String, Value>,
+    components: &'a Subtrees<'a>,
     /// Every component a node may be: underdraw's and the screen's look components.
     known: &'a Components,
+    /// The instances whose nodes are being walked, outermost first.
+    frames: Vec<Frame>,
     findings: &'a mut Findings,
+}
+
+/// An instance of a component whose nodes are being walked.
+struct Frame {
+    name: String,
+    /// The instance's id: what each node inside is named by, joined to its own.
+    id: String,
+    /// The params given a condition of the screen's (`"{hasDates}"`), each
+    /// with that condition: where one holds, so does the other.
+    conditions: BTreeMap<String, String>,
+    /// Each param given a path whole, with that path (`order` and `item`).
+    paths: Vec<(String, String)>,
+    /// The instance, and the scope and knowledge where it is: what it gives
+    /// in a slot is walked there.
+    instance: Map<String, Value>,
+    scope: Scope,
+    known: Known,
 }
 
 impl Walk<'_> {
@@ -301,21 +336,28 @@ impl Walk<'_> {
                 .add(at, "a slot holds nodes, not cases: write each node in the slot and give it an \"if\"");
             return;
         }
-        let at = object.get("id").and_then(Value::as_str).unwrap_or(at);
-        if let Some(name) = object.get("ref") {
-            match name.as_str().and_then(|name| self.components.get(name)) {
-                Some(component) => match component.get("nodes") {
-                    Some(nodes) => self.node(nodes, scope, known, at, key),
-                    None => self.findings.add(
-                        at,
-                        &format!(
-                            "ref {name} names a look component: a node is one with \"component\": {name}"
-                        ),
-                    ),
-                },
-                None => self.findings.add(at, &format!("ref {name} is not in components")),
-            }
-            return;
+        let at = match object.get("id").and_then(Value::as_str) {
+            Some(id) => subtrees::join(self.frames.last().map(|frame| frame.id.as_str()), id),
+            None => at.to_string(),
+        };
+        let at = at.as_str();
+        if object.contains_key("ref") {
+            return self.findings.add(
+                &format!("{at}.ref"),
+                "ref is gone: declare the component in components as {\"params\": {…}, \"nodes\": {…}} and use it by name, {\"id\": …, \"component\": \"<Name>\", \"with\": {…}}",
+            );
+        }
+        if subtrees::is_slot(object) {
+            return self.slotted(object, key, at);
+        }
+        if self.components.of(object).is_some() {
+            return self.instance(object, scope, known, at, key);
+        }
+        if object.contains_key("with") && object.contains_key("component") {
+            self.findings.add(
+                &format!("{at}.with"),
+                "with gives the params of a component the screen declares in components, and this node is not one",
+            );
         }
         if object.contains_key("kind") {
             self.findings.add(
@@ -325,6 +367,7 @@ impl Walk<'_> {
         }
         if let Some(Value::String(kind)) = object.get("component")
             && !self.known.has(kind)
+            && !self.components.has(kind)
         {
             self.findings.add(
                 at,
@@ -448,6 +491,155 @@ impl Walk<'_> {
                 }
                 _ => self.node(v, scope, &known, &format!("{at}.{k}"), k),
             }
+        }
+    }
+
+    /// The instance `object`, at `at`, of one of the screen's components:
+    /// its `with` gives each param, of its type, and nothing else, and its
+    /// component's nodes read only those params.
+    fn instance(&mut self, object: &Map<String, Value>, scope: &Scope, known: &Known, at: &str, key: &str) {
+        let Some(component) = self.components.of(object) else {
+            return;
+        };
+        let name = component.name.to_string();
+        let params = component.params.clone();
+        let root = Value::Object(component.nodes.clone());
+        for reached in subtrees::reached_into(object) {
+            self.findings.add(
+                &format!("{at}.{reached}"),
+                &format!("a screen cannot reach inside an instance of {name}: what it says of {name} is a param, given in \"with\""),
+            );
+        }
+        if let Some(only) = object.get("only")
+            && only.as_str().and_then(Breakpoint::parse).is_none()
+        {
+            self.findings.add(
+                &format!("{at}.only"),
+                &format!("{only} is not a breakpoint: write one of {}", Breakpoint::names()),
+            );
+        }
+        let mut known = known.clone();
+        if let Some(Value::String(used)) = object.get("if") {
+            known.extend(self.use_site(used, scope, &format!("{at}.if")));
+        }
+        if let Some(around) = self.frames.iter().position(|frame| frame.name == name) {
+            let mut through: Vec<&str> =
+                self.frames.iter().skip(around).map(|frame| frame.name.as_str()).collect();
+            through.push(&name);
+            return self.findings.add(at, &format!("component {name} uses itself: {}", through.join(" → ")));
+        }
+        let empty = Map::new();
+        let given = match object.get("with") {
+            None => &empty,
+            Some(Value::Object(given)) => given,
+            Some(_) => {
+                return self.findings.add(&format!("{at}.with"), "with is an object: one value per param");
+            }
+        };
+        let mut inner: Scope = Vec::new();
+        let mut conditions = BTreeMap::new();
+        let mut paths = Vec::new();
+        for (param, field) in &params {
+            let mut field = field.clone();
+            match given.get(param) {
+                None if field.default.is_none() => self.findings.add(
+                    &format!("{at}.with"),
+                    &format!("{name} reads {param} ({}), which with does not give", field.describe()),
+                ),
+                None => {}
+                Some(value) => {
+                    let path = value.as_str().and_then(template::whole);
+                    match path.as_deref().and_then(|path| self.condition(path)) {
+                        Some(condition) => {
+                            if !field.is_plain_bool() {
+                                self.findings.add(
+                                    &format!("{at}.with.{param}"),
+                                    &format!(
+                                        "is the condition {condition}, a Bool, and the param is {}",
+                                        field.describe()
+                                    ),
+                                );
+                            }
+                            conditions.insert(param.clone(), condition);
+                        }
+                        None => {
+                            self.argument(value, &field, scope, &known, &format!("{at}.with.{param}"));
+                            if let Some(path) = path {
+                                field.view = self.schema.in_view_state(scope, &path);
+                                paths.push((param.clone(), path));
+                            }
+                        }
+                    }
+                }
+            }
+            inner.push((param.clone(), field));
+        }
+        for param in given.keys() {
+            if !params.iter().any(|(declared, _)| declared == param) {
+                let declared: Vec<&str> = params.iter().map(|(declared, _)| declared.as_str()).collect();
+                let declared = if declared.is_empty() { "none".to_string() } else { declared.join(", ") };
+                self.findings.add(
+                    &format!("{at}.with.{param}"),
+                    &format!("{name} declares no param {param}: its params are {declared}"),
+                );
+            }
+        }
+        let mut placed = BTreeSet::new();
+        slots_placed(&root, &mut placed);
+        for (slot, _) in object {
+            if crate::instance::SLOTS.contains(&slot.as_str()) && !placed.contains(slot) {
+                self.findings.add(
+                    &format!("{at}.{slot}"),
+                    &format!("{name} places no {slot}: its nodes hold {{\"slot\": \"{slot}\"}} where what an instance gives goes"),
+                );
+            }
+        }
+        // What is known not null where the instance is, is known of the
+        // params given it.
+        let inside = Known {
+            not_null: through(&known.not_null, &paths),
+            confirming: known.confirming,
+            ..Known::default()
+        };
+        self.frames.push(Frame {
+            name,
+            id: at.to_string(),
+            conditions,
+            paths,
+            instance: object.clone(),
+            scope: scope.clone(),
+            known: known.clone(),
+        });
+        self.node(&root, &inner, &inside, at, key);
+        self.frames.pop();
+    }
+
+    /// The `{"slot": …}` node `object`, at `at`: inside a component, what
+    /// the instance gives there, walked where the instance is.
+    fn slotted(&mut self, object: &Map<String, Value>, key: &str, at: &str) {
+        let Some(frame) = self.frames.pop() else {
+            return self.findings.add(
+                at,
+                "{\"slot\": …} stands for what an instance gives, and only a component's nodes hold one",
+            );
+        };
+        if let Some(given) = subtrees::slotted(object, &frame.instance) {
+            let slot = object.get("slot").and_then(Value::as_str).unwrap_or(key);
+            self.node(given, &frame.scope, &frame.known, &format!("{}.{slot}", frame.id), slot);
+        }
+        self.frames.push(frame);
+    }
+
+    /// The condition of the screen's the path `path` names, read here: one
+    /// of the screen's own outside any component, or, inside one, a param
+    /// given one.
+    fn condition(&self, path: &str) -> Option<String> {
+        match self.frames.last() {
+            Some(frame) => frame.conditions.get(path).cloned(),
+            None if self.conditions.contains(path) && !self.conditions.is_on_type(path) => {
+                Some(path.to_string())
+            }
+            None => None,
         }
     }
 
@@ -976,6 +1168,33 @@ impl Walk<'_> {
             self.findings.add(at, &problem);
             return Known::default();
         }
+        // Inside a component, a use site reads only its params: a Bool one,
+        // or one given a condition of the screen's.
+        if let Some(frame) = self.frames.last() {
+            let resolved = self.schema.resolve(scope, name);
+            let problem = if frame.conditions.contains_key(name) {
+                None
+            } else if let Some(resolved) = resolved {
+                (!resolved.field.is_plain_bool())
+                    .then(|| format!("{name} is {}, not a Bool", resolved.field.describe()))
+            } else if self.conditions.contains(name) {
+                Some(format!(
+                    "{name} is a condition of the screen's, past the params of {}: declare a bool param and give it \"{{{name}}}\" in the instance's \"with\"",
+                    frame.name
+                ))
+            } else {
+                Some(self.schema.misused(scope, name).unwrap_or_else(|| {
+                    format!(
+                        "{name} reaches past the params of {}: a component reads only the params it declares",
+                        frame.name
+                    )
+                }))
+            };
+            if let Some(problem) = problem {
+                self.findings.add(at, &problem);
+            }
+            return if negated { Known::default() } else { self.held(name, scope) };
+        }
         if !self.conditions.contains(name) {
             match self.schema.resolve(scope, name) {
                 Some(resolved) if resolved.field.is_plain_bool() => {}
@@ -1000,7 +1219,19 @@ impl Walk<'_> {
     /// that ends in a condition on a type holds that condition, and the
     /// paths it guards, read through the value (`item.note`).
     fn held(&self, name: &str, scope: &Scope) -> Known {
-        if self.conditions.contains(name) {
+        // Inside a component, a param given a condition holds it; no other
+        // condition of the screen's is read there.
+        let inside = self.frames.last();
+        if let Some(frame) = inside
+            && let Some(condition) = frame.conditions.get(name)
+        {
+            return Known {
+                not_null: through(&self.conditions.guards(condition), &frame.paths),
+                holds: self.conditions.implied(condition),
+                confirming: false,
+            };
+        }
+        if inside.is_none() && self.conditions.contains(name) {
             return Known {
                 not_null: self.conditions.guards(name),
                 holds: self.conditions.implied(name),
@@ -1033,7 +1264,14 @@ impl Walk<'_> {
                 continue;
             }
             let Some(resolved) = self.schema.resolve(scope, path) else {
-                self.findings.add(at, &format!("{path} is not a path here"));
+                let problem = match self.frames.last() {
+                    Some(frame) => format!(
+                        "{path} reaches past the params of {}: a component reads only the params it declares; declare one and give it in the instance's \"with\"",
+                        frame.name
+                    ),
+                    None => format!("{path} is not a path here"),
+                };
+                self.findings.add(at, &problem);
                 continue;
             };
             let mut open = Vec::new();
@@ -1084,4 +1322,48 @@ impl Walk<'_> {
         };
         self.findings.add(at, &format!("{path} is {}; it is shown with {needs}", field.describe()));
     }
+}
+
+/// Every slot a `{"slot": …}` node in the nodes `value` stands for.
+fn slots_placed(value: &Value, placed: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            if subtrees::is_slot(object)
+                && let Some(Value::String(slot)) = object.get("slot")
+            {
+                placed.insert(slot.clone());
+            }
+            for (key, inner) in object {
+                if key != "on" {
+                    slots_placed(inner, placed);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                slots_placed(item, placed);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The paths among `outer` that a param given a path whole (`paths`) reaches,
+/// as read through the param: `promo.discount` is `promo.discount` inside
+/// an instance given `"promo": "{promo}"`, and `item.note` is `order.note`
+/// inside one given `"order": "{item}"`.
+fn through(outer: &BTreeSet<String>, paths: &[(String, String)]) -> BTreeSet<String> {
+    let mut inner = BTreeSet::new();
+    for path in outer {
+        for (param, given) in paths {
+            if path == given {
+                inner.insert(param.clone());
+            } else if let Some(rest) =
+                path.strip_prefix(given.as_str()).and_then(|rest| rest.strip_prefix('.'))
+            {
+                inner.insert(format!("{param}.{rest}"));
+            }
+        }
+    }
+    inner
 }
