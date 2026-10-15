@@ -1,0 +1,61 @@
+{
+  "kinds": {
+    "Thumb": {
+      "doc": "A product photo as a fixed square.",
+      "look": { "size": 64, "radius": 8, "stroke": "line", "cross": "line" }
+    },
+    "SummaryLine": {
+      "doc": "One line of the order summary: name at the start, amount at the end; strong for the total.",
+      "look": {
+        "box": "row", "justify": "between", "items": "center",
+        "children": [
+          { "cases": [
+            { "if": "strong", "then": { "text": "{label}", "font": "font.subhead" } },
+            { "else": { "text": "{label}", "ink": "muted" } }
+          ] },
+          { "cases": [
+            { "if": "strong", "then": { "text": "{value}", "font": "font.price" } },
+            { "else": { "text": "{value}" } }
+          ] }
+        ]
+      }
+    },
+    "TextField": {
+      "doc": "A one-line text input: label above, placeholder until filled, error below.",
+      "look": {
+        "box": "column", "gap": 6, "grow": 1,
+        "children": [
+          { "if": "label", "text": "{label}", "font": "font.caption", "ink": "muted" },
+          { "box": "row", "padding": [12, 12], "radius": 8, "stroke": "line",
+            "children": [
+              { "cases": [
+                { "if": "value && value != \"\"", "then": { "text": "{value}" } },
+                { "else": { "text": "{placeholder}", "ink": "muted" } }
+              ] }
+            ] },
+          { "if": "error", "text": "{error}", "font": "font.caption", "ink": "strong" }
+        ]
+      }
+    },
+    "OptionRow": {
+      "doc": "One choice of a single-choice group (delivery, payment): a radio, an optional icon, title and detail, and a price at the end. Outlined strong when selected.",
+      "look": {
+        "box": "row", "gap": 12, "padding": [12, 12], "radius": 12, "items": "center",
+        "stroke": { "cases": [ { "if": "selected", "then": "strong" }, { "else": "line" } ] },
+        "children": [
+          { "cases": [
+            { "if": "selected", "then": { "kind": "Glyph", "icon": "radio_button_checked" } },
+            { "else": { "kind": "Glyph", "icon": "radio_button_unchecked" } }
+          ] },
+          { "if": "icon", "kind": "Glyph", "icon": "{icon}" },
+          { "box": "column", "gap": 2, "grow": 1,
+            "children": [
+              { "text": "{title}", "font": "font.subhead" },
+              { "if": "detail", "text": "{detail}", "font": "font.caption", "ink": "muted" }
+            ] },
+          { "if": "price", "text": "{price}" }
+        ]
+      }
+    }
+  }
+}

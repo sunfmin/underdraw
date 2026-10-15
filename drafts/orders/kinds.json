@@ -1,0 +1,304 @@
+{
+  "kinds": {
+    "Chip": {
+      "doc": "A status filter as a pill: filled when on, with its count.",
+      "look": {
+        "box": "row",
+        "gap": 6,
+        "padding": [
+          6,
+          12
+        ],
+        "radius": 999,
+        "fill": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "strong"
+            },
+            {
+              "else": null
+            }
+          ]
+        },
+        "stroke": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": null
+            },
+            {
+              "else": "line"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": "{text}",
+            "font": "font.caption",
+            "ink": {
+              "cases": [
+                {
+                  "if": "selected",
+                  "then": "paper"
+                },
+                {
+                  "else": "text"
+                }
+              ]
+            },
+            "maxLines": 1
+          }
+        ],
+        "shrink": 0
+      }
+    },
+    "SearchField": {
+      "doc": "A one-line search box with a magnifier; shows the query, or the placeholder when empty.",
+      "look": {
+        "box": "row",
+        "gap": 8,
+        "padding": [
+          10,
+          12
+        ],
+        "radius": 8,
+        "stroke": "line",
+        "children": [
+          {
+            "kind": "Glyph",
+            "icon": "search",
+            "size": 20
+          },
+          {
+            "text": "{placeholder}",
+            "ink": "muted",
+            "if": "value == \"\""
+          },
+          {
+            "text": "{value}",
+            "if": "value != \"\""
+          }
+        ]
+      }
+    },
+    "Dialog": {
+      "doc": "A modal dialog centred over a dimmed backdrop; it blocks the screen until dismissed.",
+      "look": {
+        "box": "column",
+        "backdrop": true,
+        "width": "{width|or:88%}",
+        "gap": 16,
+        "padding": 24,
+        "radius": 16,
+        "fill": "paper",
+        "stroke": "line",
+        "children": [
+          "$children"
+        ]
+      }
+    },
+    "ReasonOption": {
+      "doc": "One choice of a single-choice list: a radio, then its label.",
+      "look": {
+        "box": "row",
+        "gap": 12,
+        "padding": [
+          10,
+          0
+        ],
+        "items": "center",
+        "children": [
+          {
+            "cases": [
+              {
+                "if": "selected",
+                "then": {
+                  "kind": "Glyph",
+                  "icon": "radio_button_checked",
+                  "size": 22
+                }
+              },
+              {
+                "else": {
+                  "kind": "Glyph",
+                  "icon": "radio_button_unchecked",
+                  "size": 22
+                }
+              }
+            ]
+          },
+          {
+            "text": "{text}"
+          }
+        ]
+      }
+    },
+    "ChipRow": {
+      "doc": "Filter chips in one row that scrolls sideways; chips past the edge are cut.",
+      "look": {
+        "box": "row",
+        "gap": 8,
+        "overflowX": "clip",
+        "frame": true,
+        "children": [
+          "$children"
+        ]
+      }
+    },
+    "OrderTableHeader": {
+      "doc": "The order table's column titles; columns match OrderTableRow's. 'wide' shows every column, otherwise number+customer, status, total and action.",
+      "look": {
+        "box": "grid",
+        "columns": "{columns}",
+        "gap": 8,
+        "padding": [
+          8,
+          16
+        ],
+        "fill": "fill",
+        "items": "center",
+        "children": [
+          {
+            "text": "订单号",
+            "if": "wide",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "顾客",
+            "if": "wide",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "商品",
+            "if": "wide",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "下单日期",
+            "if": "wide",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "订单 / 顾客",
+            "if": "!wide",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "状态",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "金额",
+            "align": "end",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "操作",
+            "align": "end",
+            "font": "font.caption",
+            "ink": "muted"
+          }
+        ]
+      }
+    },
+    "OrderTableRow": {
+      "doc": "One order as a table row, a line on top; the last cell holds the row's action, empty when there is none.",
+      "look": {
+        "box": "grid",
+        "columns": "{columns}",
+        "gap": 8,
+        "padding": [
+          10,
+          16
+        ],
+        "topLine": "line",
+        "items": "center",
+        "children": [
+          {
+            "text": "{title}",
+            "font": "font.subhead",
+            "maxLines": 1,
+            "if": "wide"
+          },
+          {
+            "text": "{customer}",
+            "maxLines": 1,
+            "if": "wide"
+          },
+          {
+            "text": "{items}",
+            "ink": "muted",
+            "maxLines": 1,
+            "if": "wide"
+          },
+          {
+            "text": "{placedAt}",
+            "font": "font.caption",
+            "ink": "muted",
+            "if": "wide"
+          },
+          {
+            "box": "column",
+            "gap": 2,
+            "if": "!wide",
+            "children": [
+              {
+                "text": "{title}",
+                "font": "font.subhead",
+                "maxLines": 1
+              },
+              {
+                "text": "{customer}",
+                "font": "font.caption",
+                "ink": "muted",
+                "maxLines": 1
+              }
+            ]
+          },
+          {
+            "box": "row",
+            "items": "center",
+            "children": [
+              {
+                "box": "row",
+                "self": "start",
+                "padding": [
+                  2,
+                  8
+                ],
+                "radius": 999,
+                "stroke": "line",
+                "children": [
+                  {
+                    "text": "{status}",
+                    "font": "font.caption"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "text": "{total}",
+            "font": "font.subhead",
+            "align": "end"
+          },
+          {
+            "box": "row",
+            "justify": "end",
+            "children": [
+              "$children"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
