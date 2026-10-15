@@ -1,0 +1,33 @@
+tree
+  root/
+    orders  [1 note]
+      ▸ default  [1 note]
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+picture
+  page default · 390
+    picked order-0-cancel: 318, 215 · 40 × 40
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
+  page default · 1120
+    picked order-0-cancel: 1048, 214 · 40 × 40
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
+  pin N1 on page 0: Answered
+  pin N2 on page 0: Note
+  pin N1 on page 1: Answered, faint
+  pin N2 on page 1: Note, faint
+sidebar
+  IconButton
+    calls  nothing
+    → cancel-dialog
+    Holding ⌘ (Ctrl) and clicking the node does the same.
+    ▸ details
+  note N2 · waiting on the agent
+    too red
+    waiting for the agent
