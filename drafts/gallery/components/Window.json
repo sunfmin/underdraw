@@ -1,0 +1,49 @@
+{
+  "$comment": "The gallery's window: the tree, the pictures, the sidebar. At a phone's width it stands for a narrow window: the pictures, then the sidebar. Its children are the three panes, in order.",
+  "params": {
+    "sidebar": "bool = true"
+  },
+  "nodes": {
+    "component": "Columns",
+    "gap": 0,
+    "columns": {
+      "cases": [
+        {
+          "if": "sidebar",
+          "then": {
+            "compact": [
+              "1fr"
+            ],
+            "regular": [
+              220,
+              "1fr",
+              300
+            ]
+          }
+        },
+        {
+          "else": {
+            "compact": [
+              "1fr"
+            ],
+            "regular": [
+              220,
+              "1fr"
+            ]
+          }
+        }
+      ]
+    },
+    "children": [
+      {
+        "slot": "children"
+      }
+    ]
+  },
+  "fixtures": {
+    "with-sidebar": {},
+    "sidebar-hidden": {
+      "sidebar": false
+    }
+  }
+}
