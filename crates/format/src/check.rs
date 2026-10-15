@@ -32,7 +32,9 @@ pub struct Checked {
     pub fixtures: Vec<String>,
     /// The phases, each a tree that renders before data arrives.
     pub phases: Vec<String>,
-    /// Each condition and the fixtures it holds in. Empty while any finding
+    /// Each condition it reads and the fixtures it holds in: one over its
+    /// data, and one on a type it reads through a value of it, or that one
+    /// it reads uses. Empty while any finding
     /// other than coverage stands: a table worked out from a faulty
     /// description would mislead.
     pub conditions: Vec<Condition>,
@@ -181,9 +183,15 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
     }
     let mut table = Vec::new();
     if findings.0.is_empty() {
+        // A condition on a type the description never reads, as the
+        // domain's are to every screen that does not, has no row.
+        let reached = conditions.reached(&read);
         for condition in conditions.all() {
             let mut holds_in = Vec::new();
             if let Some(on) = &condition.on {
+                if !reached.contains(&condition.name) {
+                    continue;
+                }
                 // One on a type holds of each value: where the screen reads
                 // it, it must be true of one and false of another.
                 let (mut of_some, mut fails_of_some) = (false, false);
