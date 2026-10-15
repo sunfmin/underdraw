@@ -260,6 +260,10 @@ LAYOUT ON A NODE
     "border"     a colour token: "color.border"
     "elevation"  an elevation token: outlined in the wireframe
     "columns"    Grid and Columns only: a count, or tracks ["58%", "1fr"]
+    "dividers"   Grid and Columns only: true draws a line between the cells,
+                 in the line ink, for panes split without a border round each
+  Each cell of a Grid or Columns is as tall as its row, so its border and
+  fill reach the row's foot.
   Section takes "gap" and "padding" too. Width, grow, alignment and sizes
   are never written on a node: they belong to a component's look (LOOKS).
   When a built-in component does not lay out as needed, define one.
@@ -847,6 +851,7 @@ LOOKS
                          ["3fr", "1fr", 48]; check refuses anything else
     fill stroke radius dashed   outline and fill in an ink
     cross topLine        a crossed placeholder, a line on top, in an ink
+    dividers             a line between the cells, in an ink (true: line)
     clip                 cut children at this radius (false: never)
     overflowX            "clip": a row that runs off the edge
     pin                  {"x": "end", "y": "end", "inset": 12}: floats over the
