@@ -12,7 +12,8 @@
 //! they now stand: as they change under its root, the tree, the state shown
 //! and its notes follow.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -187,6 +188,10 @@ struct Gallery {
     shift: bool,
     /// The journey picked, while one is played.
     playing: Option<Playing>,
+    /// Each description drawn so far, read and checked once, by its
+    /// directory, until the files change: checking one lays out every
+    /// state, too slow to do on every pick.
+    descriptions: RefCell<HashMap<PathBuf, Arc<draw::Description>>>,
 }
 
 /// A note being written: what it is for, and what has been typed.
@@ -555,7 +560,19 @@ impl Gallery {
             hovered: None,
             shift: false,
             playing: None,
+            descriptions: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// The description in `dir`, read and checked once until its files
+    /// change.
+    fn description(&self, dir: &Path) -> anyhow::Result<Arc<draw::Description>> {
+        if let Some(description) = self.descriptions.borrow().get(dir) {
+            return Ok(description.clone());
+        }
+        let description = Arc::new(draw::Description::read(dir)?);
+        self.descriptions.borrow_mut().insert(dir.to_path_buf(), description.clone());
+        Ok(description)
     }
 
     /// Scrolled `down` points, the pane under the pointer: the tree or the
@@ -749,6 +766,7 @@ impl Gallery {
         let journey = self.picked.and_then(|index| self.lines.get(index)).filter(|line| line.journey);
         let journey = journey.map(|line| (line.row.dir.clone(), self.playing.as_ref().map_or(0, |p| p.at)));
         self.lines = lines(&self.root);
+        self.descriptions.borrow_mut().clear();
         let notes = notes_of(&self.root, &self.lines);
         let closed = closed_itself(&self.notes, &notes);
         self.notes = notes;
@@ -1047,34 +1065,46 @@ impl Gallery {
     /// `WIDTHS`, given the screens `drawn` under the root, and shown; or
     /// why it cannot be. The node picked stays picked while it is there.
     fn show_pages(&mut self, dir: &Path, state: Option<&State>, drawn: &std::collections::BTreeSet<String>) {
-        let mut pages = Vec::new();
-        for width in WIDTHS {
-            let wanted = match state {
-                Some(state) => state.wanted(width, 1),
-                // A description with no state: lay_out says why.
-                None => Wanted { fixture: None, phase: None, width, scale: 1 },
-            };
-            match draw::lay_out(dir, &wanted, Some(drawn), self.lang) {
-                Ok(laid) => {
-                    let drawing = laid.draw(1, u32::MAX);
-                    pages.push(Page {
-                        caption: format!("{} · {width}", drawing.shown.name()),
-                        width: f64::from(drawing.page.width),
-                        height: f64::from(drawing.page.height),
-                        scene: drawing.scene,
-                        nodes: drawing.page.nodes,
-                        calls: drawing.calls,
-                        handlers: drawing.handlers,
-                        origins: drawing.origins,
-                    });
-                }
-                Err(e) => {
-                    let at = crate::SCREEN.to_string();
-                    self.picture = Picture::Faults(vec![Finding { at, problem: format!("{e:#}") }]);
-                    return;
-                }
+        let lang = self.lang;
+        let laid: Vec<anyhow::Result<Page>> = match self.description(dir) {
+            // Each width laid out on a thread of its own, at once.
+            Ok(description) => std::thread::scope(|scope| {
+                let laying: Vec<_> = WIDTHS
+                    .map(|width| {
+                        let description = &description;
+                        scope.spawn(move || {
+                            let wanted = match state {
+                                Some(state) => state.wanted(width, 1),
+                                // A description with no state: lay_out says why.
+                                None => Wanted { fixture: None, phase: None, width, scale: 1 },
+                            };
+                            let drawing = description.lay_out(&wanted, Some(drawn), lang)?.draw(1, u32::MAX);
+                            Ok(Page {
+                                caption: format!("{} · {width}", drawing.shown.name()),
+                                width: f64::from(drawing.page.width),
+                                height: f64::from(drawing.page.height),
+                                scene: drawing.scene,
+                                nodes: drawing.page.nodes,
+                                calls: drawing.calls,
+                                handlers: drawing.handlers,
+                                origins: drawing.origins,
+                            })
+                        })
+                    })
+                    .into_iter()
+                    .collect();
+                laying.into_iter().map(|laid| laid.join().expect("laying out a state panicked")).collect()
+            }),
+            Err(e) => vec![Err(e)],
+        };
+        let pages = match laid.into_iter().collect::<anyhow::Result<Vec<Page>>>() {
+            Ok(pages) => pages,
+            Err(e) => {
+                let at = crate::SCREEN.to_string();
+                self.picture = Picture::Faults(vec![Finding { at, problem: format!("{e:#}") }]);
+                return;
             }
-        }
+        };
         let kept = self.node.as_ref().is_some_and(|id| pages.iter().any(|page| page.has(id)));
         if !kept {
             self.node = None;
@@ -1230,13 +1260,16 @@ impl Gallery {
             .map_while(|(line, Line { state, .. })| Some((line, state.as_ref()?)))
             .collect();
         let lang = self.lang;
+        let description = self.description(dir)?;
+        let description = &description;
         // Each state laid out on a thread of its own, all at once.
         let drawings: Vec<anyhow::Result<draw::Drawing>> = std::thread::scope(|scope| {
             let laying: Vec<_> = states
                 .iter()
                 .map(|(_, state)| {
                     scope.spawn(move || {
-                        Ok(draw::lay_out(dir, &state.wanted(OVERVIEW, 1), Some(drawn), lang)?
+                        Ok(description
+                            .lay_out(&state.wanted(OVERVIEW, 1), Some(drawn), lang)?
                             .draw(1, u32::MAX))
                     })
                 })
@@ -1281,7 +1314,7 @@ impl Gallery {
         }
         let at = |name: &str| thumbs.iter().position(|thumb| thumb.name == name);
         let mut arrows = Vec::new();
-        for transition in draw::transitions(dir)? {
+        for transition in description.transitions()? {
             let (Some(from), Some(to)) = (at(&transition.from), at(&transition.to)) else { continue };
             let node = match labels[from].get(&transition.node) {
                 Some(label) => label.to_string(),
@@ -1556,7 +1589,10 @@ impl Gallery {
             Some(state) => state.wanted(WIDTHS[0], 1),
             None => Wanted { fixture: None, phase: None, width: WIDTHS[0], scale: 1 },
         };
-        match draw::lay_out(dir, &wanted, Some(drawn), self.lang) {
+        match self
+            .description(dir)
+            .and_then(|description| description.lay_out(&wanted, Some(drawn), self.lang))
+        {
             Ok(laid) => {
                 let drawing = laid.draw(1, u32::MAX);
                 Card::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
@@ -2975,6 +3011,7 @@ impl ApplicationHandler<Told> for Gallery {
                 if let Some(first) = self.lines.iter().position(|line| line.row.description().is_some()) {
                     self.pick(first);
                 }
+
                 shown.window.request_redraw();
                 self.shown = Some(shown);
             }
