@@ -1244,7 +1244,9 @@
                     "component": "Text",
                     "if": "journey.told",
                     "text": "{journey.about}",
-                    "color": "color.textSecondary"
+                    "color": "color.textSecondary",
+                    "only": "compact",
+                    "$comment": "At regular the tree beside it already says what the journey is about."
                   },
                   {
                     "id": "route",
@@ -1270,9 +1272,9 @@
                     "children": [
                       {
                         "id": "cue-label",
-                        "component": "Badge",
+                        "component": "ActMark",
                         "if": "labelled",
-                        "text": "{step.label}"
+                        "number": "{step.label}"
                       },
                       {
                         "id": "cue-act-text",
@@ -1290,7 +1292,7 @@
                       "cases": [
                         {
                           "if": "answers",
-                          "then": "{step.answer}, then leads to {step.leadsTo}"
+                          "then": "Leads to {step.leadsTo}, once {step.answer}"
                         },
                         {
                           "else": "Leads to {step.leadsTo}"
@@ -1425,23 +1427,23 @@
                         "set": "picked",
                         "to": null
                       }
-                    }
+                    },
+                    "only": "regular"
                   }
                 ]
               },
               {
                 "id": "fault",
-                "component": "Card",
+                "component": "Stack",
                 "if": "broken",
                 "gap": 8,
-                "padding": 16,
-                "border": "color.border",
+                "padding": 0,
                 "children": [
                   {
                     "id": "fault-title",
                     "component": "Text",
                     "text": "Step {step.number} cannot be played",
-                    "font": "font.subhead"
+                    "font": "font.cue"
                   },
                   {
                     "id": "fault-problem",
@@ -1469,16 +1471,21 @@
           {
             "id": "sidebar",
             "component": "Stack",
-            "gap": 12,
-            "padding": 12,
+            "gap": 0,
+            "padding": [
+              4,
+              16
+            ],
             "border": "color.border",
             "children": [
               {
                 "id": "journey-note",
-                "component": "Card",
+                "component": "Stack",
                 "gap": 8,
-                "padding": 12,
-                "border": "color.border",
+                "padding": [
+                  14,
+                  0
+                ],
                 "children": [
                   {
                     "id": "jn-title",
@@ -1510,12 +1517,18 @@
                 ]
               },
               {
+                "id": "sb-rule-1",
+                "component": "Divider"
+              },
+              {
                 "id": "node-card",
-                "component": "Card",
+                "component": "Stack",
                 "if": "hasPicked",
                 "gap": 6,
-                "padding": 12,
-                "border": "color.border",
+                "padding": [
+                  14,
+                  0
+                ],
                 "children": [
                   {
                     "id": "nc-title",
@@ -1533,19 +1546,37 @@
                 ]
               },
               {
+                "id": "sb-rule-2",
+                "component": "Divider"
+              },
+              {
                 "id": "state-card",
-                "component": "Card",
+                "component": "Stack",
                 "if": "showState",
-                "padding": 12,
-                "border": "color.border",
+                "padding": [
+                  14,
+                  0
+                ],
                 "children": [
                   {
                     "id": "sc-title",
                     "component": "Text",
                     "text": "{step.state} · the whole state",
                     "font": "font.subhead"
+                  },
+                  {
+                    "id": "sc-hint",
+                    "component": "Text",
+                    "text": "Click a part of the picture to talk about just that.",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
                   }
-                ]
+                ],
+                "gap": 4
+              },
+              {
+                "id": "sb-rule-3",
+                "component": "Divider"
               },
               {
                 "id": "talk",
@@ -1566,6 +1597,12 @@
                       }
                     ]
                   }
+                ],
+                "padding": [
+                  14,
+                  0,
+                  0,
+                  0
                 ]
               }
             ],
@@ -1610,20 +1647,42 @@
                   "y": "center"
                 },
                 "padding": [
-                  4,
-                  10
+                  3,
+                  9
                 ],
                 "radius": 999,
                 "fill": "strong",
                 "children": [
                   {
-                    "text": "act on {next}",
-                    "font": "font.caption",
+                    "text": "{next}",
+                    "font": "font.subhead",
                     "ink": "paper"
                   }
                 ]
               }
             ]
+          }
+        ]
+      }
+    },
+    "ActMark": {
+      "doc": "The label of the node to act on next: a filled disc with its number, the same over the picture and beside the act it names.",
+      "params": [
+        "number"
+      ],
+      "look": {
+        "box": "row",
+        "radius": 999,
+        "padding": [
+          3,
+          9
+        ],
+        "fill": "strong",
+        "children": [
+          {
+            "text": "{number}",
+            "font": "font.subhead",
+            "ink": "paper"
           }
         ]
       }
