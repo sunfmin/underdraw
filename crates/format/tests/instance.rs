@@ -113,3 +113,37 @@ fn a_model_shows_each_fixture_then_each_phase_as_instantiate_does() {
         }
     }
 }
+
+/// Every node and each node in it, the node first.
+fn every(node: &Node) -> Vec<&Node> {
+    std::iter::once(node).chain(node.children.iter().flat_map(every)).collect()
+}
+
+#[test]
+fn each_node_says_where_it_is_written_and_for_which_element() {
+    let screen = draft();
+    let mut states: Vec<State> = vec![State::Fixture("default"), State::Fixture("no-dates")];
+    states.extend(
+        screen["phases"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|name| !name.starts_with('$'))
+            .map(|name| State::Phase(name)),
+    );
+    for state in states {
+        let root = instantiate(&screen, state, Breakpoint::Compact).unwrap();
+        for node in every(&root) {
+            let written = screen.pointer(&node.written_at);
+            let written =
+                written.unwrap_or_else(|| panic!("{} names nothing, for {}", node.written_at, node.id));
+            assert_eq!(written["id"], json!(node.written_id), "{state:?} {}", node.written_at);
+        }
+    }
+    let root = instantiate(&screen, State::Fixture("default"), Breakpoint::Compact).unwrap();
+    let amenity = find(&root, "amenity-9").unwrap();
+    assert_eq!(amenity.written_id, "amenity-{index}", "the template, not the id it is given");
+    assert_eq!(amenity.instance, [9], "the tenth amenity");
+    assert!(amenity.written_at.ends_with("/item"), "{}", amenity.written_at);
+    assert_eq!(find(&root, "amenities-list").unwrap().instance, Vec::<usize>::new(), "outside any each");
+}

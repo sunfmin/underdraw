@@ -31,6 +31,15 @@ pub struct Node {
     /// (`order-{index}-cancel`), what a transition names it by.
     #[serde(skip)]
     pub written_id: String,
+    /// Where it is written in screen.json, as a JSON Pointer (RFC 6901):
+    /// `/root/children/1/item`, or under `/components` for one a `ref`
+    /// brings in.
+    #[serde(skip)]
+    pub written_at: String,
+    /// Which element of each `each` it was made for, the outermost first:
+    /// `[2]` for the third row; empty outside any.
+    #[serde(skip)]
+    pub instance: Vec<usize>,
     pub kind: String,
     /// Every property other than the node's structure, with templates filled
     /// and cases and responsive values chosen.
@@ -121,8 +130,35 @@ pub(crate) fn build(
     };
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
     let fill = Fill { conditions, components: &components, breakpoint };
-    let mut built = fill.node(tree, &data, "root")?;
+    let at = match state {
+        State::Fixture(_) => "/root".to_string(),
+        State::Phase(name) => format!("/phases/{}", escaped(name)),
+    };
+    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new() })?;
     built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
+}
+
+/// Where a node is written, and for which elements of the `each`s around
+/// it: what [`Node::written_at`] and [`Node::instance`] are given.
+struct Written {
+    at: String,
+    instance: Vec<usize>,
+}
+
+impl Written {
+    /// The node under `key`, and, for one of a list, at `index` of it.
+    fn under(&self, key: &str, index: Option<usize>) -> Written {
+        let at = match index {
+            Some(index) => format!("{}/{}/{index}", self.at, escaped(key)),
+            None => format!("{}/{}", self.at, escaped(key)),
+        };
+        Written { at, instance: self.instance.clone() }
+    }
+}
+
+/// `key` as one step of a JSON Pointer: `~` and `/` escaped.
+fn escaped(key: &str) -> String {
+    key.replace('~', "~0").replace('/', "~1")
 }
 
 struct Fill<'a> {
@@ -134,13 +170,15 @@ struct Fill<'a> {
 impl Fill<'_> {
     /// The nodes `written` becomes in `scope`: none when it is hidden, one
     /// otherwise.
-    fn node(&self, written: &Value, scope: &Value, slot: &str) -> Result<Vec<Node>, String> {
+    /// `written` is where it is written.
+    fn node(&self, written: &Value, scope: &Value, slot: &str, at: &Written) -> Result<Vec<Node>, String> {
         let Some(object) = written.as_object() else {
             return Err(format!("expected a node, found {written}"));
         };
         if let Some(Value::String(name)) = object.get("ref") {
             let component = self.components.get(name).ok_or_else(|| format!("no component {name}"))?;
-            return self.node(component, scope, slot);
+            let at = Written { at: format!("/components/{}", escaped(name)), instance: at.instance.clone() };
+            return self.node(component, scope, slot, &at);
         }
         if let Some(Value::String(only)) = object.get("only")
             && Breakpoint::parse(only) != Some(self.breakpoint)
@@ -160,6 +198,8 @@ impl Fill<'_> {
         let mut node = Node {
             id,
             written_id,
+            written_at: at.at.clone(),
+            instance: at.instance.clone(),
             kind,
             props: Map::new(),
             children: Vec::new(),
@@ -178,15 +218,23 @@ impl Fill<'_> {
             if key == "item" {
                 for (index, item) in each.iter().flatten().enumerate() {
                     let scope = with(scope, item, index);
-                    node.children.append(&mut self.node(value, &scope, "item")?);
+                    let mut at = at.under(key, None);
+                    at.instance.push(index);
+                    node.children.append(&mut self.node(value, &scope, "item", &at)?);
                 }
             } else if SLOTS.contains(&key.as_str()) {
-                let written = match value {
-                    Value::Array(items) => items.clone(),
-                    one => vec![one.clone()],
-                };
-                for child in &written {
-                    node.children.append(&mut self.node(child, scope, key)?);
+                match value {
+                    Value::Array(items) => {
+                        for (index, child) in items.iter().enumerate() {
+                            node.children.append(&mut self.node(
+                                child,
+                                scope,
+                                key,
+                                &at.under(key, Some(index)),
+                            )?);
+                        }
+                    }
+                    one => node.children.append(&mut self.node(one, scope, key, &at.under(key, None))?),
                 }
             } else if let ("disabled", Value::String(used)) = (key.as_str(), value) {
                 node.props.insert(key.clone(), Value::Bool(self.holds(used, scope)));
