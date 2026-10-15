@@ -1,0 +1,53 @@
+tree
+  ▸ root/
+    orders
+      default
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+    pay/
+      checkout
+        default
+        express-alipay
+        promo-applied
+        promo-invalid
+        no-address-new-card
+        out-of-stock
+        loading
+        error
+picture
+  flow
+    nav-export
+    order-{index}
+    address
+    address-add
+    orders
+    checkout
+    ExportDocuments
+    OrderDetail
+    AddressBook
+    AddressForm
+sidebar
+  等你处理 · 6
+    orders
+    ? nav-export（default）
+    这里跳转到 ExportDocuments，但根目录下没有任何描述声明它，所以猜测 ExportDocuments 是还没画的屏幕
+    ? order-{index}（default）
+    这里跳转到 OrderDetail，但根目录下没有任何描述声明它，所以猜测 OrderDetail 是还没画的屏幕
+    N1 在整个 default
+    代理：the title is a heading now
+    pay/checkout
+    ? address（default）
+    这里跳转到 AddressBook，但根目录下没有任何描述声明它，所以猜测 AddressBook 是还没画的屏幕
+    ? address-add（no-address-new-card）
+    这里跳转到 AddressForm，但根目录下没有任何描述声明它，所以猜测 AddressForm 是还没画的屏幕
+    ? card-number（no-address-new-card）
+    Card fields are drawn here
+  未选中任何东西
+    点一个节点、状态或箭头，查看它并就它交谈。
+    按住 ⌘ 点节点，像原型一样操作它。
+    ⌘C 复制引用 · ⌘\ 隐藏侧栏

@@ -1,0 +1,304 @@
+{
+  "screen": "TodoList",
+  "title": "待办清单",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "data": {
+    "todos": "Todo[] ..200",
+    "summary": "Summary",
+    "composer": {
+      "type": "Composer",
+      "view": true,
+      "doc": "正在输入的一项，只在这个屏幕上"
+    }
+  },
+  "types": {
+    "Todo": {
+      "id": "string",
+      "title": "string 1..80",
+      "done": "bool = false"
+    },
+    "Summary": {
+      "total": {
+        "type": "int 0..",
+        "derived": { "app": "todos 的条数" }
+      },
+      "remaining": {
+        "type": "int 0..",
+        "derived": { "app": "未完成的条数" }
+      },
+      "completed": {
+        "type": "int 0..",
+        "derived": { "app": "已完成的条数" }
+      }
+    },
+    "Composer": {
+      "text": "string ..80 = \"\"",
+      "canSubmit": {
+        "type": "bool",
+        "derived": { "app": "去掉首尾空白后非空" }
+      }
+    }
+  },
+  "conditions": {
+    "hasTodos": {
+      "when": "summary.total > 0",
+      "label": "有待办"
+    },
+    "allDone": {
+      "when": "hasTodos && summary.remaining == 0",
+      "label": "全部完成"
+    },
+    "hasCompleted": {
+      "when": "summary.completed > 0",
+      "label": "有已完成的"
+    },
+    "canAdd": {
+      "when": "composer.text != \"\" && composer.canSubmit",
+      "label": "可以添加"
+    }
+  },
+  "operations": {
+    "addTodo": {
+      "command": "添加一项待办，排在最后",
+      "params": {
+        "title": "string 1..80"
+      },
+      "result": "Todo",
+      "requires": "canAdd"
+    },
+    "toggleTodo": {
+      "command": "把一项待办标为完成，或者标回未完成",
+      "params": {
+        "id": "string"
+      },
+      "result": "Todo",
+      "fails": {
+        "notFound": "这一项已经被删掉了"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "todos": [
+        {
+          "id": "1",
+          "title": "买牛奶",
+          "done": true
+        },
+        {
+          "id": "2",
+          "title": "给房东回邮件，确认下个月的入住时间"
+        },
+        {
+          "id": "3",
+          "title": "周五前交季度报告"
+        }
+      ],
+      "summary": {
+        "total": 3,
+        "remaining": 2,
+        "completed": 1
+      },
+      "composer": {
+        "canSubmit": false
+      }
+    },
+    "typing": {
+      "$patch": "default",
+      "composer": {
+        "text": "取快递",
+        "canSubmit": true
+      }
+    },
+    "all-done": {
+      "todos": [
+        {
+          "id": "1",
+          "title": "买牛奶",
+          "done": true
+        },
+        {
+          "id": "2",
+          "title": "交报告",
+          "done": true
+        }
+      ],
+      "summary": {
+        "total": 2,
+        "remaining": 0,
+        "completed": 2
+      },
+      "composer": {
+        "canSubmit": false
+      }
+    },
+    "empty": {
+      "todos": [],
+      "summary": {
+        "total": 0,
+        "remaining": 0,
+        "completed": 0
+      },
+      "composer": {
+        "canSubmit": false
+      }
+    }
+  },
+  "components": {
+    "TextField": {
+      "doc": "A one-line input: fills what its row leaves, its placeholder in gray until something is typed.",
+      "params": ["value", "placeholder"],
+      "look": {
+        "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line", "radius": "radius.sm",
+        "children": [ { "cases": [
+          { "if": "value && value != \"\"", "then": { "text": "{value}", "font": "font.body" } },
+          { "else": { "text": "{placeholder}", "font": "font.body", "ink": "muted" } } ] } ]
+      }
+    }
+  },
+  "root": {
+    "id": "todo-screen",
+    "component": "Screen",
+    "children": [
+      {
+        "id": "header",
+        "component": "Stack",
+        "gap": "space.1",
+        "padding": "space.4",
+        "children": [
+          {
+            "id": "header-title",
+            "component": "Text",
+            "text": "我的待办",
+            "font": "font.title"
+          },
+          {
+            "id": "header-count",
+            "component": "Text",
+            "if": "hasTodos",
+            "font": "font.caption",
+            "color": "color.textSecondary",
+            "text": {
+              "cases": [
+                {
+                  "if": "allDone",
+                  "then": "全部完成了"
+                },
+                {
+                  "else": "还剩 {summary.remaining} 项"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "composer",
+        "component": "Row",
+        "gap": "space.3",
+        "padding": "space.4",
+        "children": [
+          {
+            "id": "composer-input",
+            "component": "TextField",
+            "bind": "composer.text",
+            "placeholder": "添加一项待办…"
+          },
+          {
+            "id": "composer-add",
+            "component": "Button",
+            "variant": "primary",
+            "text": "添加",
+            "disabled": "!canAdd",
+            "on": {
+              "tap": {
+                "call": "addTodo",
+                "with": {
+                  "title": "{composer.text}"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "divider",
+        "component": "Divider"
+      },
+      {
+        "id": "todo-body",
+        "component": "Stack",
+        "padding": [
+          0,
+          "space.4"
+        ],
+        "gap": "space.2",
+        "children": [
+          {
+            "id": "todo-empty",
+            "component": "EmptyState",
+            "if": "!hasTodos",
+            "icon": "checklist",
+            "title": "还没有待办",
+            "detail": "在上面输入一项，点「添加」。"
+          },
+          {
+            "id": "todo-list",
+            "component": "List",
+            "if": "hasTodos",
+            "each": "todos",
+            "item": {
+              "id": "todo-{index}",
+              "component": "ListItem",
+              "title": "{item.title}",
+              "leadingIcon": {
+                "cases": [
+                  {
+                    "if": "item.done",
+                    "then": "check_circle.fill"
+                  },
+                  {
+                    "else": "circle"
+                  }
+                ]
+              },
+              "on": {
+                "tap": {
+                  "call": "toggleTodo",
+                  "with": {
+                    "id": "{item.id}"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "clear-completed",
+            "component": "Link",
+            "if": "hasCompleted",
+            "text": "清除已完成（{summary.completed}）"
+          }
+        ]
+      }
+    ]
+  },
+  "phases": {
+    "loading": {
+      "id": "todo-loading",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "loading-skeleton",
+          "component": "Skeleton",
+          "shape": [
+            "line 40%",
+            "line 90%",
+            "line 90%",
+            "line 90%"
+          ]
+        }
+      ]
+    }
+  }
+}
