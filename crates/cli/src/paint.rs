@@ -29,10 +29,15 @@ pub fn scene(page: &Page, typesetter: &mut Typesetter, scale: f64) -> Scene {
     let at = Affine::scale(scale);
     let paper = RoundedRect::new(0.0, 0.0, f64::from(page.width), f64::from(page.height), 0.0);
     scene.fill(Fill::NonZero, at, colour(Ink::Paper), None, &paper);
-    for draw in &page.draws {
-        paint(&mut scene, at, draw, typesetter);
-    }
+    draws(&mut scene, at, &page.draws, typesetter);
     scene
+}
+
+/// `list` painted into `scene`, its points taken through `at`.
+pub fn draws(scene: &mut Scene, at: Affine, list: &[Draw], typesetter: &mut Typesetter) {
+    for draw in list {
+        paint(scene, at, draw, typesetter);
+    }
 }
 
 fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter) {

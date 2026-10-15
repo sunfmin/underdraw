@@ -5,9 +5,11 @@
 //! answer as one JSON object.
 
 mod draw;
+mod gallery;
 mod gpu;
 mod paint;
 mod text;
+mod window;
 
 use std::ffi::OsString;
 use std::fs::File;
@@ -72,6 +74,15 @@ enum Command {
         /// Where to write the PNG; <dir>/renders/<fixture or phase>-<width>.png when not given
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// A window for the person: every screen description under a directory, each drawn at a phone and a desktop width
+    #[command(after_long_help = include_str!("help/gallery.txt"))]
+    Gallery {
+        /// The directory the screen descriptions are under, at any depth
+        root: PathBuf,
+        /// Run the window itself, in this process: what the command starts
+        #[arg(long, hide = true)]
+        window: bool,
     },
     /// The view model as a JSON Schema, to validate API responses and other data against
     #[command(after_long_help = include_str!("help/schema.txt"))]
@@ -139,6 +150,11 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         }
     };
     let answer = match cli.command {
+        Command::Gallery { root, window: true } => {
+            window::run(&root);
+            return ExitCode::SUCCESS;
+        }
+        Command::Gallery { root, window: false } => gallery::gallery(&root),
         Command::Check { path } => check(&path),
         Command::Render { path, fixture, phase, width, scale, out } => {
             render(&path, &Wanted { fixture, phase, width, scale }, out)
@@ -344,7 +360,7 @@ fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
 
 fn render(path: &Path, wanted: &Wanted, out: Option<PathBuf>) -> anyhow::Result<Value> {
     let laid = draw::lay_out(path, wanted)?;
-    let gpu = gpu::Gpu::open()?;
+    let mut gpu = gpu::Gpu::open()?;
     let drawing = laid.draw(wanted.scale, gpu.max_side);
     let [pixels_wide, pixels_high] = drawing.pixels;
     let pixels = gpu.render(&drawing.scene, pixels_wide, pixels_high)?;
