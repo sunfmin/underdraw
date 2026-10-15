@@ -512,10 +512,10 @@ impl<'a> Walk<'a> {
                     // only while it does: what it calls may require it, and
                     // may read what it guards.
                     let mut enabled = known.clone();
-                    if let Some(Value::String(used)) = object.get("disabled") {
-                        if let Some(name) = UseSite::parse(used).only_negated() {
-                            enabled.extend(self.held(name, scope));
-                        }
+                    if let Some(Value::String(used)) = object.get("disabled")
+                        && let Some(name) = UseSite::parse(used).only_negated()
+                    {
+                        enabled.extend(self.held(name, scope));
                     }
                     for (event, handler) in events {
                         self.handler(handler, scope, &enabled, &format!("{at}.on.{event}"), at);
