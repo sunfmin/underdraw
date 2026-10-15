@@ -7,10 +7,10 @@ use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
 use crate::conditions::{Conditions, UseSite};
+use crate::domain;
 use crate::field::{Base, Field};
 use crate::fixture;
 use crate::instance::{State, build};
-use crate::domain;
 use crate::jobs;
 use crate::kinds::{Kinds, track_faults};
 use crate::operations::{BulkOf, Operation, Operations};

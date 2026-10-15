@@ -40,7 +40,8 @@ fn share(screen: &Value, findings: &mut Findings) -> Value {
         None => return shared,
         Some(Value::Object(domain)) => domain,
         Some(_) => {
-            findings.add(FILE, "the domain is an object: {\"types\": …, \"conditions\": …, \"operations\": …}");
+            findings
+                .add(FILE, "the domain is an object: {\"types\": …, \"conditions\": …, \"operations\": …}");
             return shared;
         }
     };
@@ -48,7 +49,10 @@ fn share(screen: &Value, findings: &mut Findings) -> Value {
         if !SHARED.contains(&key.as_str()) && !key.starts_with('$') {
             findings.add(
                 &format!("{FILE} {key}"),
-                &format!("the domain holds only {}: a screen's own goes in its screen.json", SHARED.join(", ")),
+                &format!(
+                    "the domain holds only {}: a screen's own goes in its screen.json",
+                    SHARED.join(", ")
+                ),
             );
         }
     }
@@ -57,7 +61,8 @@ fn share(screen: &Value, findings: &mut Findings) -> Value {
             None => continue,
             Some(Value::Object(declared)) => declared,
             Some(_) => {
-                findings.add(&format!("{FILE} {key}"), &format!("\"{key}\" maps each name to what it declares"));
+                findings
+                    .add(&format!("{FILE} {key}"), &format!("\"{key}\" maps each name to what it declares"));
                 continue;
             }
         };

@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 use crate::breakpoint::{self, Breakpoint};
 use crate::check::Findings;
 use crate::conditions::{Conditions, UseSite};
-use crate::fixture;
 use crate::domain;
+use crate::fixture;
 use crate::schema::{Schema, object};
 use crate::template::{self, Decimals, Format};
 
