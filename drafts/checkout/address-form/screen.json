@@ -194,8 +194,7 @@
             "component": "TextField",
             "label": "地址",
             "placeholder": "省、市、区、街道、门牌号",
-            "bind": "form.line",
-            "assumed": "地址写成一整行；也可以拆成先选省市区、再填街道门牌，或者在地图上选点"
+            "bind": "form.line"
           },
           {
             "id": "field-default",

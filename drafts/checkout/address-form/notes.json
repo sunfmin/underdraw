@@ -33,6 +33,36 @@
           "unread": true
         }
       ]
+    },
+    {
+      "id": "N2",
+      "state": {
+        "fixture": "new"
+      },
+      "node": {
+        "id": "field-line",
+        "at": "/root/children/1/children/2",
+        "instance": [],
+        "label": 4,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792064468,
+          "answers": {
+            "assumed": "地址写成一整行；也可以拆成先选省市区、再填街道门牌，或者在地图上选点",
+            "guess": "author",
+            "answer": "right"
+          }
+        },
+        {
+          "by": "agent",
+          "says": "好的，已去掉这个猜测：地址就写成一整行。",
+          "unread": true
+        }
+      ]
     }
   ]
 }
