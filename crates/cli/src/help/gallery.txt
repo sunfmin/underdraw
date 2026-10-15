@@ -175,8 +175,14 @@ DOES
   - a transition: click its arrow's label in an overview;
   - a navigate: click its arrow's label in a flow.
   Or pick the node, region or arrow and click "write a note on it" in the
-  sidebar. Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V
-  pastes. It is kept in notes.json beside the description's screen.json (a
+  sidebar. It is typed in a field in the sidebar, as in a chat: ← and →
+  move the caret, Backspace and Delete take the character before or after
+  it, ⌘A (Ctrl+A) selects it all, to type over or delete, ⌘V pastes;
+  Shift+Enter starts a new line, Enter sends it, Esc drops it. What an
+  input method composes (pinyin, before it becomes 汉字) is shown
+  underlined at the caret, and only what it commits is typed: Enter and
+  the other keys are its own while it composes. The field is the same
+  for every line the person writes: a note, a ✗ and a reopening. It is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references it:
   the node as written, the state, and the instance pointed at; the region's
   box and the nodes it covered; the state; the transition; or the
@@ -193,30 +199,40 @@ DOES
   its description.
   The agent reads them with `underdraw notes <root>` and answers one with a
   line of reply: its pin turns green, and the pointer over it shows the
-  reply. Click a pin to read its note in the sidebar, then close it, or
-  reopen it, saying what is still to do (Enter saves that line): it is open
-  again, for the agent. A closed note is drawn no more.
+  reply. Click a pin to read its note in the sidebar, as a conversation:
+  its status in its title (open, answered, or closed and why), then what
+  you wrote, in blue bubbles on the right, and each reply of the agent, in
+  gray on the left, in order. Under them, [close] closes it; on an
+  answered note, [not yet…] opens a field in place for what is still to
+  do, and Enter sends that line: it is open again, for the agent. It is
+  not sent empty. A closed note is drawn no more.
   A note closes itself, saying why, once what it is on is gone from the
   description: its node removed or renamed (a region: every node it
   covered), its state, its transition or its navigate. Once that
   description checks clean again, the sidebar says so, once ("N3 closed:
   order-{index} is gone (removed or renamed)"). A description's overview
   lists its closed notes, each with why it closed; click one to read it,
-  and reopen it, saying what is still to do: one whose target went is
+  as the same conversation, and reopen it with [reopen…] ([reopen on the
+  whole state…] for one that closed itself), saying what is still to do: one whose target went is
   then on the whole state (the one it was in, or its transition was from,
   while there is one; else the first).
 
   Answer an assumption: click its orange "?" (or the node it is on). The
-  sidebar shows what was guessed ("assumed"), what else it could be ("or
-  else", what the assumption says after its first ";"), and what each
-  answer means:
-  - ✓ right, keep it: writes a note on the node at once, saying so; the
-    agent takes the guess out of the description (a screen not drawn yet:
-    draws it), and the note then closes itself, saying so ("N3 closed: the
+  sidebar shows, in a card of its own, what was guessed, in large type,
+  what else it could be below it ("or else", what the assumption says
+  after its first ";"), and two buttons:
+  - [✓ right, keep it]: the guess was right. It is written to notes.json
+    only after 5 seconds, in which the sidebar counts down and [undo]
+    takes it back with nothing written, so an agent waiting with
+    `underdraw notes --wait` never acts on an answer taken back; closing
+    the window within them writes it at once. The note says so; the agent
+    takes the guess out of the description (a screen not drawn yet: draws
+    it), and the note then closes itself, saying so ("N3 closed: the
     assumption on card-number, confirmed, is taken out").
-  - ✗ wrong, tell the agent what is right: type it, as a note's line; it
-    is not saved without one. The agent changes the description and
-    answers it, and you close it or reopen it, as any note.
+  - [✗ wrong…]: opens a focused field in place of the buttons, for what
+    is right; Enter sends it as a note on the node, and it is not sent
+    empty. The agent changes the description and answers it, and you
+    close it or reopen it, as any note.
   The sidebar lists the notes that answer it already ("N3 answers it ✗
   wrong · answered"). The window writes
   notes.json, and only the person's acts; it never writes a description:

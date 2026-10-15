@@ -1988,10 +1988,11 @@ impl Gallery {
     /// The sidebar's cards, top to bottom, with a button for each thing a
     /// click does: the journey played, its step and the steps beside it;
     /// what the last act on a node came to, and any outcomes to choose
-    /// from; then the note being written, or how to start one; then the
-    /// note picked; then the node picked (what it is, what it calls, what
-    /// was assumed there, and, folded into "details", its id and its label
-    /// and box at each width), the region or the arrow picked, with a button
+    /// from; a ✓ waiting to be written, to undo; then a new note being
+    /// written, or how to start one; then the note picked, as a
+    /// conversation; then the assumption on the node picked, to answer;
+    /// then the node picked (what it is, what it calls, and, folded into
+    /// "details", its id and its label and box at each width), the region or the arrow picked, with a button
     /// to write a note on it; then a description's closed notes. None when
     /// none of these is there.
     fn cards(&self) -> Vec<Card<Do>> {
