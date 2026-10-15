@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
 use crate::components::{Components, Declared, track_faults};
-use crate::conditions::{Conditions, UseSite};
+use crate::conditions::{Conditions, Term, UseSite};
 use crate::expand::{Frame, Instances, Met};
 use crate::field::{Base, Field};
 use crate::instance::build;
@@ -141,6 +141,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
         known,
         instances: Instances::new(components),
         findings: &mut findings,
+        read: conditions.read_through(schema),
     };
     match description.get("root") {
         Some(root) => walk.node(root, &schema.roots(), &Known::default(), "root", ""),
@@ -153,6 +154,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             walk.node(tree, &Vec::new(), &Known::default(), &format!("phases.{name}"), "");
         }
     }
+    let read = walk.read;
     let fixture_names = screen.fixture_names();
     let states: Vec<String> = fixture_names.iter().chain(&phases).cloned().collect();
     transitions::check(description, components, &states, operations, &mut findings);
@@ -182,8 +184,8 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
         for condition in conditions.all() {
             let mut holds_in = Vec::new();
             if let Some(on) = &condition.on {
-                // One on a type holds of each value: it must be true of one
-                // and false of another, wherever the fixtures hold any.
+                // One on a type holds of each value: where the screen reads
+                // it, it must be true of one and false of another.
                 let (mut of_some, mut fails_of_some) = (false, false);
                 for (name, data) in fixtures {
                     let (holds, fails) = conditions.of_values(schema, &condition.name, data);
@@ -193,11 +195,11 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
                     of_some = of_some || holds;
                     fails_of_some = fails_of_some || fails;
                 }
-                if of_some != fails_of_some {
-                    let always = if of_some { "true" } else { "false" };
+                if of_some != fails_of_some && read.contains(&condition.name) {
+                    let (always, add) = if of_some { ("true", "is not") } else { ("false", "is") };
                     findings.add(
                         &format!("conditions.{}", condition.name),
-                        &format!("is {always} of every {on} in the fixtures, so a state it marks cannot be rendered; add an {on} it is not"),
+                        &format!("is {always} of every {on} in the fixtures, so a state it marks cannot be rendered; add one it {add}"),
                     );
                 }
                 table.push(Condition {
@@ -299,6 +301,9 @@ struct Walk<'a> {
     /// The instances whose nodes are being walked, outermost first.
     instances: Instances<'a, Around>,
     findings: &'a mut Findings,
+    /// The conditions on a type the screen reads through a value of it
+    /// (`stop.here`): only those must vary in its fixtures.
+    read: BTreeSet<String>,
 }
 
 /// What the walk keeps where an instance is.
@@ -512,11 +517,10 @@ impl<'a> Walk<'a> {
                     // only while it does: what it calls may require it, and
                     // may read what it guards.
                     let mut enabled = known.clone();
-                    if let Some(Value::String(used)) = object.get("disabled") {
-                        let UseSite { negated, name } = UseSite::parse(used);
-                        if negated {
-                            enabled.extend(self.held(name, scope));
-                        }
+                    if let Some(Value::String(used)) = object.get("disabled")
+                        && let Some(name) = UseSite::parse(used).only_negated()
+                    {
+                        enabled.extend(self.held(name, scope));
                     }
                     for (event, handler) in events {
                         self.handler(handler, scope, &enabled, &format!("{at}.on.{event}"), at);
@@ -818,6 +822,22 @@ impl<'a> Walk<'a> {
                     self.findings
                         .add(&at, &format!("{name} writes a field of the view model, and {path} is not one"));
                 } else if !self.schema.in_view_state(scope, path) {
+                    // Inside a component, the path is a param's: the screen
+                    // passed what it writes, and holds the way out.
+                    if let Some(frame) = self.instances.innermost() {
+                        let param = path.split('.').next().unwrap_or(path);
+                        let given = match paths(frame).into_iter().find(|(name, _)| name == param) {
+                            Some((_, given)) => format!("is given {{{given}}}, which is domain data"),
+                            None => "is given no field of the screen's".to_string(),
+                        };
+                        self.findings.add(
+                            &at,
+                            &format!(
+                                "{name} writes {path}, and {param} {given}: a component's set and toggle act on what was passed, so pass {param} a field of the screen's data marked \"view\": true; or change it with a command, called with \"call\""
+                            ),
+                        );
+                        continue;
+                    }
                     self.findings.add(
                         &at,
                         &format!(
@@ -1183,14 +1203,29 @@ impl<'a> Walk<'a> {
         None
     }
 
-    /// A yes/no at `at`: `!`, then a condition's name or a Bool path. What it
-    /// guarantees when it holds: the paths not null, and the conditions true.
+    /// A yes/no at `at`: terms joined by `&&`, each `!`, then a condition's
+    /// name or a Bool path. What it guarantees when it holds: what each term
+    /// does, the paths not null and the conditions true.
     fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> Known {
-        let UseSite { negated, name } = UseSite::parse(used);
-        if !name.split('.').all(crate::field::is_identifier) {
-            self.findings.add(at, &format!("{used:?}: here goes !? and a condition's name or a Bool path; name anything more in conditions"));
+        let UseSite { terms } = UseSite::parse(used);
+        if !terms.iter().all(|term| term.name.split('.').all(crate::field::is_identifier)) {
+            self.findings.add(
+                at,
+                &format!(
+                    "{used:?}: here go conditions' names or Bool paths, each with an optional !, joined by &&; name ||, comparisons and anything more in conditions"
+                ),
+            );
             return Known::default();
         }
+        let mut known = Known::default();
+        for Term { negated, name } in terms {
+            known.extend(self.use_term(negated, name, scope, at));
+        }
+        known
+    }
+
+    /// One term of a use site at `at`: what it guarantees when it holds.
+    fn use_term(&mut self, negated: bool, name: &str, scope: &Scope, at: &str) -> Known {
         if self.conditions.is_on_type(name) {
             let problem = self.schema.misused(scope, name).unwrap_or_default();
             self.findings.add(at, &problem);
@@ -1198,8 +1233,8 @@ impl<'a> Walk<'a> {
         }
         // Inside a component, a use site reads only its params: a Bool one,
         // or one given a condition of the screen's.
+        let resolved = self.resolve(scope, name);
         if let Some(frame) = self.instances.innermost() {
-            let resolved = self.schema.resolve(scope, name);
             let problem = if frame.at.conditions.contains_key(name) {
                 None
             } else if let Some(resolved) = resolved {
@@ -1224,7 +1259,7 @@ impl<'a> Walk<'a> {
             return if negated { Known::default() } else { self.held(name, scope) };
         }
         if !self.conditions.contains(name) {
-            match self.schema.resolve(scope, name) {
+            match resolved {
                 Some(resolved) if resolved.field.is_plain_bool() => {}
                 Some(resolved) => self.findings.add(
                     at,
@@ -1240,6 +1275,15 @@ impl<'a> Walk<'a> {
             }
         }
         if negated { Known::default() } else { self.held(name, scope) }
+    }
+
+    /// What `path` refers to, from `scope`; a condition on a type it ends
+    /// in is one the screen reads.
+    fn resolve(&mut self, scope: &Scope, path: &str) -> Option<crate::schema::Resolved> {
+        if let Some(condition) = self.schema.type_condition(scope, path) {
+            self.read.insert(condition);
+        }
+        self.schema.resolve(scope, path)
     }
 
     /// What holds wherever the use site `name` (a condition, or a Bool
@@ -1291,7 +1335,7 @@ impl<'a> Walk<'a> {
             if path == "index" {
                 continue;
             }
-            let Some(resolved) = self.schema.resolve(scope, path) else {
+            let Some(resolved) = self.resolve(scope, path) else {
                 let problem = match self.instances.innermost() {
                     Some(frame) => format!(
                         "{path} reaches past the params of {}: a component reads only the params it declares; declare one and give it in the instance's \"with\"",

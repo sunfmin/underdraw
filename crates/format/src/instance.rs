@@ -426,15 +426,17 @@ impl Fill<'_> {
         Err("no branch of cases holds, and there is no else".to_string())
     }
 
-    /// Whether the use site `used` (`!`, then a condition or a Bool path) holds.
+    /// Whether the use site `used` holds: each of its `&&` terms (`!`, then
+    /// a condition or a Bool path) does.
     fn holds(&self, used: &str, scope: &Value) -> bool {
-        let UseSite { negated, name } = UseSite::parse(used);
-        let holds = if self.conditions.contains(name) {
-            self.conditions.holds(name, scope)
-        } else {
-            lookup(scope, name) == Some(&Value::Bool(true))
-        };
-        holds != negated
+        UseSite::parse(used).terms.iter().all(|term| {
+            let holds = if self.conditions.contains(term.name) {
+                self.conditions.holds(term.name, scope)
+            } else {
+                lookup(scope, term.name) == Some(&Value::Bool(true))
+            };
+            holds != term.negated
+        })
     }
 
     /// A template's value: the value itself when it is one placeholder alone,
