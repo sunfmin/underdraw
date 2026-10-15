@@ -21,9 +21,16 @@ DOES
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
   at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
-  labels them; picking a description picks its first state. Picking a
-  directory draws the flow between the screens under it: each description
-  a box named as its directory, holding a small picture of its first state
+  labels them. Picking a description shows its overview: every state, small
+  and captioned with its name, in a grid in the order the tree lists them,
+  tall ones cut at the foot, and each transition the description declares
+  (`transitions` in screen.json) as an arrow from its `from` state to its
+  `to`, labelled with the number the node acted on is tagged with in the
+  `from` state and, for an event that calls an operation, the outcome
+  ("4 · ok"); one that stays in its state loops back into it. A state no
+  transition reaches or leaves is still shown. Clicking a state's picture
+  picks that state. Picking a directory draws the flow between the screens
+  under it: each description a box named as its directory, holding a small picture of its first state
   at 390, and each navigate an arrow from the box of the description it is
   in to the box of the screen it names, labelled with the node's id. The
   arrows are the "links" `underdraw check <root>` reports, no other: a
@@ -32,7 +39,7 @@ DOES
   yet, ends at a dashed orange box marked "?" and named as the screen it
   asks for, one for each such screen. A description with faults is a box
   marked faulty, with how many, and no picture. Clicking a description's
-  box picks that description in the tree. Scroll a tall
+  box picks that description in the tree, showing its overview. Scroll a tall
   page with the mouse wheel or trackpad. Clicking a node in the picture
   picks the innermost there, an overlay (a badge, a dialog, a sheet) before
   what it floats over, outlines it at both widths, and opens a panel with
@@ -71,7 +78,8 @@ DOES
   forward; a description that gains faults shows them, and its
   picture again once they are fixed. A description directory added under
   <root> comes into the tree, and one removed leaves it. When the state
-  shown goes, its description's first state is shown instead.
+  shown goes, its description's overview is shown instead. The window
+  opens on the first description's overview.
 
 ANSWERS
   {
