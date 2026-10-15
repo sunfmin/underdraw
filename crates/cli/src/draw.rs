@@ -14,6 +14,10 @@ use vello::Scene;
 
 use crate::{checked, paint, pick, read, text};
 
+/// The widths a description is drawn at side by side, by the gallery and
+/// by `render --all`: a phone, and a desktop.
+pub const WIDTHS: [u32; 2] = [390, 1120];
+
 /// The state to draw, and at what size.
 pub struct Wanted {
     /// The fixture whose data to show; the first fixture when neither this
@@ -129,10 +133,7 @@ pub struct Drawing {
 /// even when the description has findings, though none of them can be drawn
 /// until they are fixed.
 pub fn states(path: &Path) -> anyhow::Result<Vec<Shown>> {
-    let (screen, dir) = read(path)?;
-    let checked = checked(&screen, &dir)?;
-    let fixtures = checked.fixtures.into_iter().map(Shown::Fixture);
-    Ok(fixtures.chain(checked.phases.into_iter().map(Shown::Phase)).collect())
+    Ok(Description::read(path)?.states())
 }
 
 /// The state `wanted` names of the description at `path` (a directory or its
@@ -169,6 +170,17 @@ impl Description {
         let tokens = crate::project::Project::of(&dir)?.tokens;
         let checked = checked(&screen, &dir)?;
         Ok(Description { path: path.to_path_buf(), screen, dir, tokens, checked })
+    }
+
+    /// Every state it can be shown in, as [`states`] says.
+    pub fn states(&self) -> Vec<Shown> {
+        let fixtures = self.checked.fixtures.iter().cloned().map(Shown::Fixture);
+        fixtures.chain(self.checked.phases.iter().cloned().map(Shown::Phase)).collect()
+    }
+
+    /// The directory the description is in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     /// The screen's name, as its `screen` gives it.
@@ -275,6 +287,14 @@ fn handled(node: &Node, handlers: &mut BTreeMap<String, Handlers>) {
 }
 
 impl Laid {
+    /// The page painted at exactly `scale` pixels per point, its marks
+    /// over it.
+    pub fn scene(&mut self, scale: f64) -> Scene {
+        let (mut scene, marks) = paint::scene(&self.page, &mut self.typesetter, scale);
+        scene.append(&marks, None);
+        scene
+    }
+
     /// The scene of the page at `scale` pixels per point, or less when that
     /// would make a side longer than `max_side` pixels: a long page is drawn
     /// at a lower scale rather than not at all.

@@ -40,7 +40,7 @@ use winit::window::{CursorIcon, Window, WindowId};
 use crate::act::{self, Way};
 use crate::area::{over, rect};
 use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW, TOOLBAR};
-use crate::draw::{self, Shown as State, Wanted};
+use crate::draw::{self, Shown as State, WIDTHS, Wanted};
 use crate::field::{self, Edit, Field, Motion};
 use crate::flow::{self, Screen};
 use crate::gallery::{self, Answering, Row};
@@ -64,8 +64,6 @@ mod panes;
 mod picture;
 mod toolbar;
 
-/// The widths each description is drawn at: a phone, and a desktop.
-const WIDTHS: [u32; 2] = [390, 1120];
 /// The width each state is drawn at in a description's overview.
 const OVERVIEW: u32 = 390;
 /// How far one notch of a mouse wheel scrolls.
