@@ -152,7 +152,7 @@ fn the_tree_lists_directories_descriptions_states_phases_journeys_and_counts_fau
     assert!(line("cancel-an-order").journey, "a journey");
     assert!(gallery.lines.iter().any(|l| matches!(l.state, Some(State::Phase(_)))), "a phase");
     let Line { row, state, .. } = line("orders");
-    assert_eq!(gallery.open_notes(row, state.as_ref()), 1, "its note counted");
+    assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "its note counted");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -315,7 +315,15 @@ fn a_note_read_as_a_conversation() {
         gallery.press();
     });
     fits(&mut gallery);
-    assert!(gallery.panel().iter().any(|line| line == "not yet…"));
+    assert_eq!(
+        gallery.panel()[..3],
+        [
+            "N1 · answered · on nav-export in default at 390",
+            "rename it, and say what it exports",
+            "renamed it Export orders"
+        ]
+    );
+    assert!(!gallery.panel().iter().any(|line| line == "not yet…" || line == "close"), "never closed");
     std::fs::remove_dir_all(root).unwrap();
 }
 

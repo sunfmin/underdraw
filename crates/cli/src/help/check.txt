@@ -55,13 +55,15 @@ ANSWERS
                   never varies: then the table shows which fixtures to add
     "findings":   [{"at": where — a dotted path or a node id,
                     "problem": what is wrong, and what is allowed instead}, …]
-    "notes":      {"open", "answered"}: how many of the person's notes on
-                  it (notes.json, written in the gallery) are open, for the
-                  agent to act on and answer, and how many answered, for
-                  the person to close; with "error" when notes.json cannot
-                  be read. A note whose target is gone from a description
-                  that checks clean is closed first, saying why, and not
-                  counted. Never a finding: `underdraw notes <dir>` reads them
+    "notes":      {"waiting", "answered"}: how many of the person's notes
+                  on it (notes.json, written in the gallery) wait on the
+                  agent, the person having spoken last, for it to act on
+                  and answer, and how many the agent answered last; with
+                  "error" when notes.json cannot be read. Never a finding,
+                  but for a notes.json in the old form, from before a note
+                  became a conversation ("status", "thread"): that is a
+                  finding at "notes.json", saying to delete it, for old
+                  notes are not converted. `underdraw notes <dir>` reads them
   }
   Given a root:
   {
@@ -86,14 +88,14 @@ ANSWERS
                       "ok": true when it walks,
                       "findings": [{"at": "steps.<n>.<key>", "problem"}, …]
                       }, …]
-    "notes":        {"open", "answered"}, over every description
+    "notes":        {"waiting", "answered"}, over every description
   }
 
 EXIT
   0 when "ok" is true, 1 when there are findings (the answer above is still
   printed in full), 2 when the description could not be read or parsed, or
   a root holds no description. Unresolved navigates alone exit 0, and so do
-  notes, open or answered.
+  notes, waiting or answered.
 
 WHAT TRIPS YOU UP
   - "assumed" says what was guessed and what else it could be, in a

@@ -219,7 +219,7 @@ DOES
   becomes 汉字) is shown underlined at the caret, its candidates beside
   it, and only what it commits is typed: Enter and the other keys are its
   own while it composes. The field is the same
-  for every line the person writes: a note, a ✗ and a reopening. It is kept in notes.json beside the description's screen.json (a
+  for every line the person writes: a note and a ✗. It is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references it:
   the node as written, the state, and the instance pointed at; the region's
   box and the nodes it covered; the state; the transition; or the
@@ -231,28 +231,16 @@ DOES
   region that covered no node stays at the box dragged, at that width
   only); at the right of a state's caption, in its pictures and in the
   overview; beside a transition's label; under a navigate's arrow, where it
-  leaves its box. The tree shows how many notes are open on each
+  leaves its box. The tree shows how many notes wait on the agent on each
   description and on each state ("2 notes"): a note on an arrow counts on
   its description.
-  The agent reads them with `underdraw notes <root>` and answers one with a
-  line of reply: its pin turns green, and the pointer over it shows the
-  reply. Click a pin to read its note in the sidebar, as a conversation:
-  its status in its title (open, answered, or closed and why), then what
-  you wrote, in blue bubbles on the right, and each reply of the agent, in
-  bubbles outlined green on the left, in order. Under them, [close] closes it; on an
-  answered note, [not yet…] opens a field in place for what is still to
-  do, and Enter sends that line: it is open again, for the agent. It is
-  not sent empty. A closed note is drawn no more.
-  A note closes itself, saying why, once what it is on is gone from the
-  description: its node removed or renamed (a region: every node it
-  covered), its state, its transition or its navigate. Once that
-  description checks clean again, the sidebar says so, once ("N3 closed:
-  order-{index} is gone (removed or renamed)"). A description's overview
-  lists its closed notes, each with why it closed; click one to read it,
-  as the same conversation, and reopen it with [reopen…] ([reopen on the
-  whole state…] for one that closed itself), saying what is still to do: one whose target went is
-  then on the whole state (the one it was in, or its transition was from,
-  while there is one; else the first).
+  A note is a conversation, never closed. The agent reads them with
+  `underdraw notes <root>` and answers one, at any length: its pin turns
+  green, and the pointer over it shows what the agent said last. Click a
+  pin to read its note in the sidebar, as a conversation: where it stands
+  in its title (waiting on the agent while you spoke last, answered once
+  the agent did), then what you wrote, in blue bubbles on the right, and
+  what the agent said, in bubbles outlined green on the left, in order.
 
   Answer an assumption: click its orange "?" (or the node it is on). The
   sidebar shows, in a card of its own, what was guessed, in large type,
@@ -264,12 +252,10 @@ DOES
     `underdraw notes --wait` never acts on an answer taken back; closing
     the window within them writes it at once. The note says so; the agent
     takes the guess out of the description (a screen not drawn yet: draws
-    it), and the note then closes itself, saying so ("N3 closed: the
-    assumption on card-number, confirmed, is taken out").
+    it), and answers it.
   - [✗ wrong…]: opens a focused field in place of the buttons, for what
     is right; Enter sends it as a note on the node, and it is not sent
-    empty. The agent changes the description and answers it, and you
-    close it or reopen it, as any note.
+    empty. The agent changes the description and answers it, as any note.
   The sidebar lists the notes that answer it already ("N3 answers it ✗
   wrong · answered"). The window writes
   notes.json, and only the person's acts; it never writes a description:
@@ -281,19 +267,19 @@ DOES
   an item: each assumption no note answers yet, marked with an orange "?"
   ("<node id as written> in <state>", what was guessed under it), then each
   note the agent has answered, marked with its blue id ("N2", what it is
-  on, and "agent: <its reply>" under it in green), for you to close or
-  reopen. A directory's lists every description under it, each under its
-  directory's name, in the order the tree lists them. The notes still
-  open, waiting on the agent, are folded to how many there are
+  on, and "agent: <what it said last>" under it in green), for you to
+  read. A directory's lists every description under it, each under its
+  directory's name, in the order the tree lists them. The notes you spoke
+  last in, waiting on the agent, are folded to how many there are
   ("▸ waiting on the agent · 2"); click it to list them, each a box marked
   with its id, and again to fold them. Click an item to show its state with what
   it is on picked, the node, region or arrow (a transition's in the
   overview, a navigate's in the flow of the directory above it), and its
   card: the node's, to answer the assumption with ✓ or ✗, or the note's,
-  to close or reopen it. The inbox gives way to the card of a node or
+  to read it. The inbox gives way to the card of a node or
   region picked; click where no node is to see it again. It is drawn from
   the files as they now stand: an assumption answered, or taken out of the
-  description, and a note closed, reopened or answered again, leave it or
+  description, and a note answered or said more in, leave it or
   move within it as they change.
 
   The window watches <root> and is drawn from the files as they now stand:

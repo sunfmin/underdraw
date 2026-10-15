@@ -1,5 +1,5 @@
-//! A text field of the gallery's sidebar, where the person writes a note, a
-//! ✗ on an assumption, or the line that reopens a note: what is typed, the
+//! A text field of the gallery's sidebar, where the person writes a note, or a
+//! ✗ on an assumption: what is typed, the
 //! caret and what is selected in it, and what an input method is composing
 //! at the caret (pinyin becoming 你好), shown but not yet typed. It is
 //! parley's `PlainEditor`, its lines broken as the sidebar breaks the field's
