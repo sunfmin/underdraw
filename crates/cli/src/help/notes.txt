@@ -16,10 +16,11 @@ READS
   notes. Writes nothing, but with --answer.
 
 DOES
-  A note is what the person says of a design, pinned to one node of one
-  state, where they clicked: the node as the description writes it, with
-  the instance they pointed at as context, the same fields ⌘C copies. Each
-  is numbered N1, N2… within its description, and is:
+  A note is what the person says of a design, pinned where they said it,
+  in one state: on one node they clicked, as the description writes it,
+  with the instance they pointed at as context; or on a region they
+  dragged over, its box and the nodes wholly inside it. The same fields ⌘C
+  copies. Each is numbered N1, N2… within its description, and is:
     open      written by the person, or reopened by them with a line added:
               for the agent to act on and answer
     answered  answered by the agent with one line of reply; the person
@@ -27,7 +28,9 @@ DOES
     closed    closed by the person; nothing more to do
   `underdraw notes <path>` lists the open ones. Edit the node where
   "node.at" points in that description's screen.json (the id written
-  there is "node.id", a template inside a repeat), then answer:
+  there is "node.id", a template inside a repeat), or, for a region, the
+  nodes each of "region.nodes" points at, or what belongs in the space its
+  box marks when it covers none; then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
@@ -53,12 +56,20 @@ ANSWERS
                   "status":      "open",
                   "state":       {"fixture": <name>} or {"phase": <name>},
                                  the state it was written in
-                  "node":        {"id": the id as written, "at": the JSON
-                                 Pointer where it is written in
-                                 screen.json, "instance": the element of
-                                 each repeat around it, outermost first,
-                                 "label": its label or null, "width": the
-                                 width it was drawn at},
+                  "node":        on a node: {"id": the id as written,
+                                 "at": the JSON Pointer where it is written
+                                 in screen.json, "instance": the element
+                                 of each repeat around it, outermost
+                                 first, "label": its label or null,
+                                 "width": the width it was drawn at},
+                  "region":      on a region, in place of "node":
+                                 {"box": {"x", "y", "width", "height"},
+                                 in whole points of the picture dragged
+                                 on, "width": that picture's width,
+                                 "nodes": [{"id", "at", "instance"}, …],
+                                 the outermost nodes wholly inside the
+                                 box, as "node" names one; [] when it
+                                 covers none ("this is too empty")},
                   "thread":      [{"by": "person" or "agent", "says"}, …],
                                  what the person wrote, then each reply and
                                  each line added on reopening, in order
