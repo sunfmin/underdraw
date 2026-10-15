@@ -1,0 +1,146 @@
+WHEN
+  Whenever the person should see a design: after `underdraw check` answers
+  "ok": true, and again after each round of edits. The gallery is what a
+  person looks at; `render` is for the agent reading node boxes.
+
+WHO
+  The agent that writes descriptions, for the person it works with.
+
+READS
+  Every screen description under <root>: each directory, at any depth,
+  that holds screen.json. The tree leaves out renders/ and platforms/,
+  hidden directories, and directories leading to no description. Nothing is
+  read from renders/: the window draws from the descriptions themselves,
+  and from the notes.json beside each, the person's notes.
+
+DOES
+  Opens a window in a process of its own and exits at once; only the window
+  keeps running, until the person closes it. There is one window per root:
+  while it is open, running this again brings it forward instead of opening
+  a second, so run it after every round of edits. On the left, a tree of the
+  directories and descriptions as they are arranged on disk, each
+  description opened into its states: its fixtures, then its phases (in
+  gray), each in the order written. Picking a state draws it as a wireframe
+  at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
+  labels them. Picking a description shows its overview: every state, small
+  and captioned with its name, in a grid in the order the tree lists them,
+  tall ones cut at the foot, and each transition the description declares
+  (`transitions` in screen.json) as an arrow from its `from` state to its
+  `to`, labelled with the number the node acted on is tagged with in the
+  `from` state and, for an event that calls an operation, the outcome
+  ("4 · ok"); one that stays in its state loops back into it. A state no
+  transition reaches or leaves is still shown. Clicking a state's picture
+  picks that state. Picking a directory draws the flow between the screens
+  under it: each description a box named as its directory, holding a small picture of its first state
+  at 390, and each navigate an arrow from the box of the description it is
+  in to the box of the screen it names, labelled with the node's id. The
+  arrows are the "links" `underdraw check <root>` reports, no other: a
+  navigate to a description outside the directory brings that box in too;
+  one to a screen no description under <root> declares, a screen not drawn
+  yet, ends at a dashed orange box marked "?" and named as the screen it
+  asks for, one for each such screen. A description with faults is a box
+  marked faulty, with how many, and no picture. Clicking a description's
+  box picks that description in the tree, showing its overview. Scroll a tall
+  page with the mouse wheel or trackpad. Clicking a node in the picture
+  picks the innermost there, an overlay (a badge, a dialog, a sheet) before
+  what it floats over, outlines it at both widths, and opens a panel with
+  its id, kind, the operation it calls when acted on, what was assumed
+  there (`assumed`), and its label and box at each width, as `render`
+  reports them. A node that navigates to a screen no description under
+  <root> declares is drawn with the orange "?", a screen not drawn yet, as
+  `underdraw check <root>` reports it. What underdraw assumes itself, there and
+  in the panel, is said in --lang: en or zh, en by default. Picking another state keeps that id picked while the state
+  has it; clicking where no node is closes the panel. A description with
+  faults stays in the tree, marked with how many it has; picking it, or any
+  of its states, lists each finding as `underdraw check` names it (where,
+  then what is wrong) instead of a picture. Fix them and check it again.
+
+  Click through a design as a prototype: a plain click inspects a node, as
+  above; hold ⌘ (Ctrl on Linux and Windows) and click to act on it. Acting
+  raises the node's tap (or its first event, when it has no tap) and
+  follows what the description says happens there:
+  - a transition declared from the state shown on that event shows its
+    `to` state. Where the event calls an operation and the transitions
+    name more than one outcome, the panel lists them (`ok → default`,
+    `shipped → cancel-ready`): click the one it answered with.
+  - a `navigate` shows the first state of the description under <root>
+    that declares that screen; to a screen no description declares, the
+    panel says it is not drawn yet.
+  - `back` returns along the path taken by acting, across screens, one
+    step each time. Picking a state in the tree starts a new path.
+  - nothing declared: the screen stays, and the panel says so ("no
+    transition from <state> on <node id as written>.tap · should go to:"),
+    then lists the description's states and, as "navigate to <screen>",
+    the screens the other descriptions under <root> declare. Click one to
+    propose it: the window writes a note on the node holding the proposal
+    (`underdraw notes --help`), and the agent declares it, in the
+    description's `transitions` (`underdraw check --help`, FORMAT) or as
+    a `navigate`. The window still never writes the description.
+  The panel says what each act came to, above what it says of the node.
+
+  Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
+  and Windows) puts one line on the clipboard naming the node picked as the
+  description writes it, or, with no node picked (click a picture's
+  caption, or where no node is), the state shown; the panel says
+  "copied" and the line. For a node:
+    <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
+  e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
+  /root/children/2/children/0/children/1/item/children in screen.json ·
+  pointed at [2], label 7, width 390. For a state: `<description dir> · phase loading`.
+  The id is the one written, a template inside a repeat (`order-{index}`),
+  never the id one row was given; the JSON Pointer (RFC 6901) is where that
+  node is written in <description dir>/screen.json, under /root, a phase
+  (/phases/<name>) or a component (/components/<name>): edit the node
+  there. What follows "pointed at" is context, the one instance the person
+  pointed at: the element of each repeat around it ([2] is the third,
+  outermost first), its label and the width it was drawn at, which say
+  which data showed what they mean; it is not where to edit.
+
+  Write a note, for the agent, on a node: press N, then click the node (or
+  pick the node and click "write a note on it" in its panel), and type.
+  Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V pastes. It is
+  kept in notes.json beside the description's screen.json, pinned as ⌘C
+  references it: the node as written, the state, and the instance pointed
+  at. A blue pin numbered N1, N2… is drawn at the node's top-right corner,
+  in the state and at the width it was written in; every other state and
+  width that holds that node shows a faint dot there. The tree shows how
+  many notes are open on each description and each state ("2 notes").
+  The agent reads them with `underdraw notes <root>` and answers one with a
+  line of reply: its pin turns green, and the pointer over it shows the
+  reply. Click a pin to read its note in the panel, then close it, or
+  reopen it, saying what is still to do (Enter saves that line): it is open
+  again, for the agent. A closed note is drawn no more. The window writes
+  notes.json, and only the person's acts; it never writes a description:
+  the agent makes every change. Commit notes.json with the description.
+
+  The window watches <root> and is drawn from the files as they now stand:
+  edit a description's screen.json, kinds.json or notes.json (`underdraw
+  notes --answer` does), or a tokens.json under <root> it takes its tokens
+  from, and the state shown is drawn again within a moment, scrolled where
+  it was and with the node picked still picked while it is there, without
+  the window coming forward; a description that gains faults shows them,
+  and its picture again once they are fixed. A description directory added
+  under <root> comes into the tree, and one removed leaves it. When the
+  state shown goes, its description's overview is shown instead. The
+  window opens on the first description's overview.
+
+ANSWERS
+  {
+    "root":         the directory searched
+    "descriptions": the directories holding a screen.json, relative to root,
+                    in the order the tree lists them
+    "faults":       those of them `underdraw check` finds faults in, in the
+                    same order; [] when every one can be drawn. Run
+                    `underdraw check <root>/<each>` to read and fix them
+    "opened":       true: a window was opened; false: the window over this
+                    root was already open, and is brought forward
+    "pid":          the window's process
+  }
+  Exits 2 with {"error"} when there is no description under <root>, or no
+  display to open a window on (over SSH, in CI): there, `underdraw render`
+  draws a state to a PNG instead.
+
+WHAT TRIPS YOU UP
+  - Needs a display and a GPU; checked on macOS only, so far.
+  - The window is the root's once the path is resolved: `drafts` and
+    `./drafts/` are one root; `drafts` and `drafts/todo` are two windows.
