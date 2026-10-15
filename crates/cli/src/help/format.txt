@@ -204,6 +204,8 @@ NODES
   Slots hold child nodes (one node or a list; never cases: use "if"):
     children   the body, in order
     leading    before the body;  trailing  pushed to the far end
+               (in a Grid or Columns these two do not fill its cells in
+               turn: give the cells as children, in order)
     action     in the body after children (EmptyState's button)
     overlay    floats over the node; its "anchor" is "bottom-trailing"
                (default), "top-leading", "top-trailing", "bottom-leading"
@@ -784,7 +786,9 @@ LOOKS
   A node then writes { "id": "chip-direct", "component": "Chip", "text": "Direct",
   "selected": "{filters.direct}" }. A look's templates read the node's props
   (after the node's own templates are filled), not data, and only those
-  its params declare.
+  its params declare. A prop is a path or a literal, never a condition's
+  name ("{hasDates}" is refused): choose with cases, { "cases": [ { "if":
+  "hasDates", "then": true }, { "else": false } ] }.
   A look is one of:
     {"box": "row"|"column"|"grid" or none, …box keys}    a box
     {"text": "…", …text keys}                            text
