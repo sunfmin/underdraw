@@ -10,10 +10,10 @@ running UI to the screen.
 
 The decisions:
 
-- **One command per operation, named by its first word** (`listDocs` is
-  `list`), or by its whole name in kebab case when two operations share
-  that word. Derived, not written: a `"cli"` name on the operation would be
-  a second name to keep in step.
+- **One command per operation, named by its whole name in kebab case**
+  (`listDocs` is `list-docs`, `setQuantity` is `set-quantity`), so the
+  command says what it acts on. Derived, not written: a `"cli"` name on the
+  operation would be a second name to keep in step.
 - **A parameter without a default is positional; any other is a flag.**
   An enum parameter takes its choices, and its default carries over, so
   `--sort` defaults to what the screen's dropdown selects.
@@ -39,17 +39,29 @@ The decisions:
 
 ## Considered options
 
+- **The first word alone** (`listDocs` is `list`), the whole name only when
+  two operations share that word. This was the rule at first; on a screen
+  with several nouns it lost what a command acts on (`list` for
+  `listDeliveryOptions`, `set` for `setQuantity`), and whether a command
+  got its whole name hung on an unrelated operation sharing its verb
+  (`remove-item` beside `choose`).
+- **A noun-verb tree** (`delivery list`, `promo apply`). It would need the
+  noun told apart from the verb in a name, which the operation does not
+  say.
+
 - **Wrap a list result in a key named for it** (`{"docs": [...]}`). Nicer
   to read, but the name would come from the field a query fills, which a
   command does not have: two rules instead of one.
 - **Exit 2 for a refused precondition too.** Then 1 would mean nothing in
   a derived CLI, and a script could not tell "not allowed" from "broke".
-- **Golden outputs for every argument** (`list --sort title`). The
+- **Golden outputs for every argument** (`list-docs --sort title`). The
   fixtures hold one order of the documents; any other would be invented.
 
 ## Consequences
 
 - A CLI's tests need a fake of the server that holds a fixture's data,
-  as a UI's need one of the operations.
+  as a UI's need one of the operations. `underdraw cli` answers each
+  fixture's data as `handoff` resolves it, so a screen built only as a CLI
+  needs no platform file to get it.
 - A precondition is a condition over the view model, so the CLI must
   answer the same question the screen asks before calling the command.

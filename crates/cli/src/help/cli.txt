@@ -13,11 +13,11 @@ READS
   faults in.
 
 HOW EACH OPERATION BECOMES A COMMAND
-  name        the operation's first word: listDocs is `list`, deleteDoc is
-              `delete`. When two operations start with the same word, each
-              is its whole name in kebab case (list-docs, list-owners).
+  name        the operation's whole name in kebab case, so it says what it
+              acts on: listDocs is `list-docs`, deleteDoc is `delete-doc`,
+              setQuantity is `set-quantity`.
   arguments   each parameter, in the order written. One without a default
-              is positional (`delete <id>`); one with a default, a nullable
+              is positional (`delete-doc <id>`); one with a default, a nullable
               one or a list is a flag (`--sort <updated|…>`, a list's flag
               given once per value). A parameter of an enum takes one of its
               choices, and a default carries over: "sort": "SortKey =
@@ -30,7 +30,7 @@ HOW EACH OPERATION BECOMES A COMMAND
               command refuses a value outside it, as it refuses any
               argument that is not one of its own.
   --yes       a "destructive" operation's command does nothing without it
-              (`delete <id> --yes`): it cannot be undone, so the CLI asks
+              (`delete-doc <id> --yes`): it cannot be undone, so the CLI asks
               as the screen's confirmation does. Without --yes it exits 1
               and prints what it would do, as a dry run:
                 {"error": "needs --yes",
@@ -38,7 +38,7 @@ HOW EACH OPERATION BECOMES A COMMAND
                             "with": {"id": "c"}}}
   bulk        a bulk form ("bulk": "deleteDocs" on deleteDoc, `underdraw check
               --help`, OPERATIONS) is a command of its own, its whole name in
-              kebab case, `delete-docs`; deleteDoc stays `delete`. It takes
+              kebab case, `delete-docs`, beside deleteDoc's `delete-doc`. It takes
               its ids as positional arguments, one or more, then any flag:
                 delete-docs c e --yes
               and does each, one by one, answering for every item in the
@@ -53,8 +53,8 @@ HOW EACH OPERATION BECOMES A COMMAND
               and then prints its result as any command does; a job that
               fails exits 2 with its failure. Given --no-wait it prints the
               job at once instead, {"result": <its job type>}, exit 0.
-  <name>-job  the query derived to read a long command's job is the long
-              command's name and -job: `export-job <id>` prints the job as
+  <name>-job  the query derived to read a long command's job (exportDocsJob)
+              is the long command's name and -job: `export-docs-job <id>` prints the job as
               it stands, {"result": {"id", "status", "progress", "result",
               "error"}}, running, done or failed alike (exit 0).
   stdout      one JSON object: {"result": <the operation's result>}, or {}
@@ -77,12 +77,12 @@ ANSWERS
     "commands": [{"name", "operation", "does": "query" or "command", "doc",
                   "destructive": true (only when it is),
                   "bulkOf": "deleteDoc" (for a bulk form: what it does to each),
-                  "long": {"job": its job type, "poll": "export-job <id>",
+                  "long": {"job": its job type, "poll": "export-docs-job <id>",
                            "noWait": the JSON Schema of what --no-wait prints,
                            "progress": what it prints on stderr} (only when
                            it is long),
                   "jobOf": the long command whose job it reads (only then),
-                  "usage": "delete <id> --yes",
+                  "usage": "delete-doc <id> --yes",
                   "args": [{"param", "flag" (none when positional), "type",
                             "choices", "range", "default", "repeated"}, …],
                   "stdout": the JSON Schema of what it prints on exit 0,
@@ -125,6 +125,11 @@ ANSWERS
                 canDelete" for one refused), the others are done, exit 2.
       "args" are the arguments after the command's name, defaults left
       out; "with" the parameters they give, defaults filled in.
+
+    "fixtures": {name: data}: each fixture with its "$patch" applied and
+                every default filled in, as `underdraw handoff` resolves
+                them, with no platform needed: the data a fake server holds
+                to run the CLI in that fixture.
   }
 
 HOW TO USE IT
@@ -133,7 +138,8 @@ HOW TO USE IT
     screen's operations call.
   - Validate each command's stdout against its "stdout" schema.
   - Test it with the golden outputs: run the CLI on a fixture's data (a fake
-    of the server that answers with it), capture what it printed and its
+    of the server that answers with "fixtures"[<the golden's fixture>]),
+    capture what it printed and its
     exit code, and give it to `underdraw compare` (see its --help, A CLI'S
     CAPTURE). For a named failure, make the fake fail that way.
 
