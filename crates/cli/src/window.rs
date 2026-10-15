@@ -21,7 +21,7 @@ use winit::window::{Window, WindowId};
 
 use crate::draw::{self, Shown as State, Wanted};
 use crate::gallery::{self, Answering, Row};
-use crate::{gpu, paint, text};
+use crate::{gpu, links, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
@@ -223,6 +223,9 @@ impl Gallery {
             self.picture = Picture::Faults(faults);
             return;
         }
+        // The screens drawn under the root as they now stand: a navigate to
+        // any other is a screen not drawn yet.
+        let drawn = links::drawn(&self.root);
         let mut pages = Vec::new();
         for width in WIDTHS {
             let wanted = match &state {
@@ -230,7 +233,7 @@ impl Gallery {
                 // A description with no state: lay_out says why.
                 None => Wanted { fixture: None, phase: None, width, scale: 1 },
             };
-            match draw::lay_out(&dir, &wanted) {
+            match draw::lay_out(&dir, &wanted, Some(&drawn)) {
                 Ok(laid) => {
                     let drawing = laid.draw(1, u32::MAX);
                     pages.push(Page {

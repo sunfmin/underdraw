@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
-use underdraw_format::Finding;
+use underdraw_format::{Checked, Finding};
 
 use crate::{SCREEN, check_at};
 
@@ -43,10 +43,20 @@ pub struct Row {
 /// What `check` finds wrong with the description in `dir`; where it cannot
 /// even be read, why, as one finding at its screen.json.
 pub fn faults(dir: &Path) -> Vec<Finding> {
-    match check_at(dir) {
-        Ok(checked) => checked.findings,
-        Err(e) => vec![Finding { at: SCREEN.to_string(), problem: format!("{e:#}") }],
-    }
+    checked(dir).findings
+}
+
+/// What `check` makes of the description in `dir`; where it cannot even be
+/// read, why, as its one finding, at its screen.json.
+pub fn checked(dir: &Path) -> Checked {
+    check_at(dir).unwrap_or_else(|e| Checked {
+        screen: String::new(),
+        ok: false,
+        fixtures: Vec::new(),
+        phases: Vec::new(),
+        conditions: Vec::new(),
+        findings: vec![Finding { at: SCREEN.to_string(), problem: format!("{e:#}") }],
+    })
 }
 
 /// The tree of every description under `root`, as the directories are
@@ -55,14 +65,7 @@ pub fn faults(dir: &Path) -> Vec<Finding> {
 /// description left out. `root` is a row of its own only when it is itself
 /// a description. Each description is checked, all at once.
 pub fn tree(root: &Path) -> Vec<Row> {
-    let mut rows = Vec::new();
-    if root.join(SCREEN).is_file() {
-        let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
-        rows.push(Row { depth: 0, name, description: Some(root.to_path_buf()), faults: Vec::new() });
-        walk(root, 1, &mut rows);
-    } else {
-        walk(root, 0, &mut rows);
-    }
+    let mut rows = descriptions(root);
     std::thread::scope(|scope| {
         for Row { description, faults: found, .. } in &mut rows {
             if let Some(dir) = description {
@@ -71,6 +74,29 @@ pub fn tree(root: &Path) -> Vec<Row> {
         }
     });
     rows
+}
+
+/// The tree of [`tree`], no description checked yet: each row's faults
+/// empty.
+pub fn descriptions(root: &Path) -> Vec<Row> {
+    let mut rows = Vec::new();
+    if root.join(SCREEN).is_file() {
+        let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
+        rows.push(Row { depth: 0, name, description: Some(root.to_path_buf()), faults: Vec::new() });
+        walk(root, 1, &mut rows);
+    } else {
+        walk(root, 0, &mut rows);
+    }
+    rows
+}
+
+/// `dir` as the answers name it: relative to `root`, "." for `root` itself.
+pub fn within(root: &Path, dir: &Path) -> String {
+    match dir.strip_prefix(root) {
+        Ok(within) if within.as_os_str().is_empty() => ".".to_string(),
+        Ok(within) => within.to_string_lossy().to_string(),
+        Err(_) => dir.to_string_lossy().to_string(),
+    }
 }
 
 /// The rows of what `dir` holds, `depth` in, added to `rows`.
@@ -105,18 +131,13 @@ pub fn gallery(root: &Path) -> anyhow::Result<Value> {
         bail!("{} is not a directory: pass the directory the screen descriptions are under", root.display());
     }
     let root = root.canonicalize().with_context(|| format!("cannot read {}", root.display()))?;
-    let within = |dir: &Path| match dir.strip_prefix(&root) {
-        Ok(within) if within.as_os_str().is_empty() => ".".to_string(),
-        Ok(within) => within.to_string_lossy().to_string(),
-        Err(_) => dir.to_string_lossy().to_string(),
-    };
     let (mut descriptions, mut faulty) = (Vec::new(), Vec::new());
     for row in tree(&root) {
         let Some(dir) = row.description else { continue };
         if !row.faults.is_empty() {
-            faulty.push(within(&dir));
+            faulty.push(within(&root, &dir));
         }
-        descriptions.push(within(&dir));
+        descriptions.push(within(&root, &dir));
     }
     if descriptions.is_empty() {
         bail!(

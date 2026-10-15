@@ -20,8 +20,8 @@ pub struct Navigate {
     pub to: String,
 }
 
-/// Every `navigate` in `screen`, in the order written, a handler's `cases`
-/// included.
+/// Every `navigate` in `screen`, a handler's `cases` included: node by node
+/// in the order written, each node's screens by name, each once.
 pub fn navigates(screen: &Value) -> Vec<Navigate> {
     let mut found = Vec::new();
     for tree in TREES {
