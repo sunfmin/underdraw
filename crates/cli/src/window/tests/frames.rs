@@ -12,8 +12,9 @@
 //! look is the point (the scrollbars, the pictures at half size, the marks
 //! hidden, the narrow window) a test asserts it from the window's state: a
 //! scrollbar's thumb there or not, the zoom, what is drawn over the
-//! pictures. Those draw a fixture root of their own ([`fixture`]); the
-//! journey's surfaces draw a frozen shop of their own ([`frozen_shop`]).
+//! pictures. Those draw a fixture root of their own ([`fixture`]) or a
+//! frozen copy of a draft ([`frozen`]), as the journey's surfaces draw the
+//! frozen shop.
 
 use super::*;
 
@@ -24,6 +25,10 @@ const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airb
 /// The shop the journey's tests draw: a copy of the shop draft frozen for
 /// the tests, its journey walkable, with a broken journey of its own.
 const SHOP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/shop");
+
+/// The orders the offers' test draws: a copy of the orders draft frozen
+/// for the tests.
+const ORDERS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/orders");
 
 /// The window this size by default, as it opens.
 const WINDOW: (f64, f64) = (1440.0, 900.0);
@@ -65,9 +70,9 @@ fn fixture(name: &str, at: &str) -> PathBuf {
     root
 }
 
-/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
-/// its directory `shop`.
-fn frozen_shop(name: &str) -> PathBuf {
+/// A root of its own named `name`, holding the frozen directory `from`
+/// (such as [`SHOP`]) as its directory `at`.
+fn frozen(name: &str, from: &str, at: &str) -> PathBuf {
     fn copy(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
@@ -78,8 +83,14 @@ fn frozen_shop(name: &str) -> PathBuf {
     }
     let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    copy(Path::new(SHOP), &root.join("shop"));
+    copy(Path::new(from), &root.join(at));
     root
+}
+
+/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
+/// its directory `shop`.
+fn frozen_shop(name: &str) -> PathBuf {
+    frozen(name, SHOP, "shop")
 }
 
 /// That the window shows each of `lines`, as [`said`] writes it, its indent
@@ -863,11 +874,13 @@ fn the_journey_playing_in_a_narrow_window() {
 
 #[test]
 fn a_node_picked_offers_where_acting_on_it_goes_in_buttons_floating_beside_it() {
-    let mut gallery = acted(drafts(), WINDOW, |gallery| {
+    let root = frozen("frame-offers", ORDERS, "orders");
+    let mut gallery = acted(&root, WINDOW, |gallery| {
         show(gallery, "orders", "cancel-ready");
         gallery.press_at(on_node(gallery, 0, "cd-confirm"));
     });
     fits(&mut gallery);
     assert_eq!(picked_node(&gallery), Some("cd-confirm"));
     assert_eq!(gallery.seen().offers.len(), 2, "one for each outcome");
+    std::fs::remove_dir_all(root).unwrap();
 }
