@@ -147,3 +147,7 @@ pub const SCROLLBAR_WIDE: f64 = 6.0;
 pub const SCROLLBAR_INSET: f64 = GRIP;
 pub const SCROLLBAR_REACH: f64 = 2.0;
 pub const SCROLLBAR_LEAST: f64 = 24.0;
+/// How tall the toolbar along the window's top is, over the three panes;
+/// how far in from either end of it its buttons sit, and how far apart.
+pub const TOOLBAR: f64 = 40.0;
+pub const TOOLBAR_INSET: f64 = 8.0;

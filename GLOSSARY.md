@@ -227,6 +227,14 @@ then the **Note** on what they picked, and at its foot a box to say more
 in, in the language the gallery was opened in. Hidden and shown with ⌘\.
 _Avoid_: panel, inspector, debug view
 
+**Toolbar**:
+The strip along the top of the gallery's window, over the tree, the
+pictures and the sidebar: back and forward through what the window has
+shown, every change of it a step, kept only while the window is open; and
+the button that hides and shows the **sidebar**. Its back is the window's,
+not a design's `back`, which still returns along the path taken by acting.
+_Avoid_: navigation bar, header
+
 **Overview**:
 Every state of one description, small, in the order the tree lists them,
 and each transition it declares an arrow from its `from` state to its `to`,

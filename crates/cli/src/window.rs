@@ -6,7 +6,9 @@
 //! sidebar ([`crate::sidebar`]), the cards of what is picked and the buttons
 //! of what can be done with it; for a directory picked, the
 //! flow between the screens under it; for a journey picked (ADR 0022), its
-//! steps played one by one. The person talks to the agent about what they
+//! steps played one by one. Along the top, over all three, the toolbar
+//! ([`toolbar`]): back and forward through what the window has shown
+//! ([`history`]), and the button that hides and shows the sidebar. The person talks to the agent about what they
 //! picked (ADR 0023): a node, a whole state, or an arrow of an overview or
 //! a flow has one note, a conversation shown in the sidebar under its
 //! card, said more in from the box at its foot, and drawn as a numbered pin
@@ -37,7 +39,7 @@ use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::area::{over, rect};
-use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW};
+use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW, TOOLBAR};
 use crate::draw::{self, Shown as State, Wanted};
 use crate::field::{self, Edit, Field, Motion};
 use crate::flow::{self, Screen};
@@ -49,13 +51,17 @@ use crate::reference::{self, On, Reference};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card, Foot, Sidebar};
 use crate::{chrome, gpu, links, paint, text};
+use history::History;
 use panes::{Content, Pane, Panes, Scrolls, Took};
 use picture::{
     Arrow, Desk, Faults, Flow, Overview, Page, Pages, Pass, Picture, Pin, Seen, Target, Thumb, Tile,
 };
+use toolbar::Tool;
 
+mod history;
 mod panes;
 mod picture;
+mod toolbar;
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
@@ -251,7 +257,10 @@ struct Gallery {
     acting: bool,
     /// The states acting has come from, the last one last: where `back`
     /// returns to. Picking a state in the tree starts a new path.
-    history: Vec<Named>,
+    path: Vec<Named>,
+    /// What the window has shown, which the toolbar's back and forward,
+    /// and ⌘[ and ⌘], step through: the window's, not a design's `back`.
+    history: History<Place>,
     /// What the last act on a node came to, while nothing else is done.
     acted: Option<Acted>,
     /// Sets the tree's and the captions' text.
@@ -466,10 +475,18 @@ struct Acted {
 
 /// A line of the tree by name: its directory, a description's or not, and
 /// its state's name.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 struct Named {
     dir: PathBuf,
     state: Option<String>,
+}
+
+/// What the window shows, as its history keeps it: the line of the tree
+/// picked, by name, and for a journey the step of it shown.
+#[derive(Clone, Debug, PartialEq)]
+struct Place {
+    line: Named,
+    step: Option<usize>,
 }
 
 /// The window open, and the GPU drawing in it.
@@ -511,7 +528,8 @@ impl Gallery {
             details: false,
             cursor: (0.0, 0.0),
             acting: false,
-            history: Vec::new(),
+            path: Vec::new(),
+            history: History::new(),
             acted: None,
             typesetter,
             sidebar,
@@ -535,8 +553,10 @@ impl Gallery {
     /// window does after.
     fn handle(&mut self, input: Input, clipboard: &mut dyn Clipboard) -> Effects {
         let mut effects = Effects::default();
-        if let Input::Resized(size) = input {
-            self.panes.resize(size);
+        // The panes and the pointer below the toolbar, in points from its
+        // foot: the toolbar itself is above them.
+        if let Input::Resized((width, height)) = input {
+            self.panes.resize((width, (height - TOOLBAR).max(0.0)));
         }
         // The panes fitted to the window and to what they hold as it now
         // stands, for the input to find their scrollbars where they are
@@ -545,7 +565,8 @@ impl Gallery {
         let was = self.typing().then(|| self.sidebar.talk().shown());
         match input {
             Input::Resized(_) => effects.redraw = true,
-            Input::Moved(at) => {
+            Input::Moved((x, y)) => {
+                let at = (x, y - TOOLBAR);
                 self.cursor = at;
                 let grip = self.panes.grip(at);
                 effects.cursor = Some(if grip { CursorIcon::EwResize } else { CursorIcon::Default });
@@ -647,13 +668,16 @@ impl Gallery {
     /// offers beside is.
     fn composing(&mut self) -> (bool, Option<Rect>) {
         let typing = self.typing();
-        (typing, self.placed().and_then(|placed| placed.caret()).filter(|_| typing))
+        let caret = self.placed().and_then(|placed| placed.caret()).filter(|_| typing);
+        // In the window's points, below the toolbar.
+        (typing, caret.map(|caret| Rect { y: caret.y + TOOLBAR as f32, ..caret }))
     }
 
     /// A key pressed: with ⌘ (or Ctrl) held, ⌘V pastes into the note being
     /// written, ⌘A selects all of it, ⌘X cuts what is selected in it, ⌘C
     /// copies that, or with nothing selected the reference to what is
-    /// picked, and ⌘\ hides or shows the sidebar; without, what
+    /// picked, ⌘\ hides or shows the sidebar, and ⌘[ and ⌘] go back and
+    /// forward through what the window has shown; without, what
     /// [`Gallery::key`] says. Each letter on any keyboard layout, or where
     /// the layout has no such letter, on the key where it is. Whether that
     /// changed what is shown.
@@ -682,8 +706,11 @@ impl Gallery {
         } else if chord("a", KeyCode::KeyA) {
             self.select_all()
         } else if chord("\\", KeyCode::Backslash) {
-            self.toggle_sidebar();
-            true
+            self.use_tool(Tool::Sidebar)
+        } else if chord("[", KeyCode::BracketLeft) {
+            self.use_tool(Tool::Back)
+        } else if chord("]", KeyCode::BracketRight) {
+            self.use_tool(Tool::Forward)
         } else if chord("x", KeyCode::KeyX) {
             self.copy_selected(true, clipboard)
         } else if chord("c", KeyCode::KeyC) {
@@ -721,10 +748,73 @@ impl Gallery {
         self.clamp();
     }
 
-    /// The sidebar shown, or hidden, its width given to the pictures.
-    fn toggle_sidebar(&mut self) {
-        self.panes.toggle_side();
-        self.clamp();
+    /// What a button of the toolbar does, done: back or forward through
+    /// what the window has shown, or the sidebar hidden or shown, its width
+    /// given to the pictures. Whether that changed what is shown.
+    fn use_tool(&mut self, tool: Tool) -> bool {
+        match tool {
+            Tool::Back => self.go_through(History::back, History::forward),
+            Tool::Forward => self.go_through(History::forward, History::back),
+            Tool::Sidebar => {
+                self.panes.toggle_side();
+                self.clamp();
+                true
+            }
+        }
+    }
+
+    /// The place `way` steps the history to shown, as picking it in the
+    /// tree shows it: a new path for acting, and nothing said of the last
+    /// act. Where that place has left the tree, the history is stepped
+    /// back with `undo` and nothing changes. Whether there was a place.
+    fn go_through(
+        &mut self,
+        way: fn(&mut History<Place>) -> Option<Place>,
+        undo: fn(&mut History<Place>) -> Option<Place>,
+    ) -> bool {
+        let Some(place) = way(&mut self.history) else {
+            return false;
+        };
+        let Some(index) = self.line_named(&place.line) else {
+            undo(&mut self.history);
+            return false;
+        };
+        self.path.clear();
+        self.acted = None;
+        match place.step {
+            Some(at) => self.play(index, at),
+            None => self.pick(index),
+        }
+        true
+    }
+
+    /// What the window shows now, as its history keeps it.
+    fn place(&self) -> Option<Place> {
+        let line = self.lines.get(self.line?)?;
+        let state = line.state.as_ref().map(|state| state.name().to_string());
+        let step = self.playing.as_ref().map(|playing| playing.at);
+        Some(Place { line: Named { dir: line.row.dir.clone(), state }, step })
+    }
+
+    /// What the window shows now kept in its history: a step, unless it
+    /// shows it already.
+    fn arrive(&mut self) {
+        if let Some(place) = self.place() {
+            self.history.arrive(place);
+        }
+    }
+
+    /// The toolbar's buttons, laid out across the window as it now stands.
+    fn tools(&mut self) -> Vec<toolbar::Button> {
+        let lang = self.lang;
+        let left = vec![
+            (Tool::Back, say!(lang, go_back), self.history.can_back()),
+            (Tool::Forward, say!(lang, go_forward), self.history.can_forward()),
+        ];
+        let sidebar =
+            if self.panes.side().is_some() { say!(lang, hide_sidebar) } else { say!(lang, show_sidebar) };
+        let right = vec![(Tool::Sidebar, sidebar, true)];
+        toolbar::lay_out(&mut self.typesetter, self.panes.window().0, left, right)
     }
 
     /// The desk the pictures lie on: where it is, and how far it is
@@ -748,7 +838,8 @@ impl Gallery {
         Picture::Faults(Faults { findings, within, journey })
     }
 
-    /// A press where the pointer is: on the tree, picks the line under it;
+    /// A press where the pointer is: on the toolbar, does what its button
+    /// there does; on the tree, picks the line under it;
     /// on a button of the sidebar, does what it does; on a pin, picks what
     /// its note is on; on the pictures, picks the
     /// node under it, or none, or acts on it while [`Gallery::acting`]; on
@@ -757,6 +848,11 @@ impl Gallery {
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
+        // On the toolbar, above the panes: its button there pressed.
+        if self.cursor.1 < 0.0 {
+            let tools = self.tools();
+            return toolbar::tool_at(&tools, self.cursor).is_some_and(|tool| self.use_tool(tool));
+        }
         // On a line between two panes, only taking hold of it; on a
         // scrollbar, only scrolling its pane: no line of the tree, nor
         // region, is picked, nor button pressed.
@@ -792,13 +888,13 @@ impl Gallery {
                     true
                 }
                 Some(Target::Pass { journey, step, .. }) => {
-                    self.history.clear();
+                    self.path.clear();
                     self.acted = None;
                     self.play(journey, step);
                     true
                 }
                 Some(Target::State(line)) => {
-                    self.history.clear();
+                    self.path.clear();
                     self.acted = None;
                     self.pick(line);
                     true
@@ -811,7 +907,7 @@ impl Gallery {
         };
         match self.shows(line) {
             Some(index) if Some(index) != self.line => {
-                self.history.clear();
+                self.path.clear();
                 self.acted = None;
                 self.pick(index);
                 true
@@ -988,7 +1084,7 @@ impl Gallery {
                     self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], self.lang)))
                 }
             },
-            Act::Back => match self.history.pop() {
+            Act::Back => match self.path.pop() {
                 Some(back) => {
                     let to = self.named(&back);
                     match self.line_named(&back) {
@@ -1109,7 +1205,7 @@ impl Gallery {
             index += 1;
         }
         if let Some(here) = self.wanted.clone() {
-            self.history.push(here);
+            self.path.push(here);
         }
         self.pick(index);
         self.say(says);
@@ -1132,7 +1228,7 @@ impl Gallery {
 
     /// What picking line `index` shows: a state drawn at each of `WIDTHS`,
     /// a description's overview, a directory's flow, or a journey's first
-    /// step.
+    /// step, kept in the window's history as a step when it is new.
     fn pick(&mut self, index: usize) {
         let Some(index) = self.shows(index) else {
             return;
@@ -1166,6 +1262,7 @@ impl Gallery {
             self.lay_out_pages(&dir, state.as_ref(), &links::drawn(&self.root))
         };
         self.picked = self.still_picked(described);
+        self.arrive();
     }
 
     /// The state `state` of the description in `dir` drawn at each of
@@ -1226,8 +1323,16 @@ impl Gallery {
     /// The journey on line `index` played from its step `at` (its last, past
     /// the end): that step's state drawn at each of `WIDTHS`, the node it
     /// acts on marked. One `check` finds broken shows its faults instead,
-    /// and is not played.
+    /// and is not played. Kept in the window's history as a step when
+    /// it is new.
     fn play(&mut self, index: usize, at: usize) {
+        self.lay_out_step(index, at);
+        self.arrive();
+    }
+
+    /// The journey on line `index` shown at its step `at`, as [`Gallery::play`]
+    /// plays it, and kept in the history by it.
+    fn lay_out_step(&mut self, index: usize, at: usize) {
         let line = &self.lines[index];
         let (file, faults) = (line.row.dir.clone(), line.row.faults.clone());
         self.line = Some(index);
@@ -1765,7 +1870,7 @@ impl Gallery {
     /// the sidebar. The state shown already is not drawn again. Whether
     /// there was anything to show.
     fn visit(&mut self, visit: Visit) -> bool {
-        self.history.clear();
+        self.path.clear();
         self.acted = None;
         let (dir, on) = match visit {
             Visit::Guess(dir, state, id) => {
@@ -2580,10 +2685,19 @@ impl Gallery {
         scene
     }
 
-    /// The window as it now stands, in points.
+    /// The window as it now stands, in points: the toolbar along its top,
+    /// on the tree's surface, and the panes under it.
     fn drawn(&mut self) -> Scene {
         self.clamp();
-        self.frame()
+        let width = self.panes.window().0;
+        let tools = self.tools();
+        let mut scene = Scene::new();
+        let at = Affine::IDENTITY;
+        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, width, TOOLBAR));
+        let below = Affine::translate((0.0, TOOLBAR));
+        scene.append(&self.frame(), Some(below));
+        paint::draws(&mut scene, below, &toolbar::draws(width, &tools), chrome::colour, &mut self.typesetter);
+        scene
     }
 }
 
@@ -3045,9 +3159,10 @@ mod tests {
             })
         }
 
-        /// The pointer moved to `at`. Whether that changed what is shown.
+        /// The pointer moved to `at`, in the gallery's points, from the
+        /// toolbar's foot. Whether that changed what is shown.
         fn move_to(&mut self, at: (f64, f64)) -> bool {
-            self.feed([Input::Moved(at)]).redraw
+            self.feed([Input::Moved((at.0, at.1 + TOOLBAR))]).redraw
         }
 
         /// The pointer moved `by` from where it is.
@@ -3088,6 +3203,8 @@ mod tests {
                 "v" => KeyCode::KeyV,
                 "x" => KeyCode::KeyX,
                 "\\" => KeyCode::Backslash,
+                "[" => KeyCode::BracketLeft,
+                "]" => KeyCode::BracketRight,
                 _ => panic!("no chord on {letter:?}"),
             };
             let key = Key::Character(letter.into());
@@ -3328,13 +3445,15 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing + 1);
         gallery.press_here();
-        let end = gallery.pictures_size().1 - 900.0;
+        let tall = gallery.panes.window().1;
+        assert_eq!(tall, 900.0 - TOOLBAR, "the panes are below the toolbar");
+        let end = gallery.pictures_size().1 - tall;
         assert!(end > 0.0, "the listing is taller than the window");
         gallery.move_to((gallery.panes.pictures().x0 + 100.0, 400.0));
         gallery.wheel_by(0.0, 1e6);
         assert_eq!(gallery.panes.scrolled(Scrolls::Down), end, "as far as its end");
         let bar = gallery.panes.bar(Scrolls::Down).unwrap();
-        assert_eq!(bar.content, end + 900.0, "its scrollbar over all of it");
+        assert_eq!(bar.content, end + tall, "its scrollbar over all of it");
         gallery.wheel_by(0.0, -1e6);
         assert_eq!(gallery.panes.scrolled(Scrolls::Down), 0.0, "no further than the top");
     }
@@ -3998,6 +4117,80 @@ mod tests {
         assert!(gallery.panel()[0].contains("no act led here"), "{}", gallery.panel()[0]);
     }
 
+    /// Where the toolbar's button that does `tool` is, in the gallery's
+    /// points, and whether it can be pressed: not grayed.
+    fn tool_button(gallery: &mut Gallery, tool: Tool) -> ((f64, f64), bool) {
+        let button = gallery.tools().into_iter().find(|button| button.tool == tool).unwrap();
+        let Rect { x, y, width, height } = button.area;
+        ((f64::from(x + width / 2.0), f64::from(y + height / 2.0)), button.enabled)
+    }
+
+    #[test]
+    fn back_and_forward_step_through_what_the_window_showed_and_something_new_drops_the_steps_forward() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        let (back, can_back) = tool_button(&mut gallery, Tool::Back);
+        let (forward, can_forward) = tool_button(&mut gallery, Tool::Forward);
+        assert!(
+            back.1 < 0.0 && forward.0 > back.0,
+            "back, then forward, along the top: {back:?} {forward:?}"
+        );
+        assert!(!can_back && !can_forward, "the first thing shown: both grayed");
+        assert!(!gallery.press_at(back) && !gallery.chord("["), "grayed: nowhere to go");
+
+        act_on(&mut gallery, "order-0-cancel");
+        act_on(&mut gallery, "nav-export");
+        let export = shown(&gallery);
+        act_on(&mut gallery, "nav-back");
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "back on a node returns along the acts");
+        assert!(gallery.press_at(back), "and is a step of the window's");
+        assert_eq!(shown(&gallery), export);
+        assert!(gallery.chord("["));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "acts are steps");
+        assert!(gallery.chord("["));
+        assert_eq!(shown(&gallery), "orders · default", "a tree pick is a step");
+        assert!(!tool_button(&mut gallery, Tool::Back).1 && tool_button(&mut gallery, Tool::Forward).1);
+        assert!(gallery.press_at(forward));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog");
+        assert!(gallery.chord("]") && gallery.chord("]"));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "back on the node, gone forward to");
+        assert!(!tool_button(&mut gallery, Tool::Forward).1 && !gallery.chord("]"), "the last: grayed");
+
+        assert!(gallery.chord("["));
+        let journey = journey_of(&gallery, "cancel-an-order");
+        showing(&mut gallery, journey);
+        assert!(gallery.click(Do::Step(1)));
+        assert!(!tool_button(&mut gallery, Tool::Forward).1, "playing a journey drops the steps forward");
+        assert!(gallery.chord("["));
+        assert_eq!(gallery.playing.as_ref().map(|playing| playing.at), Some(0), "each step is one");
+        assert!(gallery.chord("["));
+        assert_eq!(shown(&gallery), export);
+        assert!(gallery.chord("]") && gallery.chord("]"));
+        assert_eq!(gallery.playing.as_ref().map(|playing| playing.at), Some(1), "played again at that step");
+    }
+
+    #[test]
+    fn the_toolbars_sidebar_button_hides_and_shows_the_sidebar_and_its_words_are_said_in_lang() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        let said = |gallery: &mut Gallery| gallery.tools().into_iter().map(|b| b.said).collect::<Vec<_>>();
+        assert_eq!(said(&mut gallery), ["← back", "→ forward", "hide sidebar"]);
+        let (sidebar, _) = tool_button(&mut gallery, Tool::Sidebar);
+        assert!(sidebar.0 > gallery.panes.pictures().x1, "at the right end, over the sidebar");
+        assert!(gallery.press_at(sidebar));
+        assert!(gallery.panes.side().is_none(), "hidden, as ⌘\\ hides it");
+        assert_eq!(said(&mut gallery)[2], "show sidebar");
+        let (sidebar, _) = tool_button(&mut gallery, Tool::Sidebar);
+        assert!(gallery.press_at(sidebar));
+        assert!(gallery.panes.side().is_some(), "shown again");
+        assert!(gallery.chord("\\") && gallery.panes.side().is_none(), "⌘\\ the same");
+        assert_eq!(said(&mut gallery)[2], "show sidebar");
+
+        gallery.speak(Lang::Zh).unwrap();
+        assert_eq!(said(&mut gallery), ["← 后退", "→ 前进", "显示侧栏"]);
+        gallery.speak(Lang::Ja).unwrap();
+        assert_eq!(said(&mut gallery), ["← 戻る", "→ 進む", "サイドバーを表示"]);
+    }
     #[test]
     fn a_navigate_to_a_screen_not_drawn_yet_says_so() {
         let mut gallery = gallery();
@@ -4034,10 +4227,7 @@ mod tests {
         let todo = line_of(&gallery, "todo");
         over_row(&mut gallery, todo);
         gallery.press_here();
-        assert!(
-            gallery.history.is_empty() && gallery.acted.is_none(),
-            "picking in the tree starts a new path"
-        );
+        assert!(gallery.path.is_empty() && gallery.acted.is_none(), "picking in the tree starts a new path");
     }
 
     #[test]
@@ -4710,7 +4900,8 @@ mod tests {
         let field = gallery.field_rect().expect("the box is at the sidebar's foot");
         let (_, caret) = gallery.composing();
         let caret = caret.expect("its caret is known");
-        assert!(over(field, (f64::from(caret.x), f64::from(caret.y))), "the caret in the field's text");
+        let at = (f64::from(caret.x), f64::from(caret.y) - TOOLBAR);
+        assert!(over(field, at), "the caret in the field's text, in the window's points below the toolbar");
         assert!(gallery.button_at((f64::from(field.x) + 1.0, f64::from(field.y) - 1.0)).is_none());
         assert_eq!(gallery.sidebar.layouts(), laid, "hit-tested and its caret found on the one layout");
 
