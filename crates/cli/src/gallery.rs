@@ -16,6 +16,7 @@ use anyhow::{Context, bail};
 use serde_json::{Value, json};
 use underdraw_format::{Checked, Finding, Lang, ScreenParams};
 
+use crate::draw::Shown;
 use crate::notes::NOTES;
 use crate::project::DOMAIN;
 use crate::{KINDS, SCREEN, TOKENS, check_at};
@@ -51,6 +52,11 @@ pub struct Row {
     /// What `check` finds wrong with the description: none when it can be
     /// drawn.
     pub faults: Vec<Finding>,
+    /// The states the description can be shown in, as `check` finds them:
+    /// its fixtures, then its phases, each in the order written, found
+    /// even while it has faults. None for a directory, or one that cannot
+    /// be read.
+    pub states: Vec<Shown>,
 }
 
 impl Row {
@@ -58,13 +64,6 @@ impl Row {
     pub fn description(&self) -> Option<&Path> {
         self.described.then_some(self.dir.as_path())
     }
-}
-
-/// What `check` finds wrong with the description in `dir`, among the
-/// screens whose params `others` holds; where it cannot even be read, why,
-/// as one finding at its screen.json.
-pub fn faults(dir: &Path, others: &ScreenParams) -> Vec<Finding> {
-    checked(dir, others).findings
 }
 
 /// What `check` makes of the description in `dir`, among the screens whose
@@ -85,16 +84,21 @@ pub fn checked(dir: &Path, others: &ScreenParams) -> Checked {
 /// arranged, each directory before what it holds and in order of name:
 /// renders/, platforms/, hidden directories and directories leading to no
 /// description left out. `root` is a row of its own only when it is itself
-/// a description. Each description is checked, all at once, among the
-/// others: a navigate to one is held to its params.
+/// a description. Each description is checked once, all at once, among
+/// the others: a navigate to one is held to its params.
 pub fn tree(root: &Path) -> Vec<Row> {
     let mut rows = descriptions(root);
     let others = crate::links::params(root);
     let others = &others;
     std::thread::scope(|scope| {
-        for Row { dir, described, faults: found, .. } in &mut rows {
+        for Row { dir, described, faults, states, .. } in &mut rows {
             if *described {
-                scope.spawn(move || *found = faults(dir, others));
+                scope.spawn(move || {
+                    let found = checked(dir, others);
+                    let fixtures = found.fixtures.into_iter().map(Shown::Fixture);
+                    *states = fixtures.chain(found.phases.into_iter().map(Shown::Phase)).collect();
+                    *faults = found.findings;
+                });
             }
         }
     });
@@ -107,7 +111,14 @@ pub fn descriptions(root: &Path) -> Vec<Row> {
     let mut rows = Vec::new();
     if root.join(SCREEN).is_file() {
         let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
-        rows.push(Row { depth: 0, name, dir: root.to_path_buf(), described: true, faults: Vec::new() });
+        rows.push(Row {
+            depth: 0,
+            name,
+            dir: root.to_path_buf(),
+            described: true,
+            faults: Vec::new(),
+            states: Vec::new(),
+        });
         walk(root, 1, &mut rows);
     } else {
         walk(root, 0, &mut rows);
@@ -129,7 +140,7 @@ fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
     for (name, path) in children(dir) {
         let at = rows.len();
         let described = path.join(SCREEN).is_file();
-        rows.push(Row { depth, name, dir: path.clone(), described, faults: Vec::new() });
+        rows.push(Row { depth, name, dir: path.clone(), described, faults: Vec::new(), states: Vec::new() });
         walk(&path, depth + 1, rows);
         if !described && rows.len() == at + 1 {
             rows.pop();
