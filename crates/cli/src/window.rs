@@ -1,15 +1,19 @@
 //! The gallery's window, run in a process of its own: the tree of
 //! descriptions and their states on the left and, for the state picked, its
-//! picture drawn at a phone and a desktop width side by side. The tree and panels
-//! are drawn by hand, in the inks a wireframe is drawn in.
+//! picture drawn at a phone and a desktop width side by side, where a node
+//! can be picked to read what it is. The tree and panels are drawn by hand,
+//! in the inks a wireframe is drawn in. The window is drawn from the files
+//! as they now stand: as they change under its root, the tree and the state
+//! shown follow.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
 use underdraw_format::Finding;
-use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
+use underdraw_layout::{Align, Draw, Font, Ink, Measure, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
@@ -38,11 +42,18 @@ const MARGIN: f64 = 24.0;
 const CAPTION: f64 = 26.0;
 /// How far one notch of a mouse wheel scrolls.
 const NOTCH: f64 = 40.0;
+/// One line of the panel of the node picked.
+const PANEL_LINE: f64 = 20.0;
 /// The space between one finding and the next.
 const GAP: f64 = 12.0;
 
-/// What a later run of the command over the same root asks of the window.
-struct ComeForward;
+/// What the window is told from other threads.
+enum Told {
+    /// A later run of the command over the same root asks it forward.
+    ComeForward,
+    /// A file it is drawn from changed, appeared or went.
+    Changed,
+}
 
 /// Opens the window over `root` and runs it until the person closes it.
 /// Says on stdout, in one JSON line, whether the window opened, and nothing
@@ -78,7 +89,14 @@ struct Gallery {
     lines: Vec<Line>,
     /// The line of the state shown, or of the description when it has none.
     picked: Option<usize>,
+    /// The description and state the person last picked, by name, so that
+    /// the files changing keeps showing them, or shows them again once
+    /// they are back: a description gone unreadable lists no states.
+    wanted: Option<Picked>,
     picture: Picture,
+    /// The id of the node picked in the picture, kept from state to state
+    /// while the state shown has it.
+    node: Option<String>,
     /// How far the pictures, and the tree, are scrolled down, in points.
     scroll: f64,
     tree_scroll: f64,
@@ -92,8 +110,9 @@ struct Gallery {
     shown: Option<Shown>,
     /// Whether the starting command has been told the window opened.
     reported: bool,
-    /// What brings the window forward, from another thread.
-    proxy: Option<EventLoopProxy<ComeForward>>,
+    /// What brings the window forward, or says its files changed, from
+    /// another thread.
+    proxy: Option<EventLoopProxy<Told>>,
     /// Later runs of the command answered, once the window is open.
     answering: Option<Answering>,
 }
@@ -124,6 +143,13 @@ fn lines(root: &Path) -> Vec<Line> {
     lines
 }
 
+/// A line of the tree by name: its description, and its state's name.
+#[derive(Clone)]
+struct Picked {
+    description: PathBuf,
+    state: Option<String>,
+}
+
 /// The window open, and the GPU drawing in it.
 struct Shown {
     window: Arc<Window>,
@@ -145,6 +171,28 @@ struct Page {
     scene: Scene,
     width: f64,
     height: f64,
+    /// Every node with an id, in the order drawn: one drawn later is over
+    /// one drawn before, and an overlay is drawn after what it floats over.
+    nodes: Vec<Placed>,
+    /// The operations each node calls when acted on, by id.
+    calls: BTreeMap<String, Vec<String>>,
+}
+
+impl Page {
+    /// The node that a press at `at`, in the page's points, is on: the
+    /// innermost there, an overlay before what it floats over.
+    fn node_at(&self, at: (f64, f64)) -> Option<&Placed> {
+        self.nodes.iter().rev().find(|node| {
+            let r = node.rect;
+            let (x, y) = (f64::from(r.x), f64::from(r.y));
+            (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1)
+        })
+    }
+
+    /// Whether a node of id `id` is in it.
+    fn has(&self, id: &str) -> bool {
+        self.nodes.iter().any(|node| node.id == id)
+    }
 }
 
 impl Gallery {
@@ -154,7 +202,9 @@ impl Gallery {
             root: root.to_path_buf(),
             lines: lines(root),
             picked: None,
+            wanted: None,
             picture: Picture::Faults(Vec::new()),
+            node: None,
             scroll: 0.0,
             tree_scroll: 0.0,
             cursor: (0.0, 0.0),
@@ -178,11 +228,15 @@ impl Gallery {
         self.clamp();
     }
 
-    /// A press where the pointer is: picks the state, or the description, on
-    /// the line of the tree under it. Whether that changed what is shown.
+    /// A press where the pointer is: on the tree, picks the state, or the
+    /// description, on the line under it; on the pictures, picks the node
+    /// under it, or none. Whether that changed what is shown.
     fn press(&mut self) -> bool {
         if self.cursor.0 >= TREE {
-            return false;
+            let node = self.node_at(self.cursor);
+            let changed = node != self.node;
+            self.node = node;
+            return changed;
         }
         let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
         if line < 0.0 {
@@ -207,6 +261,37 @@ impl Gallery {
         Some(if first.is_some() { index + 1 } else { index })
     }
 
+    /// The tree read again from the files as they now stand, and the state
+    /// shown drawn again from them, scrolled as it was. Where that state
+    /// went, its description's first state is shown; where its description
+    /// went too, the first description's.
+    fn reload(&mut self) {
+        let (wanted, scroll) = (self.wanted.take(), self.scroll);
+        self.lines = lines(&self.root);
+        self.picked = None;
+        self.picture = Picture::Faults(Vec::new());
+        let named = |line: &Line, wanted: &Picked| {
+            line.row.description.as_ref() == Some(&wanted.description)
+                && line.state.as_ref().map(|state| state.name()) == wanted.state.as_deref()
+        };
+        let again = wanted.as_ref().and_then(|wanted| self.lines.iter().position(|line| named(line, wanted)));
+        let description = wanted.as_ref().and_then(|wanted| {
+            self.lines.iter().position(|line| {
+                line.state.is_none() && line.row.description.as_ref() == Some(&wanted.description)
+            })
+        });
+        let first = self.lines.iter().position(|line| line.row.description.is_some());
+        if let Some(index) = again.or(description).or(first) {
+            self.pick(index);
+        }
+        if again.is_some() {
+            self.scroll = scroll;
+        } else if description.is_some() {
+            self.wanted = wanted;
+        }
+        self.clamp();
+    }
+
     /// What picking line `index` shows drawn at each of `WIDTHS`.
     fn pick(&mut self, index: usize) {
         let Some(index) = self.shows(index) else {
@@ -218,6 +303,8 @@ impl Gallery {
         };
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
+        let name = state.as_ref().map(|state| state.name().to_string());
+        self.wanted = Some(Picked { description: dir.clone(), state: name });
         self.scroll = 0.0;
         if !faults.is_empty() {
             self.picture = Picture::Faults(faults);
@@ -241,6 +328,8 @@ impl Gallery {
                         width: f64::from(drawing.page.width),
                         height: f64::from(drawing.page.height),
                         scene: drawing.scene,
+                        nodes: drawing.page.nodes,
+                        calls: drawing.calls,
                     });
                 }
                 Err(e) => {
@@ -250,7 +339,110 @@ impl Gallery {
                 }
             }
         }
+        let kept = self.node.as_ref().is_some_and(|id| pages.iter().any(|page| page.has(id)));
+        if !kept {
+            self.node = None;
+        }
         self.picture = Picture::Pages(pages);
+    }
+
+    /// Where each picture's top-left corner is in the window, in points.
+    fn origins(&self) -> Vec<(f64, f64)> {
+        let Picture::Pages(pages) = &self.picture else {
+            return Vec::new();
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        let mut x = TREE + MARGIN;
+        let top = MARGIN - self.scroll + CAPTION;
+        pages
+            .iter()
+            .map(|page| {
+                let at = (x, top);
+                x += page.width * zoom + MARGIN;
+                at
+            })
+            .collect()
+    }
+
+    /// The id of the node under `at`, a point in the window, in whichever
+    /// picture it falls on; none off the pictures or where no node is.
+    fn node_at(&self, at: (f64, f64)) -> Option<String> {
+        let Picture::Pages(pages) = &self.picture else {
+            return None;
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        pages
+            .iter()
+            .zip(self.origins())
+            .find_map(|(page, (left, top))| {
+                let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
+                ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y))
+                    .then(|| page.node_at((x, y)).map(|node| node.id.clone()))
+            })
+            .flatten()
+    }
+
+    /// The outline around the node picked, in window points, in each
+    /// picture that has it.
+    fn outlines(&self) -> Vec<Rect> {
+        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+            return Vec::new();
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        pages
+            .iter()
+            .zip(self.origins())
+            .filter_map(|(page, (left, top))| {
+                let r = page.nodes.iter().find(|n| &n.id == id)?.rect;
+                let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
+                let (w, h) = (f64::from(r.width) * zoom, f64::from(r.height) * zoom);
+                Some(rect(x - 2.0, y - 2.0, w + 4.0, h + 4.0))
+            })
+            .collect()
+    }
+
+    /// What the panel says of the node picked, one line each: its id, kind,
+    /// the operation it calls, what was assumed there, then its label and
+    /// box at each width. Nothing when no node is picked.
+    fn panel(&self) -> Vec<String> {
+        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+            return Vec::new();
+        };
+        let found: Vec<(&Page, &Placed)> =
+            pages.iter().filter_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?))).collect();
+        let Some(&(page, node)) = found.first() else {
+            return Vec::new();
+        };
+        let calls = match page.calls.get(id) {
+            Some(operations) => operations.join(", "),
+            None => "nothing".to_string(),
+        };
+        let mut lines = vec![
+            format!("id  {id}"),
+            format!("kind  {}", node.kind),
+            format!("calls  {calls}"),
+            format!("assumed  {}", node.assumed.as_deref().unwrap_or("nothing")),
+        ];
+        for page in pages {
+            let width = page.width;
+            lines.push(match page.nodes.iter().find(|n| &n.id == id) {
+                Some(node) => {
+                    let r = node.rect;
+                    let label = node.label.map_or_else(|| "no label".to_string(), |n| format!("label {n}"));
+                    format!("at {width}  {label} · box {}, {} · {} × {}", r.x, r.y, r.width, r.height)
+                }
+                None => format!("at {width}  not in this state"),
+            });
+        }
+        lines
+    }
+
+    /// How tall the panel is, at the foot of the pictures' pane.
+    fn panel_height(&self) -> f64 {
+        match self.panel().len() {
+            0 => 0.0,
+            lines => lines as f64 * PANEL_LINE + MARGIN,
+        }
     }
 
     /// How much the pictures are scaled down to fit side by side in a pane
@@ -271,7 +463,7 @@ impl Gallery {
         match &self.picture {
             Picture::Pages(pages) => {
                 let tallest = pages.iter().map(|p| p.height).fold(0.0, f64::max);
-                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN
+                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN + self.panel_height()
             }
             Picture::Faults(_) => self.faults(pane).1 + MARGIN,
         }
@@ -360,18 +552,16 @@ impl Gallery {
         let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
         let zoom = self.zoom(width - TREE);
         let mut pages = Vec::new();
+        let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
         match &self.picture {
             Picture::Pages(shots) => {
-                let mut x = left;
-                for shot in shots {
-                    let top = MARGIN - self.scroll;
+                for (shot, at) in shots.iter().zip(origins) {
                     pane.push(words(
-                        rect(x, top, shot.width * zoom, 16.0),
+                        rect(at.0, at.1 - CAPTION, shot.width * zoom, 16.0),
                         shot.caption.clone(),
                         Ink::Muted,
                         400,
                     ));
-                    let at = (x, top + CAPTION);
                     pane.push(Draw::Box {
                         rect: rect(at.0 - 0.5, at.1 - 0.5, shot.width * zoom + 1.0, shot.height * zoom + 1.0),
                         radius: 0.0,
@@ -380,7 +570,36 @@ impl Gallery {
                         dashed: false,
                     });
                     pages.push((at, &shot.scene));
-                    x += shot.width * zoom + MARGIN;
+                }
+                for around in outlines {
+                    pane.push(Draw::Box {
+                        rect: around,
+                        radius: 3.0,
+                        fill: None,
+                        stroke: Some(Ink::Strong),
+                        dashed: false,
+                    });
+                }
+                if !panel.is_empty() {
+                    let tall = self.panel_height();
+                    let top = height - tall;
+                    pane.push(Draw::Box {
+                        rect: rect(TREE, top, width - TREE, tall),
+                        radius: 0.0,
+                        fill: Some(Ink::Paper),
+                        stroke: Some(Ink::Line),
+                        dashed: false,
+                    });
+                    for (index, line) in panel.into_iter().enumerate() {
+                        let y = top + MARGIN / 2.0 + index as f64 * PANEL_LINE;
+                        let weight = if index == 0 { 600 } else { 400 };
+                        pane.push(words(
+                            rect(left, y + 2.0, width - left - MARGIN, 16.0),
+                            line,
+                            Ink::Text,
+                            weight,
+                        ));
+                    }
                 }
             }
             Picture::Faults(_) => {}
@@ -444,7 +663,7 @@ fn words(rect: Rect, text: String, ink: Ink, weight: u16) -> Draw {
     }
 }
 
-impl ApplicationHandler<ComeForward> for Gallery {
+impl ApplicationHandler<Told> for Gallery {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.shown.is_some() {
             return;
@@ -464,8 +683,10 @@ impl ApplicationHandler<ComeForward> for Gallery {
                 let size = shown.window.inner_size().to_logical::<f64>(shown.window.scale_factor());
                 self.size = (size.width, size.height);
                 if let Some(proxy) = self.proxy.clone() {
+                    let forward = proxy.clone();
                     self.answering =
-                        Answering::start(&self.root, move || proxy.send_event(ComeForward).is_ok());
+                        Answering::start(&self.root, move || forward.send_event(Told::ComeForward).is_ok());
+                    gallery::watch(&self.root, move || proxy.send_event(Told::Changed).is_ok());
                 }
                 report(&json!({ "opened": true }));
                 self.reported = true;
@@ -484,11 +705,22 @@ impl ApplicationHandler<ComeForward> for Gallery {
         }
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, _: ComeForward) {
-        if let Some(shown) = &self.shown {
-            shown.window.set_minimized(false);
-            shown.window.set_visible(true);
-            shown.window.focus_window();
+    fn user_event(&mut self, _: &ActiveEventLoop, told: Told) {
+        match told {
+            Told::ComeForward => {
+                if let Some(shown) = &self.shown {
+                    shown.window.set_minimized(false);
+                    shown.window.set_visible(true);
+                    shown.window.focus_window();
+                }
+            }
+            // Drawn again in place: the window is not brought forward.
+            Told::Changed => {
+                self.reload();
+                if let Some(shown) = &self.shown {
+                    shown.window.request_redraw();
+                }
+            }
         }
     }
 
@@ -555,10 +787,17 @@ mod tests {
         gallery.lines.iter().position(|line| line.row.name == name && line.state.is_none()).unwrap()
     }
 
+    /// The line of the state named `name`.
+    fn state_of(gallery: &Gallery, name: &str) -> usize {
+        gallery.lines.iter().position(|line| line.row.name == name && line.state.is_some()).unwrap()
+    }
+
     /// The names of the pictures drawn, each with its width.
     fn captions(gallery: &Gallery) -> Vec<&str> {
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
-        pages.iter().map(|page| page.caption.as_str()).collect()
+        match &gallery.picture {
+            Picture::Pages(pages) => pages.iter().map(|page| page.caption.as_str()).collect(),
+            Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+        }
     }
 
     #[test]
@@ -606,7 +845,8 @@ mod tests {
         over_row(&mut gallery, docs + 1);
         assert!(!gallery.press(), "nor does picking the state it shows");
         gallery.cursor = (TREE + 100.0, 100.0);
-        assert!(!gallery.press(), "a press on the pictures picks nothing");
+        gallery.press();
+        assert_eq!(gallery.picked, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
 
     #[test]
@@ -630,6 +870,105 @@ mod tests {
         gallery.wheel(1e6);
         let end = gallery.lines.len() as f64 * ROW + MARGIN - 900.0;
         assert_eq!(gallery.tree_scroll, end, "as far as its last line");
+    }
+
+    /// The point in the window at the middle of node `id` in picture `page`.
+    fn on_node(gallery: &Gallery, page: usize, id: &str) -> (f64, f64) {
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
+        let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
+        let (left, top) = gallery.origins()[page];
+        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        let r = node.rect;
+        let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
+        (left + middle.0 * zoom, top + middle.1 * zoom)
+    }
+
+    /// The gallery showing line `index` of the tree.
+    fn showing(gallery: &mut Gallery, index: usize) {
+        over_row(gallery, index);
+        gallery.press();
+    }
+
+    #[test]
+    fn a_node_picked_in_the_picture_is_outlined_and_says_what_it_is() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        assert!(gallery.press(), "a node is picked");
+        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "the innermost, not the bar it sits in");
+        let panel = gallery.panel();
+        assert_eq!(
+            panel[..5],
+            [
+                "id  nav-save",
+                "kind  IconButton",
+                "calls  toggleSaved",
+                "assumed  nothing",
+                "at 390  label 3 · box 334, 8 · 40 × 40",
+            ]
+        );
+        assert!(panel[5].starts_with("at 1120  label "), "and where it is at the other width: {}", panel[5]);
+        assert!(!gallery.press(), "picking it again changes nothing");
+        assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
+    }
+
+    #[test]
+    fn what_was_assumed_is_said() {
+        let mut gallery = gallery();
+        let checkout = line_of(&gallery, "checkout");
+        let states = gallery.lines[checkout + 1..].iter().take_while(|line| line.state.is_some()).count();
+        let shown = (1..=states).find(|offset| {
+            showing(&mut gallery, checkout + offset);
+            let Picture::Pages(pages) = &gallery.picture else { return false };
+            pages[0].has("card-number")
+        });
+        assert!(shown.is_some(), "a state of checkout shows the card form");
+        gallery.cursor = on_node(&gallery, 0, "card-number");
+        gallery.press();
+        assert!(gallery.panel().iter().any(|line| line.starts_with("assumed  Card fields are drawn here")));
+    }
+
+    #[test]
+    fn an_overlay_is_picked_before_what_it_floats_over() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 1, "photos-show-all");
+        gallery.press();
+        assert_eq!(gallery.node.as_deref(), Some("photos-show-all"), "not the photos under it");
+    }
+
+    #[test]
+    fn switching_state_keeps_the_node_picked_while_the_state_has_it() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 0, "nav-back");
+        gallery.press();
+        showing(&mut gallery, listing + 2);
+        assert_eq!(gallery.node.as_deref(), Some("nav-back"), "another fixture has it");
+        showing(&mut gallery, listing + 5);
+        assert_eq!(gallery.node.as_deref(), Some("nav-back"), "and so does the loading phase");
+        gallery.cursor = on_node(&gallery, 0, "loading-skeleton");
+        gallery.press();
+        showing(&mut gallery, listing + 1);
+        assert_eq!(gallery.node, None, "the data has no skeleton");
+        assert!(gallery.panel().is_empty());
+    }
+
+    #[test]
+    fn a_press_where_no_node_is_clears_the_pick() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        gallery.press();
+        let (left, top) = gallery.origins()[1];
+        gallery.cursor = (left - MARGIN / 2.0, top + 10.0);
+        assert!(gallery.press(), "between the pictures");
+        assert_eq!(gallery.node, None);
+        assert!(gallery.panel().is_empty(), "the panel is gone");
     }
 
     #[test]
@@ -658,6 +997,166 @@ mod tests {
                 "{texts:?}"
             );
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A root of its own named `name`, holding a copy of the todo draft
+    /// at `todo/`.
+    fn todo_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("todo")).unwrap();
+        for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+            std::fs::copy(Path::new(DRAFTS).join("todo").join(file), root.join("todo").join(file)).unwrap();
+        }
+        root
+    }
+
+    /// The todo description under `root`, as JSON.
+    fn todo_screen(root: &Path) -> Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join("todo").join(crate::SCREEN)).unwrap())
+            .unwrap()
+    }
+
+    fn write_todo_screen(root: &Path, screen: &Value) {
+        std::fs::write(root.join("todo").join(crate::SCREEN), screen.to_string()).unwrap();
+    }
+
+    /// How tall each picture is.
+    fn heights(gallery: &Gallery) -> Vec<f64> {
+        match &gallery.picture {
+            Picture::Pages(pages) => pages.iter().map(|page| page.height).collect(),
+            Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+        }
+    }
+
+    #[test]
+    fn an_edited_description_is_drawn_again_in_the_state_shown() {
+        let root = todo_root("edited");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 120.0);
+        let typing = state_of(&gallery, "typing");
+        gallery.pick(typing);
+        let before = heights(&gallery);
+        gallery.cursor = (TREE + 100.0, 100.0);
+        gallery.wheel(40.0);
+        assert_eq!(gallery.scroll, 40.0);
+
+        let mut screen = todo_screen(&root);
+        let todos = screen["fixtures"]["default"]["todos"].as_array_mut().unwrap();
+        for id in 4..12 {
+            todos.push(json!({ "id": id.to_string(), "title": format!("第 {id} 项") }));
+        }
+        // A state added above the one shown.
+        let fixtures = screen["fixtures"].as_object_mut().unwrap();
+        let empty = fixtures["empty"].clone();
+        fixtures.shift_insert(0, "first".to_string(), empty);
+        write_todo_screen(&root, &screen);
+        gallery.reload();
+
+        let typing = state_of(&gallery, "typing");
+        assert_eq!(gallery.picked, Some(typing), "the same state, though a state was added above it");
+        assert_eq!(gallery.lines[typing - 2].row.name, "first", "the tree lists the new state");
+        assert_eq!(captions(&gallery), ["typing · 390", "typing · 1120"]);
+        let after = heights(&gallery);
+        assert!(
+            after[0] > before[0] && after[1] > before[1],
+            "drawn again with more todos: {before:?} {after:?}"
+        );
+        assert_eq!(gallery.scroll, 40.0, "scrolled as it was");
+
+        let mut screen = todo_screen(&root);
+        let fixtures = screen["fixtures"].as_object_mut().unwrap();
+        let typing = fixtures.shift_remove("typing").unwrap();
+        fixtures.insert("typed".to_string(), typing);
+        write_todo_screen(&root, &screen);
+        gallery.reload();
+        let todo = line_of(&gallery, "todo");
+        assert_eq!(gallery.picked, Some(todo + 1), "a state gone: its description's first state");
+        assert_eq!(captions(&gallery), ["first · 390", "first · 1120"]);
+        assert_eq!(gallery.scroll, 0.0, "another state, from its top");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_added_or_removed_comes_into_the_tree_or_leaves_it() {
+        let root = todo_root("added");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let typing = state_of(&gallery, "typing");
+        gallery.pick(typing);
+
+        let added = root.join("a-flow").join("sign-in");
+        std::fs::create_dir_all(&added).unwrap();
+        for file in [crate::SCREEN, crate::TOKENS, crate::KINDS] {
+            std::fs::copy(root.join("todo").join(file), added.join(file)).unwrap();
+        }
+        gallery.reload();
+        let names: Vec<&str> = gallery
+            .lines
+            .iter()
+            .filter(|line| line.state.is_none())
+            .map(|line| line.row.name.as_str())
+            .collect();
+        assert_eq!(names, ["a-flow", "sign-in", "todo"], "the new one, under its directory");
+        let typing = line_of(&gallery, "todo") + 2;
+        assert_eq!(gallery.lines[typing].row.name, "typing");
+        assert_eq!(gallery.picked, Some(typing), "still the state shown");
+        assert_eq!(
+            gallery.lines[gallery.picked.unwrap()].row.description.as_deref(),
+            Some(&*root.join("todo"))
+        );
+
+        std::fs::remove_dir_all(root.join("todo")).unwrap();
+        gallery.reload();
+        let names: Vec<&str> = gallery
+            .lines
+            .iter()
+            .filter(|line| line.state.is_none())
+            .map(|line| line.row.name.as_str())
+            .collect();
+        assert_eq!(names, ["a-flow", "sign-in"], "the removed one has left");
+        assert_eq!(gallery.picked, Some(2), "its description gone: the first description's first state");
+        assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
+
+        std::fs::remove_dir_all(root.join("a-flow")).unwrap();
+        gallery.reload();
+        assert!(gallery.lines.is_empty(), "nothing left to list");
+        assert_eq!(gallery.picked, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_that_gains_faults_shows_them_and_its_picture_once_fixed() {
+        let root = todo_root("gains");
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let typing = state_of(&gallery, "typing");
+        gallery.pick(typing);
+        let fine = todo_screen(&root);
+
+        let mut broken = fine.clone();
+        broken["data"]["stray"] = json!("nonsense");
+        write_todo_screen(&root, &broken);
+        gallery.reload();
+        assert!(!gallery.lines[0].row.faults.is_empty(), "the tree marks it");
+        assert_eq!(gallery.picked, Some(typing), "the same state");
+        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
+
+        std::fs::write(root.join("todo").join(crate::KINDS), "{").unwrap();
+        gallery.reload();
+        let Picture::Faults(shown) = &gallery.picture else { panic!("kinds that are not JSON are a fault") };
+        assert!(shown.iter().any(|f| f.problem.contains("kinds.json")), "{shown:?}");
+
+        std::fs::copy(
+            Path::new(DRAFTS).join("todo").join(crate::KINDS),
+            root.join("todo").join(crate::KINDS),
+        )
+        .unwrap();
+        write_todo_screen(&root, &fine);
+        gallery.reload();
+        assert!(gallery.lines[0].row.faults.is_empty(), "fixed");
+        assert_eq!(captions(&gallery), ["typing · 390", "typing · 1120"], "drawn again");
         std::fs::remove_dir_all(root).unwrap();
     }
 

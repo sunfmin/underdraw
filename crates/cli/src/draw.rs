@@ -2,12 +2,12 @@
 //! width and built into a scene with its nodes, apart from what is done with
 //! the pixels: `render` writes them to a PNG.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
 use serde_json::Value;
-use underdraw_format::{Breakpoint, State};
+use underdraw_format::{Breakpoint, Node, State};
 use underdraw_layout::Page;
 use vello::Scene;
 
@@ -60,6 +60,8 @@ pub struct Laid {
     pub breakpoint: Breakpoint,
     /// The page, which holds where each node went.
     pub page: Page,
+    /// The operations each node calls when acted on, by id.
+    pub calls: BTreeMap<String, Vec<String>>,
     typesetter: text::Typesetter,
 }
 
@@ -70,6 +72,8 @@ pub struct Drawing {
     pub breakpoint: Breakpoint,
     /// The page, which holds where each node went.
     pub page: Page,
+    /// The operations each node calls when acted on, by id.
+    pub calls: BTreeMap<String, Vec<String>>,
     pub scene: Scene,
     /// Pixels per point: the one asked for, or less when the page would be
     /// taller than the GPU draws.
@@ -119,7 +123,20 @@ pub fn lay_out(path: &Path, wanted: &Wanted, drawn: Option<&BTreeSet<String>>) -
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     let page = underdraw_layout::layout(&root, &tokens, kinds.as_ref(), wanted.width as f32, &mut typesetter)
         .map_err(anyhow::Error::msg)?;
-    Ok(Laid { dir, shown, breakpoint, page, typesetter })
+    let mut calls = BTreeMap::new();
+    called(&root, &mut calls);
+    Ok(Laid { dir, shown, breakpoint, page, calls, typesetter })
+}
+
+/// The operations `node` and each node in it call, added to `calls` by id.
+fn called(node: &Node, calls: &mut BTreeMap<String, Vec<String>>) {
+    let operations: Vec<String> = node.calls().iter().map(|call| call.operation.to_string()).collect();
+    if !operations.is_empty() {
+        calls.entry(node.id.clone()).or_default().extend(operations);
+    }
+    for child in &node.children {
+        called(child, calls);
+    }
 }
 
 impl Laid {
@@ -138,6 +155,7 @@ impl Laid {
             shown: self.shown,
             breakpoint: self.breakpoint,
             page: self.page,
+            calls: self.calls,
             scene,
             scale,
             pixels: [pixels_wide, pixels_high],
@@ -190,5 +208,15 @@ mod tests {
         let wanted = Wanted { phase: Some("loading".into()), ..wanted(390) };
         let laid = lay_out(Path::new(DRAFT), &wanted, None).unwrap();
         assert!(matches!(laid.shown, Shown::Phase(ref name) if name == "loading"));
+    }
+
+    #[test]
+    fn says_which_operation_each_node_calls() {
+        let laid = lay_out(Path::new(DRAFT), &wanted(390), None).unwrap();
+        assert!(!laid.calls.is_empty(), "the listing calls operations");
+        for (id, operations) in &laid.calls {
+            assert!(laid.page.nodes.iter().any(|n| &n.id == id), "{id} is a node placed");
+            assert!(!operations.is_empty());
+        }
     }
 }

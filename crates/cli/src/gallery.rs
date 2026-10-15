@@ -2,20 +2,21 @@
 //! window of its own process (ADR 0017). The command finds them, starts the
 //! window and answers at once; the window ([`crate::window`]) runs on until
 //! the person closes it. There is one window per root: while it is open,
-//! the command brings it forward instead of starting another.
+//! the command brings it forward instead of starting another. The window
+//! [`watch`]es its root, to be drawn from the files as they now stand.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
 use underdraw_format::{Checked, Finding};
 
-use crate::{SCREEN, check_at};
+use crate::{KINDS, SCREEN, TOKENS, check_at};
 
 /// Directories a description keeps beside it that hold no description.
 const LEFT_OUT: [&str; 2] = ["renders", "platforms"];
@@ -25,6 +26,12 @@ const OPENING: Duration = Duration::from_secs(30);
 
 /// How long an open window has to answer that it is brought forward.
 const ANSWERING: Duration = Duration::from_secs(2);
+
+/// How often the window looks at its root for files changed.
+const WATCHING: Duration = Duration::from_millis(250);
+
+/// The files of a description the window draws from.
+const DRAWN_FROM: [&str; 3] = [SCREEN, TOKENS, KINDS];
 
 /// One row of the tree: a directory, or a description.
 #[derive(Debug, PartialEq)]
@@ -101,18 +108,7 @@ pub fn within(root: &Path, dir: &Path) -> String {
 
 /// The rows of what `dir` holds, `depth` in, added to `rows`.
 fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut children: Vec<(String, PathBuf)> = entries
-        .flatten()
-        // Not following a link: a link back up would never end.
-        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
-        .map(|entry| (entry.file_name().to_string_lossy().to_string(), entry.path()))
-        .filter(|(name, _)| !name.starts_with('.') && !LEFT_OUT.contains(&name.as_str()))
-        .collect();
-    children.sort();
-    for (name, path) in children {
+    for (name, path) in children(dir) {
         let at = rows.len();
         let description = path.join(SCREEN).is_file().then(|| path.clone());
         let holds_one = description.is_some();
@@ -122,6 +118,73 @@ fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
             rows.pop();
         }
     }
+}
+
+/// The directories in `dir` the tree may list, with their names, in order
+/// of name: renders/, platforms/ and hidden directories left out.
+fn children(dir: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut children: Vec<(String, PathBuf)> = entries
+        .flatten()
+        // Not following a link: a link back up would never end.
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|entry| (entry.file_name().to_string_lossy().to_string(), entry.path()))
+        .filter(|(name, _)| !name.starts_with('.') && !LEFT_OUT.contains(&name.as_str()))
+        .collect();
+    children.sort();
+    children
+}
+
+/// What the window is drawn from under `root`, as it now stands: every
+/// directory the tree may list, and when and how large each file it draws
+/// from was last written. Two differ when a description, its tokens or its
+/// kinds changed, or a directory appeared or went; renders/ is not in it.
+#[derive(Debug, PartialEq)]
+pub struct Stamp(Vec<(PathBuf, Option<(SystemTime, u64)>)>);
+
+impl Stamp {
+    /// What the window is drawn from under `root` now.
+    pub fn of(root: &Path) -> Stamp {
+        let mut stamp = Vec::new();
+        stamp_dir(root, &mut stamp);
+        Stamp(stamp)
+    }
+}
+
+/// `dir`, its files drawn from, and every directory in it, added to `stamp`.
+fn stamp_dir(dir: &Path, stamp: &mut Vec<(PathBuf, Option<(SystemTime, u64)>)>) {
+    stamp.push((dir.to_path_buf(), None));
+    for file in DRAWN_FROM {
+        let path = dir.join(file);
+        if let Ok(meta) = std::fs::metadata(&path) {
+            stamp.push((path, Some((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()))));
+        }
+    }
+    for (_, path) in children(dir) {
+        stamp_dir(&path, stamp);
+    }
+}
+
+/// Looks at `root` every [`WATCHING`], on a thread of its own, and calls
+/// `changed` each time what the window is drawn from differs from the last
+/// look; stops once `changed` says no one is listening any more.
+pub fn watch(root: &Path, changed: impl Fn() -> bool + Send + 'static) {
+    let root = root.to_path_buf();
+    std::thread::spawn(move || {
+        let mut last = Stamp::of(&root);
+        loop {
+            std::thread::sleep(WATCHING);
+            let now = Stamp::of(&root);
+            if now != last {
+                if !changed() {
+                    return;
+                }
+                last = now;
+            }
+        }
+    });
 }
 
 /// `underdraw gallery <root>`: the window started in a process of its own,
@@ -370,6 +433,56 @@ mod tests {
                 .all(|row| row.faults.is_empty()),
             "the drafts have none"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_stamp_changes_with_what_the_window_is_drawn_from_and_nothing_else() {
+        let root = std::env::temp_dir().join(format!("underdraw-gallery-stamp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("screen")).unwrap();
+        std::fs::write(root.join("screen").join(SCREEN), "{}").unwrap();
+        let mut last = Stamp::of(&root);
+        let mut step = |what: &str, change: &dyn Fn(), differs: bool| {
+            change();
+            let now = Stamp::of(&root);
+            assert_eq!(now != last, differs, "{what}");
+            last = now;
+        };
+        let dir = root.join("screen");
+        step("nothing", &|| {}, false);
+        step("the description edited", &|| std::fs::write(dir.join(SCREEN), "{ }").unwrap(), true);
+        step("its tokens written", &|| std::fs::write(dir.join(TOKENS), "{}").unwrap(), true);
+        step("its kinds written", &|| std::fs::write(dir.join(KINDS), "{}").unwrap(), true);
+        step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
+        step("a directory added", &|| std::fs::create_dir_all(root.join("a/b")).unwrap(), true);
+        step("a directory removed", &|| std::fs::remove_dir_all(root.join("a")).unwrap(), true);
+        step(
+            "a render written",
+            &|| {
+                std::fs::create_dir_all(dir.join("renders")).unwrap();
+                std::fs::write(dir.join("renders").join("default.png"), "png").unwrap();
+            },
+            false,
+        );
+        step("another file written", &|| std::fs::write(dir.join("notes.md"), "notes").unwrap(), false);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn watching_says_when_a_file_changed_until_no_one_listens() {
+        let root = std::env::temp_dir().join(format!("underdraw-gallery-watch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("screen")).unwrap();
+        let (said, heard) = mpsc::channel();
+        watch(&root, move || said.send(()).is_ok());
+        std::thread::sleep(WATCHING * 2);
+        assert!(heard.try_recv().is_err(), "nothing changed");
+        std::fs::write(root.join("screen").join(SCREEN), "{}").unwrap();
+        assert!(heard.recv_timeout(WATCHING * 20).is_ok(), "a description appeared");
+        std::thread::sleep(WATCHING * 2);
+        assert!(heard.try_recv().is_err(), "said once for one change");
+        drop(heard);
         std::fs::remove_dir_all(root).unwrap();
     }
 
