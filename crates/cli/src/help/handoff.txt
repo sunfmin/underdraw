@@ -72,4 +72,5 @@ WHAT TRIPS YOU UP
   - Texts in "props" are templates; "shows" has them filled for each state,
     formatted as the description says (money ¥104,300, date 2026/11/12).
   - A node with "each" stands for one node per item; its test id contains
-    {index}.
+    {index}, and inside a repeat inside one, the outer's index by the name
+    its "index" gives it ({row}).
