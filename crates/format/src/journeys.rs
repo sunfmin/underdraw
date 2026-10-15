@@ -19,8 +19,10 @@ use crate::screen::Screen;
 const KEYS: [&str; 4] = ["screen", "state", "on", "outcome"];
 
 /// Every fault in walking `journey`, whose screens `screens` holds by their
-/// path from the project's root, each read with what its project shares: a step
-/// naming a screen not in `screens` or a state it does not have, an act
+/// path from the project's root, each read with what its project shares. A
+/// step names its screen by the screen's name, as a navigate does, or by
+/// that path ([`named`]). The faults: a step naming a screen not in
+/// `screens` or a state it does not have, an act
 /// whose node its step's state does not show or that has no such event,
 /// an act that does not lead to the next step, and a navigate that opens
 /// the next step's screen with values other than its fixture's params.
@@ -64,9 +66,22 @@ pub fn walk(journey: &Value, screens: &BTreeMap<String, Screen>) -> Vec<Finding>
     findings.0
 }
 
+/// The screen in `screens` a step's `"screen"` names, with its path from
+/// the project's root: the one at that path, else the one that declares
+/// that name.
+pub fn named<'a>(written: &str, screens: &'a BTreeMap<String, Screen>) -> Option<(&'a String, &'a Screen)> {
+    screens
+        .get_key_value(written)
+        .or_else(|| screens.iter().find(|(_, screen)| !written.is_empty() && screen.name() == written))
+}
+
 /// One step as read: its screen and state, and the act on it, if any.
 struct Step<'a> {
+    /// Its screen's path from the project's root, the same however the
+    /// step names it.
     path: &'a str,
+    /// Its screen as the step names it, which its faults say.
+    named: &'a str,
     screen: &'a Screen,
     state: &'a str,
     /// The state built at each breakpoint it builds at.
@@ -110,15 +125,14 @@ impl<'a> Step<'a> {
             },
         };
         let outcome = text("outcome");
-        let Some(path) = text("screen") else {
-            findings
-                .add(&format!("{at}.screen"), "a step names its screen by its path from the project's root");
+        let Some(written) = text("screen") else {
+            findings.add(&format!("{at}.screen"), "a step names its screen by its name, as a navigate does");
             return None;
         };
-        let Some(screen) = screens.get(path) else {
+        let Some((path, screen)) = named(written, screens) else {
             findings.add(
                 &format!("{at}.screen"),
-                &format!("{path} is no screen description: name a screen's directory by its path from the project's root"),
+                &format!("no screen description under the root declares {written}: name a screen by its name, as a navigate does, or its directory by its path from the project's root"),
             );
             return None;
         };
@@ -133,7 +147,7 @@ impl<'a> Step<'a> {
             findings.add(
                 &format!("{at}.state"),
                 &format!(
-                    "{state} is not a state of {path}: name a fixture or a phase ({})",
+                    "{state} is not a state of {written}: name a fixture or a phase ({})",
                     states.join(", ")
                 ),
             );
@@ -155,7 +169,7 @@ impl<'a> Step<'a> {
                 held.push((param.clone(), value));
             }
         }
-        Some(Step { path, screen, state, trees, params: held, on, outcome })
+        Some(Step { path, named: written, screen, state, trees, params: held, on, outcome })
     }
 
     /// Whether this step, the `index`th, acts on a node its state shows,
@@ -165,7 +179,7 @@ impl<'a> Step<'a> {
         let Some((node, event)) = self.on else {
             return findings.add(&at, "a step before the last acts on a node: \"on\": \"<node id>.<event>\"");
         };
-        let (path, state) = (self.path, self.state);
+        let (path, state) = (self.named, self.state);
         let Some(shown) = self.trees.iter().find_map(|tree| find(tree, node)) else {
             return findings.add(
                 &at,
@@ -198,7 +212,7 @@ impl<'a> Step<'a> {
                         &at,
                         &format!(
                             "{node}.{event} in {path} {state} opens {} with {param} {given}, but the next step, {} {}, holds {param} {held}: give the same value on both sides",
-                            next.path, next.path, next.state
+                            next.named, next.named, next.state
                         ),
                     );
                 }
@@ -209,13 +223,13 @@ impl<'a> Step<'a> {
         let fix = if next.path == self.path {
             format!("declare a transition from {state} on it to {}", next.state)
         } else {
-            format!("navigate it to {}", names.unwrap_or(next.path))
+            format!("navigate it to {}", names.unwrap_or(next.named))
         };
         findings.add(
             &at,
             &format!(
                 "{node}.{event}{outcome} in {path} {state} does not reach the next step, {} {}: {fix}",
-                next.path, next.state
+                next.named, next.state
             ),
         );
     }
@@ -279,6 +293,25 @@ mod tests {
     }
 
     #[test]
+    fn a_step_naming_its_screen_by_name_walks_as_by_its_directory() {
+        let found = walked(json!([
+            { "screen": "List", "state": "some", "on": "row-{index}.tap" },
+            { "screen": "Detail", "state": "shut", "on": "toggle.tap" },
+            { "screen": "app/detail", "state": "opened" }
+        ]));
+        assert!(found.is_empty(), "{found:?}");
+        let found = walked(json!([
+            { "screen": "List", "state": "some", "on": "row-{index}.tap" },
+            { "screen": "Nowhere", "state": "shut" }
+        ]));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(
+            found[0].starts_with("steps.1.screen: no screen description under the root declares Nowhere"),
+            "{found:?}"
+        );
+    }
+
+    #[test]
     fn a_navigate_that_opens_the_next_step_with_other_params_is_named() {
         let found = walked(json!([
             { "screen": "app/list", "state": "some", "on": "row-{index}.tap" },
@@ -298,7 +331,10 @@ mod tests {
             { "screen": "app/nowhere", "state": "some", "on": "row-{index}.tap" },
             { "screen": "app/detail", "state": "gone" }
         ]));
-        assert!(found[0].starts_with("steps.0.screen: app/nowhere is no screen description"), "{found:?}");
+        assert!(
+            found[0].starts_with("steps.0.screen: no screen description under the root declares app/nowhere"),
+            "{found:?}"
+        );
         assert!(found[1].starts_with("steps.1.state: gone is not a state of app/detail"), "{found:?}");
     }
 

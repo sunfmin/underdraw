@@ -17,8 +17,11 @@ READS
   beside it is a finding: its components belong in "components". Once the
   description has no other fault, its tokens.json too (the nearest at or
   above the screen, as `underdraw --help` says): every fixture and phase
-  is laid out at widths 390 and 1120, in the system's fonts as `render`
-  does, and an overlay that runs off the page is a finding. Writes nothing.
+  is laid out at each of the widths its tokens.json names ("widths",
+  TOKENS.JSON below; 390 and 1120 when it names
+  none), in the system's fonts as `render` does, and an overlay that runs
+  off the page is a finding, as are "widths" that are not a list of whole
+  numbers from 200 to 4000. Writes nothing.
 
   <path> may be <project root>/components/<Name>, the description that
   shows a shared component on its own: its fixtures, each held to its
@@ -37,11 +40,11 @@ READS
   (PARAMS below). One description checked alone cannot see the others, so
   it says nothing of where it navigates, nor of what it gives.
   Every journey under the root, <any dir>/journeys/<name>.json, is walked
-  too: each step's screen and state are there, each act's node is shown
-  in its step's state, and the act leads to the next step, by a transition
-  or a navigate (JOURNEYS below), and a navigate's "with", computed in
-  its step's state, gives exactly the params the next step's fixture
-  holds. A journey that does not walk is a
+  too: each step's screen, by its name or its path, and its state are
+  there, each act's node is shown in its step's state, and the act leads
+  to the next step, by a transition or a navigate (JOURNEYS below), and a
+  navigate's "with", computed in its step's state, gives exactly the
+  params the next step's fixture holds. A journey that does not walk is a
   finding on the journey, at the step that breaks.
 
 ANSWERS
@@ -51,7 +54,10 @@ ANSWERS
     "fixtures":   the fixtures' names, in the order written
     "phases":     the phases' names (trees rendered before data arrives)
     "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
-                  empty while any finding stands, except a condition that
+                  only those the description reads: each of its own over
+                  its data, and each on a type it reads through a value
+                  (or that one it reads uses); a domain condition it never
+                  reads is left out. Empty while any finding stands, except a condition that
                   never varies: then the table shows which fixtures to add
     "findings":   [{"at": where — a dotted path or a node id,
                     "problem": what is wrong, and what is allowed instead}, …]
@@ -91,7 +97,7 @@ ANSWERS
     "directories":  [{"directory": its path, relative to root ("." for root),
                       "notes": {"waiting", "answered"}}, …]: each directory
                     holding no description that keeps notes on the screens
-                    under it, in its own notes.json
+                    under it or on its journeys, in its own notes.json
     "notes":        {"waiting", "answered"}, over every description and
                     every such directory
   }

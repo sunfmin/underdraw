@@ -77,3 +77,29 @@ fn tokens_one_directory_above_two_screens_are_theirs() {
     assert_eq!(rendered["tokens"], json!(screens[0].join("tokens.json")));
     std::fs::remove_dir_all(project).unwrap();
 }
+
+#[test]
+fn render_draws_at_the_first_width_tokens_name_unless_told() {
+    let project = std::env::temp_dir().join(format!("underdraw-widths-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&project);
+    let dir = project.join("listing");
+    screen_without_tokens(&dir);
+    let path = dir.to_str().unwrap();
+    let out = project.join("drawn.png");
+    let out = out.to_str().unwrap();
+
+    let (rendered, code) = underdraw(&["render", path, "--out", out]);
+    assert_eq!((code, &rendered["width"]), (0, &json!(390.0)), "none named: 390, as before");
+
+    std::fs::write(project.join("tokens.json"), r#"{ "widths": [1440, 390] }"#).unwrap();
+    let (rendered, code) = underdraw(&["render", path, "--out", out]);
+    assert_eq!((code, &rendered["width"]), (0, &json!(1440.0)), "{rendered}");
+    let (rendered, code) = underdraw(&["render", path, "--width", "390", "--out", out]);
+    assert_eq!((code, &rendered["width"]), (0, &json!(390.0)), "--width still wins");
+
+    std::fs::write(project.join("tokens.json"), r#"{ "widths": [] }"#).unwrap();
+    let (checked, code) = underdraw(&["check", path]);
+    assert_ne!(code, 0, "{checked}");
+    assert_eq!(checked["findings"][0]["at"], "tokens.json widths", "{checked}");
+    std::fs::remove_dir_all(project).unwrap();
+}

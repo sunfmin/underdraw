@@ -76,9 +76,10 @@ _Avoid_: guess, TODO
 A conversation between the person and the agent about a design, pinned
 where it is held: a node of a state, a whole state, an arrow (a transition
 or a navigate), the whole screen (its description picked, apart from any
-one state), or the screens under a directory as a group (its flow picked,
-kept in that directory's own `notes.json`), its messages kept in the order
-said. Each has at most one; one
+one state), the screens under a directory as a group (its flow picked,
+kept in that directory's own `notes.json`), or a whole **journey** (picked
+to play, kept by name in the `notes.json` of the directory holding its
+`journeys/`), its messages kept in the order said. Each has at most one; one
 whose node or arrow is gone joins its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, **taken** once `--wait` has handed that message to
@@ -235,7 +236,10 @@ _Avoid_: panel, inspector, debug view
 **Toolbar**:
 The strip along the top of the gallery's window, over the tree, the
 pictures and the sidebar: back and forward through what the window has
-shown, every change of it a step, kept only while the window is open; and
+shown, every change of it a step, kept only while the window is open; the
+button that hides and shows every mark drawn over the pictures (the
+purple marks of where acting goes, the labels, the orange "?", the pins
+and the journeys' marks), leaving the bare **wireframe**, as ⌘. does; and
 the button that hides and shows the **sidebar**. Its back is the window's,
 not a design's `back`, which still returns along the path taken by acting.
 _Avoid_: navigation bar, header

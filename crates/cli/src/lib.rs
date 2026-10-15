@@ -20,6 +20,7 @@ mod paint;
 mod project;
 mod reference;
 mod scrollbar;
+mod sheet;
 mod sidebar;
 mod text;
 mod window;
@@ -36,6 +37,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use draw::{Shown, Wanted};
 use serde_json::{Value, json};
 use underdraw_format::{Lang, Screen, ScreenParams, State};
+use underdraw_layout::WIDTH_RANGE;
 
 use crate::project::{Project, TOKENS};
 
@@ -71,7 +73,7 @@ enum Command {
         #[arg(long, default_value = "en", value_parser = lang)]
         lang: Lang,
     },
-    /// Draw a screen in one state as a wireframe PNG, and say where each node went
+    /// Draw a screen in one state as a wireframe PNG, or every state on one sheet, and say where each node went
     #[command(after_long_help = include_str!("help/render.txt"))]
     Render {
         /// The screen's directory, which holds screen.json (and tokens.json), or the screen.json itself
@@ -82,13 +84,16 @@ enum Command {
         /// A phase to show instead of data, such as loading
         #[arg(long)]
         phase: Option<String>,
-        /// The page width in points: 390 is a phone, 1120 a laptop browser
-        #[arg(long, default_value_t = 390, value_parser = clap::value_parser!(u32).range(200..=4000))]
-        width: u32,
+        /// The page width in points: 390 is a phone, 1120 a laptop browser. Not given, the first of the widths its tokens.json names ("widths"), or 390
+        #[arg(long, value_parser = clap::value_parser!(u32).range(i64::from(*WIDTH_RANGE.start())..=i64::from(*WIDTH_RANGE.end())))]
+        width: Option<u32>,
+        /// Every fixture and phase, each at every width its tokens.json names (390 and 1120 when none), captioned, in one PNG
+        #[arg(long, conflicts_with_all = ["fixture", "phase", "width"])]
+        all: bool,
         /// Pixels per point
         #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u32).range(1..=4))]
         scale: u32,
-        /// Where to write the PNG; <dir>/renders/<fixture or phase>-<width>.png when not given
+        /// Where to write the PNG; <dir>/renders/<fixture or phase>-<width>.png when not given, or with --all <dir>/renders/all.png
         #[arg(long)]
         out: Option<PathBuf>,
         /// The directory the screen descriptions are under, as `check <root>` and the gallery take it: a node that navigates to a screen none of them declares is marked assumed. Not given, navigates are not resolved
@@ -204,8 +209,12 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             notes::notes(&path, answer.as_deref(), reply.as_deref(), wait)
         }
         Command::Check { path, lang } => check(&path, lang),
-        Command::Render { path, fixture, phase, width, scale, out, root, lang } => {
-            render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref(), lang)
+        Command::Render { path, scale, out, root, lang, all: true, .. } => {
+            render_all(&path, scale, out, root.as_deref(), lang)
+        }
+        Command::Render { path, fixture, phase, width, scale, out, root, lang, all: false } => {
+            let wanted = |first| Wanted { fixture, phase, width: width.unwrap_or(first), scale };
+            render(&path, wanted, out, root.as_deref(), lang)
         }
         Command::Schema { path } => schema(&path),
         Command::Cli { path } => derive_cli(&path),
@@ -423,14 +432,9 @@ fn read_platform(dir: &Path, platform: &str) -> anyhow::Result<Value> {
     serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
 }
 
-fn render(
-    path: &Path,
-    wanted: &Wanted,
-    out: Option<PathBuf>,
-    root: Option<&Path>,
-    lang: Lang,
-) -> anyhow::Result<Value> {
-    let drawn = match root {
+/// The screens drawn under `--root`, when it is given.
+fn drawn_under(root: Option<&Path>) -> anyhow::Result<Option<std::collections::BTreeSet<String>>> {
+    Ok(match root {
         Some(root) if !root.is_dir() => {
             bail!(
                 "{} is not a directory: pass the directory the screen descriptions are under",
@@ -439,19 +443,47 @@ fn render(
         }
         Some(root) => Some(links::drawn(root)),
         None => None,
-    };
-    let laid = draw::lay_out(path, wanted, drawn.as_ref(), lang)?;
+    })
+}
+
+/// `pixels`, `width` × `height`, written to `out`, its directory made.
+fn write_out(out: &Path, width: u32, height: u32, pixels: &[u8]) -> anyhow::Result<()> {
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("cannot create {}", parent.display()))?;
+    }
+    write_png(out, width, height, pixels)
+}
+
+/// A state as `render` answers it.
+fn state_json(shown: &Shown) -> Value {
+    match shown {
+        Shown::Fixture(name) => json!({ "fixture": name }),
+        Shown::Phase(name) => json!({ "phase": name }),
+    }
+}
+
+/// The state of the description at `path` that `wanted` names, given the
+/// first of the widths its tokens name, drawn to a PNG.
+fn render(
+    path: &Path,
+    wanted: impl FnOnce(u32) -> Wanted,
+    out: Option<PathBuf>,
+    root: Option<&Path>,
+    lang: Lang,
+) -> anyhow::Result<Value> {
+    let drawn = drawn_under(root)?;
+    let description = draw::Description::read(path)?;
+    let wanted = &wanted(description.widths()[0]);
+    let laid = description.lay_out(wanted, drawn.as_ref(), lang)?;
     let mut gpu = gpu::Gpu::open()?;
-    let drawing = laid.draw(wanted.scale, gpu.max_side);
+    let mut drawing = laid.draw(wanted.scale, gpu.max_side);
     let [pixels_wide, pixels_high] = drawing.pixels;
+    drawing.scene.append(&drawing.marks, None);
     let pixels = gpu.render(&drawing.scene, pixels_wide, pixels_high)?;
 
     let name = drawing.shown.name();
     let out = out.unwrap_or_else(|| drawing.dir.join("renders").join(format!("{name}-{}.png", wanted.width)));
-    if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("cannot create {}", parent.display()))?;
-    }
-    write_png(&out, pixels_wide, pixels_high, &pixels)?;
+    write_out(&out, pixels_wide, pixels_high, &pixels)?;
 
     let page = &drawing.page;
     let project = Project::of(&drawing.dir)?;
@@ -459,13 +491,60 @@ fn render(
         "png": out,
         "project": project.root,
         "tokens": project.tokens_file,
-        "state": match drawing.shown { Shown::Fixture(_) => json!({ "fixture": name }), Shown::Phase(_) => json!({ "phase": name }) },
+        "state": state_json(&drawing.shown),
         "breakpoint": drawing.breakpoint,
         "width": page.width,
         "height": page.height,
         "scale": drawing.scale,
         "pixels": drawing.pixels,
         "nodes": page.nodes,
+    }))
+}
+
+/// Every state of the description at `path`, each at both widths, on one
+/// sheet written to `out`, and where each node went in each.
+fn render_all(
+    path: &Path,
+    scale: u32,
+    out: Option<PathBuf>,
+    root: Option<&Path>,
+    lang: Lang,
+) -> anyhow::Result<Value> {
+    let drawn = drawn_under(root)?;
+    let description = draw::Description::read(path)?;
+    let mut sheet = sheet::Sheet::lay_out(&description, drawn.as_ref(), lang)?;
+    let mut gpu = gpu::Gpu::open()?;
+    let drawing = sheet.draw(scale, gpu.max_side)?;
+    let [pixels_wide, pixels_high] = drawing.pixels;
+    let pixels = gpu.render(&drawing.scene, pixels_wide, pixels_high)?;
+    let out = out.unwrap_or_else(|| description.dir().join("renders").join("all.png"));
+    write_out(&out, pixels_wide, pixels_high, &pixels)?;
+
+    let project = Project::of(description.dir())?;
+    let states: Vec<Value> = sheet
+        .pages
+        .iter()
+        .map(|placed| {
+            let laid = &placed.laid;
+            json!({
+                "state": state_json(&laid.shown),
+                "breakpoint": laid.breakpoint,
+                "width": laid.page.width,
+                "height": laid.page.height,
+                "at": { "x": placed.x, "y": placed.y },
+                "nodes": laid.page.nodes,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "png": out,
+        "project": project.root,
+        "tokens": project.tokens_file,
+        "width": sheet.width,
+        "height": sheet.height,
+        "scale": drawing.scale,
+        "pixels": drawing.pixels,
+        "states": states,
     }))
 }
 

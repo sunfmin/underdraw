@@ -65,6 +65,23 @@ DOES
   ⌘\ does. The history is not kept once the window closes; ← and → alone,
   without ⌘, still step a journey played.
 
+  Left of it, "hide marks ⌘." hides every mark the gallery draws over the
+  pictures, leaving the bare wireframe, and "show marks ⌘." shows them
+  again; ⌘. (Ctrl+. on Linux and Windows, as the button then says) does
+  the same. The marks are the purple marks of where acting goes (dashed
+  outlines, ↗ and → badges), the numbered labels, the orange "?" of each
+  assumption and its outline, the blue pins of notes, and the journeys'
+  marks: the double ring on the node a journey acts on next and each
+  journey's mark on an overview's states. They are hidden at both widths
+  and in states, overviews and flows alike. They are shown when the window
+  opens; hidden, they stay hidden as you pick and act, from state to state
+  and screen to screen, and are shown again once the window is closed and
+  opened. Hidden, the node picked is still drawn as picked, with its go-to
+  buttons; a click still picks and a ⌘-click still acts; holding ⌘ still
+  lights up the purple marks for as long as it is held (the labels, the
+  "?" and the pins stay hidden). A press where a hidden journey's mark was
+  picks its state, and one where a hidden pin was, what is under it.
+
   Each pane that scrolls shows a scrollbar while what it holds is larger
   than it, and none while it fits: the tree and the sidebar on their right
   edge, the pictures on their right edge and, when they scroll sideways,
@@ -86,16 +103,19 @@ DOES
   shows the flow and the inbox of everything under it), each
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
-  at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
+  at each of the widths its tokens.json names ("widths", in the order
+  named; with none named, 390, a phone, and 1120, a desktop) side by side,
+  labelled as `render`
   labels them: a red circle with a white number at the top left of each
   node a person can act on, a red no wireframe draws with, so it stands
   out from the grays it sits on. A label only names its node, for "number
-  3" to mean one node in the conversation. The two pictures scale down together to fit the width left
+  3" to mean one node in the conversation. The pictures scale down together to fit the width left
   between the tree and the sidebar, down to half size; in a window too
   narrow for that they stay at half size and scroll sideways (a trackpad's
   sideways swipe, or Shift and the wheel). Their labels, and the orange
   "?", stay at full size, readable at half size, and a click picks the
-  node under it at any size. Picking a description shows its overview: every state, small
+  node under it at any size. Picking a description shows its overview: every state, drawn at
+  the first of those widths, small
   and captioned with its name, in a grid in the order the tree lists them,
   tall ones cut at the foot, and each transition the description declares
   (`transitions` in screen.json) as an arrow from its `from` state to its
@@ -105,7 +125,7 @@ DOES
   transition reaches or leaves is still shown. Clicking a state's picture
   picks that state. Picking a directory draws the flow between the screens
   under it: each description a box named as its directory, holding a small picture of its first state
-  at 390, and each navigate an arrow from the box of the description it is
+  at the first of its widths, and each navigate an arrow from the box of the description it is
   in to the box of the screen it names, labelled with the node's id. The
   arrows are the "links" `underdraw check <root>` reports, no other: a
   navigate to a description outside the directory brings that box in too;
@@ -161,7 +181,9 @@ DOES
   Picking one plays it from its first step: the step's state drawn at
   both widths, as a state picked is, and the node the person acts on next
   ringed twice in blue at each width that shows it (a repeat's first
-  instance). The sidebar says which step of how many, the step's
+  instance). At the sidebar's top, above the step, a card
+  "→ <name> · the whole journey" holds the journey's note (below), kept
+  shown step to step. Under it the sidebar says which step of how many, the step's
   description and state, and the act ("acts on order-{index} (label 3) ·
   tap, answered ok"; "the journey ends here" on the last). Step forward
   with → (or "→ next step" in the sidebar) and back with ← (or "← previous
@@ -232,14 +254,16 @@ DOES
   the description writes it, or, with none picked (click a picture's caption, or where no node is), the state
   shown, or the arrow picked, or, in an overview with no arrow picked, the
   whole screen, or, in a flow with no arrow picked, the screens under the
-  directory; the sidebar says "copied" and the line. For a
+  directory, or, while a journey is picked, the journey; the sidebar says
+  "copied" and the line. For a
   node:
     <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
   e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
   /root/children/2/children/0/children/1/item/children in screen.json ·
   pointed at [2], label 7, width 390. For a state: `<description dir> · phase loading`.
   For the whole screen: `<description dir> · the whole screen`. For the
-  screens under a directory: `<directory> · these screens`.
+  screens under a directory: `<directory> · these screens`. For a
+  journey: `<dir> · journey <name>`, <dir> holding its journeys/.
   The id is the one written, a template inside a repeat (`order-{index}`),
   never the id one row was given; the JSON Pointer (RFC 6901) is where that
   node is written in <description dir>/screen.json, under /root, a phase
@@ -268,11 +292,17 @@ DOES
     from any one state ("this screen tries to do too much");
   - the screens under a directory, as a group: pick the directory in the
     tree (the root too, when it holds no description), its flow shown
-    with no arrow picked ("these screens repeat the same header").
+    with no arrow picked ("these screens repeat the same header");
+  - a whole journey, the path through all its steps: pick it in the tree,
+    with no node picked in the step shown ("cancelling takes four steps;
+    too many"). Its note stays shown as it steps; picking a node in a
+    step shows that node's note, and Esc goes back to the journey's. A
+    step's state keeps its own note: pick the state in the tree.
   The sidebar shows the thing's card at the top (a node's details folded
   as they are; for a state, "<state> · the whole state"; for a screen,
   "<screen> · the whole screen"; for a directory, "<directory> · these
-  screens"), then its note
+  screens"; for a journey, "→ <name> · the whole journey", above the
+  step it plays), then its note
   as a conversation, scrolling with the cards, newest at the bottom: its
   id and where it stands in its title (waiting on the agent while you
   spoke last, answered once the agent did), then what you wrote, in blue
@@ -316,10 +346,11 @@ DOES
   A note is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in; one on the screens under a
   directory, in that directory's own notes.json, though it holds no
-  screen.json), pinned as ⌘C references
+  screen.json; one on a journey, in the notes.json of the directory
+  holding its journeys/), pinned as ⌘C references
   it: the node as written, the state, and the instance pointed at; the
-  state; the transition; the navigate; the whole screen; or the screens
-  under the directory. A pin
+  state; the transition; the navigate; the whole screen; the screens
+  under the directory; or the journey, by its name. A pin
   numbered N1, N2… is drawn on it, in where the note stands: blue while it waits on the
   agent, green while the agent's answer is unread, a faint gray once it
   is answered and read: at a node's top-right corner, in the state and at the width
@@ -329,9 +360,10 @@ DOES
   navigate's arrow, where it leaves its box. The pins of the conversation
   shown are ringed. Click a pin to pick what its note is on, and so show
   its conversation. The tree shows how many notes wait on the agent on
-  each description, each state and each directory ("2 notes"): a note on
-  an arrow counts on its description, one on the screens under a
-  directory on that directory.
+  each description, each state, each directory and each journey ("2
+  notes"): a note on an arrow counts on its description, one on the
+  screens under a directory on that directory, and one on a journey on
+  the journey and on the line of its directory.
   A note is a conversation, never closed. The agent reads them with
   `underdraw notes <root>` and answers one, at any length: its pin turns
   green until you read it, and the pointer over it shows what the agent
