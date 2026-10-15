@@ -52,8 +52,14 @@ DOES
   thumb's length is the share in view and its place how far the pane is
   scrolled, and it follows at once as you scroll, resize the window or
   pick something else. It runs clear of the tree's names and the
-  sidebar's buttons, and under a picture's labels and orange "?". It is
-  drawn only: scroll with the wheel or trackpad.
+  sidebar's buttons, and under a picture's labels and orange "?". Scroll
+  with the wheel or trackpad, or with the scrollbar itself: drag its
+  thumb and the pane scrolls with it, as far as it goes and no further;
+  press its track either side of the thumb and the pane scrolls one page
+  that way. The thumb darkens under the pointer and while it is dragged.
+  A press on a scrollbar only scrolls: it picks no line of the tree, no
+  node and no region, and presses no button. A scrollbar keeps clear of
+  the lines between the panes, so a press is on one or the other.
 
   The tree holds the directories and descriptions as they are arranged on disk, under
   a first line for <root> itself when it holds no description (picked, it

@@ -47,7 +47,7 @@ use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
-use crate::scrollbar::{self, Axis};
+use crate::scrollbar::{Axis, Bar, Part};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
@@ -151,6 +151,10 @@ struct Gallery {
     side: f64,
     /// The line between two panes held, being dragged; none while no line is.
     resizing: Option<Edge>,
+    /// The scrollbar's thumb held, being dragged; none while none is.
+    grabbed: Option<Grab>,
+    /// The scrollbar whose thumb the pointer is over, drawn darker.
+    hot: Option<Scrolls>,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
@@ -457,6 +461,25 @@ enum Edge {
     Side,
 }
 
+/// A pane's scrollbar, by the scroll it moves: the tree's, the pictures'
+/// down and across, the sidebar's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Scrolls {
+    Tree,
+    Down,
+    Across,
+    Side,
+}
+
+/// A scrollbar's thumb taken hold of, being dragged: whose, how far along
+/// its track the pointer was then, and how far its pane was scrolled.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Grab {
+    scrolls: Scrolls,
+    from: f64,
+    scrolled: f64,
+}
+
 /// What the picked description shows.
 enum Picture {
     /// One state at each of `WIDTHS`.
@@ -632,6 +655,8 @@ impl Gallery {
             tree: TREE,
             side: SIDEBAR,
             resizing: None,
+            grabbed: None,
+            hot: None,
             cursor: (0.0, 0.0),
             acting: false,
             history: Vec::new(),
@@ -752,6 +777,30 @@ impl Gallery {
         true
     }
 
+    /// The pointer moved, a scrollbar's thumb held: its pane scrolled as
+    /// far as the thumb has moved with the pointer along its track, held
+    /// within what there is to scroll. Whether a thumb is held.
+    fn drag_thumb(&mut self) -> bool {
+        let Some(grab) = self.grabbed else {
+            return false;
+        };
+        if let Some((_, bar)) = self.bars().into_iter().find(|(scrolls, _)| *scrolls == grab.scrolls) {
+            *self.scrolled_mut(grab.scrolls) = bar.dragged(grab.scrolled, bar.along(self.cursor) - grab.from);
+            self.clamp();
+        }
+        true
+    }
+
+    /// How far the pane `scrolls` scrolls is scrolled.
+    fn scrolled_mut(&mut self, scrolls: Scrolls) -> &mut f64 {
+        match scrolls {
+            Scrolls::Tree => &mut self.tree_scroll,
+            Scrolls::Down => &mut self.scroll,
+            Scrolls::Across => &mut self.across,
+            Scrolls::Side => &mut self.side_scroll,
+        }
+    }
+
     /// The sidebar shown, or hidden, its width given to the pictures.
     fn toggle_sidebar(&mut self) {
         self.sidebar = !self.sidebar;
@@ -772,6 +821,21 @@ impl Gallery {
         if let Some(edge) = self.edge_at() {
             self.resizing = Some(edge);
             return false;
+        }
+        // On a scrollbar, only scrolling its pane: its thumb taken hold
+        // of, or a page toward the press on its track.
+        if let Some((scrolls, bar, part)) = self.bar_at(self.cursor) {
+            let page = bar.page();
+            match part {
+                Part::Thumb => {
+                    let (from, scrolled) = (bar.along(self.cursor), bar.scrolled);
+                    self.grabbed = Some(Grab { scrolls, from, scrolled });
+                }
+                Part::Before => *self.scrolled_mut(scrolls) -= page,
+                Part::After => *self.scrolled_mut(scrolls) += page,
+            }
+            self.clamp();
+            return true;
         }
         if self.cursor.0 >= self.pane_right() {
             if self.press_field() {
@@ -887,8 +951,9 @@ impl Gallery {
     fn release(&mut self) -> bool {
         self.selecting = None;
         self.resizing = None;
+        let let_go = self.grabbed.take().is_some();
         let Some(from) = self.held.take() else {
-            return false;
+            return let_go;
         };
         let moved = (self.cursor.0 - from.0).hypot(self.cursor.1 - from.1);
         if moved < DRAG {
@@ -1933,8 +1998,13 @@ impl Gallery {
     }
 
     /// The answered note whose pin the pointer is now over, kept to show
-    /// its reply. Whether that changed.
+    /// its reply, and the scrollbar whose thumb it is over, drawn darker.
+    /// Whether either changed.
     fn hover(&mut self) -> bool {
+        let hot =
+            self.bar_at(self.cursor).and_then(|(scrolls, _, part)| (part == Part::Thumb).then_some(scrolls));
+        let warmed = hot != self.hot;
+        self.hot = hot;
         let over = self.pin_at(self.cursor).filter(|(dir, id)| {
             self.notes.get(dir).is_some_and(|notes| {
                 notes.iter().any(|note| &note.id == id && note.status == Status::Answered)
@@ -1942,7 +2012,7 @@ impl Gallery {
         });
         let changed = over != self.hovered;
         self.hovered = over;
-        changed
+        changed || warmed
     }
 
     /// What the button of the sidebar under `at`, a point in the window,
@@ -3294,36 +3364,55 @@ impl Gallery {
         self.lines.len() as f64 * ROW + MARGIN
     }
 
-    /// The thumb of each pane's scrollbar, in window points, where what
-    /// it holds is larger than it ([`scrollbar`]): the pictures', down then
-    /// across, drawn under their labels so that none covers an orange "?";
-    /// and the tree's then the sidebar's, drawn over the rest in the space
-    /// right of the tree's names and of the sidebar's cards. Where the
-    /// pictures scroll both ways, the bar across stops short of the one
-    /// down.
-    fn scrollbars(&mut self) -> (Vec<Area>, Vec<Area>) {
+    /// Each pane's scrollbar ([`scrollbar`](crate::scrollbar)): the
+    /// pictures', down then across, and the tree's, then the sidebar's
+    /// while it is shown. Where the pictures scroll both ways, the bar
+    /// across stops short of the one down.
+    fn bars(&mut self) -> Vec<(Scrolls, Bar)> {
         let (width, height) = self.size;
         let (tree, right) = (self.tree, self.pane_right());
         let pictures = Area::new(tree, 0.0, right, height);
-        let down = scrollbar::bar(pictures, Axis::Down, self.pictures_height(self.pane()), self.scroll, 0.0);
-        let corner = if down.is_some() { chrome::SCROLLBAR_WIDE + chrome::SCROLLBAR_INSET } else { 0.0 };
-        let wide = self.pictures_width(self.pane());
-        let across = scrollbar::bar(pictures, Axis::Across, wide, self.across, corner);
-        let side = Area::new(right, 0.0, width, height);
-        let side = if self.sidebar {
-            scrollbar::bar(side, Axis::Down, self.sidebar_height(), self.side_scroll, 0.0)
-        } else {
-            None
-        };
+        let content = self.pictures_height(self.pane());
+        let down = Bar { pane: pictures, axis: Axis::Down, content, scrolled: self.scroll, corner: 0.0 };
+        let corner =
+            if down.thumb().is_some() { chrome::SCROLLBAR_WIDE + chrome::SCROLLBAR_INSET } else { 0.0 };
+        let content = self.pictures_width(self.pane());
+        let across = Bar { pane: pictures, axis: Axis::Across, content, scrolled: self.across, corner };
         let lines = Area::new(0.0, 0.0, tree, height);
-        let tree = scrollbar::bar(lines, Axis::Down, self.tree_height(), self.tree_scroll, 0.0);
-        (down.into_iter().chain(across).collect(), tree.into_iter().chain(side).collect())
+        let content = self.tree_height();
+        let lines = Bar { pane: lines, axis: Axis::Down, content, scrolled: self.tree_scroll, corner: 0.0 };
+        let mut bars = vec![(Scrolls::Down, down), (Scrolls::Across, across), (Scrolls::Tree, lines)];
+        if self.sidebar {
+            let side = Area::new(right, 0.0, width, height);
+            let content = self.sidebar_height();
+            let side = Bar { pane: side, axis: Axis::Down, content, scrolled: self.side_scroll, corner: 0.0 };
+            bars.push((Scrolls::Side, side));
+        }
+        bars
+    }
+
+    /// The thumb of each pane's scrollbar, in window points, where what
+    /// it holds is larger than it, in the order of [`Gallery::bars`]: the
+    /// pictures' drawn under their labels so that none covers an orange
+    /// "?", the tree's and the sidebar's over the rest in the space right
+    /// of the tree's names and of the sidebar's cards.
+    fn thumbs(&mut self) -> Vec<(Scrolls, Area)> {
+        self.bars().into_iter().filter_map(|(scrolls, bar)| Some((scrolls, bar.thumb()?))).collect()
+    }
+
+    /// The scrollbar under `at`, a point in the window, and the part of it
+    /// there; none off every scrollbar.
+    fn bar_at(&mut self, at: (f64, f64)) -> Option<(Scrolls, Bar, Part)> {
+        self.bars().into_iter().find_map(|(scrolls, bar)| Some((scrolls, bar, bar.at(at)?)))
     }
 
     /// The whole window, in points.
     fn frame(&mut self) -> Scene {
         let (width, height) = self.size;
-        let (pictures_bars, side_bars) = self.scrollbars();
+        let thumbs = self.thumbs();
+        let hot = self.grabbed.map(|grab| grab.scrolls).or(self.hot);
+        let (pictures_bars, side_bars): (Vec<_>, Vec<_>) =
+            thumbs.into_iter().partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
         let tree = self.tree;
         let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
@@ -3537,8 +3626,8 @@ impl Gallery {
         }
         // The labels under what the window draws over the pictures: the
         // outline, the pins.
-        for bar in pictures_bars {
-            thumb(&mut scene, bar);
+        for (scrolls, bar) in pictures_bars {
+            thumb(&mut scene, bar, hot == Some(scrolls));
         }
         let mut over = labels;
         over.extend(pane);
@@ -3552,8 +3641,8 @@ impl Gallery {
         let edge =
             [Draw::Line { from: [tree as f32, 0.0], to: [tree as f32, height as f32], ink: Ink::Line }];
         paint::draws(&mut scene, at, &edge, chrome::colour, &mut self.typesetter);
-        for bar in side_bars {
-            thumb(&mut scene, bar);
+        for (scrolls, bar) in side_bars {
+            thumb(&mut scene, bar, hot == Some(scrolls));
         }
         scene
     }
@@ -3812,10 +3901,12 @@ fn sheet(scene: &mut Scene, at: Affine, around: Rect, radius: f32) {
     scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Line), None, &edge);
 }
 
-/// A scrollbar's thumb at `bar`, in window points, in the chrome's look.
-fn thumb(scene: &mut Scene, bar: Area) {
+/// A scrollbar's thumb at `bar`, in window points, in the chrome's look:
+/// darker while `hot`, the pointer over it or dragging it.
+fn thumb(scene: &mut Scene, bar: Area, hot: bool) {
     let round = vello::kurbo::RoundedRect::from_rect(bar, chrome::SCROLLBAR_WIDE / 2.0);
-    scene.fill(Fill::NonZero, Affine::IDENTITY, chrome::SCROLLBAR, None, &round);
+    let ink = if hot { chrome::SCROLLBAR_HOT } else { chrome::SCROLLBAR };
+    scene.fill(Fill::NonZero, Affine::IDENTITY, ink, None, &round);
 }
 
 /// `text`, a picture's caption, in `rect`.
@@ -3954,7 +4045,7 @@ impl ApplicationHandler<Told> for Gallery {
                     CursorIcon::Default
                 };
                 window.set_cursor(grip);
-                let resized = self.resize();
+                let resized = self.resize() || self.drag_thumb();
                 if resized || self.hover() || self.held.is_some() || self.drag_field() {
                     window.request_redraw();
                 }
@@ -4258,13 +4349,28 @@ mod tests {
         assert_eq!(gallery.tree_scroll, end, "as far as its last line");
     }
 
+    /// The thumbs of the pictures' scrollbars, down then across, and of
+    /// the tree's then the sidebar's.
+    fn scrollbars(gallery: &mut Gallery) -> (Vec<Area>, Vec<Area>) {
+        let (pictures, others): (Vec<_>, Vec<_>) = gallery
+            .thumbs()
+            .into_iter()
+            .partition(|(scrolls, _)| matches!(scrolls, Scrolls::Down | Scrolls::Across));
+        (pictures.into_iter().map(|(_, bar)| bar).collect(), others.into_iter().map(|(_, bar)| bar).collect())
+    }
+
+    /// The scrollbar `scrolls` of the gallery as it is now.
+    fn bar_of(gallery: &mut Gallery, scrolls: Scrolls) -> Bar {
+        gallery.bars().into_iter().find(|(s, _)| *s == scrolls).unwrap().1
+    }
+
     #[test]
     fn a_pane_shows_a_scrollbar_while_it_overflows_and_follows_its_scroll() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing + 1);
         gallery.press();
-        let (pictures, _) = gallery.scrollbars();
+        let (pictures, _) = scrollbars(&mut gallery);
         assert_eq!(pictures.len(), 2, "the listing overflows down, and at half size across: {pictures:?}");
         let (top, across) = (pictures[0], pictures[1]);
         assert!(across.x1 < top.x0, "the bar across stops short of the one down");
@@ -4274,7 +4380,7 @@ mod tests {
         assert!((top.height() - (900.0 - 2.0 * chrome::SCROLLBAR_INSET) * share).abs() < 1e-9);
         gallery.cursor = (gallery.tree + 100.0, 400.0);
         gallery.wheel(0.0, 1e6);
-        let (pictures, _) = gallery.scrollbars();
+        let (pictures, _) = scrollbars(&mut gallery);
         assert_eq!(
             pictures[0].y1,
             900.0 - chrome::SCROLLBAR_INSET,
@@ -4282,7 +4388,7 @@ mod tests {
         );
         assert_eq!(pictures[0].height(), top.height());
 
-        let (_, others) = gallery.scrollbars();
+        let (_, others) = scrollbars(&mut gallery);
         let tree = gallery.tree_height() > 900.0;
         assert_eq!(others.iter().any(|bar| bar.x1 <= gallery.tree), tree, "the tree's while it overflows");
         for bar in &others {
@@ -4291,8 +4397,128 @@ mod tests {
 
         gallery.size = (4000.0, 1e5);
         gallery.clamp();
-        let (pictures, others) = gallery.scrollbars();
+        let (pictures, others) = scrollbars(&mut gallery);
         assert!(pictures.is_empty() && others.is_empty(), "a window large enough for all of it has none");
+    }
+
+    #[test]
+    fn dragging_a_thumb_scrolls_its_pane_in_step_held_within_its_bounds() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        let (picked, node) = (gallery.picked, gallery.node.clone());
+        let bar = bar_of(&mut gallery, Scrolls::Down);
+        let thumb = bar.thumb().unwrap();
+
+        gallery.cursor = (thumb.center().x, thumb.center().y);
+        assert!(gallery.hover(), "the pointer over a thumb warms it");
+        assert_eq!(gallery.hot, Some(Scrolls::Down));
+        gallery.press();
+        assert_eq!(gallery.grabbed.map(|grab| grab.scrolls), Some(Scrolls::Down), "the thumb taken hold of");
+        assert_eq!(gallery.scroll, 0.0, "a press on the thumb scrolls nothing yet");
+        gallery.cursor.1 += 30.0;
+        assert!(gallery.drag_thumb(), "the drag moves the thumb");
+        assert!((gallery.scroll - bar.dragged(0.0, 30.0)).abs() < 1e-9, "scrolled as far as the thumb moved");
+        let moved = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
+        assert!((moved.y0 - (thumb.y0 + 30.0)).abs() < 1e-9, "the thumb under the pointer still: {moved:?}");
+        gallery.cursor.1 += 1e5;
+        gallery.drag_thumb();
+        let below = gallery.pictures_height(gallery.pane()) - 900.0;
+        assert_eq!(gallery.scroll, below, "no further than the end");
+        gallery.cursor.1 = -1e5;
+        gallery.drag_thumb();
+        assert_eq!(gallery.scroll, 0.0, "no further than the start");
+        assert!(gallery.release(), "letting go cools the thumb");
+        assert!(gallery.grabbed.is_none());
+        gallery.cursor.1 = 500.0;
+        assert!(!gallery.drag_thumb(), "let go, the pane stays");
+        assert_eq!(gallery.scroll, 0.0);
+        assert_eq!((gallery.picked, &gallery.node), (picked, &node), "nothing picked by any of it");
+        assert!(gallery.region.is_none(), "nor a region");
+
+        let across = bar_of(&mut gallery, Scrolls::Across).thumb().unwrap();
+        gallery.cursor = (across.center().x, across.center().y);
+        gallery.press();
+        gallery.cursor.0 += 40.0;
+        gallery.drag_thumb();
+        assert!(gallery.across > 0.0, "the thumb across scrolls across");
+        gallery.release();
+    }
+
+    #[test]
+    fn a_press_on_the_track_scrolls_a_page_toward_it() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        // The window short, so that a page is less than what is out of view.
+        gallery.size = (1440.0, 300.0);
+        gallery.clamp();
+        let thumb = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
+        gallery.cursor = (thumb.center().x, thumb.y1 + 10.0);
+        assert!(gallery.press(), "a press below the thumb scrolls");
+        assert_eq!(gallery.scroll, 300.0, "one page down: as tall as the pane");
+        assert!(gallery.grabbed.is_none(), "takes hold of nothing");
+        gallery.release();
+        let thumb = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
+        gallery.cursor = (thumb.center().x, thumb.y0 - 1.0);
+        gallery.press();
+        assert_eq!(gallery.scroll, 0.0, "one page back up");
+        gallery.release();
+        gallery.cursor = (thumb.center().x, 300.0 - chrome::SCROLLBAR_INSET - 1.0);
+        for _ in 0..20 {
+            gallery.press();
+            gallery.release();
+        }
+        let below = gallery.pictures_height(gallery.pane()) - 300.0;
+        assert_eq!(gallery.scroll, below, "never past the end");
+    }
+
+    #[test]
+    fn a_press_on_a_scrollbar_picks_nothing_and_presses_nothing() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        gallery.size = (1440.0, 300.0);
+        gallery.clamp();
+        let (picked, node) = (gallery.picked, gallery.node.clone());
+        for scrolls in [Scrolls::Tree, Scrolls::Down, Scrolls::Across, Scrolls::Side] {
+            let bar = bar_of(&mut gallery, scrolls);
+            let thumb = bar.thumb().unwrap_or_else(|| panic!("{scrolls:?} overflows a short window"));
+            for at in [(thumb.center().x, thumb.center().y), bar.lane().unwrap().center().into()] {
+                gallery.cursor = at;
+                assert_eq!(gallery.edge_at(), None, "{scrolls:?}: a scrollbar is never a line's");
+                gallery.press();
+                assert_eq!(gallery.picked, picked, "{scrolls:?}: no line of the tree picked");
+                assert_eq!(gallery.node, node, "{scrolls:?}: no node picked");
+                assert!(
+                    gallery.held.is_none() && gallery.resizing.is_none(),
+                    "{scrolls:?}: no region, no line"
+                );
+                assert!(gallery.draft.is_none() && gallery.acted.is_none(), "{scrolls:?}: no button pressed");
+                gallery.cursor.1 += 5.0;
+                gallery.release();
+                assert!(gallery.region.is_none(), "{scrolls:?}: no region dragged");
+            }
+        }
+    }
+
+    #[test]
+    fn a_line_between_panes_and_the_scrollbar_beside_it_never_share_a_point() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        gallery.size = (1440.0, 300.0);
+        gallery.clamp();
+        let (tree, right) = (gallery.tree, gallery.pane_right());
+        let lanes: Vec<_> =
+            gallery.bars().into_iter().filter_map(|(s, bar)| Some((s, bar.lane()?))).collect();
+        assert_eq!(lanes.len(), 4, "every pane overflows: {lanes:?}");
+        for (scrolls, lane) in lanes {
+            for line in [tree, right] {
+                let clear = lane.x1 <= line - chrome::GRIP || lane.x0 >= line + chrome::GRIP;
+                assert!(clear, "{scrolls:?}'s scrollbar {lane:?} clear of the line at {line}");
+            }
+        }
     }
 
     /// The point in the window at the middle of node `id` in picture `page`.
