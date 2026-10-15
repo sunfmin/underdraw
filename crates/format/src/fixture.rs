@@ -7,12 +7,38 @@ use serde_json::{Map, Value};
 use crate::check::{Finding, Findings};
 use crate::field::{Base, Field};
 use crate::schema::{Schema, Shape, object};
+use crate::showcase;
+
+/// Whose fields an object's are: a type's, or, in a fixture of a shared
+/// component shown on its own, the component's params.
+#[derive(Clone, Copy)]
+enum Owner<'a> {
+    Type(&'a str),
+    Params(&'a str),
+}
+
+impl Owner<'_> {
+    /// The fault of a field `key` it does not have.
+    fn has_no(self, key: &str) -> String {
+        match self {
+            Owner::Type(name) => format!("{name} has no field {key}"),
+            Owner::Params(name) => {
+                format!("{name} has no param {key}: a fixture gives each of its params, and nothing else")
+            }
+        }
+    }
+}
 
 /// Every fixture by name, in the order written, with defaults filled in.
 pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(String, Value)> {
     #[cfg(test)]
     crate::screen::tests::count("fixtures");
     let roots = schema.roots();
+    // A showcase's view model is the component's params.
+    let owner = match showcase::shows(screen) {
+        Some(name) => Owner::Params(name),
+        None => Owner::Type("data"),
+    };
     let mut merged: Vec<(String, Value)> = Vec::new();
     let mut read: Vec<(String, Value)> = Vec::new();
     for (name, written) in object(screen, "fixtures") {
@@ -39,7 +65,7 @@ pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(St
         };
         let mut own = Findings::default();
         let checked = match value.as_object() {
-            Some(object) => Value::Object(fields(schema, &roots, "data", object, &at, &mut own)),
+            Some(object) => Value::Object(fields(schema, &roots, owner, object, &at, &mut own)),
             None => value.clone(),
         };
         // A fault inherited from the base fixture is the base's to report.
@@ -47,7 +73,7 @@ pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(St
         for finding in own.0 {
             let as_base: Option<Finding> = base_at.as_ref().map(|b| finding.renamed(&at, b));
             if !as_base.is_some_and(|as_base| findings.0.contains(&as_base)) {
-                findings.0.push(finding);
+                findings.push(finding);
             }
         }
         merged.push((name.clone(), value));
@@ -133,7 +159,9 @@ fn validate(schema: &Schema, value: &Value, field: &Field, at: &str, findings: &
             value.clone()
         }
         Some(Shape::Object(declared)) => match value.as_object() {
-            Some(object) => Value::Object(fields(schema, declared, field.base.name(), object, at, findings)),
+            Some(object) => {
+                Value::Object(fields(schema, declared, Owner::Type(field.base.name()), object, at, findings))
+            }
             None => {
                 findings.add(at, &format!("expected a {} object", field.base.name()));
                 value.clone()
@@ -148,14 +176,14 @@ fn validate(schema: &Schema, value: &Value, field: &Field, at: &str, findings: &
 fn fields(
     schema: &Schema,
     declared: &[(String, Field)],
-    type_name: &str,
+    owner: Owner,
     object: &Map<String, Value>,
     at: &str,
     findings: &mut Findings,
 ) -> Map<String, Value> {
     for key in object.keys() {
         if !declared.iter().any(|(name, _)| name == key) {
-            findings.add(at, &format!("{type_name} has no field {key}"));
+            findings.add(at, &owner.has_no(key));
         }
     }
     let mut filled = Map::new();

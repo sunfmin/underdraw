@@ -89,9 +89,15 @@ fn a_mapping_that_misses_a_component_says_so() {
         "platform": "ios", "language": "swift", "testId": "{id}",
         "tokenNaming": { "pattern": "{group}.{name}" }, "components": { "Screen": "screen" }, "actions": {}
     });
-    let handoff = handoff(&screen(), &mapping, &json!({})).unwrap_or_else(|c| panic!("{:?}", c.findings));
+    // A second Text lacks the same entry: it is said once, at the first.
+    let mut screen = screen();
+    screen["root"]["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "id": "u", "component": "Text", "text": "y" }));
+    let handoff = handoff(&screen, &mapping, &json!({})).unwrap_or_else(|c| panic!("{:?}", c.findings));
     assert!(!handoff.ok);
-    assert_eq!(handoff.findings.len(), 1);
+    assert_eq!(handoff.findings.len(), 1, "{:?}", handoff.findings);
     assert_eq!(handoff.findings[0].at, "t");
     assert!(handoff.findings[0].problem.contains("component Text"), "{:?}", handoff.findings);
 }

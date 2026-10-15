@@ -39,6 +39,17 @@ pub struct Checked {
     pub findings: Vec<Finding>,
 }
 
+impl Checked {
+    /// `finding` added to what `check` made of the screen, by a later look
+    /// at it (its layout, the files beside it). Any fault makes the screen
+    /// not ok and takes the condition table away.
+    pub fn fault(&mut self, finding: Finding) {
+        self.ok = false;
+        self.conditions.clear();
+        self.findings.push(finding);
+    }
+}
+
 /// A condition: what it means, and the fixtures it holds in.
 #[derive(Clone, Debug, Serialize)]
 pub struct Condition {
@@ -65,12 +76,21 @@ impl Finding {
     }
 }
 
+/// The faults found so far, in the order found, each once: a fault found
+/// again at the same place, as a component's is at each instance of it
+/// that shares the place, is the one already standing.
 #[derive(Default)]
 pub struct Findings(pub Vec<Finding>);
 
 impl Findings {
     pub fn add(&mut self, at: &str, problem: &str) {
-        self.0.push(Finding { at: at.to_string(), problem: problem.to_string() });
+        self.push(Finding { at: at.to_string(), problem: problem.to_string() });
+    }
+
+    pub fn push(&mut self, finding: Finding) {
+        if !self.0.contains(&finding) {
+            self.0.push(finding);
+        }
     }
 }
 
@@ -90,7 +110,10 @@ pub fn check(screen: &Screen) -> Checked {
 /// params, of its type, in `with`, and nothing else. A navigate to a screen
 /// not in `others` is held to nothing.
 pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
-    let mut findings = Findings(screen.findings().to_vec());
+    let mut findings = Findings::default();
+    for finding in screen.findings() {
+        findings.push(finding.clone());
+    }
     let Screen { components: known, schema, fixtures, conditions, operations, transitions, .. } = screen;
     let description = screen.description();
     jobs::check(operations, schema, fixtures, &mut findings);
@@ -154,10 +177,6 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             }
         }
     }
-    // A component's fault is found at each instance of it: say it once.
-    let mut said = BTreeSet::new();
-    findings.0.retain(|finding| said.insert((finding.at.clone(), finding.problem.clone())));
-
     let mut table = Vec::new();
     if findings.0.is_empty() {
         for condition in conditions.all() {

@@ -195,6 +195,22 @@ fn each_fault_of_a_component_is_found() {
 }
 
 #[test]
+fn a_fault_found_at_each_instance_is_said_once() {
+    // Two id-less instances in one list item: each node inside either is
+    // found at the same place, and so is the fault of the shared body.
+    let mut reaching = row();
+    reaching["nodes"]["children"][0].as_object_mut().unwrap().remove("id");
+    reaching["nodes"]["children"][0]["text"] = json!("{title}");
+    let instance = json!({ "component": "ItemRow", "with": { "item": "{item}", "open": "{menuOpen}" } });
+    let mut description =
+        screen(reaching, json!({ "id": "pair-{index}", "component": "Row", "children": [] }));
+    description["root"]["children"][0]["item"]["children"] = json!([instance.clone(), instance]);
+    let checked = check(&description);
+    let said: Vec<_> = checked.findings.iter().filter(|f| f.problem.contains("title reaches past")).collect();
+    assert_eq!(said.len(), 1, "{:#?}", checked.findings);
+}
+
+#[test]
 fn a_bool_param_takes_a_condition_of_the_screens() {
     let mut row = row();
     row["params"]["shown"] = json!("bool");

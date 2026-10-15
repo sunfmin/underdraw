@@ -66,15 +66,6 @@ impl Screen {
         let schema = Schema::read(&description, &mut findings);
         let mut fixtures = fixture::read(&description, &schema, &mut findings);
         if let Some(name) = showcase::shows(&description) {
-            // A showcase's view model is the component's params.
-            let unknown = "data has no field ";
-            for finding in &mut findings.0 {
-                if let Some(param) = finding.problem.strip_prefix(unknown) {
-                    finding.problem = format!(
-                        "{name} has no param {param}: a fixture gives each of its params, and nothing else"
-                    );
-                }
-            }
             if fixtures.is_empty() {
                 findings.add(
                     "fixtures",

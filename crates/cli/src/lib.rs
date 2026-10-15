@@ -275,17 +275,13 @@ fn checked_among(
     let mut checked =
         underdraw_layout::check(screen, &tokens, others, &mut typesetter).map_err(anyhow::Error::msg)?;
     if dir.join(KINDS).exists() {
-        checked.ok = false;
-        checked.conditions.clear();
-        checked.findings.push(underdraw_format::Finding {
+        checked.fault(underdraw_format::Finding {
             at: KINDS.to_string(),
             problem: "kinds.json is no longer read: move each of its components into screen.json's \"components\", declaring the params its look reads, then delete kinds.json (`underdraw check --help`, COMPONENTS)".to_string(),
         });
     }
     if let Some(old) = notes::old_form(dir) {
-        checked.ok = false;
-        checked.conditions.clear();
-        checked.findings.push(underdraw_format::Finding { at: notes::NOTES.to_string(), problem: old });
+        checked.fault(underdraw_format::Finding { at: notes::NOTES.to_string(), problem: old });
     }
     Ok(checked)
 }
