@@ -111,6 +111,7 @@ sentences! {
     transition_outcome,
     on_navigate,
     on_screen,
+    on_screens,
     // The rest of the gallery's own words.
     acted_to_state,
     acted_calls,
@@ -149,6 +150,7 @@ sentences! {
     hint_keys,
     whole_state,
     whole_screen,
+    these_screens,
     talk_title,
     talk_none,
     talk_hint,
@@ -204,6 +206,13 @@ sentences! {
     node_no_label,
     answer_right,
     answer_wrong,
+    // Where acting on the node picked goes, offered beside it and on its card.
+    way_state,
+    way_outcome,
+    way_navigate,
+    way_undrawn,
+    way_back,
+    way_hint,
 }
 
 /// `sentence` with each `{name}` in it replaced by the value given for

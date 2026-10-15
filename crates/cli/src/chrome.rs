@@ -36,6 +36,7 @@ pub fn colour(ink: Ink) -> Color {
         Ink::Note => [0x2B, 0x58, 0xD6],
         Ink::Answered => [0x15, 0x86, 0x58],
         Ink::Label => [0xD6, 0x1F, 0x4F],
+        Ink::Interaction => return INTERACTION,
         Ink::Scrim => return Color::from_rgba8(0x0B, 0x0E, 0x14, 0x59),
     };
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])
@@ -119,6 +120,12 @@ pub const MARK_INSET: f64 = 6.0;
 pub const SHEET_RADIUS: f32 = 6.0;
 pub const PICKED_RADIUS: f32 = 6.0;
 pub const MARK_RADIUS: f32 = 9.0;
+/// A button floating beside the node picked, offering where acting on it
+/// goes: how tall, how far its text is set in either side, and how far it
+/// is from the node and from the next, in window points at any scale.
+pub const OFFER_TALL: f64 = 24.0;
+pub const OFFER_PAD: f64 = 10.0;
+pub const OFFER_GAP: f64 = 6.0;
 /// The corners of a card of the sidebar, and of a button on it.
 pub const CARD_RADIUS: f32 = 8.0;
 pub const BUTTON_RADIUS: f32 = 6.0;

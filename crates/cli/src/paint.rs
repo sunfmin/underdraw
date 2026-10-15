@@ -22,6 +22,8 @@ pub fn colour(ink: Ink) -> Color {
         Ink::Note => [0x1F, 0x6F, 0xEB],
         Ink::Answered => [0x1A, 0x9E, 0x4B],
         Ink::Label => [0xD6, 0x1F, 0x4F],
+        // No wireframe draws with it: only the gallery, around one.
+        Ink::Interaction => [0x8B, 0x3D, 0xF0],
         Ink::Scrim => return Color::from_rgba8(0x00, 0x00, 0x00, 0x59),
     };
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])

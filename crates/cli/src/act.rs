@@ -4,6 +4,8 @@
 //! another screen and `back` to where the person came from. Where nothing
 //! is declared, the act says so rather than doing nothing.
 
+use std::collections::BTreeSet;
+
 use serde_json::{Map, Value};
 use underdraw_format::Transition;
 
@@ -28,14 +30,47 @@ pub enum Act {
     Nothing,
 }
 
+/// One place acting on a node goes, as the gallery offers it beside the
+/// node picked and on its card: what a ⌘-click on the node does, or, where
+/// the event calls an operation, does once that outcome is chosen.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Way {
+    /// To state `to` of the same screen; answered with `outcome` when the
+    /// event calls an operation and more than one outcome is declared.
+    To { outcome: Option<String>, to: String },
+    /// To the screen named, by its "screen"; not `drawn` when no
+    /// description under the root declares it, a screen not drawn yet.
+    Navigate { screen: String, drawn: bool },
+    /// Back to where the person came from.
+    Back,
+}
+
 impl Act {
-    /// Where it leads, as the gallery marks the node in purple: none where
-    /// acting goes nowhere.
-    pub fn leads(&self) -> Option<Leads> {
+    /// Every place it goes, in the order written, each screen navigated to
+    /// drawn when it is among the screens `drawn` under the root
+    /// ([`crate::links::drawn`]): none when nothing is declared.
+    pub fn ways(self, drawn: &BTreeSet<String>) -> Vec<Way> {
         match self {
-            Act::Go { .. } | Act::Choose(_) => Some(Leads::State),
-            Act::Navigate(_) | Act::Back => Some(Leads::Screen),
-            Act::Nothing => None,
+            Act::Go { to } => vec![Way::To { outcome: None, to }],
+            Act::Choose(choices) => {
+                choices.into_iter().map(|(outcome, to)| Way::To { outcome: Some(outcome), to }).collect()
+            }
+            Act::Navigate(screen) => {
+                let drawn = drawn.contains(&screen);
+                vec![Way::Navigate { screen, drawn }]
+            }
+            Act::Back => vec![Way::Back],
+            Act::Nothing => Vec::new(),
+        }
+    }
+}
+
+impl Way {
+    /// Where it leads, as the gallery marks the node in purple.
+    pub fn leads(&self) -> Leads {
+        match self {
+            Way::To { .. } => Leads::State,
+            Way::Navigate { .. } | Way::Back => Leads::Screen,
         }
     }
 }
@@ -149,12 +184,37 @@ mod tests {
     }
 
     #[test]
+    fn each_way_acting_goes_is_offered() {
+        let declared = BTreeSet::from(["Export".to_string()]);
+        let choose = Act::Choose(vec![("ok".into(), "list".into()), ("shipped".into(), "dialog".into())]);
+        assert_eq!(
+            choose.ways(&declared),
+            [
+                Way::To { outcome: Some("ok".into()), to: "list".into() },
+                Way::To { outcome: Some("shipped".into()), to: "dialog".into() }
+            ],
+            "one for each outcome"
+        );
+        let go = Act::Go { to: "dialog".into() };
+        assert_eq!(go.ways(&declared), [Way::To { outcome: None, to: "dialog".into() }]);
+        assert_eq!(
+            Act::Navigate("Export".into()).ways(&declared),
+            [Way::Navigate { screen: "Export".into(), drawn: true }]
+        );
+        assert_eq!(
+            Act::Navigate("Detail".into()).ways(&declared),
+            [Way::Navigate { screen: "Detail".into(), drawn: false }],
+            "a screen not drawn yet"
+        );
+        assert_eq!(Act::Back.ways(&declared), [Way::Back]);
+        assert!(Act::Nothing.ways(&declared).is_empty(), "nowhere");
+    }
+
+    #[test]
     fn a_transition_leads_to_a_state_and_a_navigate_or_back_to_a_screen() {
-        assert_eq!(Act::Go { to: "dialog".into() }.leads(), Some(Leads::State));
-        assert_eq!(Act::Choose(vec![("ok".into(), "list".into())]).leads(), Some(Leads::State));
-        assert_eq!(Act::Navigate("OrderDetail".into()).leads(), Some(Leads::Screen));
-        assert_eq!(Act::Back.leads(), Some(Leads::Screen));
-        assert_eq!(Act::Nothing.leads(), None);
+        assert_eq!(Way::To { outcome: None, to: "dialog".into() }.leads(), Leads::State);
+        assert_eq!(Way::Navigate { screen: "Detail".into(), drawn: false }.leads(), Leads::Screen);
+        assert_eq!(Way::Back.leads(), Leads::Screen);
         assert_eq!((Leads::Screen.badge(), Leads::State.badge()), ("↗", "→"));
     }
 

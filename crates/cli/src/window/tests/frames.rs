@@ -145,8 +145,9 @@ fn tree_shown(gallery: &mut Gallery) -> Vec<String> {
 fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
     let mut out = Vec::new();
     match &gallery.picture {
-        Picture::Pages(Pages { pages, .. }) => {
-            for page in pages {
+        Picture::Pages(shown @ Pages { pages, .. }) => {
+            let leading = shown.leading(&gallery.desk());
+            for (index, page) in pages.iter().enumerate() {
                 out.push(format!("page {}", page.caption));
                 if let Some((id, _)) = gallery.node()
                     && let Some(node) = page.nodes.iter().find(|node| node.id == id)
@@ -155,11 +156,10 @@ fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
                     out.push(format!("  picked {id}: {}, {} · {} × {}", r.x, r.y, r.width, r.height));
                 }
                 for leads in [Leads::Screen, Leads::State] {
-                    let ids: Vec<&str> = page
-                        .nodes
+                    let ids: Vec<&str> = leading
                         .iter()
-                        .filter(|node| page.leads.get(&node.id) == Some(&leads))
-                        .map(|node| node.id.as_str())
+                        .filter(|l| l.page == index && l.leads == leads)
+                        .map(|l| l.id.as_str())
                         .collect();
                     if !ids.is_empty() {
                         out.push(format!("  {} {}", leads.badge(), ids.join(", ")));
@@ -405,7 +405,7 @@ fn a_prototype_act_and_its_outcomes() {
         act_on(gallery, "cd-confirm");
     });
     fits(&mut gallery);
-    assert!(panel_has(&gallery, "ok → default") && panel_has(&gallery, "shipped → cancel-ready"));
+    assert!(panel_has(&gallery, "→ default · ok") && panel_has(&gallery, "→ cancel-ready · shipped"));
 }
 
 #[test]
@@ -689,4 +689,15 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
     });
     assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_node_picked_offers_where_acting_on_it_goes_in_buttons_floating_beside_it() {
+    let mut gallery = drawn("offers", drafts(), WINDOW, |gallery| {
+        show(gallery, "orders", "cancel-ready");
+        gallery.press_at(on_node(gallery, 0, "cd-confirm"));
+    });
+    fits(&mut gallery);
+    assert_eq!(picked_node(&gallery), Some("cd-confirm"));
+    assert_eq!(gallery.seen().offers.len(), 2, "one for each outcome");
 }

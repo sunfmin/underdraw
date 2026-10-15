@@ -1,18 +1,17 @@
 picture
   page cancel-ready · 390
     picked cd-confirm: 155.5, 435 · 112 × 48
-    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
     → cd-keep, cd-confirm
   page cancel-ready · 1120
     picked cd-confirm: 452, 392 · 112 × 48
-    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
     → cd-keep, cd-confirm
 sidebar
   cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered
-    ok → default
-    shipped → cancel-ready
   Button
     calls  cancelOrder
+    → default · ok
+    → cancel-ready · shipped
+    Holding ⌘ (Ctrl) and clicking the node does the same.
     ▸ details
   note · nothing said yet
     Say below what should change: Enter sends, Shift+Enter breaks the line.

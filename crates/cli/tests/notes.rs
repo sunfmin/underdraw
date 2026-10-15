@@ -80,7 +80,7 @@ fn notes_lists_the_waiting_ones_under_a_root_and_answer_adds_the_agents_message_
 
     let (refused, code) = underdraw(&["notes", root.to_str().unwrap(), "--answer", "N2", "--reply", "x"]);
     assert_eq!(code, 2);
-    assert!(refused["error"].as_str().unwrap().contains("the directory of the description"), "{refused}");
+    assert!(refused["error"].as_str().unwrap().contains("the directory the note is in"), "{refused}");
     let (refused, code) = underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N9", "--reply", "x"]);
     assert_eq!(code, 2);
     assert!(refused["error"].as_str().unwrap().contains("no note N9"), "{refused}");
@@ -208,6 +208,63 @@ fn a_note_on_the_whole_screen_is_listed_answered_and_counted() {
     assert_eq!(answered["note"]["whole"], "screen");
     let (counted, _) = underdraw(&["check", dir.to_str().unwrap()]);
     assert_eq!(counted["notes"], json!({ "waiting": 2, "answered": 1 }));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_note_on_a_directory_is_listed_answered_and_counted() {
+    let root = root("screens");
+    let shop = root.join("shop");
+    std::fs::create_dir_all(&shop).unwrap();
+    std::fs::rename(root.join("orders"), shop.join("orders")).unwrap();
+    let screens = |id: &str, says: &str| json!({ "notes": [{ "id": id, "whole": "screens", "messages": [{ "by": "person", "says": says }] }] });
+    std::fs::write(shop.join("notes.json"), screens("N1", "these repeat a header").to_string()).unwrap();
+    std::fs::write(root.join("notes.json"), screens("N1", "the app needs a tab bar").to_string()).unwrap();
+
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!((code, &answer["waiting"]), (0, &json!(4)), "{answer}");
+    let listed: Vec<(&Value, &Value, &Value)> = answer["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|note| (&note["description"], &note["id"], &note["whole"]))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (&json!("."), &json!("N1"), &json!("screens")),
+            (&json!("shop"), &json!("N1"), &json!("screens")),
+            (&json!("shop/orders"), &json!("N1"), &Value::Null),
+            (&json!("shop/orders"), &json!("N2"), &Value::Null),
+        ],
+        "the root's, then in the tree's order"
+    );
+    assert_eq!(answer["notes"][1]["reference"], format!("{} · these screens", shop.display()));
+    let (counted, _) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(counted["notes"], json!({ "waiting": 4, "answered": 0 }), "{counted}");
+    assert_eq!(
+        counted["directories"],
+        json!([
+            { "directory": ".", "notes": { "waiting": 1, "answered": 0 } },
+            { "directory": "shop", "notes": { "waiting": 1, "answered": 0 } },
+        ])
+    );
+
+    let (answered, code) =
+        underdraw(&["notes", shop.to_str().unwrap(), "--answer", "N1", "--reply", "one header now"]);
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("unread")), "{answered}");
+    assert_eq!(answered["note"]["whole"], "screens");
+    let (answered, code) =
+        underdraw(&["notes", root.to_str().unwrap(), "--answer", "N1", "--reply", "added one"]);
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("unread")), "the root's: {answered}");
+    let (counted, _) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(counted["notes"], json!({ "waiting": 2, "answered": 2 }));
+
+    let empty = root.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let (refused, code) = underdraw(&["notes", empty.to_str().unwrap(), "--answer", "N1", "--reply", "x"]);
+    assert_eq!(code, 2, "{refused}");
+    assert!(refused["error"].as_str().unwrap().contains("keeps no notes.json"), "{refused}");
     std::fs::remove_dir_all(root).unwrap();
 }
 

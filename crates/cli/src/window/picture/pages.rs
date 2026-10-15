@@ -8,15 +8,15 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use underdraw_layout::{Draw, Ink, Placed, Rect};
+use underdraw_layout::{Align, Draw, Ink, Measure, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area, Stroke, Vec2};
-use vello::peniko::{Color, Fill};
+use vello::peniko::Fill;
 
-use super::{Desk, Pin, Seen, Shows, Target};
-use crate::act::Leads;
+use super::{Desk, Offer, Pin, Seen, Shows, Target};
+use crate::act::{Leads, Way};
 use crate::area::{over, rect};
-use crate::chrome::{self, BADGE, CAPTION, DOT, MARGIN, PIN};
+use crate::chrome::{self, BADGE, CAPTION, DOT, MARGIN, OFFER_GAP, OFFER_PAD, OFFER_TALL, PIN};
 use crate::draw::{Handlers, Origin, Shown as State};
 use crate::notes::Note;
 use crate::paint;
@@ -30,6 +30,9 @@ pub(crate) struct Pages {
     /// The state drawn; none where the description has none.
     pub state: Option<State>,
     pub pages: Vec<Page>,
+    /// Where acting on each node goes from the state drawn, by id: a node
+    /// that goes nowhere is not in it.
+    pub ways: BTreeMap<String, Vec<Way>>,
 }
 
 /// A node that acting on goes somewhere, as a page shows it, in window
@@ -63,9 +66,6 @@ pub(crate) struct Page {
     pub handlers: BTreeMap<String, Handlers>,
     /// Where each node is written in the description, by id.
     pub origins: BTreeMap<String, Origin>,
-    /// Where acting on each node that goes somewhere leads, from the state
-    /// shown, by id: every instance of a repeat apart.
-    pub leads: BTreeMap<String, Leads>,
 }
 
 impl Page {
@@ -154,22 +154,23 @@ impl Pages {
     }
 
     /// Each node, on each page, that acting on goes somewhere, in the
-    /// order drawn. Its badge sits over its top-right corner, moved right
-    /// past its label and its "?" where it would cover either.
+    /// order drawn; not one a person cannot see, cut away or covered by an
+    /// overlay, which layout leaves unlabelled as it does every node no one
+    /// can act on there. Its badge sits over its top-right corner,
+    /// moved right past its label and its "?" where it would cover either.
     pub fn leading(&self, pane: &Desk) -> Vec<Leading> {
         let zoom = self.zoom(pane.width);
         let mut leading = Vec::new();
         for (index, (page, at)) in self.pages.iter().zip(self.origins(pane)).enumerate() {
             for node in &page.nodes {
-                let Some(&leads) = page.leads.get(&node.id) else { continue };
+                let leads = self.ways.get(&node.id).and_then(|ways| Some(ways.first()?.leads()));
+                let (Some(leads), Some(label)) = (leads, node.label) else {
+                    continue;
+                };
                 let (x, y, w, h) = Self::spot(node.rect, at, zoom);
-                let label = node.label.and_then(|label| {
-                    page.tags.iter().find_map(|tag| match tag {
-                        Draw::Tag { rect, text, ink: Ink::Label } if *text == label.to_string() => {
-                            Some(*rect)
-                        }
-                        _ => None,
-                    })
+                let label = page.tags.iter().find_map(|tag| match tag {
+                    Draw::Tag { rect, text, ink: Ink::Label } if *text == label.to_string() => Some(*rect),
+                    _ => None,
                 });
                 let mut covered: Vec<Area> =
                     label.into_iter().chain(node.guess_tag).map(|r| Self::tag_spot(r, at, zoom)).collect();
@@ -196,6 +197,56 @@ impl Pages {
         let (x, y) = (left + middle.0 * zoom, top + middle.1 * zoom);
         let (w, h) = (f64::from(r.width), f64::from(r.height));
         Area::new(x - w / 2.0, y - h / 2.0, x + w / 2.0, y + h / 2.0)
+    }
+
+    /// Where the buttons floating beside node `id` are, each as wide as
+    /// `wide` says, in window points: in rows under the node on page
+    /// `pointed`, or on the first page that shows it, from the node's left
+    /// edge, a row going on under it where the next would pass the page's
+    /// right edge, and each row kept inside that edge; over the node where
+    /// the page has no room under it. At their own size at any scale, as
+    /// the labels are. None where no page shows the node.
+    pub fn offered(&self, id: &str, pointed: usize, wide: &[f64], pane: &Desk) -> Vec<Area> {
+        let (zoom, origins) = (self.zoom(pane.width), self.origins(pane));
+        let has = |index: &usize| self.pages.get(*index).is_some_and(|page| page.has(id));
+        let Some(index) = Some(pointed).filter(has).or_else(|| (0..self.pages.len()).find(has)) else {
+            return Vec::new();
+        };
+        let (page, at) = (&self.pages[index], origins[index]);
+        let Some(node) = page.nodes.iter().find(|n| n.id == id) else {
+            return Vec::new();
+        };
+        let (x, y, _, h) = Self::spot(node.rect, at, zoom);
+        let right = at.0 + page.width * zoom;
+        // Each row's buttons, by their place in `wide`.
+        let mut rows: Vec<Vec<usize>> = Vec::new();
+        let mut end = f64::INFINITY;
+        for (index, w) in wide.iter().enumerate() {
+            match rows.last_mut() {
+                Some(row) if end + OFFER_GAP + w <= right => {
+                    row.push(index);
+                    end += OFFER_GAP + w;
+                }
+                _ => {
+                    rows.push(vec![index]);
+                    end = x + w;
+                }
+            }
+        }
+        let tall = rows.len() as f64 * (OFFER_TALL + OFFER_GAP) - OFFER_GAP;
+        let under = y + h + OFFER_GAP;
+        let top = if under + tall <= at.1 + page.height * zoom { under } else { y - OFFER_GAP - tall };
+        let mut offered = Vec::new();
+        for (number, row) in rows.iter().enumerate() {
+            let long = row.iter().map(|&index| wide[index]).sum::<f64>() + OFFER_GAP * (row.len() - 1) as f64;
+            let mut left = x.min(right - long).max(at.0);
+            let top = top + number as f64 * (OFFER_TALL + OFFER_GAP);
+            for &index in row {
+                offered.push(Area::new(left, top, left + wide[index], top + OFFER_TALL));
+                left += wide[index] + OFFER_GAP;
+            }
+        }
+        offered
     }
 
     /// `r`, in the page at `at` drawn at `zoom`, in window points: its
@@ -297,9 +348,13 @@ impl Shows for Pages {
                 });
             }
         }
-        if let Some(Target::Node { id, .. }) = &seen.picked {
+        if let Some(Target::Node { id, pointed }) = &seen.picked {
             for node in self.picked(id, pane) {
                 picked(scene, node, chrome::PICKED_RADIUS / 2.0);
+            }
+            let wide = offer_widths(&seen.offers, typesetter);
+            for (offer, area) in seen.offers.iter().zip(self.offered(id, *pointed, &wide, pane)) {
+                over.extend(offer_draws(offer, area));
             }
         }
         over
@@ -380,18 +435,48 @@ fn lead(scene: &mut Scene, leading: &Leading, lit: bool, typesetter: &mut Typese
     let badge = Draw::Tag {
         rect: rect(b.x0, b.y0, b.width(), b.height()),
         text: leading.leads.badge().to_string(),
-        ink: Ink::Label,
+        ink: Ink::Interaction,
     };
-    paint::draws(scene, at, &[badge], interaction, typesetter);
+    paint::draws(scene, at, &[badge], chrome::colour, typesetter);
 }
 
-/// The interaction ink for a badge's ground, and the paper for its ring
-/// and its arrow.
-fn interaction(ink: Ink) -> Color {
-    match ink {
-        Ink::Paper => chrome::colour(Ink::Paper),
-        _ => chrome::INTERACTION,
-    }
+/// How wide each of `offers` is drawn: its text, set in the buttons' type,
+/// and the space either side of it.
+pub(crate) fn offer_widths(offers: &[Offer], typesetter: &mut Typesetter) -> Vec<f64> {
+    offers
+        .iter()
+        .map(|offer| f64::from(typesetter.text(&offer.says, chrome::BUTTON, None).width) + 2.0 * OFFER_PAD)
+        .collect()
+}
+
+/// `offer` drawn at `area`: filled with the interaction ink where it goes
+/// there, its text on it in the paper's; grayed where it only says where it
+/// would.
+fn offer_draws(offer: &Offer, area: Area) -> [Draw; 2] {
+    let (fill, stroke, ink) = match offer.live {
+        true => (Ink::Interaction, None, Ink::Paper),
+        false => (Ink::Paper, Some(Ink::Line), Ink::Muted),
+    };
+    let tall = f64::from(chrome::BUTTON.line_height);
+    [
+        Draw::Box {
+            rect: rect(area.x0, area.y0, area.width(), area.height()),
+            radius: chrome::BUTTON_RADIUS,
+            fill: Some(fill),
+            stroke,
+            dashed: false,
+        },
+        Draw::Text {
+            rect: rect(area.x0, area.y0 + (area.height() - tall) / 2.0, area.width(), tall),
+            text: offer.says.clone(),
+            font: chrome::BUTTON,
+            ink,
+            max_lines: Some(1),
+            align: Align::Center,
+            underline: false,
+            strike: false,
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -430,10 +515,11 @@ mod tests {
             calls: BTreeMap::new(),
             handlers: BTreeMap::new(),
             origins,
-            leads: BTreeMap::from([("buy".to_string(), Leads::State)]),
         };
         let state = Some(State::Fixture("default".to_string()));
-        Pages { dir: PathBuf::from("shop"), state, pages: vec![page] }
+        let ways =
+            BTreeMap::from([("buy".to_string(), vec![Way::To { outcome: None, to: "paid".to_string() }])]);
+        Pages { dir: PathBuf::from("shop"), state, pages: vec![page], ways }
     }
 
     #[test]
@@ -486,6 +572,14 @@ mod tests {
     fn a_node_that_goes_somewhere_is_badged_at_its_top_right_clear_of_its_label_and_its_guess() {
         let mut pages = pages();
         let (left, top) = (PANE.left + MARGIN, MARGIN + CAPTION);
+        assert!(pages.leading(&PANE).is_empty(), "unlabelled, covered by an overlay: not marked");
+        let page = &mut pages.pages[0];
+        page.nodes[1].label = Some(1);
+        page.tags.push(Draw::Tag {
+            rect: Rect { x: 14.0, y: 14.0, width: 18.0, height: 18.0 },
+            text: "1".to_string(),
+            ink: Ink::Label,
+        });
         let leading = pages.leading(&PANE);
         assert_eq!(leading.len(), 1, "only the button goes somewhere");
         let buy = &leading[0];
@@ -507,12 +601,6 @@ mod tests {
         let page = &mut pages.pages[0];
         page.nodes[1].guess_tag = None;
         page.nodes[1].rect.width = 10.0;
-        page.nodes[1].label = Some(1);
-        page.tags.push(Draw::Tag {
-            rect: Rect { x: 14.0, y: 14.0, width: 18.0, height: 18.0 },
-            text: "1".to_string(),
-            ink: Ink::Label,
-        });
         let badge = pages.leading(&PANE)[0].badge;
         assert_eq!(badge.x0, left + 32.0 + 2.0, "right of the label");
     }

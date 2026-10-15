@@ -37,7 +37,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
-use crate::act::{self, Act};
+use crate::act::{self, Way};
 use crate::area::{over, rect};
 use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW, TOOLBAR};
 use crate::draw::{self, Shown as State, Wanted};
@@ -47,14 +47,15 @@ use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Mark, Note, Proposal, Stands};
-use crate::reference::{self, On, Reference};
+use crate::reference::{self, On, Reference, Whole};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card, Foot, Sidebar};
 use crate::{chrome, gpu, links, paint, text};
 use history::History;
 use panes::{Content, Pane, Panes, Scrolls, Took};
 use picture::{
-    Arrow, Desk, Faults, Flow, Overview, Page, Pages, Pass, Picture, Pin, Seen, Target, Thumb, Tile,
+    Arrow, Desk, Faults, Flow, Offer, Overview, Page, Pages, Pass, Picture, Pin, Seen, Target, Thumb, Tile,
+    offer_widths,
 };
 use toolbar::Tool;
 
@@ -271,8 +272,8 @@ struct Gallery {
     acted: Option<Acted>,
     /// Sets the tree's and the captions' text.
     typesetter: text::Typesetter,
-    /// Every description's notes, by its directory, as notes.json now
-    /// holds them.
+    /// Every description's notes, and every directory's on the screens
+    /// under it, by its directory, as notes.json now holds them.
     notes: BTreeMap<PathBuf, Vec<Note>>,
     /// The sidebar: the box at its foot, where the person writes to the
     /// conversation on what is picked, and its cards as last laid out.
@@ -348,9 +349,9 @@ struct Confirming {
 /// What a click on a button of the sidebar does.
 #[derive(Clone, Debug, PartialEq)]
 enum Do {
-    /// Chooses the outcome the last act's operation answered with: the
-    /// state it goes to shown.
-    Choose { outcome: String, to: String },
+    /// Goes where acting on the node picked goes this way, as a ⌘-click on
+    /// it does: one outcome its operation answers with, chosen.
+    Go(Way),
     /// Says in the note on the node acted on where acting on it should go:
     /// a message marked as that proposal.
     Propose(Proposal),
@@ -382,14 +383,14 @@ enum Visit {
     Note(PathBuf, String),
 }
 
-/// Every description's notes on the lines of the tree, by its directory,
-/// each on what is gone joined its state's note first; one whose
-/// notes.json cannot be read has none (`check` says why).
+/// The notes of every description and directory on the lines of the
+/// tree, by its directory, each on what is gone joined its state's note
+/// first; one whose notes.json cannot be read has none (`check` says why).
 fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
     lines
         .iter()
-        .filter(|line| line.state.is_none())
-        .filter_map(|line| line.row.description())
+        .filter(|line| line.state.is_none() && !line.journey)
+        .map(|line| line.row.dir.as_path())
         .map(|dir| {
             let _ = notes::settle(dir);
             (dir.to_path_buf(), notes::read(dir).unwrap_or_default())
@@ -888,11 +889,18 @@ impl Gallery {
             };
         }
         if pane == Pane::Pictures {
+            // As they are drawn: the pins over the buttons floating beside
+            // the node picked, and both over the nodes.
+            if !self.acting
+                && let Some((dir, id)) = self.pin_at(self.cursor)
+            {
+                return self.visit(Visit::Note(dir, id));
+            }
+            if let Some(way) = self.offer_at(self.cursor) {
+                return self.click(Do::Go(way));
+            }
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
-            }
-            if let Some((dir, id)) = self.pin_at(self.cursor) {
-                return self.visit(Visit::Note(dir, id));
             }
             return match self.target_at(self.cursor) {
                 Some(Target::Node { id, pointed }) => self.pick_thing(Picked::Node { id, pointed }),
@@ -1068,42 +1076,109 @@ impl Gallery {
             self.pick_thing(Picked::Nothing);
             return true;
         };
-        let page = &pages.pages[pointed];
-        let handlers = page.handlers.get(&id).cloned().unwrap_or_default();
-        let calls = page.calls.get(&id).cloned().unwrap_or_default();
+        let calls = pages.pages[pointed].calls.get(&id).cloned().unwrap_or_default();
         self.pick_thing(Picked::Node { id, pointed });
-        let Some(here) = self.wanted.clone() else {
+        let (Some(here), Some(on)) = (self.wanted.clone(), self.acted_on()) else {
             return true;
         };
         let state = here.state.clone().unwrap_or_default();
-        let on = format!("{}.{}", handlers.written, act::event(&handlers.events));
+        match self.ways().to_vec().as_slice() {
+            [] => {
+                self.flash();
+                let says = say!(self.lang, no_transition, state, on);
+                let choices = self.proposals(&here.dir, &on);
+                self.acted = Some(Acted { says, choices });
+            }
+            [way] => self.follow(&on, way.clone()),
+            // One for each outcome, offered on the node's card under it.
+            _ => {
+                let calls = calls.join(", ");
+                self.say(say!(self.lang, acted_calls, on, state, calls));
+            }
+        }
+        true
+    }
+
+    /// The node picked as acting on it names it: its id as written and the
+    /// event a click raises on it. None while no node is picked.
+    fn acted_on(&self) -> Option<String> {
+        let ((id, pointed), Picture::Pages(pages)) = (self.node()?, &self.picture) else {
+            return None;
+        };
+        let handled = |page: &&Page| page.handlers.contains_key(id);
+        let page = pages.pages.get(pointed).filter(handled).or_else(|| pages.pages.iter().find(handled));
+        let handlers = page.and_then(|page| page.handlers.get(id)).cloned().unwrap_or_default();
+        Some(format!("{}.{}", handlers.written, act::event(&handlers.events)))
+    }
+
+    /// Where acting on the node picked goes from the state shown, in the
+    /// order written: none while no node is picked, or it goes nowhere.
+    fn ways(&self) -> &[Way] {
+        match (self.node(), &self.picture) {
+            (Some((id, _)), Picture::Pages(pages)) => pages.ways.get(id).map_or(&[], Vec::as_slice),
+            _ => &[],
+        }
+    }
+
+    /// `way` as it is offered beside the node picked and on its card: where
+    /// it goes, in --lang, grayed for a screen not drawn yet.
+    fn offer(&self, way: &Way) -> Offer {
         let lang = self.lang;
-        let screen = crate::read(&here.dir).ok().map(|(screen, _)| screen);
-        let transitions = screen.as_ref().map_or(&[][..], |screen| screen.transitions.as_slice());
-        match act::act(transitions, &state, &handlers.written, &handlers.events) {
-            Act::Go { to } => {
+        let (says, live) = match way {
+            Way::To { outcome: None, to } => (say!(lang, way_state, to), true),
+            Way::To { outcome: Some(outcome), to } => (say!(lang, way_outcome, to, outcome), true),
+            Way::Navigate { screen, drawn: true } => (say!(lang, way_navigate, screen), true),
+            Way::Navigate { screen, drawn: false } => (say!(lang, way_undrawn, screen), false),
+            Way::Back => (say!(lang, way_back), true),
+        };
+        Offer { says, live }
+    }
+
+    /// The button floating beside the node picked under `at`, a point in
+    /// the window: where it goes. A grayed one only says where it would,
+    /// and a press goes through it to what is under it.
+    fn offer_at(&mut self, at: (f64, f64)) -> Option<Way> {
+        let (id, pointed) = self.node().map(|(id, pointed)| (id.to_string(), pointed))?;
+        let ways = self.ways().to_vec();
+        let offers: Vec<Offer> = ways.iter().map(|way| self.offer(way)).collect();
+        let wide = offer_widths(&offers, &mut self.typesetter);
+        let Picture::Pages(pages) = &self.picture else {
+            return None;
+        };
+        let offered = pages.offered(&id, pointed, &wide, &self.desk());
+        let at = vello::kurbo::Point::new(at.0, at.1);
+        let live = |index: &usize| offers[*index].live && offered[*index].contains(at);
+        (0..offered.len()).find(live).map(|index| ways[index].clone())
+    }
+
+    /// Goes where `way` says acting on the node picked, `on` (its id as
+    /// written and event), goes from the state shown: to a state of the
+    /// screen; to the first state of the screen a navigate names, or, for
+    /// one not drawn yet, says so; or back along the path taken. The panel
+    /// says what came of it.
+    fn follow(&mut self, on: &str, way: Way) {
+        let Some(here) = self.wanted.clone() else {
+            return;
+        };
+        let state = here.state.clone().unwrap_or_default();
+        let lang = self.lang;
+        match way {
+            Way::To { outcome: None, to } => {
                 let says = say!(lang, acted_to_state, on, state, to);
                 self.go(Named { dir: here.dir, state: Some(to) }, says);
             }
-            Act::Choose(choices) => {
-                let calls = calls.join(", ");
-                let says = say!(lang, acted_calls, on, state, calls);
-                let choices = choices
-                    .into_iter()
-                    .map(|(outcome, to)| (format!("{outcome} → {to}"), Do::Choose { outcome, to }))
-                    .collect();
-                self.acted = Some(Acted { says, choices });
+            Way::To { outcome: Some(outcome), to } => {
+                let says = say!(lang, acted_outcome, outcome, state, to);
+                self.go(Named { dir: here.dir, state: Some(to) }, says);
             }
-            Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
+            Way::Navigate { screen, .. } => match links::declared(&self.root).remove(&screen) {
                 Some(description) => {
                     let says = say!(lang, acted_navigates, on, screen);
                     self.go(Named { dir: description, state: None }, says);
                 }
-                None => {
-                    self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], self.lang)))
-                }
+                None => self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], lang))),
             },
-            Act::Back => match self.path.pop() {
+            Way::Back => match self.path.pop() {
                 Some(back) => {
                     let to = self.named(&back);
                     match self.line_named(&back) {
@@ -1116,14 +1191,7 @@ impl Gallery {
                 }
                 None => self.say(say!(lang, acted_goes_back_nowhere, on)),
             },
-            Act::Nothing => {
-                self.flash();
-                let says = say!(lang, no_transition, state, on);
-                let choices = self.proposals(&here.dir, &on);
-                self.acted = Some(Acted { says, choices });
-            }
         }
-        true
     }
 
     /// Every node that acting on goes somewhere lit up for a moment, to show
@@ -1150,7 +1218,7 @@ impl Gallery {
         }
         matches!(
             self.picture.shows().target_at(at, &self.desk()),
-            Some(Target::Node { id, pointed }) if pages.pages[pointed].leads.contains_key(&id)
+            Some(Target::Node { id, .. }) if pages.ways.contains_key(&id)
         )
     }
 
@@ -1179,7 +1247,11 @@ impl Gallery {
     /// to do.
     fn click(&mut self, does: Do) -> bool {
         match does {
-            Do::Choose { outcome, to } => self.choose(outcome, to),
+            Do::Go(way) => {
+                let on = self.acted_on().unwrap_or_default();
+                self.follow(&on, way);
+                true
+            }
             Do::Propose(proposal) => {
                 self.propose(proposal);
                 true
@@ -1208,18 +1280,6 @@ impl Gallery {
                 true
             }
         }
-    }
-
-    /// The outcome the last act's operation answered with chosen: the
-    /// state `to` it goes to shown. Whether a state was shown to go from.
-    fn choose(&mut self, outcome: String, to: String) -> bool {
-        let Some(here) = self.wanted.clone() else {
-            return false;
-        };
-        let state = here.state.clone().unwrap_or_default();
-        let says = say!(self.lang, acted_outcome, outcome, state, to);
-        self.go(Named { dir: here.dir, state: Some(to.clone()) }, says);
-        true
     }
 
     /// `proposal` said in the note on the node acted on, at the instance
@@ -1323,14 +1383,12 @@ impl Gallery {
         drawn: &std::collections::BTreeSet<String>,
     ) -> Picture {
         let lang = self.lang;
-        // None where the description has findings: then nothing is laid out.
-        let transitions = self.description(dir).and_then(|d| d.transitions()).unwrap_or_default();
         let laid: Vec<anyhow::Result<Page>> = match self.description(dir) {
             // Each width laid out on a thread of its own, at once.
             Ok(description) => std::thread::scope(|scope| {
                 let laying: Vec<_> = WIDTHS
                     .map(|width| {
-                        let (description, transitions) = (&description, &transitions);
+                        let description = &description;
                         scope.spawn(move || {
                             let wanted = match state {
                                 Some(state) => state.wanted(width, 1),
@@ -1345,18 +1403,7 @@ impl Gallery {
                                 .partition(|draw| matches!(draw, Draw::Tag { .. }));
                             laid.page.draws = draws;
                             let drawing = laid.draw(1, u32::MAX);
-                            let state = drawing.shown.name();
-                            let leads = drawing
-                                .handlers
-                                .iter()
-                                .filter_map(|(id, handlers)| {
-                                    let act =
-                                        act::act(transitions, state, &handlers.written, &handlers.events);
-                                    Some((id.clone(), act.leads()?))
-                                })
-                                .collect();
                             Ok(Page {
-                                leads,
                                 tags,
                                 caption: format!("{} · {width}", drawing.shown.name()),
                                 width: f64::from(drawing.page.width),
@@ -1376,9 +1423,39 @@ impl Gallery {
             Err(e) => vec![Err(e)],
         };
         match laid.into_iter().collect::<anyhow::Result<Vec<Page>>>() {
-            Ok(pages) => Picture::Pages(Pages { dir: dir.to_path_buf(), state: state.cloned(), pages }),
+            Ok(pages) => {
+                let ways = self.ways_of(dir, state, &pages, drawn);
+                Picture::Pages(Pages { dir: dir.to_path_buf(), state: state.cloned(), pages, ways })
+            }
             Err(e) => self.faulty(vec![Finding { at: crate::SCREEN.to_string(), problem: format!("{e:#}") }]),
         }
+    }
+
+    /// Where acting on each node of `pages` goes from `state` of the
+    /// description in `dir`, given the screens `drawn` under the root: by
+    /// id, a node that goes nowhere left out.
+    fn ways_of(
+        &self,
+        dir: &Path,
+        state: Option<&State>,
+        pages: &[Page],
+        drawn: &std::collections::BTreeSet<String>,
+    ) -> BTreeMap<String, Vec<Way>> {
+        let Some(state) = state else {
+            return BTreeMap::new();
+        };
+        let transitions = self.description(dir).and_then(|d| d.transitions()).unwrap_or_default();
+        let mut ways = BTreeMap::new();
+        for (id, handlers) in pages.iter().flat_map(|page| &page.handlers) {
+            if ways.contains_key(id) {
+                continue;
+            }
+            let goes = act::act(&transitions, state.name(), &handlers.written, &handlers.events).ways(drawn);
+            if !goes.is_empty() {
+                ways.insert(id.clone(), goes);
+            }
+        }
+        ways
     }
 
     /// The journey on line `index` played from its step `at` (its last, past
@@ -1590,6 +1667,14 @@ impl Gallery {
         self.lines.iter().position(|line| line.state.is_none() && line.row.description() == Some(dir))
     }
 
+    /// The line of the directory `dir`, holding no description, picked to
+    /// show its flow.
+    fn directory_line(&self, dir: &Path) -> Option<usize> {
+        self.lines.iter().position(|line| {
+            line.state.is_none() && !line.journey && line.row.description().is_none() && line.row.dir == dir
+        })
+    }
+
     /// The flow between the descriptions under `dir`, from the links `check
     /// <root>` reports, each box showing its description's first state.
     fn flow(&self, dir: &Path) -> Flow {
@@ -1611,7 +1696,7 @@ impl Gallery {
                 Screen::Undrawn(_) => Tile::Undrawn,
             })
             .collect();
-        Flow { map, tiles }
+        Flow { dir: dir.to_path_buf(), map, tiles }
     }
 
     /// The box of the description in `dir`: its first state at the phone's
@@ -1642,8 +1727,9 @@ impl Gallery {
     /// What ⌘C copies, and what the conversation in the sidebar is on: the
     /// node picked, as the description writes it, and the instance of it
     /// pointed at (in the picture it was picked in, or the first that has
-    /// it); or, with none picked, the state shown, or the whole screen whose
-    /// overview is shown; or the arrow picked in an overview or a flow.
+    /// it); or, with none picked, the state shown, the whole screen whose
+    /// overview is shown, or the screens under the directory whose flow is;
+    /// or the arrow picked in an overview or a flow.
     /// None where nothing is.
     fn reference(&self) -> Option<Reference> {
         let picked = match &self.picked {
@@ -1741,7 +1827,8 @@ impl Gallery {
             self.node_card()
                 .or_else(|| self.arrow_card())
                 .or_else(|| self.state_card())
-                .or_else(|| self.screen_card()),
+                .or_else(|| self.screen_card())
+                .or_else(|| self.screens_card()),
         );
         cards.extend(self.conversation_card());
         cards
@@ -1767,9 +1854,10 @@ impl Gallery {
         cards
     }
 
-    /// The descriptions whose inbox the sidebar shows: the one picked, or
-    /// whose state is, or each under the directory picked, in the order the
-    /// tree lists them. None while a node or an arrow is picked, or a
+    /// The descriptions and directories whose inbox the sidebar shows: the
+    /// description picked, or whose state is, or the directory picked and
+    /// each description and directory under it, in the order the tree
+    /// lists them. None while a node or an arrow is picked, or a
     /// journey played.
     fn inboxed(&self) -> Vec<PathBuf> {
         // The node picked is kept through an overview, for the next state:
@@ -1789,7 +1877,7 @@ impl Gallery {
         self.lines
             .iter()
             .filter(|line| line.state.is_none() && !line.journey)
-            .filter_map(|line| line.row.description())
+            .map(|line| line.row.dir.as_path())
             .filter(|dir| dir.starts_with(&line.row.dir))
             .map(Path::to_path_buf)
             .collect()
@@ -1928,7 +2016,8 @@ impl Gallery {
     /// state, its node picked; a note's state with its node picked, its
     /// description's overview with its transition picked, or with nothing
     /// picked for the whole screen, or the flow its navigate is drawn in
-    /// with that picked; and so its conversation in
+    /// with that picked, or a directory's flow, for the screens under it,
+    /// with nothing picked; and so its conversation in
     /// the sidebar. The state shown already is not drawn again. Whether
     /// there was anything to show.
     fn visit(&mut self, visit: Visit) -> bool {
@@ -1973,8 +2062,12 @@ impl Gallery {
                     );
                 }
             }
-            On::Screen { .. } => {
-                let Some(index) = self.description_line(&dir) else {
+            On::Whole { whole } => {
+                let line = match whole {
+                    Whole::Screen => self.description_line(&dir),
+                    Whole::Screens => self.directory_line(&dir),
+                };
+                let Some(index) = line else {
                     return false;
                 };
                 self.pick(index);
@@ -1988,14 +2081,7 @@ impl Gallery {
                     _ => dir
                         .ancestors()
                         .skip(1)
-                        .filter_map(|above| {
-                            self.lines.iter().position(|line| {
-                                line.state.is_none()
-                                    && !line.journey
-                                    && line.row.description().is_none()
-                                    && line.row.dir == above
-                            })
-                        })
+                        .filter_map(|above| self.directory_line(above))
                         .chain(self.description_line(&dir))
                         .collect(),
                 };
@@ -2473,6 +2559,20 @@ impl Gallery {
         Some(Card::new(say!(self.lang, whole_screen, screen), Vec::new()))
     }
 
+    /// The card of the directory picked, its flow shown with no arrow
+    /// picked: the directory's name, as the tree lists it, for the
+    /// conversation under it on the screens under it, as a group. None
+    /// where no flow is.
+    fn screens_card(&self) -> Option<Card<Do>> {
+        let Picture::Flow(flow) = &self.picture else {
+            return None;
+        };
+        let line = self.directory_line(&flow.dir).and_then(|index| self.lines.get(index));
+        let directory =
+            line.map_or_else(|| gallery::within(&self.root, &flow.dir), |line| line.row.name.clone());
+        Some(Card::new(say!(self.lang, these_screens, directory), Vec::new()))
+    }
+
     /// The card of the node picked: what it is (its component), the
     /// operation it calls, what was assumed there, and a button that folds
     /// out its details: its id, and its label and box at each width. None
@@ -2489,6 +2589,14 @@ impl Gallery {
             None => say!(lang, calls_nothing),
         };
         let mut blocks = vec![Block::Fact(say!(lang, calls), calls)];
+        let ways = self.ways();
+        for way in ways {
+            let Offer { says, live } = self.offer(way);
+            blocks.push(if live { Block::Button(says, Do::Go(way.clone())) } else { Block::Muted(says) });
+        }
+        if !ways.is_empty() {
+            blocks.push(Block::Muted(say!(lang, way_hint)));
+        }
         let (fold, details) = (if self.details { "▾" } else { "▸" }, lang.words().details);
         blocks.push(Block::Fold(format!("{fold} {details}"), Do::Details));
         if self.details {
@@ -2517,9 +2625,10 @@ impl Gallery {
     }
 
     /// How many notes wait on the agent on the tree's line of `row` and
-    /// `state`: on the whole description, or on that state of it.
+    /// `state`: on the whole description, or on that state of it; or on
+    /// the screens under a directory, as a group.
     fn waiting_notes(&self, row: &Row, state: Option<&State>) -> usize {
-        let Some(notes) = row.description().and_then(|dir| self.notes.get(dir)) else {
+        let Some(notes) = self.notes.get(&row.dir) else {
             return 0;
         };
         let waiting = notes.iter().filter(|note| note.waits());
@@ -2633,7 +2742,8 @@ impl Gallery {
             Picked::Arrow(arrow) => Some(Target::Arrow(*arrow)),
         };
         let lit = self.acting || self.flash_ends(Instant::now()).is_some();
-        Seen { picked, marked: self.written_marked().map(str::to_string), lit, lang: self.lang }
+        let offers = self.ways().iter().map(|way| self.offer(way)).collect();
+        Seen { picked, marked: self.written_marked().map(str::to_string), offers, lit, lang: self.lang }
     }
 
     /// The tree's lines, in window points, top to bottom: for each, the
@@ -3139,7 +3249,6 @@ mod tests {
     use crate::act::Leads;
     use crate::chrome::{CAPTION, MARGIN};
     use crate::chrome::{SIDEBAR, SIDEBAR_LEAST, TREE, TREE_LEAST};
-    use crate::reference::Whole;
 
     /// The drafts as git has them committed at `HEAD`, not as they stand in
     /// the working tree: a draft added, edited or noted on and not committed
@@ -3739,11 +3848,8 @@ mod tests {
         showing(&mut gallery, 0);
         assert_eq!(gallery.panes.pictures().x1, 1440.0 - SIDEBAR, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
-        assert_eq!(
-            shown.last().map(|card| card.title.as_str()),
-            Some("Nothing picked"),
-            "with nothing picked to talk about, a flow, it says what can be done, under the inbox"
-        );
+        assert!(shown[0].title.ends_with(" · these screens"), "a flow is talked about as a group");
+        assert!(shown.iter().all(|card| card.title != "Nothing picked"));
         showing(&mut gallery, listing);
         let shown = gallery.sidebar_cards();
         assert!(shown[0].title.ends_with(" · the whole screen"), "a description is talked about as a whole");
@@ -4154,23 +4260,17 @@ mod tests {
         let mut gallery = gallery();
         show(&mut gallery, "orders", "default");
         let Picture::Pages(pages) = &gallery.picture else { panic!("orders has faults") };
+        let leads = |id: &str| pages.ways.get(id).and_then(|ways| ways.first()).map(Way::leads);
         let phone = &pages.pages[0];
         let rows: Vec<&str> =
             phone.nodes.iter().map(|n| n.id.as_str()).filter(|id| id.ends_with("-cancel")).collect();
         assert!(rows.len() > 1, "{rows:?}");
         for row in &rows {
-            assert_eq!(
-                phone.leads.get(*row),
-                Some(&Leads::State),
-                "{row}: every row's button, by its transition"
-            );
+            assert_eq!(leads(row), Some(Leads::State), "{row}: every row's button, by its transition");
         }
-        assert_eq!(phone.leads.get("nav-export"), Some(&Leads::Screen), "a navigate");
-        assert_eq!(phone.leads.get("nav-back"), Some(&Leads::Screen), "back");
-        assert!(
-            phone.nodes.iter().any(|n| !phone.leads.contains_key(&n.id)),
-            "not every node goes somewhere"
-        );
+        assert_eq!(leads("nav-export"), Some(Leads::Screen), "a navigate");
+        assert_eq!(leads("nav-back"), Some(Leads::Screen), "back");
+        assert!(phone.nodes.iter().any(|n| leads(&n.id).is_none()), "not every node goes somewhere");
 
         let button = on_node(&gallery, 0, rows[0]);
         let moved = |gallery: &mut Gallery, at: (f64, f64)| {
@@ -4205,10 +4305,83 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · cancel-ready", "nothing is shown until an outcome is chosen");
         let panel = gallery.panel();
         assert_eq!(panel[0], "cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered");
-        assert_eq!(panel[1..3], ["ok → default", "shipped → cancel-ready"]);
-        assert!(click_panel_line(&mut gallery, "ok → default"), "the first outcome clicked");
+        assert_eq!(panel[3..5], ["→ default · ok", "→ cancel-ready · shipped"], "on the node's card");
+        assert!(click_panel_line(&mut gallery, "→ default · ok"), "the first outcome clicked");
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(gallery.panel()[0], "ok in cancel-ready → default");
+    }
+
+    /// The buttons floating beside the node picked: what each says, and
+    /// whether it goes there.
+    fn offers(gallery: &Gallery) -> Vec<(String, bool)> {
+        gallery.seen().offers.into_iter().map(|offer| (offer.says, offer.live)).collect()
+    }
+
+    /// Whether a line of the sidebar reads `line`.
+    fn reads(gallery: &Gallery, line: &str) -> bool {
+        gallery.panel().iter().any(|l| l.trim() == line)
+    }
+
+    /// The middle of the button floating beside the node picked that says
+    /// `says`.
+    fn on_offer(gallery: &mut Gallery, says: &str) -> (f64, f64) {
+        let (id, pointed) = gallery.node().map(|(id, pointed)| (id.to_string(), pointed)).unwrap();
+        let offers = gallery.seen().offers;
+        let wide = offer_widths(&offers, &mut gallery.typesetter);
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no pages") };
+        let offered = pages.offered(&id, pointed, &wide, &gallery.desk());
+        let index = offers.iter().position(|offer| offer.says == says).unwrap();
+        let area = offered[index];
+        (area.center().x, area.center().y)
+    }
+
+    #[test]
+    fn a_node_picked_offers_where_acting_on_it_goes_beside_it_and_on_its_card() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        gallery.press_at(on_node(&gallery, 0, "nav-export"));
+        assert_eq!(offers(&gallery), [("↗ Go to ExportDocuments".to_string(), true)]);
+        let hint = "Holding ⌘ (Ctrl) and clicking the node does the same.";
+        assert!(reads(&gallery, "↗ Go to ExportDocuments") && reads(&gallery, hint));
+        let at = on_offer(&mut gallery, "↗ Go to ExportDocuments");
+        assert!(gallery.press_at(at), "the button floating beside it clicked");
+        let export = line_of(&gallery, "export");
+        assert_eq!(gallery.line, Some(export + 1), "as a ⌘-click does: the screen's first state");
+        assert_eq!(gallery.panel()[0], "nav-export.tap navigates to ExportDocuments");
+
+        gallery.press_at(on_node(&gallery, 0, "nav-back"));
+        assert_eq!(offers(&gallery), [("← Back".to_string(), true)]);
+        assert!(click_panel_line(&mut gallery, "← Back"), "on the card, as beside it");
+        assert_eq!(shown(&gallery), "orders · default", "back where it came from");
+
+        gallery.press_at(on_node(&gallery, 0, "order-0"));
+        assert_eq!(
+            offers(&gallery),
+            [("↗ OrderDetail · not drawn yet".to_string(), false)],
+            "a screen not drawn yet, grayed"
+        );
+        assert!(reads(&gallery, "↗ OrderDetail · not drawn yet"), "said on the card");
+        assert!(
+            !gallery.placed().unwrap().buttons().iter().any(|(_, says, _)| says.contains("OrderDetail")),
+            "and not a button there"
+        );
+
+        show(&mut gallery, "orders", "cancel-ready");
+        gallery.press_at(on_node(&gallery, 0, "cd-confirm"));
+        assert_eq!(
+            offers(&gallery),
+            [("→ default · ok".to_string(), true), ("→ cancel-ready · shipped".to_string(), true)],
+            "one for each outcome"
+        );
+        let at = on_offer(&mut gallery, "→ default · ok");
+        assert!(gallery.press_at(at));
+        assert_eq!(shown(&gallery), "orders · default");
+        assert_eq!(gallery.panel()[0], "ok in cancel-ready → default");
+
+        show(&mut gallery, "orders", "cancel-unpaid");
+        gallery.press_at(on_node(&gallery, 0, "cd-keep"));
+        assert!(offers(&gallery).is_empty(), "a node that goes nowhere offers nothing");
+        assert!(!reads(&gallery, hint));
     }
 
     #[test]
@@ -5270,7 +5443,7 @@ mod tests {
         type_text(&mut gallery, "this screen tries to do too much");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Screen { whole: Whole::Screen }));
+        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Whole { whole: Whole::Screen }));
         let file: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join(notes::NOTES)).unwrap()).unwrap();
         assert_eq!(file["notes"][0]["whole"], "screen", "kept in its notes.json");
@@ -5346,7 +5519,8 @@ mod tests {
         let root = root_of("notes-navigate", &[("orders", "app/orders")]);
         let mut gallery = opened(&root, (1440.0, 900.0));
         showing(&mut gallery, 0);
-        assert!(gallery.foot().is_none(), "nothing picked in a flow: nothing to talk about");
+        let screens = Reference { description: root.clone(), on: On::Whole { whole: Whole::Screens } };
+        assert_eq!(gallery.reference(), Some(screens), "nothing picked in a flow: the screens under it");
         let dir = root.join("app/orders");
         let link = flow_shown(&gallery).map.arrows[0].link.clone();
 
@@ -5377,6 +5551,68 @@ mod tests {
         assert!(!gallery.press() || gallery.arrow() == Some(0), "its pin keeps its arrow picked");
         let Line { row, state, .. } = &gallery.lines[line_of(&gallery, "orders")];
         assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its description");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_directory_picked_talks_about_the_screens_under_it() {
+        let root = root_of("notes-screens", &[("orders", "app/orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        let app = line_of(&gallery, "app");
+        showing(&mut gallery, app);
+        let Picture::Flow(_) = &gallery.picture else { panic!("not a flow") };
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "app · these screens", "the card names the directory: {panel:?}");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet");
+        let dir = root.join("app");
+        let line = format!("{} · these screens", dir.display());
+        assert_eq!(gallery.reference().unwrap().line(), line);
+        gallery.chord("c");
+        assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
+
+        gallery.acted = None;
+        type_text(&mut gallery, "these screens repeat the same header");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Whole { whole: Whole::Screens }));
+        assert!(!dir.join(crate::SCREEN).exists(), "the directory holds no description");
+        let file: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(notes::NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"][0]["whole"], "screens", "kept in the directory's own notes.json");
+        assert_eq!(
+            talk_shown(&gallery),
+            [
+                "note N1 · waiting on the agent",
+                "these screens repeat the same header",
+                "waiting for the agent"
+            ]
+        );
+        let Line { row, state, .. } = &gallery.lines[app];
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its directory");
+
+        assert!(gallery.press_at(on_arrow(&gallery, 0)), "an arrow picked");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the navigate's own conversation");
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(gallery.arrow(), None);
+        assert_eq!(talk_shown(&gallery)[1], "these screens repeat the same header", "back to the group's");
+
+        showing(&mut gallery, 0);
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the root's note is its own");
+        type_text(&mut gallery, "the whole app needs a tab bar");
+        press_keys(&mut gallery, &["Enter"]);
+        let kept = notes::read(&root).unwrap();
+        assert_eq!((kept[0].id.as_str(), &kept[0].on), ("N1", &On::Whole { whole: Whole::Screens }));
+        assert!(
+            gallery.inboxed().contains(&dir),
+            "the root's inbox holds the directories under it: {:?}",
+            gallery.inboxed()
+        );
+
+        let orders = line_of(&gallery, "orders");
+        showing(&mut gallery, orders);
+        assert!(gallery.click(Do::Visit(Visit::Note(dir.clone(), "N1".into()))));
+        assert_eq!(gallery.line, Some(app), "its inbox item shows the directory's flow");
+        assert_eq!(talk_shown(&gallery)[1], "these screens repeat the same header");
         std::fs::remove_dir_all(root).unwrap();
     }
 

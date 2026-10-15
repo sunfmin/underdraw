@@ -73,8 +73,10 @@ _Avoid_: guess, TODO
 **Note**:
 A conversation between the person and the agent about a design, pinned
 where it is held: a node of a state, a whole state, an arrow (a transition
-or a navigate), or the whole screen (its description picked, apart from any
-one state), its messages kept in the order said. Each has at most one; one
+or a navigate), the whole screen (its description picked, apart from any
+one state), or the screens under a directory as a group (its flow picked,
+kept in that directory's own `notes.json`), its messages kept in the order
+said. Each has at most one; one
 whose node or arrow is gone joins its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, **taken** once `--wait` has handed that message to
@@ -199,7 +201,8 @@ An ordered choice of one value, ending in an `else`.
 **Inbox**:
 What waits on the person under what they picked, a description or a
 directory: each assumption not yet answered and each note the agent has
-answered that they have not read; and, apart, the notes still waiting on
+answered that they have not read, a directory's own notes and those of the
+directories under it among them; and, apart, the notes still waiting on
 the agent.
 _Avoid_: to-do list, queue, notifications
 

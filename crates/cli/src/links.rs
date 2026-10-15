@@ -52,8 +52,9 @@ pub fn params(root: &Path) -> ScreenParams {
 
 /// `underdraw check <root>`, for a directory holding no screen.json: every
 /// description under it checked, and the links between them, what is
-/// assumed of one to a screen not drawn yet said in `lang`, and every
-/// journey under it walked.
+/// assumed of one to a screen not drawn yet said in `lang`, every
+/// journey under it walked, and the notes of each directory under it that
+/// keeps any (on the screens under it) counted with the descriptions'.
 pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
     if !root.is_dir() {
         bail!("cannot read {}: pass a screen's directory, or a directory of them", root.display());
@@ -95,6 +96,14 @@ pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
             "notes": counted,
         }));
     }
+    let mut directories = Vec::new();
+    let grouped = notes::kept_under(&root).into_iter().filter(|dir| !dirs.contains(dir));
+    for dir in grouped.filter(|dir| dir.join(notes::NOTES).is_file()) {
+        let counted = notes::counted(&dir);
+        let count = |stands: &str| counted[stands].as_u64().unwrap_or(0) as usize;
+        counts = counts.add(notes::Counts { waiting: count("waiting"), answered: count("answered") });
+        directories.push(json!({ "directory": within(&root, &dir), "notes": counted }));
+    }
     let links: Vec<Value> = between(&dirs, &screens)
         .into_iter()
         .map(|link| {
@@ -120,6 +129,7 @@ pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
         "descriptions": descriptions,
         "links": links,
         "journeys": journeys,
+        "directories": directories,
         "notes": counts,
     }))
 }
