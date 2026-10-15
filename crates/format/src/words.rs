@@ -110,6 +110,7 @@ sentences! {
     on_transition,
     transition_outcome,
     on_navigate,
+    on_screen,
     // The rest of the gallery's own words.
     acted_to_state,
     acted_calls,
@@ -142,6 +143,7 @@ sentences! {
     hint_act,
     hint_keys,
     whole_state,
+    whole_screen,
     talk_title,
     talk_none,
     talk_hint,

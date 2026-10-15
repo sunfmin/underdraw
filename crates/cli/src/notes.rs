@@ -622,7 +622,8 @@ pub fn counted(dir: &Path) -> Value {
 /// is gone once no tree writes its id, or its state is; a region once its
 /// state is, or every node it covered; a whole state once the description
 /// has no state by its name; a transition or a navigate once none is
-/// written with the same keys.
+/// written with the same keys. The whole screen is there while its
+/// description is.
 fn gone(screen: &Screen, on: &On) -> Option<String> {
     let now_gone = |was: String| Some(format!("on {was}, now gone"));
     let state_gone = on.state().filter(|state| {
@@ -665,7 +666,7 @@ fn gone(screen: &Screen, on: &On) -> Option<String> {
                 .any(|written| written.node == navigate.node && written.to == navigate.to);
             if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
         }
-        On::Node { .. } | On::State { .. } => None,
+        On::Node { .. } | On::State { .. } | On::Screen { .. } => None,
     }
 }
 
