@@ -119,12 +119,18 @@ pub const BUBBLE_RADIUS: f32 = 10.0;
 pub const FACT: f64 = 64.0;
 /// A pane's scrollbar, drawn while what it holds is larger than it is and
 /// never faded out: only its thumb, as wide as this, set in this far from
-/// the pane's edge and from either end of its track, never shorter than
-/// [`SCROLLBAR_LEAST`], round, in a translucent ink that shows on the desk
-/// and on the tree's and the sidebar's surface alike. It runs in the space
-/// the tree keeps right of its names, the sidebar around its cards, and
-/// the pictures' pane under their labels.
+/// the pane's edge and from either end of its track — as far as a line
+/// between panes is taken hold of ([`GRIP`]), so that a press is on one or
+/// the other, never both — never shorter than [`SCROLLBAR_LEAST`], round,
+/// in a translucent ink that shows on the desk and on the tree's and the
+/// sidebar's surface alike, darker while the pointer is over the thumb or
+/// it is dragged. It runs in the space the tree keeps right of its names,
+/// the sidebar around its cards, and the pictures' pane under their
+/// labels. A press takes hold of it on its track, as wide as the thumb and
+/// [`SCROLLBAR_REACH`] more on the pane's inner side.
 pub const SCROLLBAR: Color = Color::from_rgba8(0x1A, 0x22, 0x33, 0x4D);
+pub const SCROLLBAR_HOT: Color = Color::from_rgba8(0x1A, 0x22, 0x33, 0x99);
 pub const SCROLLBAR_WIDE: f64 = 6.0;
-pub const SCROLLBAR_INSET: f64 = 2.0;
+pub const SCROLLBAR_INSET: f64 = GRIP;
+pub const SCROLLBAR_REACH: f64 = 2.0;
 pub const SCROLLBAR_LEAST: f64 = 24.0;
