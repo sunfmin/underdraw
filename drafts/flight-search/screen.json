@@ -1,0 +1,781 @@
+{
+  "$comment": "航班搜索结果页，平台无关的界面描述。手机上筛选是一排可横滑的胶囊，点开是底部弹层；大屏上筛选常驻在左栏。",
+  "screen": "FlightResults",
+  "title": "航班搜索结果",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+
+  "data": {
+    "search": "Search",
+    "days": "DayFare[]",
+    "sortOptions": "SortOption[]",
+    "filters": "Filters",
+    "results": { "type": "Results", "from": "searchFlights" }
+  },
+
+  "types": {
+    "Search": {
+      "from": "Place",
+      "to": "Place",
+      "date": "date",
+      "passengers": "int 1..9",
+      "cabin": { "type": "string 1..10", "doc": "舱位的显示名，例：经济舱" }
+    },
+    "Place": { "code": "string 3..3", "city": "string 1..20" },
+    "DayFare": {
+      "date": "date",
+      "lowest": { "type": "money", "doc": "当天最低价；售罄的日子是最后一次报价" },
+      "soldOut": "bool = false",
+      "selected": { "type": "bool = false", "doc": "就是搜索的那一天" }
+    },
+    "SortOption": {
+      "label": "string 1..6",
+      "detail": { "type": "string 1..30", "derived": { "server": "按这种排法排第一的航班的价格和时长，例：¥1,280 · 2小时55分" } },
+      "selected": "bool"
+    },
+    "Filters": {
+      "activeCount": { "type": "int 0..", "derived": { "app": "勾选了几项筛选；直飞算一项" } },
+      "nonstopOnly": "bool",
+      "stops": "FilterOption[] 1..",
+      "airlines": "FilterOption[]",
+      "departWindows": { "type": "FilterOption[] 4..4", "doc": "凌晨、上午、下午、晚上" }
+    },
+    "FilterOption": {
+      "label": "string 1..20",
+      "detail": { "type": "string ..20 = \"\"", "doc": "勾上它之后的最低价，例：¥1,280 起" },
+      "checked": "bool"
+    },
+    "Results": {
+      "total": { "type": "int 0..", "derived": { "server": "筛选之后剩下的航班数" } },
+      "partial": { "type": "bool", "doc": "有航空公司还没返回报价，结果可能不全" },
+      "flights": "Flight[]"
+    },
+    "Flight": {
+      "id": "string",
+      "airline": "string 1..20",
+      "flightNo": "string 3..8",
+      "logo": "image",
+      "depart": { "type": "string 5..5", "doc": "出发地当地时间 HH:mm" },
+      "arrive": { "type": "string 5..5", "doc": "到达地当地时间 HH:mm" },
+      "departCode": "string 3..3",
+      "arriveCode": "string 3..3",
+      "nextDay": { "type": "bool", "doc": "到达是出发的第二天（当地时间）" },
+      "duration": { "type": "string 1..12", "derived": { "server": "全程时长，例：2小时55分" } },
+      "nonstop": "bool",
+      "stopsText": { "type": "string 1..20", "derived": { "server": "直飞；或 经停 1 次 · 上海；经停的城市不在视图模型里" } },
+      "price": { "type": "money", "doc": "每位成人，含税" },
+      "seatsLeft": "int 0..9",
+      "fewSeats": { "type": "bool", "derived": { "server": "seatsLeft ≤ 5 时为 true；门槛由后端定，同 isCheapest" } },
+      "includesBag": "bool",
+      "isCheapest": { "type": "bool", "doc": "由后端在全部结果里标出，前端不自己比" },
+      "isFastest": { "type": "bool", "doc": "同上" }
+    }
+  },
+
+  "conditions": {
+    "hasFilters":     { "when": "filters.activeCount > 0", "label": "有筛选" },
+    "noResults":      { "when": "results.total == 0", "label": "没有结果" },
+    "partialResults": { "when": "results.partial && !noResults", "label": "部分航空公司未返回" }
+  },
+
+  "operations": {
+    "searchFlights": { "query": "这次搜索的航班，按选中的筛选和排法",
+                       "params": { "date": { "type": "date?", "doc": "换一天搜；null 时沿用搜索的那天" },
+                                   "sort": { "type": "int? 0..", "doc": "第几种排法；null 时沿用当前的" } },
+                       "result": "Results", "fails": { "offline": "连不上服务器" } },
+    "toggleFilter":  { "command": "勾上或取消一项筛选，回答筛选后的结果",
+                       "params": { "group": { "type": "string", "doc": "stops、airlines 或 departWindows" },
+                                   "option": { "type": "string", "doc": "这一项的 label" } } },
+    "toggleNonstop": { "command": "只看直飞，或者取消" },
+    "clearFilters":  { "command": "取消全部筛选" }
+  },
+
+  "fixtures": {
+    "default": {
+      "search": { "from": { "code": "PVG", "city": "上海" }, "to": { "code": "NRT", "city": "东京" },
+                  "date": "2026-11-12", "passengers": 2, "cabin": "经济舱" },
+      "days": [
+        { "date": "2026-11-09", "lowest": { "amount": 1460, "currency": "CNY" } },
+        { "date": "2026-11-10", "lowest": { "amount": 1320, "currency": "CNY" } },
+        { "date": "2026-11-11", "lowest": { "amount": 1390, "currency": "CNY" } },
+        { "date": "2026-11-12", "lowest": { "amount": 1280, "currency": "CNY" }, "selected": true },
+        { "date": "2026-11-13", "lowest": { "amount": 1540, "currency": "CNY" } },
+        { "date": "2026-11-14", "lowest": { "amount": 1980, "currency": "CNY" }, "soldOut": true },
+        { "date": "2026-11-15", "lowest": { "amount": 1720, "currency": "CNY" } }
+      ],
+      "sortOptions": [
+        { "label": "推荐", "detail": "¥1,350 · 2小时55分", "selected": true },
+        { "label": "最便宜", "detail": "¥1,280 · 6小时40分", "selected": false },
+        { "label": "最快", "detail": "¥1,620 · 2小时45分", "selected": false }
+      ],
+      "filters": {
+        "activeCount": 0, "nonstopOnly": false,
+        "stops": [ { "label": "直飞", "detail": "¥1,350 起", "checked": false },
+                   { "label": "经停 1 次", "detail": "¥1,280 起", "checked": false } ],
+        "airlines": [ { "label": "东方航空", "detail": "¥1,350 起", "checked": false },
+                      { "label": "春秋航空", "detail": "¥1,280 起", "checked": false },
+                      { "label": "全日空", "detail": "¥1,620 起", "checked": false },
+                      { "label": "日本航空", "detail": "¥1,690 起", "checked": false } ],
+        "departWindows": [ { "label": "凌晨 0–6 点", "checked": false }, { "label": "上午 6–12 点", "checked": false },
+                           { "label": "下午 12–18 点", "checked": false }, { "label": "晚上 18–24 点", "checked": false } ]
+      },
+      "results": {
+        "total": 4, "partial": false,
+        "flights": [
+          { "id": "f1", "airline": "东方航空", "flightNo": "MU523", "logo": "mu.png", "depart": "08:15", "arrive": "12:10",
+            "departCode": "PVG", "arriveCode": "NRT", "nextDay": false, "duration": "2小时55分", "nonstop": true, "stopsText": "直飞",
+            "price": { "amount": 1350, "currency": "CNY" }, "seatsLeft": 9, "fewSeats": false, "includesBag": true,
+            "isCheapest": false, "isFastest": false },
+          { "id": "f2", "airline": "全日空", "flightNo": "NH920", "logo": "nh.png", "depart": "10:40", "arrive": "14:25",
+            "departCode": "PVG", "arriveCode": "NRT", "nextDay": false, "duration": "2小时45分", "nonstop": true, "stopsText": "直飞",
+            "price": { "amount": 1620, "currency": "CNY" }, "seatsLeft": 3, "fewSeats": true, "includesBag": true,
+            "isCheapest": false, "isFastest": true },
+          { "id": "f3", "airline": "春秋航空", "flightNo": "9C8515", "logo": "9c.png", "depart": "13:05", "arrive": "20:45",
+            "departCode": "PVG", "arriveCode": "NRT", "nextDay": false, "duration": "6小时40分", "nonstop": false, "stopsText": "经停 1 次 · 大阪",
+            "price": { "amount": 1280, "currency": "CNY" }, "seatsLeft": 7, "fewSeats": false, "includesBag": false,
+            "isCheapest": true, "isFastest": false },
+          { "id": "f4", "airline": "日本航空", "flightNo": "JL876", "logo": "jl.png", "depart": "22:30", "arrive": "02:20",
+            "departCode": "PVG", "arriveCode": "HND", "nextDay": true, "duration": "2小时50分", "nonstop": true, "stopsText": "直飞",
+            "price": { "amount": 1690, "currency": "CNY" }, "seatsLeft": 5, "fewSeats": true, "includesBag": true,
+            "isCheapest": false, "isFastest": false }
+        ]
+      }
+    },
+    "filtered": {
+      "$patch": "default",
+      "filters": {
+        "activeCount": 2, "nonstopOnly": true,
+        "stops": [ { "label": "直飞", "detail": "¥1,350 起", "checked": true },
+                   { "label": "经停 1 次", "detail": "¥1,280 起", "checked": false } ],
+        "airlines": [ { "label": "东方航空", "detail": "¥1,350 起", "checked": true },
+                      { "label": "春秋航空", "detail": "¥1,280 起", "checked": false },
+                      { "label": "全日空", "detail": "¥1,620 起", "checked": false },
+                      { "label": "日本航空", "detail": "¥1,690 起", "checked": false } ]
+      },
+      "results": { "total": 1, "flights": [
+          { "id": "f1", "airline": "东方航空", "flightNo": "MU523", "logo": "mu.png", "depart": "08:15", "arrive": "12:10",
+            "departCode": "PVG", "arriveCode": "NRT", "nextDay": false, "duration": "2小时55分", "nonstop": true, "stopsText": "直飞",
+            "price": { "amount": 1350, "currency": "CNY" }, "seatsLeft": 9, "fewSeats": false, "includesBag": true,
+            "isCheapest": true, "isFastest": true } ] }
+    },
+    "no-results": {
+      "$patch": "filtered",
+      "filters": { "activeCount": 3,
+        "departWindows": [ { "label": "凌晨 0–6 点", "checked": true }, { "label": "上午 6–12 点", "checked": false },
+                           { "label": "下午 12–18 点", "checked": false }, { "label": "晚上 18–24 点", "checked": false } ] },
+      "results": { "total": 0, "flights": [] }
+    },
+    "partial": { "$patch": "default", "results": { "partial": true } }
+  },
+
+  "phases": {
+    "loading": {
+      "id": "results-loading", "component": "Screen", "children": [
+        { "id": "nav-loading", "component": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ], "children": [
+          { "id": "nav-loading-title", "component": "Text", "text": "正在搜索航班…", "font": "font.subhead" } ] },
+        { "id": "loading-skeleton", "component": "Skeleton",
+          "shape": ["line 100%", "line 60%", "line 90%", "line 90%", "line 40%", "line 90%", "line 90%", "line 40%"] } ] },
+    "error": {
+      "id": "results-error", "component": "Screen", "children": [
+        { "id": "nav-error", "component": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ] },
+        { "id": "error-state", "component": "EmptyState", "icon": "warning", "title": "航班搜索失败", "detail": "请检查网络后重试。",
+          "children": [ { "id": "error-retry", "component": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "call": "searchFlights" } } } ] } ] }
+  },
+
+  "root": {
+    "id": "flight-results", "component": "Screen",
+    "children": [
+
+      { "id": "nav", "component": "NavBar", "only": "compact",
+        "leading": [ { "ref": "nav-back" } ],
+        "trailing": [ { "id": "nav-edit", "component": "Button", "variant": "secondary", "size": "small", "text": "修改",
+                        "on": { "tap": { "open": "sheet-search" } } } ],
+        "children": [
+          { "id": "nav-title", "component": "Stack", "children": [
+            { "id": "nav-route", "component": "Text", "text": "{search.from.city} → {search.to.city}", "font": "font.subhead" },
+            { "id": "nav-meta", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
+              "text": "{search.date|date:short} · {search.passengers} 位 · {search.cabin}" } ] } ] },
+
+      { "id": "search-bar", "component": "Row", "only": "regular", "gap": "space.3", "padding": "space.4",
+        "children": [
+          { "id": "search-from", "component": "SearchField", "label": "出发", "value": "{search.from.city} {search.from.code}" },
+          { "id": "search-to", "component": "SearchField", "label": "到达", "value": "{search.to.city} {search.to.code}" },
+          { "id": "search-date", "component": "SearchField", "label": "日期", "value": "{search.date|date}" },
+          { "id": "search-who", "component": "SearchField", "label": "乘客与舱位", "value": "{search.passengers} 位 · {search.cabin}" },
+          { "id": "search-go", "component": "Button", "variant": "primary", "text": "重新搜索", "on": { "tap": { "call": "searchFlights" } } } ] },
+
+      { "id": "content", "component": "Scroll", "children": [
+
+        { "id": "day-strip", "component": "Strip", "each": "days", "padding": "space.4",
+          "item": { "id": "day-{index}", "component": "DayPrice", "date": "{item.date|date:short}", "selected": "{item.selected}",
+                    "price": { "cases": [ { "if": "item.soldOut", "then": "售罄" }, { "else": "{item.lowest|money}" } ] },
+                    "on": { "tap": { "call": "searchFlights", "with": { "date": "{item.date}" } } } } },
+
+        { "id": "divider-days", "component": "Divider" },
+
+        { "id": "body", "component": "Columns", "gap": "space.6", "padding": "space.4",
+          "columns": { "compact": ["1fr"], "regular": ["27%", "1fr"] },
+          "children": [
+
+            { "id": "filter-panel", "component": "Stack", "only": "regular", "gap": "space.6", "children": [
+              { "id": "filter-head", "component": "Section", "title": "筛选",
+                "subtitle": { "cases": [ { "if": "hasFilters", "then": "已选 {filters.activeCount} 项" }, { "else": "全部航班" } ] },
+                "children": [
+                  { "id": "filter-clear", "component": "Link", "if": "hasFilters", "text": "清除全部筛选",
+                    "on": { "tap": { "call": "clearFilters" } } } ] },
+              { "id": "filter-stops", "component": "Section", "title": "经停", "gap": "space.1", "children": [
+                { "id": "filter-stops-list", "component": "List", "each": "filters.stops",
+                  "item": { "id": "stop-{index}", "component": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
+                            "checked": "{item.checked}", "on": { "tap": { "call": "toggleFilter", "with": { "group": "stops", "option": "{item.label}" } } } } } ] },
+              { "id": "filter-airlines", "component": "Section", "title": "航空公司", "gap": "space.1", "children": [
+                { "id": "filter-airlines-list", "component": "List", "each": "filters.airlines",
+                  "item": { "id": "airline-{index}", "component": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
+                            "checked": "{item.checked}", "on": { "tap": { "call": "toggleFilter", "with": { "group": "airlines", "option": "{item.label}" } } } } } ] },
+              { "id": "filter-times", "component": "Section", "title": "起飞时间", "children": [
+                { "id": "filter-times-grid", "component": "Grid", "columns": 2, "gap": "space.2", "each": "filters.departWindows",
+                  "item": { "id": "window-{index}", "component": "Chip", "text": "{item.label}", "selected": "{item.checked}",
+                            "on": { "tap": { "call": "toggleFilter", "with": { "group": "departWindows", "option": "{item.label}" } } } } } ] } ] },
+
+            { "id": "results", "component": "Stack", "gap": "space.4", "children": [
+
+              { "id": "filter-chips", "component": "Strip", "only": "compact", "children": [
+                { "id": "chip-filters", "component": "Chip", "selected": { "cases": [ { "if": "hasFilters", "then": true }, { "else": false } ] },
+                  "text": { "cases": [ { "if": "hasFilters", "then": "筛选 · {filters.activeCount}" }, { "else": "筛选" } ] },
+                  "on": { "tap": { "open": "sheet-filters" } } },
+                { "id": "chip-nonstop", "component": "Chip", "text": "直飞", "selected": "{filters.nonstopOnly}",
+                  "on": { "tap": { "call": "toggleNonstop" } } },
+                { "id": "chip-airlines", "component": "Chip", "text": "航空公司", "menu": true, "on": { "tap": { "open": "sheet-filters" } } },
+                { "id": "chip-times", "component": "Chip", "text": "起飞时间", "menu": true, "on": { "tap": { "open": "sheet-filters" } } } ] },
+
+              { "id": "sort-tabs", "component": "Row", "gap": "space.2", "each": "sortOptions",
+                "item": { "id": "sort-{index}", "component": "SortTab", "label": "{item.label}", "detail": "{item.detail}",
+                          "selected": "{item.selected}", "on": { "tap": { "call": "searchFlights", "with": { "sort": "{index}" } } } } },
+
+              { "id": "partial-notice", "component": "Row", "if": "partialResults", "padding": "space.3",
+                "border": "color.border", "radius": "radius.sm", "children": [
+                  { "id": "partial-text", "component": "Text", "font": "font.caption",
+                    "text": "! 还有航空公司没返回报价，结果可能不全，稍后会自动更新。" } ] },
+
+              { "id": "results-count", "component": "Text", "if": "!noResults", "font": "font.caption", "color": "color.textSecondary",
+                "text": "共 {results.total} 个航班 · 价格为每位成人含税" },
+
+              { "id": "flight-list", "component": "List", "if": "!noResults", "gap": "space.3", "each": "results.flights",
+                "item": { "ref": "flight-card" } },
+
+              { "id": "no-results", "component": "EmptyState", "if": "noResults", "icon": "flight",
+                "title": "没有符合筛选条件的航班", "detail": "试试放宽经停、航空公司或起飞时间。",
+                "children": [ { "id": "no-results-clear", "component": "Button", "variant": "secondary", "text": "清除全部筛选",
+                                "on": { "tap": { "call": "clearFilters" } } } ] } ] } ] } ] } ]
+  },
+
+  "components": {
+    "SearchField": {
+      "doc": "One part of the search on a desktop: a small label over what was searched; it shares the row with the others.",
+      "params": ["label", "value"],
+      "look": {
+        "box": "column",
+        "gap": 2,
+        "padding": [
+          8,
+          12
+        ],
+        "grow": 1,
+        "basis": 0,
+        "stroke": "line",
+        "radius": "radius.sm",
+        "children": [
+          {
+            "text": "{label}",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "{value}",
+            "font": "font.subhead",
+            "maxLines": 1
+          }
+        ]
+      }
+    },
+    "DayPrice": {
+      "doc": "A day near the searched date, with its lowest fare; the searched day is filled.",
+      "params": ["selected", "date", "price"],
+      "look": {
+        "box": "column",
+        "gap": 2,
+        "items": "center",
+        "padding": [
+          8,
+          0
+        ],
+        "width": 96,
+        "shrink": 0,
+        "radius": "radius.sm",
+        "fill": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "fill"
+            },
+            {
+              "else": null
+            }
+          ]
+        },
+        "stroke": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "text"
+            },
+            {
+              "else": "line"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": "{date}",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "text": "{price}",
+            "font": "font.subhead"
+          }
+        ]
+      }
+    },
+    "SortTab": {
+      "doc": "One way to order the results, with the best fare under it; the chosen one is outlined and filled.",
+      "params": ["selected", "label", "detail"],
+      "look": {
+        "box": "column",
+        "gap": 2,
+        "grow": 1,
+        "basis": 0,
+        "padding": [
+          10,
+          8
+        ],
+        "radius": "radius.sm",
+        "fill": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "fill"
+            },
+            {
+              "else": null
+            }
+          ]
+        },
+        "stroke": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "text"
+            },
+            {
+              "else": "line"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": "{label}",
+            "font": "font.subhead"
+          },
+          {
+            "text": "{detail}",
+            "font": "font.caption",
+            "ink": "muted",
+            "maxLines": 1
+          }
+        ]
+      }
+    },
+    "Chip": {
+      "doc": "A filter as a pill: filled dark when on; a ▾ when it opens a menu; a count when some of its options are on.",
+      "params": ["selected", "menu", "text"],
+      "look": {
+        "box": "row",
+        "gap": 6,
+        "padding": [
+          6,
+          12
+        ],
+        "shrink": 0,
+        "radius": 999,
+        "fill": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "strong"
+            },
+            {
+              "else": null
+            }
+          ]
+        },
+        "stroke": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": null
+            },
+            {
+              "else": "line"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": {
+              "cases": [
+                {
+                  "if": "menu",
+                  "then": "{text} ▾"
+                },
+                {
+                  "else": "{text}"
+                }
+              ]
+            },
+            "font": "font.caption",
+            "ink": {
+              "cases": [
+                {
+                  "if": "selected",
+                  "then": "paper"
+                },
+                {
+                  "else": "text"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "Checkbox": {
+      "doc": "A filter option: box, name, and on the right the lowest fare with it.",
+      "params": ["checked", "label", "detail"],
+      "look": {
+        "box": "row",
+        "gap": 10,
+        "padding": [
+          6,
+          0
+        ],
+        "children": [
+          {
+            "box": "row",
+            "justify": "center",
+            "size": 18,
+            "shrink": 0,
+            "radius": 4,
+            "fill": {
+              "cases": [
+                {
+                  "if": "checked",
+                  "then": "strong"
+                },
+                {
+                  "else": null
+                }
+              ]
+            },
+            "stroke": {
+              "cases": [
+                {
+                  "if": "checked",
+                  "then": null
+                },
+                {
+                  "else": "text"
+                }
+              ]
+            },
+            "children": [
+              {
+                "if": "checked",
+                "text": "✓",
+                "font": "font.caption",
+                "ink": "paper"
+              }
+            ]
+          },
+          {
+            "box": "row",
+            "grow": 1,
+            "shrink": 1,
+            "children": [
+              {
+                "text": "{label}",
+                "font": "font.body"
+              }
+            ]
+          },
+          {
+            "if": "detail",
+            "text": "{detail}",
+            "font": "font.caption",
+            "ink": "muted"
+          }
+        ]
+      }
+    },
+    "Route": {
+      "doc": "A flight's times end to end: departure on the left, arrival on the right, a line between them carrying the duration over it and the stops under it.",
+      "params": ["depart", "departCode", "duration", "stops", "nonstop", "arrive", "nextDay", "arriveCode"],
+      "look": {
+        "box": "row",
+        "gap": 8,
+        "grow": 1,
+        "shrink": 1,
+        "children": [
+          {
+            "box": "column",
+            "items": "start",
+            "children": [
+              {
+                "text": "{depart}",
+                "font": "font.time"
+              },
+              {
+                "text": "{departCode}",
+                "font": "font.caption",
+                "ink": "muted"
+              }
+            ]
+          },
+          {
+            "box": "column",
+            "gap": 4,
+            "grow": 1,
+            "shrink": 1,
+            "items": "center",
+            "children": [
+              {
+                "text": "{duration}",
+                "font": "font.caption",
+                "ink": "muted"
+              },
+              {
+                "width": "100%",
+                "height": 1,
+                "fill": "line"
+              },
+              {
+                "text": "{stops}",
+                "font": "font.caption",
+                "ink": {
+                  "cases": [
+                    {
+                      "if": "nonstop",
+                      "then": "text"
+                    },
+                    {
+                      "else": "muted"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "box": "column",
+            "items": "start",
+            "children": [
+              {
+                "box": "row",
+                "gap": 2,
+                "children": [
+                  {
+                    "text": "{arrive}",
+                    "font": "font.time"
+                  },
+                  {
+                    "if": "nextDay",
+                    "text": "+1",
+                    "font": "font.caption"
+                  }
+                ]
+              },
+              {
+                "text": "{arriveCode}",
+                "font": "font.caption",
+                "ink": "muted"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Tag": {
+      "doc": "A short word that marks a flight out (最便宜, 最快).",
+      "params": ["text"],
+      "look": {
+        "self": "start",
+        "padding": [
+          2,
+          8
+        ],
+        "radius": 4,
+        "fill": "fill",
+        "children": [
+          {
+            "text": "{text}",
+            "font": "font.caption",
+            "weight": 600
+          }
+        ]
+      }
+    },
+    "Strip": {
+      "doc": "A row that runs off the edge: what does not fit scrolls into view.",
+      "params": ["padding", "gap", "radius", "border", "elevation"],
+      "look": {
+        "box": "row",
+        "gap": "{gap|or:8}",
+        "overflowX": "clip",
+        "clip": 0,
+        "frame": true,
+        "children": [
+          "$children"
+        ]
+      }
+    },
+    "nav-back": {
+      "nodes": {
+        "id": "nav-back",
+        "component": "IconButton",
+        "icon": "arrow_back",
+        "label": "返回",
+        "on": {
+          "tap": {
+            "back": true
+          }
+        }
+      }
+    },
+    "flight-card": {
+      "nodes": {
+        "id": "flight-{index}",
+        "component": "Card",
+        "padding": "space.4",
+        "gap": "space.3",
+        "border": "color.border",
+        "radius": "radius.md",
+        "on": {
+          "tap": {
+            "navigate": "FlightDetail",
+            "with": {
+              "flight": "{item.id}"
+            }
+          }
+        },
+        "children": [
+          {
+            "id": "flight-{index}-head",
+            "component": "Row",
+            "gap": "space.2",
+            "children": [
+              {
+                "id": "flight-{index}-logo",
+                "component": "Avatar",
+                "image": "{item.logo}",
+                "size": 20
+              },
+              {
+                "id": "flight-{index}-airline",
+                "component": "Text",
+                "text": "{item.airline} · {item.flightNo}",
+                "font": "font.caption",
+                "color": "color.textSecondary"
+              },
+              {
+                "id": "flight-{index}-cheapest",
+                "component": "Tag",
+                "if": "item.isCheapest",
+                "text": "最便宜"
+              },
+              {
+                "id": "flight-{index}-fastest",
+                "component": "Tag",
+                "if": "item.isFastest",
+                "text": "最快"
+              }
+            ]
+          },
+          {
+            "id": "flight-{index}-main",
+            "component": "Row",
+            "gap": "space.3",
+            "children": [
+              {
+                "id": "flight-{index}-route",
+                "component": "Route",
+                "depart": "{item.depart}",
+                "departCode": "{item.departCode}",
+                "arrive": "{item.arrive}",
+                "arriveCode": "{item.arriveCode}",
+                "nextDay": "{item.nextDay}",
+                "duration": "{item.duration}",
+                "stops": "{item.stopsText}",
+                "nonstop": "{item.nonstop}"
+              },
+              {
+                "id": "flight-{index}-price",
+                "component": "Stack",
+                "gap": "space.1",
+                "children": [
+                  {
+                    "id": "flight-{index}-amount",
+                    "component": "Text",
+                    "text": "{item.price|money}",
+                    "font": "font.price",
+                    "align": "end"
+                  },
+                  {
+                    "id": "flight-{index}-seats",
+                    "component": "Text",
+                    "if": "item.fewSeats",
+                    "text": "仅剩 {item.seatsLeft} 座",
+                    "font": "font.caption",
+                    "align": "end"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "flight-{index}-bag",
+            "component": "Text",
+            "font": "font.caption",
+            "color": "color.textSecondary",
+            "text": {
+              "cases": [
+                {
+                  "if": "item.includesBag",
+                  "then": "含 20kg 托运行李"
+                },
+                {
+                  "else": "不含托运行李，可加购"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+
+  "sheets": {
+    "sheet-search":  { "title": "修改搜索", "content": "出发、到达、日期、乘客与舱位" },
+    "sheet-filters": { "title": "筛选", "content": "与大屏左栏 filter-panel 相同的四组；底部是“显示 {results.total} 个航班”按钮" }
+  },
+
+  "navigatesTo": ["FlightDetail"]
+}
