@@ -33,7 +33,7 @@
                 "underline": "{underline}", "align": "{align}" }
     },
     "Link": {
-      "params": ["font", "trailingIcon", "text"],
+      "params": { "font": "string?", "trailingIcon": "bool = false", "text": "string?" },
       "look": { "self": "start", "font": "{font|or:font.subhead}", "underline": true,
                 "text": { "cases": [ { "if": "trailingIcon", "then": "{text} ›" }, { "else": "{text}" } ] } }
     },
@@ -44,7 +44,7 @@
                 "children": [ { "text": "{text}", "font": "font.caption" } ] }
     },
     "Button": {
-      "params": ["size", "disabled", "variant", "text"],
+      "params": { "size": "string?", "disabled": "bool = false", "variant": "string?", "text": "string?" },
       "look": {
         "box": "row", "justify": "center", "radius": 8,
         "height":  { "cases": [ { "if": "size == \"small\"", "then": 32 }, { "else": 48 } ] },

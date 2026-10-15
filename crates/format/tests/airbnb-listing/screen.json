@@ -194,7 +194,7 @@
 
                   { "id": "description", "component": "Stack", "gap": "space.4", "children": [
                     { "id": "description-text", "component": "Text", "text": "{listing.description}", "font": "font.body", "maxLines": 6 },
-                    { "id": "description-more", "component": "Link", "text": "显示更多", "trailingIcon": "chevron_right",
+                    { "id": "description-more", "component": "Link", "text": "显示更多", "trailingIcon": true,
                       "on": { "tap": { "open": "sheet-description" } } } ] },
 
                   { "id": "divider-4", "component": "Divider" },
