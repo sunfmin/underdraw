@@ -379,24 +379,28 @@ impl Catalog<'_> {
     }
 
     /// `node`'s children in order: `leading`, the body (`children`, `item`,
-    /// `action`), then `trailing` pushed to the far end; `overlay` floats
+    /// `action`), then `trailing` pushed to the far end and `foot` after it,
+    /// so a column's foot sits on its bottom edge; `overlay` floats
     /// over the box at its `anchor`: a corner, the center, or the bottom edge
     /// from side to side, flush.
     fn children<'a>(&self, node: &'a Node) -> Vec<Elem<'a>> {
         let mut built = Vec::new();
         let mut trailing = Vec::new();
+        let mut foot = Vec::new();
         for child in &node.children {
             match child.slot.as_str() {
                 "trailing" => trailing.push(self.node(child)),
+                "foot" => foot.push(self.node(child)),
                 "overlay" => {}
                 _ => built.push(self.node(child)),
             }
         }
-        if !trailing.is_empty() {
+        if !trailing.is_empty() || !foot.is_empty() {
             let mut spacer = Style::default();
             spacer.flex_grow = 1.0;
             built.push(Elem::new(spacer));
             built.append(&mut trailing);
+            built.append(&mut foot);
         }
         for child in &node.children {
             if child.slot == "overlay" {

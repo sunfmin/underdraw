@@ -48,7 +48,15 @@
           "app": "the stops' screens, joined by ›, a screen twice in a row once"
         }
       }
-    }
+    },
+    "TreeRow": {
+      "name": "string 1..",
+      "depth": "int 0..4",
+      "kind": "RowKind",
+      "meta": "string = \"\"",
+      "picked": "bool = false"
+    },
+    "RowKind": "enum(directory, description, state, phase)"
   },
   "conditions": {
     "Journey.broken": {
@@ -58,6 +66,14 @@
     "Journey.told": {
       "when": "about != \"\"",
       "label": "Says what it is about"
+    },
+    "TreeRow.heading": {
+      "when": "kind == \"directory\" || kind == \"description\"",
+      "label": "A directory or a description"
+    },
+    "TreeRow.phase": {
+      "when": "kind == \"phase\"",
+      "label": "A phase"
     }
   }
 }

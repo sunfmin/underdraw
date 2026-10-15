@@ -10,14 +10,6 @@
     "states": "Thumb[]"
   },
   "types": {
-    "TreeRow": {
-      "name": "string 1..",
-      "depth": "int 0..4",
-      "kind": "RowKind",
-      "meta": "string = \"\"",
-      "picked": "bool = false"
-    },
-    "RowKind": "enum(directory, description, state, phase)",
     "TreeJourney": {
       "journey": "Journey",
       "played": "bool = false"
@@ -40,14 +32,6 @@
     }
   },
   "conditions": {
-    "TreeRow.heading": {
-      "when": "kind == \"directory\" || kind == \"description\"",
-      "label": "A directory or a description"
-    },
-    "TreeRow.phase": {
-      "when": "kind == \"phase\"",
-      "label": "A phase"
-    },
     "Thumb.marked": {
       "when": "markCount > 0",
       "label": "A journey passes through it"
@@ -416,6 +400,7 @@
             },
             "gap": 24,
             "each": "states",
+            "index": "state",
             "item": {
               "id": "state-{index}",
               "component": "Stack",
@@ -434,7 +419,7 @@
                   "if": "item.marked",
                   "each": "item.marks",
                   "item": {
-                    "id": "state-mark-{index}",
+                    "id": "state-{state}-mark-{index}",
                     "component": "JourneyMark",
                     "journey": "{item.journey}",
                     "step": "{item.step}",

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Finding, Instances, Met};
+use underdraw_format::{Finding, Instances, Met, SLOTS};
 
 /// One node, as the platform builds it.
 #[derive(Debug, Serialize)]
@@ -60,10 +60,8 @@ pub struct Hidden {
     pub why: Option<String>,
 }
 
-/// Keys that hold child nodes.
-const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
 /// Keys that decide whether and how often a node is shown.
-const SHOWN: [&str; 4] = ["if", "only", "each", "limit"];
+const SHOWN: [&str; 5] = ["if", "only", "each", "index", "limit"];
 /// Keys said of the node elsewhere in a spec, or not at all.
 const OTHER: [&str; 8] = ["id", "component", "with", "assumed", "platform", "on", "$note", "$why"];
 

@@ -214,14 +214,61 @@ fn a_nodes_padding_takes_sides_as_a_looks_does() {
 
 #[test]
 fn a_component_not_in_the_catalog_is_drawn_as_a_guess() {
-    let page = tiny(serde_json::json!([{ "id": "input", "component": "TextField" }]));
+    let page = tiny(serde_json::json!([{ "id": "input", "component": "SignaturePad" }]));
     let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();
-    assert!(assumed.contains("TextField"), "{assumed:?}");
+    assert!(assumed.contains("SignaturePad"), "{assumed:?}");
     let marked = page
         .draws
         .iter()
         .any(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(underdraw_layout::Ink::Assumed), .. }));
     assert!(marked, "drawn in the colour of a guess");
+}
+
+/// A built-in TextField bound to `draft`, one line high and four, with
+/// `draft` as `value`.
+fn text_fields(value: &str) -> Page {
+    let screen = serde_json::json!({
+        "screen": "Tiny", "data": { "draft": { "type": "string", "view": true } }, "types": {},
+        "fixtures": { "default": { "draft": value } }, "conditions": {},
+        "root": { "id": "tiny", "component": "Screen", "children": [
+            { "id": "one", "component": "TextField", "bind": "draft", "placeholder": "Add a todo" },
+            { "id": "four", "component": "TextField", "bind": "draft", "placeholder": "Write a message", "lines": 4 } ] }
+    });
+    let tokens = read("tokens.json");
+    let screen = Screen::read(&screen, Shared::default());
+    let root =
+        screen.instantiate(State::Fixture("default"), Breakpoint::for_width(&tokens, 390), None).unwrap();
+    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed).unwrap()
+}
+
+fn ink_of(page: &Page, shown: &str) -> Vec<Ink> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Text { text, ink, .. } if text == shown => Some(*ink),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_text_field_shows_its_placeholder_muted_while_its_value_is_empty() {
+    let empty = text_fields("");
+    assert_eq!(placed(&empty, "one").assumed, None, "TextField is built in");
+    assert_eq!(ink_of(&empty, "Add a todo"), [Ink::Muted]);
+    assert_eq!(ink_of(&empty, "Write a message"), [Ink::Muted]);
+    let typed = text_fields("milk");
+    assert_eq!(ink_of(&typed, "milk"), [Ink::Text, Ink::Text], "the value, in the ink of text");
+    assert!(ink_of(&typed, "Add a todo").is_empty(), "no placeholder once typed: {:?}", texts(&typed));
+}
+
+#[test]
+fn a_text_field_is_as_high_as_its_lines() {
+    let page = text_fields("");
+    let (one, four) = (placed(&page, "one").rect, placed(&page, "four").rect);
+    // font.body's lines are 22 high, inside 10 above and below.
+    assert_eq!((one.height, four.height), (22.0 + 20.0, 4.0 * 22.0 + 20.0));
+    assert_eq!(one.width, four.width, "both as wide as the screen");
 }
 
 #[test]
@@ -607,4 +654,25 @@ fn a_label_sits_left_of_its_node_clear_of_the_text_at_its_top_left() {
         assert_eq!(tag.y, node.rect.y, "level with the top of {}", node.id);
         assert!(!texts.iter().any(|t| overlaps(*tag, *t)), "on no text: {tag:?} {texts:?}");
     }
+}
+
+#[test]
+fn a_foot_sits_on_the_bottom_of_its_column_after_everything_else() {
+    // A pane beside a taller one: its foot is drawn on the pane's bottom
+    // edge, after the cards, with the space left between them.
+    let page = tiny(serde_json::json!([
+        { "id": "panes", "component": "Columns", "gap": 0, "columns": ["1fr", "1fr"], "children": [
+            { "id": "long", "component": "Stack", "children": [
+                { "id": "l1", "component": "Text", "text": "a" }, { "id": "l2", "component": "Text", "text": "b" },
+                { "id": "l3", "component": "Text", "text": "c" }, { "id": "l4", "component": "Text", "text": "d" },
+                { "id": "l5", "component": "Text", "text": "e" }, { "id": "l6", "component": "Text", "text": "f" } ] },
+            { "id": "side", "component": "Stack",
+              "foot": { "id": "send", "component": "Button", "text": "Send" },
+              "children": [ { "id": "card", "component": "Text", "text": "a card" } ] } ] }
+    ]));
+    let (side, card, send) =
+        (placed(&page, "side").rect, placed(&page, "card").rect, placed(&page, "send").rect);
+    assert_eq!(side.height, placed(&page, "long").rect.height, "the pane is as tall as the other");
+    assert_eq!(send.y + send.height, side.y + side.height, "the foot closes the pane");
+    assert!(send.y > card.y + card.height, "below the cards, with room between: {card:?} {send:?}");
 }

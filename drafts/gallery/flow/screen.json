@@ -20,14 +20,6 @@
     }
   },
   "types": {
-    "TreeRow": {
-      "name": "string 1..",
-      "depth": "int 0..4",
-      "kind": "RowKind",
-      "meta": "string = \"\"",
-      "picked": "bool = false"
-    },
-    "RowKind": "enum(directory, description, state, phase)",
     "TreeJourney": {
       "journey": "Journey",
       "played": "bool = false",
@@ -50,14 +42,6 @@
     }
   },
   "conditions": {
-    "TreeRow.heading": {
-      "when": "kind == \"directory\" || kind == \"description\"",
-      "label": "A directory or a description"
-    },
-    "TreeRow.phase": {
-      "when": "kind == \"phase\"",
-      "label": "A phase"
-    },
     "showing": {
       "when": "shownCount > 0",
       "label": "A journey's path drawn"
