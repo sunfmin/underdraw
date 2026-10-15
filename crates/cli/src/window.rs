@@ -4268,7 +4268,8 @@ mod tests {
         notes::answer(&dir, "N1", "it says Export").unwrap();
 
         let file = dir.join(crate::SCREEN);
-        let screen = std::fs::read_to_string(&file).unwrap().replace("\"id\": \"export\"", "\"id\": \"download\"");
+        let screen =
+            std::fs::read_to_string(&file).unwrap().replace("\"id\": \"export\"", "\"id\": \"download\"");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
         assert_eq!(

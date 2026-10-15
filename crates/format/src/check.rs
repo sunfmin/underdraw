@@ -103,6 +103,14 @@ pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams)
     jobs::check(&operations, &schema, &fixtures, &mut findings);
     components::check(screen, &schema, &mut findings);
     let components = Components::read(screen);
+    for (name, _) in object(screen, components::KEY) {
+        if known.has(name) {
+            findings.add(
+                &format!("{}.{name}", components::KEY),
+                &format!("{name} is a component already (underdraw's, or kinds.json's): give the screen's its own name"),
+            );
+        }
+    }
     let mut opened = BTreeSet::new();
     collect_opened(screen, &mut opened);
     let mut walk = Walk {

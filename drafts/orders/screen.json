@@ -392,6 +392,64 @@
     }
   },
   "components": {
+    "OrderRow": {
+      "params": {
+        "order": "Order"
+      },
+      "nodes": {
+        "component": "OrderTableRow",
+        "title": "#{order.number}",
+        "status": "{order.statusLabel}",
+        "customer": "{order.customer}",
+        "items": "{order.itemsSummary}",
+        "placedAt": "{order.placedAt|date:short}",
+        "total": "{order.total|money}",
+        "on": {
+          "tap": {
+            "navigate": "OrderDetail",
+            "with": {
+              "id": "{order.id}"
+            }
+          }
+        },
+        "children": {
+          "id": "cancel",
+          "component": "IconButton",
+          "if": "order.cancellable",
+          "icon": "cancel",
+          "accessibilityLabel": "取消订单",
+          "on": {
+            "tap": {
+              "open": "cancel-dialog",
+              "with": {
+                "id": "{order.id}"
+              }
+            }
+          }
+        },
+        "columns": {
+          "compact": [
+            "5fr",
+            64,
+            "3fr",
+            40
+          ],
+          "regular": [
+            "13fr",
+            "10fr",
+            "18fr",
+            "9fr",
+            "8fr",
+            "9fr",
+            48
+          ]
+        },
+        "wide": {
+          "compact": false,
+          "regular": true
+        }
+      }
+    },
     "Nav": {
       "nodes": {
         "component": "NavBar",
@@ -520,60 +578,7 @@
                 "id": "table-body",
                 "component": "Stack",
                 "each": "orders",
-                "item": {
-                  "id": "order-{index}",
-                  "component": "OrderTableRow",
-                  "title": "#{item.number}",
-                  "status": "{item.statusLabel}",
-                  "customer": "{item.customer}",
-                  "items": "{item.itemsSummary}",
-                  "placedAt": "{item.placedAt|date:short}",
-                  "total": "{item.total|money}",
-                  "on": {
-                    "tap": {
-                      "navigate": "OrderDetail",
-                      "with": {
-                        "id": "{item.id}"
-                      }
-                    }
-                  },
-                  "children": {
-                    "id": "order-{index}-cancel",
-                    "component": "IconButton",
-                    "if": "item.cancellable",
-                    "icon": "cancel",
-                    "accessibilityLabel": "取消订单",
-                    "on": {
-                      "tap": {
-                        "open": "cancel-dialog",
-                        "with": {
-                          "id": "{item.id}"
-                        }
-                      }
-                    }
-                  },
-                  "columns": {
-                    "compact": [
-                      "5fr",
-                      64,
-                      "3fr",
-                      40
-                    ],
-                    "regular": [
-                      "13fr",
-                      "10fr",
-                      "18fr",
-                      "9fr",
-                      "8fr",
-                      "9fr",
-                      48
-                    ]
-                  },
-                  "wide": {
-                    "compact": false,
-                    "regular": true
-                  }
-                }
+                "item": { "id": "order-{index}", "component": "OrderRow", "with": { "order": "{item}" } }
               }
             ]
           }
