@@ -168,8 +168,9 @@ TEMPLATES AND FORMATS
   value itself, with its type: "value": "{listing.rating}", "each" items.
   A bool, enum, image or object cannot be shown as text: choose words with
   cases. A nullable value (or one reached through it) may be shown, or given
-  to a param that is not nullable, only where its own or an enclosing "if" or cases branch tests it != null, directly or via
-  a condition whose top-level && chain says so. A negation guarantees nothing.
+  to a param that is not nullable, only where its own or an enclosing "if"
+  or cases branch tests it != null, directly or via a condition whose
+  top-level && chain says so. A negation guarantees nothing.
 
 CASES
   Any property's value can be chosen per state; the first true branch wins,
