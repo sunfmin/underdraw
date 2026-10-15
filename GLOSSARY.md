@@ -165,8 +165,15 @@ _Avoid_: mockup, screenshot
 Every screen description under one directory, arranged as its directories
 are, where a person picks one, and then one of its states, to see its
 wireframe drawn from the description as it now stands, and can act on its
-nodes to click through its transitions and navigates as a prototype.
+nodes to click through its transitions and navigates as a prototype; or
+picks a directory, to see the **flow** between the screens under it.
 _Avoid_: mockup viewer, preview
+
+**Flow**:
+The screens under one directory as boxes, and each `navigate` between them
+an arrow labelled with its node, drawn from the links `check <root>`
+reports; one to a screen not drawn yet ends at a dashed "?".
+_Avoid_: site map, navigation graph
 
 **Label**:
 The number tagged in a wireframe on each node a person can act on, in document

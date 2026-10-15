@@ -6,6 +6,7 @@
 
 mod act;
 mod draw;
+mod flow;
 mod gallery;
 mod gpu;
 mod links;
