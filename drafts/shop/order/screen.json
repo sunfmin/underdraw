@@ -1,0 +1,47 @@
+{
+  "screen": "ShopOrder",
+  "title": "Order",
+  "tokens": "tokens.json",
+  "$comment": "One order of the shop, read on its own page, where it can be cancelled until it ships.",
+  "params": ["orderId"],
+  "data": {
+    "orderId": "string",
+    "order": { "type": "Order", "from": "getOrder" }
+  },
+  "operations": {
+    "getOrder": {
+      "query": "One order of the shop, by its id",
+      "params": { "id": "string" },
+      "result": "Order",
+      "fails": { "notFound": "no order has this id" }
+    }
+  },
+  "fixtures": {
+    "open": {
+      "orderId": "A12",
+      "order": { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" }
+    },
+    "shipped": {
+      "$patch": "open",
+      "order": { "status": "shipped" }
+    },
+    "cancelled": {
+      "$patch": "open",
+      "order": { "status": "cancelled" }
+    }
+  },
+  "root": {
+    "id": "order", "component": "Screen", "padding": "space.4", "gap": "space.3",
+    "children": [
+      { "id": "number", "component": "Text", "text": "Order {order.number}", "font": "font.title" },
+      { "id": "customer", "component": "Text", "text": "{order.customer}" },
+      { "id": "total", "component": "Text", "text": "{order.total|money}", "color": "color.textSecondary" },
+      { "id": "cancel", "component": "Button", "if": "order.cancellable", "text": "Cancel order", "variant": "secondary",
+        "on": { "tap": { "call": "cancelOrder", "with": { "id": "{order.id}" } } } }
+    ]
+  },
+  "transitions": [
+    { "from": "open", "on": "cancel.tap", "outcome": "ok", "to": "cancelled" },
+    { "from": "open", "on": "cancel.tap", "outcome": "shipped", "to": "shipped" }
+  ]
+}
