@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::check::Findings;
 use crate::components::{self, Declared};
+use crate::expand::{Instances, Met};
 use crate::field::{self, Base, Field};
 use crate::instance::SLOTS;
 use crate::schema::{Schema, object};
@@ -71,24 +72,6 @@ impl<'a> Subtrees<'a> {
     pub(crate) fn has(&self, name: &str) -> bool {
         self.0.contains_key(name)
     }
-}
-
-/// The id of a node written `id` inside the instance named `prefix`:
-/// `order-3` and `cancel` make `order-3-cancel`. Outside any, its own.
-pub fn join(prefix: Option<&str>, id: &str) -> String {
-    match prefix {
-        Some(prefix) => format!("{prefix}-{id}"),
-        None => id.to_string(),
-    }
-}
-
-/// What the instance `instance` gives in the slot a `{"slot": …}` node
-/// `placeholder` stands for: nothing, when it gives none.
-pub(crate) fn slotted<'v>(
-    placeholder: &Map<String, Value>,
-    instance: &'v Map<String, Value>,
-) -> Option<&'v Value> {
-    placeholder.get("slot").and_then(Value::as_str).and_then(|slot| instance.get(slot))
 }
 
 /// Whether `node` is a `{"slot": …}` node: a place in a component's nodes
@@ -193,66 +176,70 @@ pub(crate) fn reached_into(instance: &Map<String, Value>) -> Vec<&String> {
 /// root, under the instance's id.
 pub(crate) fn written(screen: &Value) -> Vec<(String, &Map<String, Value>)> {
     let subtrees = Subtrees::read(screen);
-    let mut walk = Written { subtrees: &subtrees, using: Vec::new(), found: Vec::new() };
+    let mut walk = Written { instances: Instances::new(&subtrees), found: Vec::new() };
     if let Some(root) = screen.get("root") {
-        walk.value(root, None);
+        walk.value(root);
     }
     for (_, tree) in object(screen, "phases") {
-        walk.value(tree, None);
+        walk.value(tree);
     }
     walk.found
 }
 
 struct Written<'c, 'a> {
-    subtrees: &'c Subtrees<'a>,
-    /// The components being walked through, outermost first: one met again
-    /// is a cycle, which `check` names, and is not walked into.
-    using: Vec<&'a str>,
+    /// The instances being walked through, each keeping itself: what it
+    /// gives in a slot is written there.
+    instances: Instances<'c, 'a, &'a Map<String, Value>>,
     found: Vec<(String, &'a Map<String, Value>)>,
 }
 
 impl<'a> Written<'_, 'a> {
-    fn value(&mut self, value: &'a Value, prefix: Option<&str>) {
+    fn value(&mut self, value: &'a Value) {
         match value {
             Value::Array(items) => {
                 for item in items {
-                    self.value(item, prefix);
+                    self.value(item);
                 }
             }
-            Value::Object(node) => self.node(node, prefix),
+            Value::Object(node) => self.node(node),
             _ => {}
         }
     }
 
-    fn node(&mut self, node: &'a Map<String, Value>, prefix: Option<&str>) {
-        let id = join(prefix, node.get("id").and_then(Value::as_str).unwrap_or_default());
-        if let Some(component) = self.subtrees.of(node) {
-            let (name, root) = (component.name, component.nodes);
-            for (key, inside) in node {
-                if SLOTS.contains(&key.as_str()) {
-                    self.value(inside, prefix);
+    fn node(&mut self, node: &'a Map<String, Value>) {
+        let written = node.get("id").and_then(Value::as_str).unwrap_or_default();
+        let (_, id) = self.instances.ids(written, written);
+        match self.instances.met(node) {
+            Met::Slot(key) => {
+                if let Some(frame) = self.instances.leave() {
+                    if let Some(given) = frame.at.get(&key) {
+                        self.value(given);
+                    }
+                    self.instances.resume(frame);
                 }
             }
-            if self.using.contains(&name) {
-                return;
+            // One that uses itself `check` names, and is not walked into.
+            Met::Instance(component) => {
+                if self.instances.enter(component, node, id.clone(), id.clone(), node).is_ok() {
+                    self.found.push((id, component.nodes));
+                    self.inside(component.nodes);
+                    self.instances.leave();
+                }
             }
-            self.found.push((id.clone(), root));
-            self.using.push(name);
-            self.inside(root, Some(&id));
-            self.using.pop();
-            return;
+            Met::Node => {
+                if ["id", "component", "on"].iter().any(|key| node.contains_key(*key)) {
+                    self.found.push((id, node));
+                }
+                self.inside(node);
+            }
         }
-        if ["id", "component", "on"].iter().any(|key| node.contains_key(*key)) {
-            self.found.push((id, node));
-        }
-        self.inside(node, prefix);
     }
 
     /// What the node `node` holds, every key but its handlers.
-    fn inside(&mut self, node: &'a Map<String, Value>, prefix: Option<&str>) {
+    fn inside(&mut self, node: &'a Map<String, Value>) {
         for (key, inside) in node {
             if key != "on" && key != "with" {
-                self.value(inside, prefix);
+                self.value(inside);
             }
         }
     }
