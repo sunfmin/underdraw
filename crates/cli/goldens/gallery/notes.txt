@@ -1,0 +1,27 @@
+tree
+  root/
+    orders  [1 note]
+      ▸ default  [1 note]
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+picture
+  page default · 390
+    picked order-0-cancel: 318, 215 · 40 × 40
+  page default · 1120
+    picked order-0-cancel: 1048, 214 · 40 × 40
+  pin N1 on page 0: Answered
+  pin N2 on page 0: Note
+  pin N1 on page 1: Answered, faint
+  pin N2 on page 1: Note, faint
+sidebar
+  IconButton
+    calls  nothing
+    ▸ details
+  note N2 · waiting on the agent
+    too red
+    waiting for the agent
