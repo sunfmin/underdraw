@@ -93,7 +93,7 @@ fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
     press_keys(gallery, &["Enter"]);
 }
 
-/// Whether a line of the panel reads `line`.
+/// Whether a line of the sidebar reads `line`.
 fn panel_has(gallery: &Gallery, line: &str) -> bool {
     gallery.panel().iter().any(|l| l.trim() == line)
 }
@@ -230,7 +230,7 @@ fn an_assumption_picked_by_its_question_mark() {
         }
         // Scrolled to it, as a person scrolls before clicking.
         gallery.cursor = (TREE + MARGIN, MARGIN);
-        gallery.wheel(on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
+        gallery.wheel(0.0, on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
         gallery.cursor = on_guess(gallery, 0, "card-number");
         gallery.press();
     });
@@ -243,5 +243,54 @@ fn a_shared_component_in_the_components_section() {
     let root = shop("frame-components");
     let gallery = held("components", &root, WINDOW, |gallery| show(gallery, "OrderRow", "pending"));
     assert_eq!(captions(&gallery), ["pending · 390", "pending · 1120"]);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
+    let gallery = held("node", Path::new(DRAFTS), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.cursor = on_node(gallery, 0, "nav-save");
+        gallery.press();
+        gallery.details = true;
+    });
+    assert!(panel_has(&gallery, "id  nav-save"));
+}
+
+#[test]
+fn the_sidebar_hidden_the_pictures_take_its_width() {
+    let gallery = held("sidebar-hidden", Path::new(DRAFTS), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.toggle_sidebar();
+    });
+    assert_eq!(gallery.pane_right(), WINDOW.0);
+}
+
+#[test]
+fn a_narrow_window_at_half_size_scrolled_across() {
+    let gallery = held("narrow", Path::new(DRAFTS), (1000.0, 900.0), |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.cursor = (TREE + MARGIN, MARGIN);
+        gallery.wheel(1e6, 0.0);
+        gallery.cursor = on_node(gallery, 1, "nav-save");
+        gallery.press();
+    });
+    assert_eq!(gallery.zoom(gallery.pane()), SMALLEST);
+    assert_eq!(gallery.node.as_deref(), Some("nav-save"), "picked, scaled and scrolled");
+}
+
+#[test]
+fn the_window_in_chinese() {
+    let root = root_of("frame-zh", &[("checkout", "checkout")]);
+    let gallery = held("zh", &root, WINDOW, |gallery| {
+        gallery.lang = Lang::Zh;
+        let checkout = line_of(gallery, "checkout");
+        showing(gallery, checkout + 1);
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let guessed = pages[0].nodes.iter().find(|node| node.assumed.is_some()).unwrap().id.clone();
+        gallery.cursor = on_node(gallery, 0, &guessed);
+        gallery.press();
+    });
+    assert!(panel_has(&gallery, "▸ 详情"));
     std::fs::remove_dir_all(root).unwrap();
 }
