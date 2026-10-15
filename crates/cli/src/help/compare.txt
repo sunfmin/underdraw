@@ -131,5 +131,5 @@ WHAT TRIPS YOU UP
     scrollX and scrollY so the frames are the page's.
   - Order and nesting are checked; sizes and spacing are not: the wireframe's
     are not the real UI's.
-  - Pinned bars (StickyBar) and overlays are not checked for order, and
-    nothing is checked for nesting inside a node that scrolls.
+  - Pinned bars (StickyBar), a node's "foot" and overlays are not checked
+    for order, and nothing is checked for nesting inside a node that scrolls.

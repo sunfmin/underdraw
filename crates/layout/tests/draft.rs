@@ -507,3 +507,24 @@ fn text_in_a_colour_token_is_drawn_in_the_ink_its_colour_reads_as() {
     assert_eq!(ink("dark"), underdraw_layout::Ink::Text);
     assert_eq!(ink("missing"), underdraw_layout::Ink::Text);
 }
+
+#[test]
+fn a_foot_sits_on_the_bottom_of_its_column_after_everything_else() {
+    // A pane beside a taller one: its foot is drawn on the pane's bottom
+    // edge, after the cards, with the space left between them.
+    let page = tiny(serde_json::json!([
+        { "id": "panes", "component": "Columns", "gap": 0, "columns": ["1fr", "1fr"], "children": [
+            { "id": "long", "component": "Stack", "children": [
+                { "id": "l1", "component": "Text", "text": "a" }, { "id": "l2", "component": "Text", "text": "b" },
+                { "id": "l3", "component": "Text", "text": "c" }, { "id": "l4", "component": "Text", "text": "d" },
+                { "id": "l5", "component": "Text", "text": "e" }, { "id": "l6", "component": "Text", "text": "f" } ] },
+            { "id": "side", "component": "Stack",
+              "foot": { "id": "send", "component": "Button", "text": "Send" },
+              "children": [ { "id": "card", "component": "Text", "text": "a card" } ] } ] }
+    ]));
+    let (side, card, send) =
+        (placed(&page, "side").rect, placed(&page, "card").rect, placed(&page, "send").rect);
+    assert_eq!(side.height, placed(&page, "long").rect.height, "the pane is as tall as the other");
+    assert_eq!(send.y + send.height, side.y + side.height, "the foot closes the pane");
+    assert!(send.y > card.y + card.height, "below the cards, with room between: {card:?} {send:?}");
+}

@@ -49,7 +49,7 @@ pub struct Node {
     /// and cases and responsive values chosen.
     pub props: Map<String, Value>,
     /// The nodes it holds, each with the key it came from in `slot`
-    /// (`children`, `leading`, `trailing`, `item`, `action`, `overlay`).
+    /// (`children`, `leading`, `trailing`, `item`, `action`, `overlay`, `foot`).
     pub children: Vec<Node>,
     pub slot: String,
     /// What the agent guessed here, for the person to confirm.
@@ -84,7 +84,7 @@ impl Node {
 }
 
 /// Keys that hold child nodes.
-pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
+pub const SLOTS: [&str; 7] = ["children", "leading", "trailing", "item", "action", "overlay", "foot"];
 
 /// Keys that only steer how the tree is built.
 const STRUCTURE: [&str; 11] =
