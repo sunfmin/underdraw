@@ -6,7 +6,9 @@
 //! sidebar ([`crate::sidebar`]), the cards of what is picked and the buttons
 //! of what can be done with it; for a directory picked, the
 //! flow between the screens under it; for a journey picked (ADR 0022), its
-//! steps played one by one. The person talks to the agent about what they
+//! steps played one by one. Along the top, over all three, the toolbar
+//! ([`toolbar`]): back and forward through what the window has shown
+//! ([`history`]), and the button that hides and shows the sidebar. The person talks to the agent about what they
 //! picked (ADR 0023): a node, a whole state, or an arrow of an overview or
 //! a flow has one note, a conversation shown in the sidebar under its
 //! card, said more in from the box at its foot, and drawn as a numbered pin
@@ -809,7 +811,8 @@ impl Gallery {
             (Tool::Back, say!(lang, go_back), self.history.can_back()),
             (Tool::Forward, say!(lang, go_forward), self.history.can_forward()),
         ];
-        let sidebar = if self.panes.side().is_some() { say!(lang, hide_sidebar) } else { say!(lang, show_sidebar) };
+        let sidebar =
+            if self.panes.side().is_some() { say!(lang, hide_sidebar) } else { say!(lang, show_sidebar) };
         let right = vec![(Tool::Sidebar, sidebar, true)];
         toolbar::lay_out(&mut self.typesetter, self.panes.window().0, left, right)
     }
@@ -3158,6 +3161,8 @@ mod tests {
                 "v" => KeyCode::KeyV,
                 "x" => KeyCode::KeyX,
                 "\\" => KeyCode::Backslash,
+                "[" => KeyCode::BracketLeft,
+                "]" => KeyCode::BracketRight,
                 _ => panic!("no chord on {letter:?}"),
             };
             let key = Key::Character(letter.into());
@@ -3398,13 +3403,15 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing + 1);
         gallery.press_here();
-        let end = gallery.pictures_size().1 - 900.0;
+        let tall = gallery.panes.window().1;
+        assert_eq!(tall, 900.0 - TOOLBAR, "the panes are below the toolbar");
+        let end = gallery.pictures_size().1 - tall;
         assert!(end > 0.0, "the listing is taller than the window");
         gallery.move_to((gallery.panes.pictures().x0 + 100.0, 400.0));
         gallery.wheel_by(0.0, 1e6);
         assert_eq!(gallery.panes.scrolled(Scrolls::Down), end, "as far as its end");
         let bar = gallery.panes.bar(Scrolls::Down).unwrap();
-        assert_eq!(bar.content, end + 900.0, "its scrollbar over all of it");
+        assert_eq!(bar.content, end + tall, "its scrollbar over all of it");
         gallery.wheel_by(0.0, -1e6);
         assert_eq!(gallery.panes.scrolled(Scrolls::Down), 0.0, "no further than the top");
     }
@@ -4066,6 +4073,80 @@ mod tests {
         assert!(gallery.panel()[0].contains("no act led here"), "{}", gallery.panel()[0]);
     }
 
+    /// Where the toolbar's button that does `tool` is, in the gallery's
+    /// points, and whether it can be pressed: not grayed.
+    fn tool_button(gallery: &mut Gallery, tool: Tool) -> ((f64, f64), bool) {
+        let button = gallery.tools().into_iter().find(|button| button.tool == tool).unwrap();
+        let Rect { x, y, width, height } = button.area;
+        ((f64::from(x + width / 2.0), f64::from(y + height / 2.0)), button.enabled)
+    }
+
+    #[test]
+    fn back_and_forward_step_through_what_the_window_showed_and_something_new_drops_the_steps_forward() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        let (back, can_back) = tool_button(&mut gallery, Tool::Back);
+        let (forward, can_forward) = tool_button(&mut gallery, Tool::Forward);
+        assert!(
+            back.1 < 0.0 && forward.0 > back.0,
+            "back, then forward, along the top: {back:?} {forward:?}"
+        );
+        assert!(!can_back && !can_forward, "the first thing shown: both grayed");
+        assert!(!gallery.press_at(back) && !gallery.chord("["), "grayed: nowhere to go");
+
+        act_on(&mut gallery, "order-0-cancel");
+        act_on(&mut gallery, "nav-export");
+        let export = shown(&gallery);
+        act_on(&mut gallery, "nav-back");
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "back on a node returns along the acts");
+        assert!(gallery.press_at(back), "and is a step of the window's");
+        assert_eq!(shown(&gallery), export);
+        assert!(gallery.chord("["));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "acts are steps");
+        assert!(gallery.chord("["));
+        assert_eq!(shown(&gallery), "orders · default", "a tree pick is a step");
+        assert!(!tool_button(&mut gallery, Tool::Back).1 && tool_button(&mut gallery, Tool::Forward).1);
+        assert!(gallery.press_at(forward));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog");
+        assert!(gallery.chord("]") && gallery.chord("]"));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "back on the node, gone forward to");
+        assert!(!tool_button(&mut gallery, Tool::Forward).1 && !gallery.chord("]"), "the last: grayed");
+
+        assert!(gallery.chord("["));
+        let journey = journey_of(&gallery, "cancel-an-order");
+        showing(&mut gallery, journey);
+        assert!(gallery.click(Do::Step(1)));
+        assert!(!tool_button(&mut gallery, Tool::Forward).1, "playing a journey drops the steps forward");
+        assert!(gallery.chord("["));
+        assert_eq!(gallery.playing.as_ref().map(|playing| playing.at), Some(0), "each step is one");
+        assert!(gallery.chord("["));
+        assert_eq!(shown(&gallery), export);
+        assert!(gallery.chord("]") && gallery.chord("]"));
+        assert_eq!(gallery.playing.as_ref().map(|playing| playing.at), Some(1), "played again at that step");
+    }
+
+    #[test]
+    fn the_toolbars_sidebar_button_hides_and_shows_the_sidebar_and_its_words_are_said_in_lang() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        let said = |gallery: &mut Gallery| gallery.tools().into_iter().map(|b| b.said).collect::<Vec<_>>();
+        assert_eq!(said(&mut gallery), ["← back", "→ forward", "hide sidebar"]);
+        let (sidebar, _) = tool_button(&mut gallery, Tool::Sidebar);
+        assert!(sidebar.0 > gallery.panes.pictures().x1, "at the right end, over the sidebar");
+        assert!(gallery.press_at(sidebar));
+        assert!(gallery.panes.side().is_none(), "hidden, as ⌘\\ hides it");
+        assert_eq!(said(&mut gallery)[2], "show sidebar");
+        let (sidebar, _) = tool_button(&mut gallery, Tool::Sidebar);
+        assert!(gallery.press_at(sidebar));
+        assert!(gallery.panes.side().is_some(), "shown again");
+        assert!(gallery.chord("\\") && gallery.panes.side().is_none(), "⌘\\ the same");
+        assert_eq!(said(&mut gallery)[2], "show sidebar");
+
+        gallery.speak(Lang::Zh).unwrap();
+        assert_eq!(said(&mut gallery), ["← 后退", "→ 前进", "显示侧栏"]);
+        gallery.speak(Lang::Ja).unwrap();
+        assert_eq!(said(&mut gallery), ["← 戻る", "→ 進む", "サイドバーを表示"]);
+    }
     #[test]
     fn a_navigate_to_a_screen_not_drawn_yet_says_so() {
         let mut gallery = gallery();
@@ -4102,10 +4183,7 @@ mod tests {
         let todo = line_of(&gallery, "todo");
         over_row(&mut gallery, todo);
         gallery.press_here();
-        assert!(
-            gallery.path.is_empty() && gallery.acted.is_none(),
-            "picking in the tree starts a new path"
-        );
+        assert!(gallery.path.is_empty() && gallery.acted.is_none(), "picking in the tree starts a new path");
     }
 
     #[test]
@@ -4778,7 +4856,8 @@ mod tests {
         let field = gallery.field_rect().expect("the box is at the sidebar's foot");
         let (_, caret) = gallery.composing();
         let caret = caret.expect("its caret is known");
-        assert!(over(field, (f64::from(caret.x), f64::from(caret.y))), "the caret in the field's text");
+        let at = (f64::from(caret.x), f64::from(caret.y) - TOOLBAR);
+        assert!(over(field, at), "the caret in the field's text, in the window's points below the toolbar");
         assert!(gallery.button_at((f64::from(field.x) + 1.0, f64::from(field.y) - 1.0)).is_none());
         assert_eq!(gallery.sidebar.layouts(), laid, "hit-tested and its caret found on the one layout");
 
