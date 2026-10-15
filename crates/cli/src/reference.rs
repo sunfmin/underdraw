@@ -134,7 +134,7 @@ impl Reference {
 
 /// The element of each repeat around a node, outermost first, after a
 /// space: ` [2][0]`; nothing outside any repeat.
-fn instance(of: &[usize]) -> String {
+pub fn instance(of: &[usize]) -> String {
     match of {
         [] => String::new(),
         _ => format!(" {}", of.iter().map(|index| format!("[{index}]")).collect::<String>()),

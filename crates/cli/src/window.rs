@@ -34,7 +34,7 @@ use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::notes::{self, By, Note, Status};
-use crate::reference::{Frame, On, Pointed, Reference, Region};
+use crate::reference::{self, Frame, On, Pointed, Reference, Region};
 use crate::{gpu, links, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
@@ -1542,8 +1542,7 @@ impl Gallery {
             lines.push("covers  no node".to_string());
         }
         for origin in &region.nodes {
-            let instance: String = origin.instance.iter().map(|index| format!("[{index}]")).collect();
-            lines.push(format!("covers  {} {instance}", origin.written).trim_end().to_string());
+            lines.push(format!("covers  {}{}", origin.written, reference::instance(&origin.instance)));
         }
         lines
     }
