@@ -1,10 +1,13 @@
 
 FORMAT — how to write a description
-  The reference for writing screen.json, tokens.json and kinds.json, from
-  the files' keys to every built-in kind.
+  The reference for writing screen.json, domain.json, tokens.json and
+  kinds.json, from the files' keys to every built-in kind.
 
 FILES
   <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
+  domain.json         optional: the types, conditions and operations every
+                      screen of the project shares; its directory is the
+                      project root (DOMAIN.JSON below)
   tokens.json         design tokens; read by name, always this file name,
                       from the nearest directory at or above <dir> that
                       has one (beside screen.json, or shared above it)
@@ -526,6 +529,31 @@ BUILT-IN KINDS
   write what the platform needs to know, such as "minLength", "sticky".
   The built-in kinds use the fonts font.body, font.subhead, font.caption,
   font.heading and font.price: define them in tokens.json.
+
+DOMAIN.JSON
+  The domain a project's screens share, at the project root: the nearest
+  directory at or above a screen holding it.
+  {
+    "types":      { "Order": { "id": "string", "total": "money" } },
+    "conditions": { … },
+    "operations": { "cancelOrder": { "command": "Cancels an order",
+                                     "params": { "id": "string" },
+                                     "fails": { "notFound": "…" } } }
+  }
+  Each key is written as in screen.json (DATA AND TYPES, CONDITIONS,
+  OPERATIONS), and nothing else goes there. Every command reads each screen
+  of the project as if it declared the domain's itself: a screen uses
+  "Order" in its "data" and calls "cancelOrder" by name, and `handoff`, `cli`
+  and its golden outputs come out as if it had written them. A screen adds
+  its own beside them (a type that wraps the domain's with view state,
+  "OrderRow": { "order": "Order", "menuOpen": … }), but never one of a name
+  the domain declares: check names the screen's at "types.Order" (or
+  "conditions.…", "operations.…"), says it shadows the domain's, and reads
+  the domain's in its place. A finding about the domain's file itself is
+  at "domain.json …"; one inside a declaration it holds is at its dotted
+  path, as if the screen held it, and is fixed in domain.json.
+  A condition in the domain reads the data of each screen that uses it, so
+  share one only when every such screen holds the fields it names.
 
 TOKENS.JSON
   {

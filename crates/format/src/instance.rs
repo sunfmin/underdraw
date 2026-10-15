@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 use crate::breakpoint::{self, Breakpoint};
 use crate::check::Findings;
 use crate::conditions::{Conditions, UseSite};
+use crate::domain;
 use crate::fixture;
-use crate::jobs;
 use crate::schema::{Schema, object};
 use crate::template::{self, Decimals, Format};
 
@@ -91,7 +91,7 @@ const STRUCTURE: [&str; 11] =
 /// A screen read more than once is better read once: `Model::instantiate`.
 pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Result<Node, String> {
     let mut ignored = Findings::default();
-    let screen = &jobs::expand(screen, &mut ignored);
+    let screen = &domain::expand(screen, &mut ignored);
     let schema = Schema::read(screen, &mut ignored);
     let conditions = Conditions::read(screen, &schema, &mut ignored);
     let fixtures = fixture::read(screen, &schema, &mut ignored);

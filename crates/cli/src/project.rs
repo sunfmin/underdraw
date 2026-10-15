@@ -1,5 +1,5 @@
 //! Where a screen's project is: the one place every command finds a
-//! screen's project root and its tokens (ADR 0021).
+//! screen's project root, its domain (ADR 0020) and its tokens (ADR 0021).
 
 use std::path::{Path, PathBuf};
 
@@ -23,25 +23,40 @@ pub struct Project {
     pub tokens_file: Option<PathBuf>,
     /// The screen's tokens: that file's, or none.
     pub tokens: Value,
+    /// The domain its screens share: domain.json at the root, when there
+    /// is one.
+    pub domain: Option<Value>,
 }
 
 impl Project {
     /// The project of the screen whose directory is `dir`; refused when
-    /// the tokens it takes are not JSON.
+    /// the tokens it takes, or its domain, are not JSON.
     pub fn of(dir: &Path) -> anyhow::Result<Project> {
         let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
-        let root = nearest(&dir, DOMAIN).unwrap_or_else(|| dir.clone());
+        let domain_root = nearest(&dir, DOMAIN);
+        let domain = domain_root.as_ref().map(|root| read_json(&root.join(DOMAIN))).transpose()?;
+        let root = domain_root.unwrap_or_else(|| dir.clone());
         let tokens_file = nearest(&dir, TOKENS).map(|at| at.join(TOKENS));
         let tokens = match &tokens_file {
-            Some(file) => {
-                let text = std::fs::read_to_string(file)
-                    .with_context(|| format!("cannot read {}", file.display()))?;
-                serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))?
-            }
+            Some(file) => read_json(file)?,
             None => json!({}),
         };
-        Ok(Project { root, tokens_file, tokens })
+        Ok(Project { root, tokens_file, tokens, domain })
     }
+
+    /// `screen` as every command hands it to the pure crates: with the
+    /// domain it shares, when the project has one.
+    pub fn describe(&self, mut screen: Value) -> Value {
+        if let (Some(domain), Some(fields)) = (&self.domain, screen.as_object_mut()) {
+            fields.insert(underdraw_format::DOMAIN.to_string(), domain.clone());
+        }
+        screen
+    }
+}
+
+fn read_json(file: &Path) -> anyhow::Result<Value> {
+    let text = std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
+    serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
 }
 
 /// The nearest directory at or above `dir` that holds the file `name`.
