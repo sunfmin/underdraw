@@ -8,9 +8,8 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::check::Findings;
-use crate::instance::{Node, SLOTS};
+use crate::instance::Node;
 use crate::operations::Operations;
-use crate::schema::object;
 
 /// One transition: in state `from`, the person raises `event` on the node
 /// `node`, and the screen is then in state `to`. `outcome` names how the
@@ -218,40 +217,14 @@ pub fn written_node<'a>(screen: &'a Value, id: &str) -> Option<&'a Map<String, V
     written(screen).get(id).copied()
 }
 
-/// Every node the description writes, in its trees, phases and components,
-/// by its id as written.
-fn written(screen: &Value) -> BTreeMap<&str, &Map<String, Value>> {
+/// Every node the description writes, in its trees and phases and, through
+/// each instance, its components, by its id as written and joined.
+fn written(screen: &Value) -> BTreeMap<String, &Map<String, Value>> {
     let mut nodes = BTreeMap::new();
-    if let Some(root) = screen.get("root") {
-        collect(root, &mut nodes);
-    }
-    for key in ["phases", "components"] {
-        for (_, tree) in object(screen, key) {
-            collect(tree, &mut nodes);
-        }
+    for (id, node) in crate::components::written(screen) {
+        nodes.entry(id).or_insert(node);
     }
     nodes
-}
-
-fn collect<'a>(value: &'a Value, nodes: &mut BTreeMap<&'a str, &'a Map<String, Value>>) {
-    match value {
-        Value::Array(items) => {
-            for item in items {
-                collect(item, nodes);
-            }
-        }
-        Value::Object(node) => {
-            if let Some(Value::String(id)) = node.get("id") {
-                nodes.insert(id, node);
-            }
-            for slot in SLOTS {
-                if let Some(inside) = node.get(slot) {
-                    collect(inside, nodes);
-                }
-            }
-        }
-        _ => {}
-    }
 }
 
 /// Whether the tree `node` holds a node written with the id `written`.

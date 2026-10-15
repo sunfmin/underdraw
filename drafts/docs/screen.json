@@ -552,22 +552,23 @@
     }
   },
   "components": {
-    "nav": {
-      "id": "nav",
-      "component": "NavBar",
-      "children": {
-        "id": "nav-title",
-        "component": "Text",
-        "text": "团队文档",
-        "font": "font.heading"
-      },
-      "trailing": {
-        "id": "nav-new",
-        "component": "IconButton",
-        "icon": "add",
-        "on": {
-          "tap": {
-            "call": "newDocument"
+    "Nav": {
+      "nodes": {
+        "component": "NavBar",
+        "children": {
+          "id": "title",
+          "component": "Text",
+          "text": "团队文档",
+          "font": "font.heading"
+        },
+        "trailing": {
+          "id": "new",
+          "component": "IconButton",
+          "icon": "add",
+          "on": {
+            "tap": {
+              "call": "newDocument"
+            }
           }
         }
       }
@@ -577,9 +578,7 @@
     "id": "docs",
     "component": "Screen",
     "children": [
-      {
-        "ref": "nav"
-      },
+      { "id": "nav", "component": "Nav" },
       {
         "id": "toolbar",
         "component": "Row",
@@ -946,9 +945,7 @@
       "id": "loading",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "sk",
           "component": "Stack",
@@ -975,9 +972,7 @@
       "id": "error",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "err",
           "component": "EmptyState",

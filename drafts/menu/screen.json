@@ -471,50 +471,49 @@
     }
   },
   "components": {
-    "nav": {
-      "id": "nav",
-      "component": "NavBar",
-      "leading": {
-        "id": "nav-back",
-        "component": "IconButton",
-        "icon": "arrow_back",
-        "on": {
-          "tap": {
-            "back": true
-          }
-        }
-      },
-      "trailing": [
-        {
-          "id": "nav-search",
+    "Nav": {
+      "nodes": {
+        "component": "NavBar",
+        "leading": {
+          "id": "back",
           "component": "IconButton",
-          "icon": "search",
+          "icon": "arrow_back",
           "on": {
             "tap": {
-              "navigate": "MenuSearch"
+              "back": true
             }
           }
         },
-        {
-          "id": "nav-share",
-          "component": "IconButton",
-          "icon": "ios_share",
-          "on": {
-            "tap": {
-              "share": true
+        "trailing": [
+          {
+            "id": "search",
+            "component": "IconButton",
+            "icon": "search",
+            "on": {
+              "tap": {
+                "navigate": "MenuSearch"
+              }
+            }
+          },
+          {
+            "id": "share",
+            "component": "IconButton",
+            "icon": "ios_share",
+            "on": {
+              "tap": {
+                "share": true
+              }
             }
           }
-        }
-      ]
+        ]
+      }
     }
   },
   "root": {
     "id": "menu",
     "component": "Screen",
     "children": [
-      {
-        "ref": "nav"
-      },
+      { "id": "nav", "component": "Nav" },
       {
         "id": "header",
         "component": "Stack",
@@ -846,9 +845,7 @@
       "id": "loading",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "sk",
           "component": "Stack",
@@ -874,9 +871,7 @@
       "id": "error",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "err",
           "component": "EmptyState",

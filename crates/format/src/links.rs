@@ -14,8 +14,9 @@ use crate::Lang;
 /// The parts of a description that hold nodes, and so actions.
 const TREES: [&str; 3] = ["root", "phases", "components"];
 
-/// One `navigate`: the node it is on, by its id as written (empty for a
-/// node with none), and the screen it names.
+/// One `navigate`: the node it is on, by its id as written and, inside a
+/// component, joined to its instance's (empty for a node with none), and
+/// the screen it names.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Navigate {
     pub node: String,
@@ -26,38 +27,16 @@ pub struct Navigate {
 /// in the order written, each node's screens by name, each once.
 pub fn navigates(screen: &Value) -> Vec<Navigate> {
     let mut found = Vec::new();
-    for tree in TREES {
-        if let Some(value) = screen.get(tree) {
-            collect(value, &mut found);
+    for (node, written) in crate::components::written(screen) {
+        if let Some(on) = written.get("on") {
+            let mut screens = BTreeSet::new();
+            targets(on, &mut screens);
+            for to in screens {
+                found.push(Navigate { node: node.clone(), to });
+            }
         }
     }
     found
-}
-
-fn collect(value: &Value, found: &mut Vec<Navigate>) {
-    match value {
-        Value::Object(object) => {
-            if let Some(on) = object.get("on") {
-                let node = object.get("id").and_then(Value::as_str).unwrap_or("");
-                let mut screens = BTreeSet::new();
-                targets(on, &mut screens);
-                for to in screens {
-                    found.push(Navigate { node: node.to_string(), to });
-                }
-            }
-            for (key, inner) in object {
-                if key != "on" {
-                    collect(inner, found);
-                }
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                collect(item, found);
-            }
-        }
-        _ => {}
-    }
 }
 
 /// The screens the handlers in `on` navigate to, by name.

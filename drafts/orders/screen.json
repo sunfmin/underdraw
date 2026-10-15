@@ -392,32 +392,33 @@
     }
   },
   "components": {
-    "nav": {
-      "id": "nav",
-      "component": "NavBar",
-      "leading": {
-        "id": "nav-back",
-        "component": "IconButton",
-        "icon": "arrow_back",
-        "on": {
-          "tap": {
-            "back": true
+    "Nav": {
+      "nodes": {
+        "component": "NavBar",
+        "leading": {
+          "id": "back",
+          "component": "IconButton",
+          "icon": "arrow_back",
+          "on": {
+            "tap": {
+              "back": true
+            }
           }
-        }
-      },
-      "children": {
-        "id": "nav-title",
-        "component": "Text",
-        "text": "订单管理",
-        "font": "font.heading"
-      },
-      "trailing": {
-        "id": "nav-export",
-        "component": "IconButton",
-        "icon": "download",
-        "on": {
-          "tap": {
-            "navigate": "ExportDocuments"
+        },
+        "children": {
+          "id": "title",
+          "component": "Text",
+          "text": "订单管理",
+          "font": "font.heading"
+        },
+        "trailing": {
+          "id": "export",
+          "component": "IconButton",
+          "icon": "download",
+          "on": {
+            "tap": {
+              "navigate": "ExportDocuments"
+            }
           }
         }
       }
@@ -427,9 +428,7 @@
     "id": "orders",
     "component": "Screen",
     "children": [
-      {
-        "ref": "nav"
-      },
+      { "id": "nav", "component": "Nav" },
       {
         "id": "toolbar",
         "component": "Stack",
@@ -731,9 +730,7 @@
       "id": "loading",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "sk",
           "component": "Stack",
@@ -761,9 +758,7 @@
       "id": "error",
       "component": "Screen",
       "children": [
-        {
-          "ref": "nav"
-        },
+        { "id": "nav", "component": "Nav" },
         {
           "id": "err",
           "component": "EmptyState",
