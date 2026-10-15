@@ -252,15 +252,24 @@ fn find<'a>(notes: &'a mut [Note], dir: &Path, id: &str) -> anyhow::Result<&'a m
 /// Why the agent may not create, close or reopen a note.
 pub const THE_PERSONS: &str = "the agent cannot create, close or reopen a note: the person does that in the gallery (`underdraw gallery <root>`). Answer an open one with `underdraw notes <dir> --answer <id> --reply \"…\"`; to ask the person something, write an assumption (`assumed`) in the description";
 
+/// How long `--wait` lets pass between two readings of the notes.
+const WAIT_BETWEEN: std::time::Duration = std::time::Duration::from_millis(200);
+
 /// `underdraw notes <path>`: the open notes of the description at `path`,
 /// or of every description under it, each with its reference; or, given
 /// `answer`, that note of the description at `path` answered with `reply`.
-pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>) -> anyhow::Result<Value> {
+/// With `wait`, the open notes once there is any: at once when some are
+/// open already, else as soon as the person writes or reopens one. Nothing
+/// is kept between runs; the files are read again each time.
+pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool) -> anyhow::Result<Value> {
     if !path.is_dir() {
         bail!("{} is not a directory: pass a description's directory, or a root of them", path.display());
     }
     let path = path.canonicalize().with_context(|| format!("cannot read {}", path.display()))?;
     if let Some(id) = answer {
+        if wait {
+            bail!("--wait waits for a note to answer: run it without --answer, then answer what it lists");
+        }
         if !path.join(SCREEN).is_file() {
             bail!(
                 "{} holds no {SCREEN}: --answer takes the directory of the description the note is in, as \"description\" names it under the root",
@@ -277,7 +286,22 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>) -> anyhow::
     if reply.is_some() {
         bail!("--reply answers a note: give the note with --answer <id>");
     }
-    let dirs: Vec<PathBuf> = crate::gallery::descriptions(&path)
+    loop {
+        let (open, counts) = listed(&path)?;
+        if !wait || counts.open > 0 {
+            return Ok(
+                json!({ "root": path, "notes": open, "open": counts.open, "answered": counts.answered }),
+            );
+        }
+        std::thread::sleep(WAIT_BETWEEN);
+    }
+}
+
+/// The open notes of every description under `root`, as `notes` answers
+/// each, and how many there are open and answered: read from the files as
+/// they now stand, descriptions added since included.
+fn listed(root: &Path) -> anyhow::Result<(Vec<Value>, Counts)> {
+    let dirs: Vec<PathBuf> = crate::gallery::descriptions(root)
         .into_iter()
         .filter_map(|row| row.description().map(Path::to_path_buf))
         .collect();
@@ -286,10 +310,10 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>) -> anyhow::
         let notes = read(dir)?;
         counts = counts.add(Counts::of(&notes));
         open.extend(
-            notes.iter().filter(|note| note.status == Status::Open).map(|note| note.answer(&path, dir)),
+            notes.iter().filter(|note| note.status == Status::Open).map(|note| note.answer(root, dir)),
         );
     }
-    Ok(json!({ "root": path, "notes": open, "open": counts.open, "answered": counts.answered }))
+    Ok((open, counts))
 }
 
 /// What `check` says of the notes of the description in `dir`: how many are
