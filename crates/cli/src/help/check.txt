@@ -133,5 +133,11 @@ WHAT TRIPS YOU UP
   - A "long" command's job type (ExportDocsJob) and the query that reads
     it (exportDocsJob) are derived: write neither. A field of "data" holds
     the job, and fixtures hold it with each "status": running, done, failed.
+  - A component of the screen's ("components", FORMAT's COMPONENTS) reads
+    only its params: a path past them, or a condition of the screen's, is
+    refused; pass it in a param ("{hasDates}" for a bool one). Its "with"
+    gives each param of its type, and nothing else; it declares no view
+    state; its nodes are named by the instance's id joined to theirs
+    (order-{index}-cancel), and a transition names them so. "ref" is gone.
   - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
     solid form), in a node, a fixture or a look: fonts.google.com/icons.

@@ -3411,7 +3411,7 @@ mod tests {
         .unwrap();
         let written =
             screen.pointer(&node.origin.at).unwrap_or_else(|| panic!("{} names nothing", node.origin.at));
-        assert_eq!(written["id"], "order-{index}-cancel", "the pointer names that node in screen.json");
+        assert_eq!(written["id"], "cancel", "the pointer names that node in screen.json, inside OrderRow");
         let line = reference.line();
         assert!(
             line.contains(&format!("order-{{index}}-cancel at {} in screen.json", node.origin.at)),

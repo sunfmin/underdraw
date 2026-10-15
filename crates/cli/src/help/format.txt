@@ -29,7 +29,7 @@ SCREEN.JSON
     "fixtures":   {…},                 sample view models, one state each
     "conditions": {…},                 every yes/no the screen decides, named
     "operations": {…},                 the queries and commands it calls (OPERATIONS, PAGING)
-    "components": {"name": node, …},   nodes used more than once, by "ref"
+    "components": {"Name": {…}, …},    the screen's own components (COMPONENTS)
     "root":       node,                the screen once data has arrived
     "phases":     {"loading": node, "error": node}
                                        trees shown before data; they read no data
@@ -178,8 +178,9 @@ CASES
 NODES
   A node is an object:
     "id"        required, unique: "todo-{index}" inside an item template
-    "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
-                or one in kinds.json (LOOKS); check refuses "kind", its old name
+    "component" what the node is: a built-in component (BUILT-IN COMPONENTS),
+                one in kinds.json (LOOKS) or one of the screen's (COMPONENTS);
+                check refuses "kind", its old name
     "if"        a use site: the node and all inside it show only when it holds
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
@@ -190,7 +191,7 @@ NODES
                 a date range: ["booking.checkIn", "booking.checkOut"])
     "disabled"  a use site: "!canAdd"
     "on"        actions (ACTIONS below)
-    "ref"       "<component>": stands for that component; other keys ignored
+    "with"      the params of a screen's component, one value each (COMPONENTS)
     "assumed"   what you guessed there and what else it could be, in a
                 sentence (ASSUMED below): drawn orange until the person agrees
     "platform"  {"web": {"hidden": true, "$why": "…"}} or {"ios": {"<prop>": v}}:
@@ -462,9 +463,49 @@ PAGING
   --cursor and --limit, and its stdout holds "next" (see cli --help).
 
 COMPONENTS
-  "components": { "nav-back": { "id": "nav-back", "component": "IconButton",
-                                "icon": "arrow_back", "on": {"tap": {"back": true}} } }
-  used as { "ref": "nav-back" } anywhere a node goes, phases included.
+  A piece of the screen used more than once (a nav bar, an order row with
+  its cancel button) is declared once in "components", by a name that
+  starts with a capital and is not a built-in's or kinds.json's:
+    "components": { "OrderRow": {
+      "params": { "order": "Order", "menuOpen": "bool" },
+      "nodes": { "component": "Card", "on": { "tap": { "navigate": "OrderDetail", "with": { "id": "{order.id}" } } },
+                 "children": [
+        { "id": "title",  "component": "Text", "text": "#{order.number}" },
+        { "id": "cancel", "component": "IconButton", "icon": "cancel", "if": "order.cancellable",
+          "on": { "tap": { "open": "cancel-dialog" } } },
+        { "id": "more",   "component": "IconButton", "icon": "more_vert", "on": { "tap": { "toggle": "menuOpen" } } },
+        { "slot": "children" } ] } } }
+  and used where a node goes, phases included, by its name:
+    { "id": "order-{index}", "component": "OrderRow",
+      "with": { "order": "{item}", "menuOpen": "{rowMenuOpen}" },
+      "children": { "id": "order-{index}-note", "component": "Text", "text": "{item.note}" } }
+  - params: what it reads, typed as fields of data (DATA AND TYPES). It
+    reads nothing else: a path that reaches past them, or a condition of
+    the screen's, is refused. Each is given in "with", of its type, unless
+    it has a default ("bool = false") or is nullable; check refuses one
+    missing, one ill-typed and one it does not declare.
+  - "with" gives each a template read where the instance is: "{item}" for a
+    value, "#{item.number}" for text, a literal; a bool param may be given
+    a condition of the screen's, "{hasDates}", and holds where it does.
+  - nodes: one node, the root of its subtree. The root has no id: it is
+    named by the instance's. Every node inside is named by the instance's
+    id joined to its own: "cancel" in "order-3" is "order-3-cancel", and
+    in states, handoff, captures, transitions and notes it is
+    "order-{index}-cancel" as written. An id inside need only be unique in
+    the component.
+  - It holds no view state: check refuses a param marked "view". A flag
+    such as a menu's open state is the screen's, in data marked "view":
+    true, passed in whole ("{rowMenuOpen}"); a "set" or "toggle" on the
+    param acts on what was passed.
+  - It varies only through its params and slots: the instance holds only
+    id, component, with, if, only, assumed and the slots it fills; any
+    other key reaches inside, and is refused. { "slot": "children" } in
+    its nodes stands for what an instance gives in that slot (children,
+    leading, trailing, action or overlay): the screen's own nodes, read
+    where the instance is, under their own ids. check refuses a slot the
+    component places nowhere.
+  - A component may use another; check refuses one that uses itself.
+  - check refuses "ref", the old way to repeat a node: use the component.
 
 POPUPS
   underdraw has no dialog, sheet or menu component. A popup is a state like any
