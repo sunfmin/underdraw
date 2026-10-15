@@ -1,0 +1,50 @@
+tree
+  root/
+    ▸ shop/
+      checkout
+        default
+        express-alipay
+        promo-applied
+        promo-invalid
+        no-address-new-card
+        out-of-stock
+        loading
+        error
+      listing
+        default
+        no-dates
+        unavailable
+        new-listing
+        loading
+        error
+picture
+  flow
+    address
+    address-add
+    photos-carousel
+    photos-show-all
+    reserve-button
+    map-view
+    checkout
+    listing
+    AddressBook
+    AddressForm
+    PhotoGallery
+    FullMap
+sidebar
+  shop · these screens
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
+  waits on you · 5
+    shop/checkout
+    ? address in default
+    This navigates to AddressBook, which no description under the root declares, so it is guessed that AddressBook is a screen not drawn yet
+    ? address-add in no-address-new-card
+    This navigates to AddressForm, which no description under the root declares, so it is guessed that AddressForm is a screen not drawn yet
+    ? card-number in no-address-new-card
+    Card fields are drawn here
+    shop/listing
+    ? photos-carousel in default
+    This navigates to PhotoGallery, which no description under the root declares, so it is guessed that PhotoGallery is a screen not drawn yet
+    ? map-view in default
+    This navigates to FullMap, which no description under the root declares, so it is guessed that FullMap is a screen not drawn yet
