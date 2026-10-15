@@ -1303,6 +1303,9 @@ impl<'a> Walk<'a> {
         // The path the value is, when it is one whole placeholder.
         let mut path = None;
         let given = match value {
+            Value::String(text) if crate::length::arithmetic(text) => {
+                return self.template(text, scope, &known.not_null, at, "");
+            }
             Value::String(text) => {
                 let Ok(placeholders) = template::placeholders(text) else {
                     return self.template(text, scope, &known.not_null, at, "");

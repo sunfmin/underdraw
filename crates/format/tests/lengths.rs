@@ -85,7 +85,7 @@ fn arithmetic_outside_a_look_is_named() {
     let template = json!({ "children": [{ "id": "said", "component": "Text", "text": "{depth * 2}" }] });
     let checked = check(&screen(params, json!(0), template, json!({})));
     assert!(
-        found(&checked, "said", "is arithmetic, and a template never computes"),
+        found(&checked, "said.text", "is arithmetic, and a template never computes"),
         "{:#?}",
         checked.findings
     );
