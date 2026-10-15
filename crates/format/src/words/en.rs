@@ -4,6 +4,7 @@ use super::Words;
 
 pub(super) const WORDS: Words = Words {
     name: "en",
+    locale: None,
     undrawn_one: "This navigates to {names}, which no description under the root declares, so it is guessed that {names} is a screen not drawn yet; it could instead be a misspelt name of a screen that is drawn, or the navigate may not be wanted at all: draw it, or correct the name.",
     undrawn_many: "This navigates to {names}, which no description under the root declares, so it is guessed that {names} are screens not drawn yet; it could instead be a misspelt name of a screen that is drawn, or the navigate may not be wanted at all: draw them, or correct the name.",
     list_separator: ", ",

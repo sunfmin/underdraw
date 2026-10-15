@@ -438,3 +438,20 @@ fn the_window_in_chinese() {
     assert!(panel_has(&gallery, "▸ 详情"));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn the_window_in_japanese() {
+    let root = root_of("frame-ja", &[("checkout", "checkout")]);
+    let mut gallery = held("ja", &root, WINDOW, |gallery| {
+        gallery.speak(Lang::Ja).unwrap();
+        let checkout = line_of(gallery, "checkout");
+        showing(gallery, checkout + 1);
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let guessed = pages[0].nodes.iter().find(|node| node.assumed.is_some()).unwrap().id.clone();
+        gallery.cursor = on_node(gallery, 0, &guessed);
+        gallery.press();
+    });
+    fits(&mut gallery);
+    assert!(panel_has(&gallery, "▸ 詳細"));
+    std::fs::remove_dir_all(root).unwrap();
+}

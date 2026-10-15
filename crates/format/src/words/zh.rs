@@ -4,6 +4,7 @@ use super::Words;
 
 pub(super) const WORDS: Words = Words {
     name: "zh",
+    locale: None,
     undrawn_one: "这里跳转到 {names}，但根目录下没有任何描述声明它，所以猜测 {names} 是还没画的屏幕；也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。",
     undrawn_many: "这里跳转到 {names}，但根目录下没有任何描述声明它，所以猜测 {names} 是还没画的屏幕；也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。",
     list_separator: "、",

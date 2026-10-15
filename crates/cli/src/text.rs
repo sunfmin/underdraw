@@ -90,6 +90,12 @@ impl Typesetter {
         Ok(Typesetter { fonts, layouts: LayoutContext::new(), locale, families, measured: HashMap::new() })
     }
 
+    /// The fonts it sets text in, in the order they are tried.
+    #[cfg(test)]
+    pub fn families(&self) -> &'static str {
+        self.families
+    }
+
     /// A typesetter of its own, setting text as this one does.
     pub fn like(&self) -> Typesetter {
         Typesetter {

@@ -228,9 +228,9 @@ ASSUMED
   "locale" is. Take it out once the person confirms it.
   The assumptions underdraw makes itself, a navigate to a screen not drawn
   yet and a component it does not know, come as whole sentences naming
-  that screen or component, in English or Chinese as the command that reports them
-  is asked: --lang en|zh on `check <root>`, `render` and `gallery`,
-  English by default.
+  that screen or component, in English, Chinese or Japanese as the command that reports
+  them is asked: --lang en|zh|ja on `check <root>`, `render` and
+  `gallery`, English by default, whatever the machine's locale.
 
 LAYOUT ON A NODE
   Direction comes from the component: Stack, List, Scroll, Screen, Card,

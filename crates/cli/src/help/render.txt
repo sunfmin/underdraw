@@ -38,7 +38,7 @@ ANSWERS
                       not one underdraw knows, or (given --root) that it
                       navigates to a screen not drawn yet, or null; what
                       underdraw assumes itself is a whole sentence in
-                      --lang, en or zh, en by default}, …]
+                      --lang, en, zh or ja, en by default}, …]
   }
 
 WHAT YOU SEE

@@ -67,7 +67,7 @@ enum Command {
     Check {
         /// The screen's directory, which holds screen.json, or the screen.json itself; or a directory holding no screen.json, to check every description under it and the navigates between them
         path: PathBuf,
-        /// The language underdraw words its own assumptions in, a screen not drawn yet among the links: en or zh
+        /// The language underdraw words its own assumptions in, a screen not drawn yet among the links: en, zh or ja
         #[arg(long, default_value = "en", value_parser = lang)]
         lang: Lang,
     },
@@ -94,7 +94,7 @@ enum Command {
         /// The directory the screen descriptions are under, as `check <root>` and the gallery take it: a node that navigates to a screen none of them declares is marked assumed. Not given, navigates are not resolved
         #[arg(long)]
         root: Option<PathBuf>,
-        /// The language underdraw words its own assumptions in, a screen not drawn yet or a component it does not know: en or zh
+        /// The language underdraw words its own assumptions in, a screen not drawn yet or a component it does not know: en, zh or ja
         #[arg(long, default_value = "en", value_parser = lang)]
         lang: Lang,
     },
@@ -103,7 +103,7 @@ enum Command {
     Gallery {
         /// The directory the screen descriptions are under, at any depth
         root: PathBuf,
-        /// The language the window says everything of its own in: its sidebar, its marks and its title, and underdraw's own assumptions, a screen not drawn yet or a component it does not know: en or zh
+        /// The language the window says everything of its own in: its sidebar, its marks and its title, and underdraw's own assumptions, a screen not drawn yet or a component it does not know: en, zh or ja
         #[arg(long, default_value = "en", value_parser = lang)]
         lang: Lang,
         /// Run the window itself, in this process: what the command starts
