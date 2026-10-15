@@ -135,22 +135,24 @@ impl Conditions {
                         chain.push(inner);
                         continue;
                     }
-                    Expr::Compare(op, Atom::Name(name), literal) if name == path => (*op, literal),
-                    Expr::Compare(op, literal, Atom::Name(name)) if name == path => (op.flipped(), literal),
+                    Expr::Compare(op, left, right) => {
+                        if is_name(left, path) {
+                            (*op, right)
+                        } else if is_name(right, path) {
+                            (op.flipped(), left)
+                        } else {
+                            continue;
+                        }
+                    }
                     _ => continue,
                 };
-                let (at_least, at_most) = match (op, literal) {
-                    (Op::Ne, Atom::Str(s)) if s.is_empty() && !numeric => (Some(1.0), None),
-                    (Op::Eq, Atom::Str(s)) if !numeric => {
-                        let length = s.chars().count() as f64;
-                        (Some(length), Some(length))
-                    }
-                    (Op::Eq, Atom::Num(n)) if numeric => (Some(*n), Some(*n)),
-                    (Op::Ge, Atom::Num(n)) if numeric => (Some(if int { n.ceil() } else { *n }), None),
-                    (Op::Gt, Atom::Num(n)) if numeric => (Some(if int { n.floor() + 1.0 } else { *n }), None),
-                    (Op::Le, Atom::Num(n)) if numeric => (None, Some(if int { n.floor() } else { *n })),
-                    (Op::Lt, Atom::Num(n)) if numeric => (None, Some(if int { n.ceil() - 1.0 } else { *n })),
-                    _ => continue,
+                let bound = match literal {
+                    Atom::Str(text) if !numeric => length_bound(op, text),
+                    Atom::Num(n) if numeric => number_bound(op, *n, int),
+                    _ => None,
+                };
+                let Some((at_least, at_most)) = bound else {
+                    continue;
                 };
                 if let Some(at_least) = at_least {
                     lo = Some(lo.map_or(at_least, |lo| lo.max(at_least)));
@@ -450,5 +452,39 @@ impl<'a> UseSite<'a> {
             Some(name) => UseSite { negated: true, name },
             None => UseSite { negated: false, name: used },
         }
+    }
+}
+
+/// Whether `atom` is the path `path`.
+fn is_name(atom: &Atom, path: &str) -> bool {
+    match atom {
+        Atom::Name(name) => name == path,
+        _ => false,
+    }
+}
+
+/// What `length op text` says of a string's length: at least one long
+/// for `!= ""`, as long as `text` for `== text`.
+fn length_bound(op: Op, text: &str) -> Option<(Option<f64>, Option<f64>)> {
+    match op {
+        Op::Ne if text.is_empty() => Some((Some(1.0), None)),
+        Op::Eq => {
+            let length = text.chars().count() as f64;
+            Some((Some(length), Some(length)))
+        }
+        _ => None,
+    }
+}
+
+/// What `value op n` says of a number: its least and its most, each
+/// whole where it is an `int`.
+fn number_bound(op: Op, n: f64, int: bool) -> Option<(Option<f64>, Option<f64>)> {
+    match op {
+        Op::Eq => Some((Some(n), Some(n))),
+        Op::Ge => Some((Some(if int { n.ceil() } else { n }), None)),
+        Op::Gt => Some((Some(if int { n.floor() + 1.0 } else { n }), None)),
+        Op::Le => Some((None, Some(if int { n.floor() } else { n }))),
+        Op::Lt => Some((None, Some(if int { n.ceil() - 1.0 } else { n }))),
+        Op::Ne => None,
     }
 }
