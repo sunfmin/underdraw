@@ -262,7 +262,10 @@ fn deleting_from_the_menu(destructive: bool) -> Value {
             r#""bulk""#,
         );
     }
-    serde_json::from_str(&text).unwrap()
+    let mut screen: Value = serde_json::from_str(&text).unwrap();
+    // The draft's transitions follow the confirmation this takes out.
+    screen.as_object_mut().unwrap().remove("transitions");
+    screen
 }
 
 #[test]
