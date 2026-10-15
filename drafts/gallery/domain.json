@@ -1,0 +1,63 @@
+{
+  "$comment": "The gallery's journeys, described as a screen would be: a design of the gallery, not how it is built (ADR 0017 still draws it by hand).",
+  "types": {
+    "Stop": {
+      "number": "int 1..",
+      "screen": {
+        "type": "string 1..",
+        "doc": "The step's screen, by its directory under the project root"
+      },
+      "state": "string 1..",
+      "last": {
+        "type": "bool = false",
+        "doc": "The journey's last step"
+      },
+      "here": {
+        "type": "bool = false",
+        "doc": "The step shown"
+      },
+      "passed": {
+        "type": "bool = false",
+        "doc": "A step before the one shown"
+      },
+      "broken": {
+        "type": "bool = false",
+        "doc": "The step check names, where the journey breaks"
+      }
+    },
+    "Journey": {
+      "name": "string 1..",
+      "about": {
+        "type": "string",
+        "doc": "The journey's $comment; empty when it has none"
+      },
+      "steps": {
+        "type": "int 1..",
+        "derived": {
+          "app": "stops' length"
+        }
+      },
+      "stops": "Stop[] 1..",
+      "brokenAt": {
+        "type": "int?",
+        "doc": "The step check names first, when it does not walk"
+      },
+      "route": {
+        "type": "string 1..",
+        "derived": {
+          "app": "the stops' screens, joined by ›, a screen twice in a row once"
+        }
+      }
+    }
+  },
+  "conditions": {
+    "Journey.broken": {
+      "when": "brokenAt != null",
+      "label": "Does not walk"
+    },
+    "Journey.told": {
+      "when": "about != \"\"",
+      "label": "Says what it is about"
+    }
+  }
+}
