@@ -561,8 +561,12 @@ impl<'a> Walk<'a> {
                 "\"index\" names the index of the repeat \"each\" makes, and this node has no \"each\"",
             );
         }
+        let props = match object.get("component") {
+            Some(Value::String(kind)) if self.known.has(kind) => self.props(kind, object, scope, &known, at),
+            _ => BTreeSet::new(),
+        };
         for (k, v) in object {
-            if INERT.contains(&k.as_str()) {
+            if INERT.contains(&k.as_str()) || props.contains(k) {
                 continue;
             }
             match (k.as_str(), v) {
@@ -589,6 +593,69 @@ impl<'a> Walk<'a> {
                 _ => self.node(v, scope, &known, &format!("{at}.{k}"), k),
             }
         }
+    }
+
+    /// The props the node `object`, at `at`, gives the look component
+    /// `kind`, held here rather than walked as templates: each param `kind`
+    /// types, given of its type unless it has a default or is nullable, and
+    /// any prop given a condition of the screen's (`"{hasDates}"`), a Bool,
+    /// which only a bool param or one untyped takes.
+    fn props(
+        &mut self,
+        kind: &str,
+        object: &Map<String, Value>,
+        scope: &Scope,
+        known: &Known,
+        at: &str,
+    ) -> BTreeSet<String> {
+        let typed = self.known.typed(kind).map(<[(String, Field)]>::to_vec);
+        let mut held = BTreeSet::new();
+        for (prop, value) in object {
+            let param = typed.as_ref().map(|typed| typed.iter().find(|(param, _)| param == prop));
+            // Text shows no Bool, unless a typed param says what it takes.
+            let text = TEXT.contains(&prop.as_str()) && !matches!(param, Some(Some(_)));
+            if INERT.contains(&prop.as_str()) || text || prop == "disabled" {
+                continue;
+            }
+            let Some(condition) =
+                value.as_str().and_then(template::whole).and_then(|path| self.condition(&path))
+            else {
+                continue;
+            };
+            if let Some(Some((_, field))) = param
+                && !field.is_plain_bool()
+            {
+                self.findings.add(
+                    &format!("{at}.{prop}"),
+                    &format!("is the condition {condition}, a Bool, and the param is {}", field.describe()),
+                );
+            }
+            held.insert(prop.clone());
+        }
+        for (param, field) in typed.iter().flatten() {
+            if held.contains(param) {
+                continue;
+            }
+            let prop = format!("{at}.{param}");
+            match object.get(param) {
+                None if field.default.is_none() && !field.nullable => self.findings.add(
+                    at,
+                    &format!("{kind} reads {param} ({}), which the node does not give", field.describe()),
+                ),
+                None => {}
+                Some(Value::String(text)) if field.is_plain_bool() && !text.starts_with('{') => {
+                    self.findings.add(
+                        &prop,
+                        &format!(
+                            "{text:?} is text, and {param} is a bool: give true, false, a Bool path (\"{{item.on}}\") or a condition's name (\"{{hasDates}}\"); name anything more in conditions"
+                        ),
+                    );
+                }
+                Some(value) => self.argument(value, field, scope, known, &prop),
+            }
+            held.insert(param.clone());
+        }
+        held
     }
 
     /// The instance `object`, at `at`, of one of the screen's components:

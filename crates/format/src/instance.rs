@@ -289,8 +289,8 @@ impl Fill<'_> {
         !matches!(object.get("if"), Some(Value::String(used)) if !self.holds(used, scope))
     }
 
-    /// What a param is given in `with`, read in the instance's scope: a
-    /// condition's name in braces gives whether it holds.
+    /// What a param is given in `with`, or a prop on a node, read in the
+    /// instance's scope: a condition's name in braces gives whether it holds.
     fn argument(&self, given: &Value, scope: &Value) -> Result<Value, String> {
         match given.as_str().and_then(template::whole) {
             Some(name) if self.conditions.contains(&name) => {
@@ -353,7 +353,8 @@ impl Fill<'_> {
             } else if let ("disabled", Value::String(used)) = (key.as_str(), value) {
                 node.props.insert(key.clone(), Value::Bool(self.holds(used, scope)));
             } else {
-                node.props.insert(key.clone(), self.value(value, scope)?);
+                // A look's prop, as a param in `with`, may be given a condition.
+                node.props.insert(key.clone(), self.argument(value, scope)?);
             }
         }
         // What a bound field shows: the value at its path (or paths).
