@@ -95,9 +95,15 @@ DOES
   box picks that description in the tree, showing its overview. Scroll a tall
   page with the mouse wheel or trackpad. Clicking a node in the picture
   picks the innermost there, an overlay (a badge, a dialog, a sheet) before
-  what it floats over, outlines it at both widths, and shows its card in
-  the sidebar: what it is (its component, as the title), the operation it
-  calls when acted on ("calls"), and what was assumed there (`assumed`).
+  what it floats over, marks it at each width that shows it, and shows
+  its card in the sidebar. The node picked is drawn in purple, the
+  gallery's ink for interaction (what acting on a node does), never a
+  wireframe's and never in `render`'s PNG: a light purple wash over the
+  node and a thick purple outline round it, as thick at half size as at
+  full, whether or not acting on it goes anywhere. Gray-black is the
+  wireframe, orange an assumption, blue a note or a journey. The card
+  says what it is (its component, as the title), the operation it calls
+  when acted on ("calls"), and what was assumed there (`assumed`).
   Its id, and its label and box at each width, as `render` reports them,
   are folded into "▸ details": click it to unfold them, and again to fold
   them, for every node picked after. A node that navigates to a screen no description under

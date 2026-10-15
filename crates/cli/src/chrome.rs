@@ -4,8 +4,9 @@
 //! chrome lays them on a cool drafting desk, each picture a sheet with a
 //! soft shadow, and keeps its own colour for what the person and the agent
 //! say about them: cobalt for the person's notes and journeys, green for
-//! what the agent answered, and the wireframes' own orange for what was
-//! assumed, so that orange means the same in the picture and around it.
+//! what the agent answered, the wireframes' own orange for what was
+//! assumed, so that orange means the same in the picture and around it,
+//! and purple, the gallery's alone, for interaction.
 
 use underdraw_layout::{Font, Ink};
 use vello::peniko::Color;
@@ -38,6 +39,17 @@ pub fn colour(ink: Ink) -> Color {
     };
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])
 }
+
+/// Interaction, the gallery's own ink, never a wireframe's: what acting on
+/// a node does, and the node picked. A violet far from the notes' cobalt
+/// and the assumptions' orange, dark enough to read on the white paper and
+/// clear of the strong ink's near-black; its fill a light wash of it, so
+/// the node shows through. The node picked is washed with it and outlined
+/// [`PICKED_STROKE`] wide in window points, at any scale, with a hairline
+/// of paper inside the outline that parts it from a dark node.
+pub const INTERACTION: Color = Color::from_rgb8(0x8B, 0x3D, 0xF0);
+pub const INTERACTION_FILL: Color = Color::from_rgba8(0x8B, 0x3D, 0xF0, 0x2E);
+pub const PICKED_STROKE: f64 = 3.0;
 
 /// The chrome's type, one family (the system's) in four sizes: what is
 /// read, the tree's lines; a caption over a picture; a mark

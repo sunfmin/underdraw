@@ -2653,6 +2653,19 @@ fn sheet(scene: &mut Scene, at: Affine, around: Rect, radius: f32) {
     scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Line), None, &edge);
 }
 
+/// The node picked, at `node` in window points: washed and outlined in the
+/// interaction ink, the outline's paper hairline against the node's edge.
+fn picked(scene: &mut Scene, node: Area, radius: f32) {
+    let at = Affine::IDENTITY;
+    let r = f64::from(radius);
+    scene.fill(Fill::NonZero, at, chrome::INTERACTION_FILL, None, &node.to_rounded_rect(r));
+    let paper = node.inflate(0.5, 0.5).to_rounded_rect(r + 0.5);
+    scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Paper), None, &paper);
+    let out = 1.0 + chrome::PICKED_STROKE / 2.0;
+    let outline = node.inflate(out, out).to_rounded_rect(r + out);
+    scene.stroke(&vello::kurbo::Stroke::new(chrome::PICKED_STROKE), at, chrome::INTERACTION, None, &outline);
+}
+
 /// A scrollbar's thumb at `bar`, in window points, in the chrome's look:
 /// darker while `hot`, the pointer over it or dragging it.
 fn thumb(scene: &mut Scene, bar: Area, hot: bool) {
