@@ -35,7 +35,9 @@ DOES
   again; it is shown when the window opens, and while it is hidden the
   pictures take its width. Scroll the sidebar with the wheel over it.
 
-  The tree holds the directories and descriptions as they are arranged on disk, each
+  The tree holds the directories and descriptions as they are arranged on disk, under
+  a first line for <root> itself when it holds no description (picked, it
+  shows the flow and the inbox of everything under it), each
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
   at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
@@ -221,6 +223,25 @@ DOES
   wrong · answered"). The window writes
   notes.json, and only the person's acts; it never writes a description:
   the agent makes every change. Commit notes.json with the description.
+
+  The inbox: with a description, one of its states, or a directory (the
+  root's line too) picked, and no node, region or arrow, the sidebar lists
+  what waits on you there, in a card "waits on you · <how many>": each
+  assumption no note answers yet ("? <node id as written> in <state>: what
+  was guessed"), then each note the agent has answered ("N2 · on … · agent:
+  <its reply>"), for you to close or reopen. A directory's lists every
+  description under it, each under its directory's name, in the order the
+  tree lists them. The notes still open, waiting on the agent, are folded
+  to how many there are ("▸ waiting on the agent · 2"); click it to list
+  them, and again to fold them. Click an item to show its state with what
+  it is on picked, the node, region or arrow (a transition's in the
+  overview, a navigate's in the flow of the directory above it), and its
+  card: the node's, to answer the assumption with ✓ or ✗, or the note's,
+  to close or reopen it. The inbox gives way to the card of a node or
+  region picked; click where no node is to see it again. It is drawn from
+  the files as they now stand: an assumption answered, or taken out of the
+  description, and a note closed, reopened or answered again, leave it or
+  move within it as they change.
 
   The window watches <root> and is drawn from the files as they now stand:
   edit a description's screen.json or notes.json (`underdraw
