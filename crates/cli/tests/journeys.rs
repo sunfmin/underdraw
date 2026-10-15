@@ -68,7 +68,7 @@ fn a_screen_changed_so_the_journey_breaks_names_it() {
     let (answer, _) = check(&root);
     let problem = answer["journeys"][0]["findings"][0]["problem"].as_str().unwrap().to_string();
     assert!(
-        problem.contains("does not reach the next step, order open: navigate it to ShopOrder"),
+        problem.contains("does not reach the next step, ShopOrder open: navigate it to ShopOrder"),
         "{problem}"
     );
 
@@ -76,7 +76,7 @@ fn a_screen_changed_so_the_journey_breaks_names_it() {
     edit(&root.join("journeys/cancel-an-order.json"), r#""state": "open""#, r#""state": "shipped""#);
     let (answer, _) = check(&root);
     let problem = answer["journeys"][0]["findings"][0]["problem"].as_str().unwrap().to_string();
-    assert!(problem.starts_with("summary-cancel is not shown in order shipped"), "{problem}");
+    assert!(problem.starts_with("summary-cancel is not shown in ShopOrder shipped"), "{problem}");
 
     let root = shop("params");
     edit(&root.join("order/screen.json"), r#""orderId": "A12""#, r#""orderId": "A13""#);
@@ -86,19 +86,32 @@ fn a_screen_changed_so_the_journey_breaks_names_it() {
     assert_eq!(finding["at"], "steps.0.on", "{answer}");
     assert_eq!(
         finding["problem"],
-        r#"order-{index}.tap in orders default opens order with orderId "A12", but the next step, order open, holds orderId "A13": give the same value on both sides"#,
+        r#"order-{index}.tap in ShopOrders default opens ShopOrder with orderId "A12", but the next step, ShopOrder open, holds orderId "A13": give the same value on both sides"#,
         "{answer}"
     );
 
     let root = shop("unknown");
     edit(
         &root.join("journeys/cancel-an-order.json"),
-        r#""screen": "order", "state": "cancelled""#,
-        r#""screen": "orderz", "state": "cancelled""#,
+        r#""screen": "ShopOrder", "state": "cancelled""#,
+        r#""screen": "ShopOrderz", "state": "cancelled""#,
     );
     let (answer, _) = check(&root);
-    assert_eq!(answer["journeys"][0]["findings"][0]["at"], "steps.2.screen", "{answer}");
-    for root in ["transition", "navigate", "shown", "params", "unknown"] {
+    let finding = &answer["journeys"][0]["findings"][0];
+    assert_eq!(finding["at"], "steps.2.screen", "{answer}");
+    assert!(
+        finding["problem"]
+            .as_str()
+            .unwrap()
+            .starts_with("no screen description under the root declares ShopOrderz"),
+        "{answer}"
+    );
+
+    let root = shop("directory");
+    edit(&root.join("journeys/cancel-an-order.json"), r#""screen": "ShopOrders""#, r#""screen": "orders""#);
+    let (answer, code) = check(&root);
+    assert_eq!((code, &answer["journeys"][0]["findings"]), (0, &json!([])), "{answer}");
+    for root in ["transition", "navigate", "shown", "params", "unknown", "directory"] {
         std::fs::remove_dir_all(
             std::env::temp_dir().join(format!("underdraw-journeys-{root}-{}", std::process::id())),
         )
