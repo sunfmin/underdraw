@@ -200,8 +200,8 @@ mod tests {
     const RIGHT: Edit = Edit::Move(Motion::Right);
 
     fn field() -> Field {
-        let typesetter = Typesetter::new(None).unwrap();
-        crate::sidebar::Sidebar::<()>::new(&typesetter).field(&typesetter)
+        // About as wide as the box at the sidebar.s foot.
+        Field::new(&Typesetter::new(None).unwrap(), 300.0)
     }
 
     #[test]

@@ -44,7 +44,7 @@ use crate::flow::{self, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
-use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Stands};
+use crate::notes::{self, Answer, Answers, Goes, Guess, Mark, Note, Proposal, Stands};
 use crate::reference::{self, On, Reference};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card, Foot, Sidebar};
@@ -260,9 +260,9 @@ struct Gallery {
     /// The sidebar: the box at its foot, where the person writes to the
     /// conversation on what is picked, and its cards as last laid out.
     sidebar: Sidebar<Do>,
-    /// A ✗ on an assumption being written, in place of the box, while it
-    /// is.
-    draft: Option<Draft>,
+    /// A ✗ on an assumption clicked, while what is right is written in the
+    /// box at the sidebar's foot: Send sends it as the ✗.
+    rejecting: Option<Rejecting>,
     /// A ✓ on an assumption waiting to be written, while it can be undone.
     confirming: Option<Confirming>,
     /// Where the text of the field written in was, in window points,
@@ -285,6 +285,9 @@ struct Gallery {
     /// Whether the inbox lists the notes waiting on the agent, or only how
     /// many there are.
     waiting: bool,
+    /// The time the window counts how long ago a message was taken from,
+    /// in seconds since 1970: the system's, unless a test holds it still.
+    time: Option<u64>,
 }
 
 /// What the person picked in what is shown, to read what it is, copy it
@@ -302,12 +305,11 @@ enum Picked {
     Arrow(usize),
 }
 
-/// A ✗ on the assumption of the node `on` references being written: what
-/// it answers, and the field what is right is typed in.
-struct Draft {
+/// A ✗ on the assumption of the node `on` references, clicked: what it
+/// answers, sent with what the box at the sidebar's foot holds.
+struct Rejecting {
     on: Reference,
     answers: Answers,
-    text: Field,
 }
 
 /// A ✓ on an assumption, not yet written: notes.json gets it once
@@ -326,14 +328,14 @@ enum Do {
     /// Chooses the outcome the last act's operation answered with: the
     /// state it goes to shown.
     Choose { outcome: String, to: String },
-    /// Writes a note on the node acted on, proposing where acting on it
-    /// should go.
+    /// Says in the note on the node acted on where acting on it should go:
+    /// a message marked as that proposal.
     Propose(Proposal),
     /// Sends what the box at the sidebar's foot holds to the conversation
     /// on what is picked.
     Send,
     /// Answers the assumption on the node picked: ✓ is written once it can
-    /// no longer be undone; ✗ starts writing what is right.
+    /// no longer be undone; ✗ puts the caret in the box, for what is right.
     Judge(Answer),
     /// Takes back the ✓ waiting to be written.
     Undo,
@@ -505,7 +507,7 @@ impl Gallery {
             acted: None,
             typesetter,
             sidebar,
-            draft: None,
+            rejecting: None,
             confirming: None,
             selecting: None,
             hovered: None,
@@ -514,6 +516,7 @@ impl Gallery {
             descriptions: RefCell::new(HashMap::new()),
             guessed: RefCell::new(HashMap::new()),
             waiting: false,
+            time: None,
         }
     }
 
@@ -566,8 +569,42 @@ impl Gallery {
                 effects.exit = true;
             }
         }
+        effects.redraw |= self.see();
         (effects.ime, effects.caret) = self.composing();
         effects
+    }
+
+    /// The conversation shown in the sidebar seen by the person: each
+    /// answer in it not read yet marked read in notes.json, and the notes
+    /// read again. Whether any was.
+    fn see(&mut self) -> bool {
+        if self.panes.side().is_none() {
+            return false;
+        }
+        let Some((on, notes)) = self.conversation() else {
+            return false;
+        };
+        let unread: Vec<String> =
+            notes.iter().filter(|note| note.stands() == Stands::Unread).map(|note| note.id.clone()).collect();
+        if unread.is_empty() || !notes::seen(&on.description, &unread).unwrap_or(false) {
+            return false;
+        }
+        self.notes = notes_of(&self.lines);
+        true
+    }
+
+    /// The time now, in seconds since 1970, as the window counts from it.
+    fn now(&self) -> u64 {
+        self.time.unwrap_or_else(notes::now)
+    }
+
+    /// Whether the conversation shown counts how long ago the agent took
+    /// what the person said, so the window is drawn again each second.
+    fn counting(&self) -> bool {
+        self.panes.side().is_some()
+            && self
+                .conversation()
+                .is_some_and(|(_, notes)| notes.last().is_some_and(|note| note.taken().is_some()))
     }
 
     /// Whether an input method may compose, only into a field keys type
@@ -830,6 +867,7 @@ impl Gallery {
             self.play(index, at);
             self.clamp();
             self.panes.scroll_to(Scrolls::Down, scroll);
+            self.see();
             return;
         }
         let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
@@ -855,6 +893,8 @@ impl Gallery {
             self.wanted = wanted;
         }
         self.clamp();
+        // An answer come in to the conversation shown is seen as it comes.
+        self.see();
     }
 
     /// The line of the state `named` names, or of its directory when it
@@ -1002,10 +1042,10 @@ impl Gallery {
         true
     }
 
-    /// A note written on the node acted on, at the instance pointed at,
-    /// holding `proposal`, for the agent to declare; the panel says so, or
-    /// why it was not. The window writes the note only, never the
-    /// description.
+    /// `proposal` said in the note on the node acted on, at the instance
+    /// pointed at, as a message marked as that proposal, for the agent to
+    /// declare; the panel says so, or why it was not. The window writes the
+    /// note only, never the description.
     fn propose(&mut self, proposal: Proposal) {
         let Some(on) = self.reference().filter(|on| matches!(on.on, On::Node { .. })) else {
             return self.say(say!(self.lang, proposal_needs_node));
@@ -1520,14 +1560,14 @@ impl Gallery {
 
     /// The descriptions whose inbox the sidebar shows: the one picked, or
     /// whose state is, or each under the directory picked, in the order the
-    /// tree lists them. None while a node or an arrow is picked, a ✗ is
-    /// written, or a journey played.
+    /// tree lists them. None while a node or an arrow is picked, or a
+    /// journey played.
     fn inboxed(&self) -> Vec<PathBuf> {
         // The node picked is kept through an overview, for the next state:
         // it is picked only while a state is drawn.
         let drawn = matches!(self.picture, Picture::Pages(_));
         let busy = drawn && self.node().is_some() || self.arrow().is_some();
-        if busy || self.draft.is_some() || self.playing.is_some() {
+        if busy || self.playing.is_some() {
             return Vec::new();
         }
         let Some(line) = self.line.and_then(|index| self.lines.get(index)).filter(|line| !line.journey)
@@ -1632,7 +1672,7 @@ impl Gallery {
                             )),
                         }
                     }
-                    Item::Answered(note) => {
+                    Item::Unread(note) => {
                         let reply = note.reply().unwrap_or_default();
                         Listed {
                             mark: note.id.clone(),
@@ -1778,10 +1818,11 @@ impl Gallery {
     }
 
     /// The card of the assumption on the node picked, for the person to
-    /// answer: what was guessed, in large type, what else it could be, the
-    /// notes that already answer it, then ✓ and ✗; or, once ✗ is clicked,
-    /// the field for what is right, in their place. None when the node
-    /// picked has none.
+    /// answer, above the conversation on it: what was guessed, in large
+    /// type, what else it could be, then ✓ and ✗ and what each means; or,
+    /// once ✗ is clicked, how to say what is right in the box below, in
+    /// their place. The answers already given are messages of the
+    /// conversation. None when the node picked has none.
     fn assumption_card(&self) -> Option<Card<Do>> {
         let (on, assumed) = self.assumption()?;
         let lang = self.lang;
@@ -1796,18 +1837,8 @@ impl Gallery {
                 },
             ),
         ];
-        if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
-            for note in notes {
-                let (Some(answers), On::Node { node: on, .. }) = (&note.answers, &note.on) else { continue };
-                if on.origin.written == node.origin.written {
-                    let (id, mark, status) =
-                        (&note.id, answered(answers.answer, lang), note_status(note, lang));
-                    blocks.push(Block::Muted(say!(lang, answers_it, id, mark, status)));
-                }
-            }
-        }
-        if self.draft.is_some() {
-            blocks.extend(self.field_blocks());
+        if self.rejecting.as_ref().is_some_and(|rejecting| rejecting.on == on) {
+            blocks.push(Block::Muted(say!(lang, rejecting_hint)));
         } else if self.confirming.as_ref().is_some_and(|confirming| confirming.on == on) {
             // Its ✓ waits, to be undone, in the card above.
         } else {
@@ -1867,10 +1898,7 @@ impl Gallery {
                 }
                 self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
-            Answer::Wrong => {
-                let text = self.sidebar.field(&self.typesetter);
-                self.draft = Some(Draft { on, answers, text });
-            }
+            Answer::Wrong => self.rejecting = Some(Rejecting { on, answers }),
         }
     }
 
@@ -1914,10 +1942,11 @@ impl Gallery {
     }
 
     /// The notes on what the conversation in the sidebar is on
-    /// ([`Gallery::reference`]), in the order written: its note, and the
-    /// notes answering an assumption on it or proposing where acting on it
-    /// should go, each a part of the one conversation. Their description's
-    /// directory with them; none where nothing is picked to talk about.
+    /// ([`Gallery::reference`]), in the order written: its note, and any
+    /// other on the same thing, written before a note held every answer
+    /// and proposal on it, each a part of the one conversation. Their
+    /// description's directory with them; none where nothing is picked to
+    /// talk about.
     fn conversation(&self) -> Option<(Reference, Vec<&Note>)> {
         let on = self.reference()?;
         let notes = self.notes.get(&on.description).map(Vec::as_slice).unwrap_or_default();
@@ -1927,7 +1956,10 @@ impl Gallery {
 
     /// The card of the conversation on what is picked: its note's id and
     /// where it stands, then what the person and the agent said, each in a
-    /// bubble, in the order said, newest at the bottom; or, where nothing
+    /// bubble, in the order said, newest at the bottom, a message that
+    /// answers an assumption or proposes where an act goes under a line
+    /// saying so, and under the person's last message, while it waits,
+    /// whether the agent has taken it and how long ago; or, where nothing
     /// is said yet, how to say it in the box below. None where nothing is
     /// picked to talk about.
     fn conversation_card(&self) -> Option<Card<Do>> {
@@ -1940,98 +1972,92 @@ impl Gallery {
         let ids = notes.iter().map(|note| note.id.as_str()).collect::<Vec<_>>().join(", ");
         let title = say!(lang, talk_title, id = ids, status = note_status(last, lang));
         let mut blocks = Vec::new();
-        for note in &notes {
-            blocks.extend(note.messages.iter().map(|said| Block::Bubble(said.by, said.says.clone())));
+        for said in notes.iter().flat_map(|note| &note.messages) {
+            match &said.mark {
+                Some(Mark::Answers(answers)) => {
+                    let mark = answered(answers.answer, lang);
+                    blocks.push(Block::Muted(say!(lang, marked_answers, mark)));
+                }
+                Some(Mark::Proposes(_)) => blocks.push(Block::Muted(say!(lang, marked_proposes))),
+                None => {}
+            }
+            blocks.push(Block::Bubble(said.by, said.says.clone()));
+        }
+        match last.taken() {
+            Some(taken) => {
+                let since = since(self.now().saturating_sub(taken));
+                blocks.push(Block::Muted(say!(lang, agent_changing, since)));
+            }
+            None if last.waits() => blocks.push(Block::Muted(say!(lang, waiting_for_agent))),
+            None => {}
         }
         let ink = if last.waits() { Ink::Note } else { Ink::Answered };
         Some(Card { ink, ..Card::new(title, blocks) })
     }
 
     /// The box at the sidebar's foot, while there is something picked to
-    /// talk about and no ✗ is written in its place: what it holds, and
-    /// Send, which sends it unless it is empty.
+    /// talk about: what it holds, and Send, which sends it unless it is
+    /// empty; asking what is right while a ✗ on it is clicked.
     fn foot(&self) -> Option<Foot<Do>> {
-        if self.draft.is_some() {
-            return None;
-        }
-        self.reference()?;
+        let on = self.reference()?;
         let lang = self.lang;
+        let rejecting = self.rejecting.as_ref().is_some_and(|rejecting| rejecting.on == on);
         Some(Foot {
             field: self.sidebar.talk().shown(),
-            empty: say!(lang, talk_box),
+            empty: if rejecting { say!(lang, ask_right) } else { say!(lang, talk_box) },
             send: say!(lang, send),
             does: (!self.sidebar.talk().is_blank()).then_some(Do::Send),
         })
     }
 
-    /// The field of the ✗ being written, and what its keys do: Enter
-    /// sends what it holds, unless it is empty.
-    fn field_blocks(&self) -> Vec<Block<Do>> {
-        let Some(draft) = &self.draft else {
-            return Vec::new();
-        };
-        let lang = self.lang;
-        let keys = if draft.text.is_blank() { say!(lang, not_sent_empty) } else { say!(lang, enter_sends) };
-        vec![Block::Field(draft.text.shown(), say!(lang, ask_right)), Block::Muted(keys)]
-    }
-
-    /// The field keys and an input method type into: the ✗ being written,
-    /// or else the box at the sidebar's foot while it is shown; none while
-    /// neither is.
+    /// The field keys and an input method type into: the box at the
+    /// sidebar's foot while it is shown; none while it is not.
     fn field_mut(&mut self) -> Option<&mut Field> {
-        let talking = self.typing();
-        match &mut self.draft {
-            Some(draft) => Some(&mut draft.text),
-            None => talking.then_some(self.sidebar.talk_mut()),
-        }
+        self.typing().then_some(self.sidebar.talk_mut())
     }
 
     /// Whether there is a field keys type into: see [`Gallery::field_mut`].
     fn typing(&self) -> bool {
-        self.draft.is_some() || (self.panes.side().is_some() && self.reference().is_some())
+        self.panes.side().is_some() && self.reference().is_some()
+    }
+
+    /// The ✗ clicked on what is picked, while it is: Send sends the box as
+    /// it.
+    fn rejecting(&self) -> Option<&Rejecting> {
+        let on = self.reference()?;
+        self.rejecting.as_ref().filter(|rejecting| rejecting.on == on)
     }
 
     /// What the box at the sidebar's foot holds said in the conversation on
     /// what is picked, added to its note in notes.json, or a note started
-    /// on it, and shown at once, scrolled to; the box emptied. Nothing when
-    /// it is empty; where it cannot be written, the panel says why and the
-    /// box keeps it.
+    /// on it, and shown at once, scrolled to; the box emptied. While a ✗
+    /// on it is clicked, sent as a message marked as rejecting the
+    /// assumption, and refused when empty, as ✗ says what is right;
+    /// otherwise nothing when it is empty. Where it cannot be written, the
+    /// panel says why and the box keeps it.
     fn send(&mut self) {
-        let Some(on) = self.reference().filter(|_| !self.sidebar.talk().is_blank()) else {
+        let Some(on) = self.reference() else {
             return;
         };
-        match notes::say(&on, &self.sidebar.talk().text()) {
-            Ok(_) => {
+        let lang = self.lang;
+        let sent = match self.rejecting() {
+            Some(rejecting) => notes::judge(&on, rejecting.answers.clone(), &self.sidebar.talk().text())
+                .map(|id| Some(say!(lang, note_sent, id, done = say!(lang, done_rejected)))),
+            None if self.sidebar.talk().is_blank() => return,
+            None => notes::say(&on, &self.sidebar.talk().text()).map(|_| None),
+        };
+        match sent {
+            Ok(rejected) => {
+                if let Some(says) = rejected {
+                    self.rejecting = None;
+                    self.say(says);
+                }
                 self.notes = notes_of(&self.lines);
                 self.sidebar.empty(&self.typesetter);
                 self.clamp();
                 self.panes.scroll_to(Scrolls::Side, f64::MAX);
             }
-            Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
-        }
-    }
-
-    /// The ✗ being written saved to notes.json as a note on its node; or,
-    /// where it cannot be, the panel says why and it stays to edit. Not
-    /// sent empty: its field says so.
-    fn reject(&mut self) {
-        let Some(draft) = self.draft.take() else {
-            return;
-        };
-        if draft.text.is_blank() {
-            self.draft = Some(draft);
-            return;
-        }
-        let lang = self.lang;
-        match notes::judge(&draft.on, draft.answers.clone(), &draft.text.text()) {
-            Ok(id) => {
-                self.notes = notes_of(&self.lines);
-                self.say(say!(lang, note_sent, id, done = say!(lang, done_rejected)));
-            }
-            Err(e) => {
-                self.say(say!(lang, not_saved, e = format!("{e:#}")));
-                self.draft = Some(draft);
-            }
+            Err(e) => self.say(say!(lang, not_saved, e = format!("{e:#}"))),
         }
     }
 
@@ -2040,10 +2066,10 @@ impl Gallery {
     /// Enter sending it and Shift+Enter breaking a line, the keys an input
     /// method takes while it composes left to it, so that the Enter that
     /// commits what it composes sends nothing. ← and → step a journey
-    /// played while the box is empty. Esc drops a ✗ being written, else
+    /// played while the box is empty. Esc takes back a ✗ clicked, else
     /// what is picked. Whether that changed what is shown.
     fn key(&mut self, key: &Key, text: Option<&str>) -> bool {
-        let stepping = self.playing.is_some() && self.draft.is_none() && self.sidebar.talk().is_blank();
+        let stepping = self.playing.is_some() && self.rejecting().is_none() && self.sidebar.talk().is_blank();
         match key {
             Key::Named(NamedKey::ArrowRight | NamedKey::ArrowLeft) if stepping => {
                 let Some(playing) = &self.playing else { return false };
@@ -2054,7 +2080,8 @@ impl Gallery {
                 return at < playing.steps.len() && self.step(at);
             }
             Key::Named(NamedKey::Escape) => {
-                if self.draft.take().is_some() {
+                if self.rejecting().is_some() {
+                    self.rejecting = None;
                     return true;
                 }
                 return self.pick_thing(Picked::Nothing);
@@ -2074,11 +2101,7 @@ impl Gallery {
                 true
             }
             Key::Named(NamedKey::Enter) => {
-                if self.draft.is_some() {
-                    self.reject();
-                } else {
-                    self.send();
-                }
+                self.send();
                 true
             }
             Key::Named(
@@ -2195,7 +2218,7 @@ impl Gallery {
 
     /// The notes on what is shown, drawn on it where its picture says
     /// ([`picture::Shows::pins`]); blue while waiting on the agent, green
-    /// once answered.
+    /// while its answer is unread, faint gray once read.
     fn pins(&self) -> Vec<Pin> {
         self.picture.shows().pins(&self.notes, &self.desk())
     }
@@ -2360,17 +2383,13 @@ impl Gallery {
     }
 
     /// The panes fitted to how large what each holds is at their widths:
-    /// each width, and each scroll, held within its bounds. And the note
-    /// being written fitted to the sidebar's width. The sidebar, while it
-    /// is shown, laid out for how tall its cards are and how tall the box
-    /// at its foot is.
+    /// each width, and each scroll, held within its bounds: the sidebar,
+    /// while it is shown, laid out for how tall its cards are and how tall
+    /// the box at its foot is.
     fn clamp(&mut self) {
         let bottom = self.panes.window().1;
         let (side, foot) =
             self.placed().map_or((0.0, 0.0), |placed| (placed.height(), bottom - placed.foot()));
-        if let Some(draft) = &mut self.draft {
-            self.sidebar.fit(&mut draft.text);
-        }
         let pictures = self.pictures_size();
         let content = Content { rows: self.lines.len(), pictures, side, foot };
         self.panes.fit(content);
@@ -2520,9 +2539,16 @@ fn answered(answer: Answer, lang: Lang) -> &'static str {
 
 /// Where `note` stands, as the sidebar says it in `lang`.
 fn note_status(note: &Note, lang: Lang) -> String {
-    match note.stands() {
-        Stands::Waiting => say!(lang, status_waiting),
-        Stands::Answered => say!(lang, status_answered),
+    if note.waits() { say!(lang, status_waiting) } else { say!(lang, status_answered) }
+}
+
+/// How long ago, `seconds`, as the sidebar counts it: `23s`, `4m 05s`,
+/// `2h 03m`.
+fn since(seconds: u64) -> String {
+    match seconds {
+        ..60 => format!("{seconds}s"),
+        60..3600 => format!("{}m {:02}s", seconds / 60, seconds % 60),
+        _ => format!("{}h {:02}m", seconds / 3600, seconds % 3600 / 60),
     }
 }
 
@@ -2738,15 +2764,19 @@ impl ApplicationHandler<Told> for App {
     }
 
     /// While a ✓ waits to be written: written once its time comes, the
-    /// window woken each second until then to count down.
+    /// window woken each second until then to count down. While the
+    /// conversation shown counts how long ago the agent took it, woken
+    /// each second too.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let written = self.gallery.confirm(now);
-        let wake = self.gallery.confirming.as_ref().map(|confirming| {
+        let confirming = self.gallery.confirming.as_ref().map(|confirming| {
             let left = confirming.at.saturating_duration_since(now);
             let tick = Duration::from_nanos((left.as_nanos() % 1_000_000_000) as u64);
             now + if tick.is_zero() { Duration::from_secs(1).min(left) } else { tick }
         });
+        let counting = self.gallery.counting().then(|| now + Duration::from_secs(1));
+        let wake = confirming.into_iter().chain(counting).min();
         if let Some(shown) = &self.shown
             && (written || wake.is_some())
         {
@@ -3233,7 +3263,7 @@ mod tests {
             gallery.press_here();
             assert_eq!(gallery.line, line, "{what}: no line of the tree picked");
             assert_eq!(gallery.picked, picked, "{what}: no node picked");
-            assert!(gallery.draft.is_none() && gallery.acted.is_none(), "{what}: no button pressed");
+            assert!(gallery.rejecting.is_none() && gallery.acted.is_none(), "{what}: no button pressed");
             gallery.move_by((0.0, 5.0));
             gallery.let_go();
             assert!(gallery.selecting.is_none(), "{what}: no text selected");
@@ -3911,7 +3941,7 @@ mod tests {
     }
 
     #[test]
-    fn choosing_where_nothing_declared_should_go_writes_a_note_and_never_the_description() {
+    fn choosing_where_nothing_declared_should_go_says_it_in_the_nodes_note_and_never_the_description() {
         let root = root_of("propose", &[("orders", "orders"), ("export", "export")]);
         let mut gallery = opened(&root, (1440.0, 900.0));
         let dir = root.join("orders");
@@ -3928,28 +3958,19 @@ mod tests {
         act_on(&mut gallery, "cd-keep");
         assert!(click_panel_line(&mut gallery, "navigate to ExportDocuments"), "a screen chosen");
 
+        assert!(gallery.panel()[0].starts_with("N1 saved"), "the same note: {:?}", gallery.panel());
+
         let written = notes::read(&dir).unwrap();
-        let proposed: Vec<(String, Option<&Proposal>, &str)> = written
-            .iter()
-            .map(|note| {
-                let On::Node { state, node } = &note.on else { panic!("not on a node: {note:?}") };
-                (node.origin.written.clone(), note.proposes.as_ref(), state.name())
-            })
-            .collect();
+        assert_eq!(written.len(), 1, "one note on the node: {written:#?}");
+        let On::Node { state, node } = &written[0].on else { panic!("not on a node: {written:?}") };
+        assert_eq!((node.origin.written.as_str(), state.name()), ("cd-keep", "cancel-unpaid"));
         let on = "cd-keep.tap".to_string();
+        let marks: Vec<Option<&Mark>> = written[0].messages.iter().map(|said| said.mark.as_ref()).collect();
         assert_eq!(
-            proposed,
+            marks,
             [
-                (
-                    "cd-keep".to_string(),
-                    Some(&Proposal { on: on.clone(), goes: Goes::To("default".into()) }),
-                    "cancel-unpaid"
-                ),
-                (
-                    "cd-keep".to_string(),
-                    Some(&Proposal { on, goes: Goes::Navigate("ExportDocuments".into()) }),
-                    "cancel-unpaid"
-                ),
+                Some(&Mark::Proposes(Proposal { on: on.clone(), goes: Goes::To("default".into()) })),
+                Some(&Mark::Proposes(Proposal { on, goes: Goes::Navigate("ExportDocuments".into()) })),
             ]
         );
         assert_eq!(
@@ -3958,8 +3979,16 @@ mod tests {
         );
         let listed = notes::notes(&root, None, None, false).unwrap();
         assert_eq!(
-            listed["notes"][1]["proposes"],
-            json!({ "on": "cd-keep.tap", "navigate": "ExportDocuments" })
+            listed["notes"][0]["messages"][1]["proposes"],
+            json!({ "on": "cd-keep.tap", "navigate": "ExportDocuments" }),
+            "`notes` lists the mark"
+        );
+        gallery.press_at(on_node(&gallery, 0, "cd-keep"));
+        gallery.let_go();
+        let panel = gallery.panel();
+        assert!(
+            panel.iter().filter(|line| *line == "proposes where acting on it goes").count() == 2,
+            "the conversation marks each: {panel:?}"
         );
         assert_eq!(
             std::fs::read_to_string(dir.join(crate::SCREEN)).unwrap(),
@@ -4246,7 +4275,7 @@ mod tests {
         assert!(gallery.sidebar.talk().is_blank(), "Enter sends, and empties the box");
         assert_eq!(
             talk_shown(&gallery),
-            ["note N1 · waiting on the agent", "价格太长\na b"],
+            ["note N1 · waiting on the agent", "价格太长\na b", "waiting for the agent"],
             "shown at once"
         );
 
@@ -4267,7 +4296,11 @@ mod tests {
         assert_eq!(written.len(), 1, "the node has one note, said more in");
         let said: Vec<&str> = written[0].messages.iter().map(|said| said.says.as_str()).collect();
         assert_eq!(said, ["价格太长\na b", "and the date"]);
-        assert_eq!(talk_shown(&gallery)[1..], ["价格太长\na b", "and the date"], "newest at the bottom");
+        assert_eq!(
+            talk_shown(&gallery)[1..],
+            ["价格太长\na b", "and the date", "waiting for the agent"],
+            "newest at the bottom"
+        );
 
         assert_eq!(
             pins_shown(&gallery),
@@ -4359,8 +4392,61 @@ mod tests {
         }
         gallery.cursor = on_pin(&gallery, "N2");
         gallery.press();
-        assert_eq!(talk_shown(&gallery), ["note N2 · waiting on the agent", "too red"]);
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N2 · waiting on the agent", "too red", "waiting for the agent"]
+        );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_conversation_is_waiting_then_taken_then_answered_unread_then_read() {
+        let root = root_of("notes-stands", &[("orders", "orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        gallery.time = Some(1_000_023);
+        show(&mut gallery, "orders", "default");
+        say_on(&mut gallery, 0, "nav-export", "rename it");
+        let dir = root.join("orders");
+        let ink = |gallery: &Gallery| {
+            gallery.pins().into_iter().find(|pin| pin.id == "N1" && !pin.faint).map(|pin| pin.ink)
+        };
+        assert_eq!(talk_shown(&gallery)[2], "waiting for the agent", "under the person's last message");
+        assert_eq!(ink(&gallery), Some(Ink::Note), "waiting on the agent: its mark");
+        assert!(!gallery.counting(), "nothing to count yet");
+
+        assert!(notes::hand_over(&dir, 1_000_000).unwrap(), "`--wait` hands it to the agent");
+        gallery.reload();
+        assert_eq!(talk_shown(&gallery)[2], "the agent is changing it (23s)");
+        assert!(gallery.counting(), "the window is drawn again each second");
+        gallery.time = Some(1_000_125);
+        assert_eq!(talk_shown(&gallery)[2], "the agent is changing it (2m 05s)", "counting up");
+        assert_eq!(ink(&gallery), Some(Ink::Note), "taken, it still waits on the agent: the same mark");
+
+        // Its conversation not shown, the answer comes in unread.
+        press_keys(&mut gallery, &["Esc"]);
+        notes::answer(&dir, "N1", "renamed it Export").unwrap();
+        gallery.reload();
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Unread);
+        assert_eq!(ink(&gallery), Some(Ink::Answered), "unread: a mark of its own");
+        assert!(!gallery.counting(), "answered: nothing counts");
+
+        assert!(gallery.press_at(on_pin(&gallery, "N1")), "its conversation shown");
+        assert_eq!(talk_shown(&gallery), ["note N1 · answered", "rename it", "renamed it Export"]);
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Read, "seen, it is read");
+        assert_eq!(ink(&gallery), Some(Ink::Line), "answered and read: quiet");
+
+        let mut again = opened(&root, (1440.0, 900.0));
+        show(&mut again, "orders", "default");
+        assert_eq!(ink(&again), Some(Ink::Line), "still read in a window opened again");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn how_long_ago_is_counted_in_seconds_then_minutes_then_hours() {
+        assert_eq!(
+            [0, 23, 59, 60, 125, 3599, 3600, 7380].map(since),
+            ["0s", "23s", "59s", "1m 00s", "2m 05s", "59m 59s", "1h 00m", "2h 03m"]
+        );
     }
 
     #[test]
@@ -4381,7 +4467,11 @@ mod tests {
         assert_ne!(std::fs::read_to_string(dir.join(notes::NOTES)).unwrap(), before, "it joined");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.on, On::State { state: State::Fixture("default".into()) });
-        assert_eq!((note.stands(), note.messages.len()), (Stands::Answered, 3), "never closed: {note:?}");
+        assert_eq!(
+            (note.stands(), note.messages.len()),
+            (Stands::Read, 3),
+            "never closed, and read, its state shown: {note:?}"
+        );
         assert_eq!(note.messages[0].says, "on `nav-export`, now gone");
         gallery.press_at(on_pin(&gallery, "N1"));
         assert_eq!(picked_node(&gallery), None, "its pin picks the whole state");
@@ -4406,7 +4496,7 @@ mod tests {
     }
 
     #[test]
-    fn an_assumption_is_answered_with_a_note_and_a_confirmed_one_closes_once_taken_out() {
+    fn an_assumption_is_answered_with_marked_messages_in_its_nodes_note() {
         let root = root_of("assume", &[("checkout", "checkout")]);
         let mut gallery = opened(&root, (1440.0, 900.0));
         let checkout = line_of(&gallery, "checkout");
@@ -4425,45 +4515,72 @@ mod tests {
             "or else  the real build may use the payment provider's hosted fields",
             "✓ right, keep it",
             "✗ wrong…",
+            "✓: the agent takes the guess out · ✗: say what is right",
         ] {
             assert!(panel.iter().any(|line| line == part), "{part:?} in {panel:?}");
         }
+        let at = |panel: &[String], line: &str| panel.iter().position(|said| said == line);
+        assert!(
+            at(&panel, "✗ wrong…") < at(&panel, "note · nothing said yet"),
+            "above the conversation: {panel:?}"
+        );
 
+        type_text(&mut gallery, "the card form");
+        press_keys(&mut gallery, &["Enter"]);
         assert!(click_panel_line(&mut gallery, "✗ wrong…"));
+        assert!(gallery.typing(), "the caret is in the box");
         let panel = gallery.panel();
-        assert!(panel.iter().any(|line| line == "what is right?"), "a field in place: {panel:?}");
+        assert!(panel.iter().any(|line| line.starts_with("✗: write what is right")), "{panel:?}");
         assert!(!panel.iter().any(|line| line == "✓ right, keep it"), "in place of the buttons");
+        assert_eq!(gallery.foot().unwrap().empty, "what is right?");
         press_keys(&mut gallery, &["Enter", " ", "Enter"]);
-        assert!(gallery.draft.is_some(), "the ✗ is not sent empty");
-        assert!(gallery.panel().iter().any(|line| line.starts_with("not sent empty")));
+        assert!(gallery.rejecting.is_some(), "the ✗ is not sent empty");
+        assert!(gallery.panel()[0].contains("✗ says what is right"), "{:?}", gallery.panel());
         let dir = root.join("checkout");
-        assert!(!dir.join(notes::NOTES).exists(), "nothing written");
+        assert_eq!(notes::read(&dir).unwrap()[0].messages.len(), 1, "nothing more written");
         press_keys(&mut gallery, &["Backspace"]);
         type_text(&mut gallery, "use the hosted fields");
         press_keys(&mut gallery, &["Enter"]);
-        let wrong = notes::read(&dir).unwrap().remove(0);
+        assert!(gallery.rejecting.is_none() && gallery.sidebar.talk().is_blank(), "sent");
+        let written = notes::read(&dir).unwrap();
+        assert_eq!(written.len(), 1, "one note on the node: {written:#?}");
+        let wrong = &written[0];
         assert_eq!(wrong.stands(), Stands::Waiting);
-        assert_eq!(wrong.messages[0].says, "use the hosted fields");
-        let answers = wrong.answers.clone().unwrap();
-        assert_eq!((answers.answer, answers.guess), (Answer::Wrong, Guess::Author));
+        assert_eq!(wrong.messages[0].mark, None, "plain talk is unmarked");
+        assert_eq!(wrong.messages[1].says, "use the hosted fields");
+        let Some(Mark::Answers(answers)) = &wrong.messages[1].mark else { panic!("unmarked: {wrong:?}") };
+        assert_eq!((answers.answer, &answers.guess), (Answer::Wrong, &Guess::Author));
         assert!(answers.assumed.starts_with("Card fields are drawn here;"));
+        assert!(gallery.panel().iter().any(|line| line == "✗ wrong, answering the assumption"));
+
+        assert!(click_panel_line(&mut gallery, "✗ wrong…"));
+        press_keys(&mut gallery, &["Esc"]);
+        assert!(gallery.rejecting.is_none(), "Esc takes the ✗ back");
+        type_text(&mut gallery, "and the expiry");
+        press_keys(&mut gallery, &["Enter"]);
+        assert_eq!(notes::read(&dir).unwrap()[0].messages[2].mark, None, "sent as plain talk");
 
         assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
         assert!(gallery.panel()[0].starts_with("✓ right on card-number in "), "{:?}", gallery.panel());
         assert!(!gallery.panel().iter().any(|line| line == "✓ right, keep it"), "one ✓ at a time");
         assert!(click_panel_line(&mut gallery, "undo"));
         assert!(!gallery.confirm(Instant::now() + UNDO * 2), "undone: nothing waits");
-        assert_eq!(notes::read(&dir).unwrap().len(), 1, "an undone ✓ leaves notes.json as it was");
+        assert_eq!(
+            notes::read(&dir).unwrap()[0].messages.len(),
+            3,
+            "an undone ✓ leaves notes.json as it was"
+        );
 
         assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
         assert!(!gallery.confirm(Instant::now() + UNDO - Duration::from_secs(1)), "it can still be undone");
-        assert_eq!(notes::read(&dir).unwrap().len(), 1, "not written while it can be undone");
+        assert_eq!(notes::read(&dir).unwrap()[0].messages.len(), 3, "not written while it can be undone");
         assert!(gallery.confirm(Instant::now() + UNDO));
         assert!(!gallery.confirm(Instant::now() + UNDO * 2), "written once");
-        let right = notes::read(&dir).unwrap().remove(1);
-        assert_eq!(right.answers.as_ref().map(|answers| answers.answer), Some(Answer::Right));
-        assert_eq!(right.messages[0].says, notes::RIGHT, "✓ needs no line");
-        assert!(gallery.panel().iter().any(|line| line == "N1 answers it ✗ wrong · waiting on the agent"));
+        let note = notes::read(&dir).unwrap().remove(0);
+        let right = &note.messages[3];
+        assert_eq!(right.says, notes::RIGHT, "✓ needs no line");
+        assert!(matches!(&right.mark, Some(Mark::Answers(answers)) if answers.answer == Answer::Right));
+        assert!(gallery.panel().iter().any(|line| line == "✓ right, answering the assumption"));
 
         notes::answer(&dir, "N1", "kept them drawn: hosted fields are for the build").unwrap();
         let file = dir.join(crate::SCREEN);
@@ -4474,13 +4591,7 @@ mod tests {
         assert!(!screen.contains("Card fields are drawn here"), "the guess taken out");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
-        let notes = notes::read(&dir).unwrap();
-        assert_eq!(
-            notes[1].stands(),
-            Stands::Waiting,
-            "the ✓ is never closed: it waits on the agent's answer"
-        );
-        assert_eq!(notes[0].stands(), Stands::Answered, "the agent spoke last in the ✗");
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Read, "the agent spoke last, shown: read");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -4597,7 +4708,7 @@ mod tests {
         gallery.leave();
         let notes = notes::read(&dir).unwrap();
         assert_eq!(notes.len(), 1, "closing the window writes it");
-        assert_eq!(notes[0].answers.as_ref().map(|answers| answers.answer), Some(Answer::Right));
+        assert_eq!(notes[0].answers().next().map(|answers| answers.answer), Some(Answer::Right));
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -4617,7 +4728,7 @@ mod tests {
         assert!(gallery.confirm(Instant::now() + UNDO));
         let dir = root.join("orders");
         let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!(note.answers.unwrap().guess, Guess::Undrawn(vec!["ExportDocuments".into()]));
+        assert_eq!(note.answers().next().unwrap().guess, Guess::Undrawn(vec!["ExportDocuments".into()]));
 
         let drawn = root_of("assume-undrawn-export", &[("export", "export")]);
         std::fs::rename(drawn.join("export"), root.join("export")).unwrap();
@@ -4675,7 +4786,11 @@ mod tests {
         let dir = root.join("orders");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.on, On::State { state: State::Fixture("default".into()) });
-        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "too busy"], "shown at once");
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "too busy", "waiting for the agent"],
+            "shown at once"
+        );
         let pins = pins_shown(&gallery);
         assert_eq!(pins, [("N1".to_string(), 0, Ink::Note, false)], "one pin, by the first caption");
         gallery.cursor = on_node(&gallery, 0, "nav-export");
@@ -4725,7 +4840,10 @@ mod tests {
         let note = notes::read(&dir).unwrap().remove(0);
         let On::Transition { transition } = &note.on else { panic!("not a transition: {note:?}") };
         assert_eq!(serde_json::to_value(transition).unwrap(), declared[last]);
-        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "should it say why?"]);
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "should it say why?", "waiting for the agent"]
+        );
         assert_eq!(gallery.pins().len(), 1, "a pin beside its arrow");
         press_keys(&mut gallery, &["Esc"]);
         assert_eq!(gallery.arrow(), None);
@@ -4763,7 +4881,10 @@ mod tests {
             json!({ "from": link.from, "node": link.node, "to": link.to }),
             "kept by the description it is written in"
         );
-        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "is this the right screen?"]);
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "is this the right screen?", "waiting for the agent"]
+        );
         assert_eq!(gallery.pins().len(), 1, "a pin under its arrow");
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(!gallery.press() || gallery.arrow() == Some(0), "its pin keeps its arrow picked");
@@ -5060,6 +5181,9 @@ mod tests {
 
         let dir = root.join("orders");
         let on_export = gallery.reference().unwrap();
+        // Its conversation not shown while the agent answers, the answer
+        // comes in unread.
+        gallery.pick(orders);
         notes::say(&on_export, "say Export").unwrap();
         notes::answer(&dir, "N1", "it says Export now").unwrap();
         let whole =
@@ -5080,6 +5204,18 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(picked_node(&gallery), Some("nav-export"), "the note's node picked");
         assert_eq!(talk_shown(&gallery)[0], "note N1 · answered", "with its conversation");
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Read, "shown, it is read");
+        gallery.pick(orders);
+        assert_eq!(
+            inbox(&gallery)[..],
+            [
+                &["waits on you · 2"][..],
+                &guesses,
+                &["▾ waiting on the agent · 1", "N2 on the whole of default"]
+            ]
+            .concat(),
+            "read, it leaves the inbox"
+        );
 
         let top = gallery.lines.iter().position(|line| line.row.dir == root).unwrap();
         assert_eq!(top, 0, "the root is the tree's first line");
@@ -5090,11 +5226,7 @@ mod tests {
             everything.iter().position(|line| line == "orders").unwrap(),
             everything.iter().position(|line| line == "pay/checkout").unwrap(),
         );
-        assert_eq!(
-            everything[at_orders + 1..at_orders + 7],
-            [&guesses[..], &answered].concat(),
-            "{everything:?}"
-        );
+        assert_eq!(everything[at_orders + 1..at_orders + 5], guesses, "{everything:?}");
         assert!(at_orders < at_checkout, "grouped by description, in the tree's order");
         assert!(
             everything[at_checkout + 1..].iter().any(|line| line.starts_with("? card-number in ")),
@@ -5112,16 +5244,14 @@ mod tests {
         assert_eq!(
             inbox(&gallery),
             [
-                "waits on you · 2",
+                "waits on you · 1",
                 guesses[2],
                 guesses[3],
-                answered[0],
-                answered[1],
                 "▾ waiting on the agent · 2",
+                "N1 on nav-export in default at 390",
                 "N2 on the whole of default",
-                "N3 on nav-export in default at 390",
             ],
-            "answered ✓, the assumption leaves as the files change; the ✓ waits on the agent"
+            "answered ✓, the assumption leaves as the files change; the ✓ goes on in nav-export's note, which waits on the agent"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -5182,7 +5312,7 @@ mod tests {
         assert!(gallery.chord("v"));
         assert_eq!(gallery.sidebar.talk().shown().text, "too smalltoo small");
         press_keys(&mut gallery, &["Esc"]);
-        assert!(gallery.draft.is_none());
+        assert!(gallery.rejecting.is_none());
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub(crate) use self::overview::{Arrow, Overview, Pass, Thumb};
 pub(crate) use self::pages::{Page, Pages};
 use crate::area::rect;
 use crate::chrome::PIN;
-use crate::notes::Note;
+use crate::notes::{Note, Stands};
 use crate::reference::Reference;
 use crate::text::Typesetter;
 
@@ -134,9 +134,15 @@ pub(crate) struct Pin {
 
 impl Pin {
     /// Note `note`, of the description in `dir`, drawn in `rect`: faint, or
-    /// its pin.
+    /// its pin, in the ink of where it stands: one that waits on the agent
+    /// in the note's, one with an answer unread in the answer's, and one
+    /// answered and read quiet.
     fn of(dir: &Path, note: &Note, rect: Rect, faint: bool) -> Pin {
-        let ink = if note.waits() { Ink::Note } else { Ink::Answered };
+        let ink = match note.stands() {
+            Stands::Waiting | Stands::Taken => Ink::Note,
+            Stands::Unread => Ink::Answered,
+            Stands::Read => Ink::Line,
+        };
         Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint }
     }
 }

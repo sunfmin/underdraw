@@ -1,4 +1,4 @@
-//! The gallery's sidebar: what the person reads about what is picked, and
+//! The galleself.laid.field.map(|self.laid.caret.map(|r| shifted(r, self.left, 0.0))| shifted(r, self.left, 0.0))y's sidebar: what the person reads about what is picked, and
 //! what they can do with it, on the right of the window. It is made of
 //! cards, each a title over blocks of text and buttons, outlined in its
 //! title's ink: who it is from (the person's cobalt, the agent's green, the
@@ -65,9 +65,6 @@ pub enum Block<A> {
     Item(Item<A>),
     /// Buttons side by side, sharing the card's width.
     Row(Vec<(String, A)>),
-    /// The field being written in, with its caret: what it holds, and what
-    /// it says while empty.
-    Field(Shown, String),
 }
 
 /// The box at the sidebar's foot, fixed there below the cards as they
@@ -114,9 +111,6 @@ impl<A> Block<A> {
                 .chain((!item.says.is_empty()).then(|| item.says.clone()))
                 .collect(),
             Block::Row(buttons) => buttons.iter().map(|(text, _)| text.clone()).collect(),
-            Block::Field(shown, empty) => {
-                vec![if shown.text.is_empty() { empty.clone() } else { shown.text.clone() }]
-            }
         }
     }
 }
@@ -176,16 +170,6 @@ impl<A: Clone + PartialEq> Sidebar<A> {
     /// The box at the foot emptied, once what it held is sent.
     pub fn empty(&mut self, typesetter: &Typesetter) {
         self.talk = Field::new(typesetter, field_width(self.width));
-    }
-
-    /// An empty field as wide as one in a card: one to write a ✗ in.
-    pub fn field(&self, typesetter: &Typesetter) -> Field {
-        Field::new(typesetter, field_width(self.width))
-    }
-
-    /// `field`, one in a card, fitted to the sidebar as wide as it now is.
-    pub fn fit(&self, field: &mut Field) {
-        field.fit(field_width(self.width));
     }
 
     /// `cards` and `foot` laid out in the sidebar `width` wide from `left`,
@@ -253,9 +237,6 @@ struct Laid<A> {
     /// Where the text of that field is: a point in it is a place in its
     /// text, from its top-left.
     field: Option<Rect>,
-    /// Whether that field is in a card, scrolled with them, rather than in
-    /// the box at the foot.
-    field_scrolls: bool,
     /// How far down its last card ends, from its top.
     height: f64,
 }
@@ -280,15 +261,15 @@ impl<'a, A> Placed<'a, A> {
         buttons.iter().find(|(r, _, _)| over(*r, at)).map(|(_, _, does)| does)
     }
 
-    /// Where the text of the field being written in is: a point in it is
+    /// Where the text of the box at the foot is: a point in it is
     /// a place in its text, from its top-left.
     pub fn field(&self) -> Option<Rect> {
-        self.laid.field.map(|r| self.field_moved(r))
+        self.laid.field.map(|r| shifted(r, self.left, 0.0))
     }
 
-    /// The caret of the field being written in.
+    /// The caret of the box at the foot.
     pub fn caret(&self) -> Option<Rect> {
-        self.laid.caret.map(|r| self.field_moved(r))
+        self.laid.caret.map(|r| shifted(r, self.left, 0.0))
     }
 
     /// How far down the last card ends, from the cards' top, unscrolled.
@@ -321,11 +302,6 @@ impl<'a, A> Placed<'a, A> {
                 (shifted(*r, self.left, down), said.as_str(), does)
             })
             .collect()
-    }
-
-    /// `r`, of the field written in, where it is drawn.
-    fn field_moved(&self, r: Rect) -> Rect {
-        shifted(r, self.left, if self.laid.field_scrolls { self.top } else { 0.0 })
     }
 }
 
@@ -390,7 +366,6 @@ fn lay_out<A: Clone>(
         cards: 0,
         caret: None,
         field: None,
-        field_scrolls: false,
         height: 0.0,
     };
     let mut y = top + GUTTER;
@@ -447,11 +422,6 @@ fn lay_out<A: Clone>(
                         let at = rect(x + i as f64 * (each + gap), y, each, tall);
                         button(&mut inside, &mut laid, typesetter, at, said, does);
                     }
-                    tall
-                }
-                Block::Field(shown, empty) => {
-                    let (tall, caret, words) = field(&mut inside, typesetter, (x, y, inner), shown, empty);
-                    (laid.caret, laid.field, laid.field_scrolls) = (Some(caret), Some(words), true);
                     tall
                 }
             };
@@ -512,7 +482,7 @@ fn foot<A: Clone>(
     ];
     let (_, caret, words) =
         field(&mut draws, typesetter, (x, top + PADDING, inner), &foot.field, &foot.empty);
-    (laid.caret, laid.field, laid.field_scrolls) = (Some(caret), Some(words), false);
+    (laid.caret, laid.field) = (Some(caret), Some(words));
     let at = rect(x + inner - send_wide, top + PADDING + field_tall + BETWEEN, send_wide, send_tall);
     match &foot.does {
         Some(does) => {

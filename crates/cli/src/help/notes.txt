@@ -30,29 +30,33 @@ DOES
   `underdraw check <root>` reports it among its "links", kept by the
   description it is written in. Each is numbered N1, N2… within its
   description, and holds its messages in the order said, each by the
-  person or the agent. Only the person starts one. It is never closed:
-  who spoke last says where it stands, and that is read from its
-  messages, never stored:
-    waiting   the person spoke last: for the agent to act on and answer
-    answered  the agent spoke last: for the person to read, and say more
-              in if they want
+  person or the agent, and some of the person's marked as more than talk
+  (MARKS, below). Only the person starts one. It is never closed:
+  who spoke last says where it stands, read from its messages:
+    waiting   the person spoke last, and `--wait` has not handed it to
+              the agent yet: for the agent to act on and answer
+    taken     the person spoke last, and `--wait` handed it to the agent
+              (its "taken"): it still waits on the agent, and the
+              gallery counts how long ago it was taken
+    unread    the agent spoke last, and the person has not seen it yet
+    read      the agent spoke last, and the person has seen it: they may
+              say more in it
   `underdraw notes <path>` lists the waiting ones, each with its whole
   conversation. Edit what it is on in that description's screen.json: the
   node where "node.at" points (the id written there is "node.id", a
   template inside a repeat); the state's fixture or phase; the entry of
   `transitions` the "transition" names; or the navigate on the node
-  "navigate.node". A note with "proposes" asks for where acting on its
-  node should go: declare the transition, or the navigate, it names. A
-  note with "answers" is the person's answer to the assumption on its
-  node (ASSUMPTIONS, below). Then answer:
+  "navigate.node"; and do what each marked message asks (MARKS, below).
+  Then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
   <dir> is that description's directory: <path>/<"description">. The reply
   is at any length, as many lines as it takes, kept as written but for
   blank space at its ends: say what was done, or why not, or ask back.
-  It is added to the conversation as the agent's message, and the note is
-  answered: its pin turns green in the window. Answering again with the
+  It is added to the conversation as the agent's message, unread, and the
+  note is answered: its pin turns green in the window until the person
+  reads it. Answering again with the
   same text as the agent's last message changes nothing more; with other
   text, it is one more message.
 
@@ -71,23 +75,43 @@ DOES
     underdraw notes <dir> --answer N3 --reply "Made the price wrap.
     Should the date wrap too, or be cut?"
 
+MARKS
+  A message of the person's with neither key below is plain talk. One
+  with a mark has, beside "by" and "says", exactly one of:
+    "answers"   the person's answer to the assumption on the note's node
+                (ASSUMPTIONS, below); "says" is what is right for a ✗,
+                or a fixed line for a ✓ with nothing more to say
+    "proposes"  where acting on the note's node should go, chosen where
+                nothing was declared: {"on": "<node id as written>.<event>",
+                "to": <state>}, a transition to add to "transitions"
+                from the note's "state", or {"on", "navigate": <screen>},
+                a navigate to give the node's handler. Declare it; "says"
+                is the same in words
+  The agent's messages and underdraw's are never marked. A note may hold
+  several marked messages, each answered by the agent's next message as
+  any other; the marks stay in the conversation after it is answered.
+
 ASSUMPTIONS
-  The person answers an assumption with a note on its node, its
-  "answers" saying which and how: "assumed", the guess as the gallery
+  The person answers an assumption with a message in its node's note,
+  its "answers" saying which and how: "assumed", the guess as the gallery
   showed it; "guess", what made it: "author" (the node's own `assumed`),
   {"undrawn": [<screen>, …]} (a navigate to a screen not drawn yet) or
   {"component": <component>} (a component underdraw does not know); and "answer":
     right  ✓: the guess was right. Make it a decision: take the guess out
            of the description (remove the node's `assumed`; draw the
            screen; define the component), then answer the note saying so.
-    wrong  ✗: the guess was wrong, and the note's messages say what is
-           right. Change the description to that, then answer the note,
-           as any note.
+    wrong  ✗: the guess was wrong, and the message says what is right.
+           Change the description to that, then answer the note, as any
+           note.
 
 WAITING
   `underdraw notes <root> --wait` blocks until a note under <root> waits
   on the agent, the person having spoken last in it, then answers as
   `underdraw notes <root>` does, every waiting note listed, and exits 0.
+  Each message it hands over is marked taken in notes.json, with the
+  time, so the gallery tells the person "the agent is changing it" and
+  how long ago; a message already taken keeps its time. A note taken
+  still waits, and is listed again until it is answered.
   When one waits already it answers at once; when none does, it reads the
   files again every fraction of a second, and answers as soon as the
   person starts a note, or says more in one, in the gallery. A message of
@@ -122,8 +146,8 @@ ANSWERS
                 [{"description": its directory, relative to root ("." for
                                  root itself),
                   "id":          "N3",
-                  "stands":      "waiting" or "answered", read from who
-                                 spoke last (DOES, above),
+                  "stands":      "waiting", "taken", "unread" or "read",
+                                 read from who spoke last (DOES, above),
                   what it is on, as one of these:
                   "state":       {"fixture": <name>} or {"phase": <name>},
                                  the state it was written in, with
@@ -141,23 +165,19 @@ ANSWERS
                   "messages":    [{"by": "person" or "agent", "says"}, …],
                                  the conversation, in the order said, the
                                  person's first; "says" as many lines as
-                                 were written; "by": "underdraw" is the
+                                 were written; a person's message handed
+                                 over by --wait has "taken": when, in
+                                 seconds since 1970; an agent's message
+                                 the person has not seen has "unread":
+                                 true; "by": "underdraw" is the
                                  line saying where the messages after it
                                  were, in a note now gone, and is neither
-                                 person's nor agent's
-                  "proposes":    null, or, where acting on the node found
-                                 nothing declared and the person chose
-                                 where it should go: {"on": "<node id as
-                                 written>.<event>", "to": <state>}, a
-                                 transition to add to "transitions" from
-                                 "state", or {"on", "navigate": <screen>},
-                                 a navigate to give the node's handler
-                  "answers":     for a note answering an assumption only:
-                                 {"assumed", "guess", "answer": "right"
-                                 or "wrong"} (ASSUMPTIONS, above)
+                                 person's nor agent's; a message of the
+                                 person's may also hold "answers" or
+                                 "proposes" (MARKS, above)
                   "reference":   the same as one line, as ⌘C copies it}, …]
-    "waiting":  how many notes wait on the agent
-    "answered": how many the agent spoke last in
+    "waiting":  how many notes wait on the agent, taken or not
+    "answered": how many the agent spoke last in, read or not
   }
   With --answer:
   {
