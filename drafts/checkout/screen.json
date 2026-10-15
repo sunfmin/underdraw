@@ -282,6 +282,11 @@
         ]
       }
     },
+    "FieldRow": {
+      "doc": "A field and its button side by side, tops aligned: the field may grow an error line below.",
+      "params": [],
+      "look": { "box": "row", "gap": 8, "items": "start", "children": ["$children"] }
+    },
     "TextField": {
       "doc": "A one-line text input: label above, placeholder until filled, error below.",
       "params": ["label", "value", "placeholder", "error"],
@@ -348,7 +353,7 @@
                     "title": "添加收货地址",
                     "detail": "下单前需要一个收货地址",
                     "trailingIcon": "chevron_right",
-                    "on": { "tap": { "navigate": "AddressForm" } } }
+                    "on": { "tap": { "navigate": "AddressForm", "with": { "addressId": null } } } }
                 ]
               },
               {
@@ -404,7 +409,7 @@
               {
                 "id": "sec-promo", "component": "Section", "title": "优惠码", "gap": "space.2",
                 "children": [
-                  { "id": "promo-entry", "component": "Row", "if": "!promoApplied", "gap": "space.2",
+                  { "id": "promo-entry", "component": "FieldRow", "if": "!promoApplied",
                     "children": [
                       { "id": "promo-code", "component": "TextField", "bind": "promoCode", "placeholder": "输入优惠码",
                         "error": { "cases": [
