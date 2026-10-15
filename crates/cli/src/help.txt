@@ -43,11 +43,12 @@ START HERE
                              (<dir>/journeys/<name>.json) walked
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
-  underdraw notes <root>     what the person said there: each open note, pinned
-                             to a node, a state or an arrow; act on it, then answer it with
+  underdraw notes <root>     what the person said there: each note waiting on
+                             you, a conversation pinned to a node, a state or an
+                             arrow; act on it, then answer it with
                              `underdraw notes <dir> --answer N1 --reply "…"`;
                              `underdraw notes <root> --wait` in the background
-                             answers when the person writes the next one
+                             answers when the person next says something
   underdraw handoff <dir> --platform ios
                              once agreed: what to build, and what to test it against
   underdraw compare <dir> --platform ios --capture c.json
@@ -72,9 +73,10 @@ COMMANDS
                              <root>, each drawn at a phone and a desktop width,
                              where they write notes on its nodes, states and arrows,
                              and play each journey under it step by step
-    underdraw notes <root>   the person's open notes, each with where it is pinned;
+    underdraw notes <root>   the person's notes waiting on the agent, each a
+                             conversation with where it is pinned;
                              with --answer <id> --reply "…", one answered;
-                             with --wait, once one is open
+                             with --wait, once one waits
     underdraw render <dir>   a wireframe PNG of one state, and where each node went,
                              for the agent to read the node boxes
   For the agent building the screen on a platform:

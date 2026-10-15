@@ -45,7 +45,7 @@ use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
-use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Status};
+use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Stands};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
 use crate::scrollbar::{Axis, Bar, Part};
 use crate::sidebar::Item as Listed;
@@ -251,9 +251,6 @@ struct Confirming {
 enum Writing {
     /// A new note, on what this references.
     On(Reference),
-    /// The line that reopens the note of this id, in the description in
-    /// this directory.
-    Reopening(PathBuf, String),
     /// A ✗ on the assumption of the node this references: what is right.
     Rejecting(Reference, Answers),
 }
@@ -269,12 +266,6 @@ enum Do {
     Propose(Proposal),
     /// Starts writing a note on the node, region or arrow picked.
     Write,
-    /// Closes the note picked: its description's directory, and its id.
-    Close(PathBuf, String),
-    /// Starts writing the line that reopens the note picked, named so.
-    Reopen(PathBuf, String),
-    /// Picks the note named so: one of a description's closed notes.
-    Show(PathBuf, String),
     /// Answers the assumption on the node picked: ✓ is written once it can
     /// no longer be undone; ✗ starts writing what is right.
     Judge(Answer),
@@ -316,44 +307,15 @@ struct Pin {
     region: Option<Rect>,
 }
 
-/// Every description's notes on the lines of the tree over `root`, by its
-/// directory, each that closes itself closed first; one whose notes.json
-/// cannot be read has none (`check` says why).
-fn notes_of(root: &Path, lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
+/// Every description's notes on the lines of the tree, by its directory;
+/// one whose notes.json cannot be read has none (`check` says why).
+fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
     lines
         .iter()
         .filter(|line| line.state.is_none())
         .filter_map(|line| line.row.description())
-        .map(|dir| {
-            let _ = notes::settle(dir, root);
-            (dir.to_path_buf(), notes::read(dir).unwrap_or_default())
-        })
+        .map(|dir| (dir.to_path_buf(), notes::read(dir).unwrap_or_default()))
         .collect()
-}
-
-/// What closed itself between the notes `before` and `after`, each with
-/// why, as the panel says it once: `N3 closed: order-{index} is gone
-/// (removed or renamed)`.
-fn closed_itself(
-    before: &BTreeMap<PathBuf, Vec<Note>>,
-    after: &BTreeMap<PathBuf, Vec<Note>>,
-    lang: Lang,
-) -> Vec<String> {
-    let mut said = Vec::new();
-    for (dir, notes) in after {
-        for note in notes {
-            let Some(why) = &note.closed_because else { continue };
-            let was_closed = before
-                .get(dir)
-                .and_then(|was| was.iter().find(|was| was.id == note.id))
-                .is_none_or(|was| was.status == Status::Closed);
-            if !was_closed {
-                let id = &note.id;
-                said.push(say!(lang, note_closed_because, id, why));
-            }
-        }
-    }
-    said
 }
 
 /// One line of the tree: a directory, a description, one of a
@@ -652,7 +614,7 @@ impl Gallery {
         Gallery {
             root: root.to_path_buf(),
             lang: Lang::default(),
-            notes: notes_of(root, &lines),
+            notes: notes_of(&lines),
             lines,
             picked: None,
             wanted: None,
@@ -1034,9 +996,7 @@ impl Gallery {
         self.lines = lines(&self.root);
         self.descriptions.borrow_mut().clear();
         self.guessed.borrow_mut().clear();
-        let notes = notes_of(&self.root, &self.lines);
-        let closed = closed_itself(&self.notes, &notes, self.lang);
-        self.notes = notes;
+        self.notes = notes_of(&self.lines);
         self.picked = None;
         self.picture = Picture::Faults(Vec::new());
         let playing = journey.and_then(|(file, at)| {
@@ -1045,9 +1005,6 @@ impl Gallery {
         if let Some((index, at)) = playing {
             self.play(index, at);
             self.scroll = scroll;
-            if !closed.is_empty() {
-                self.say(self.reopen_from(&closed));
-            }
             self.clamp();
             return;
         }
@@ -1068,16 +1025,7 @@ impl Gallery {
         } else if description.is_some() {
             self.wanted = wanted;
         }
-        if !closed.is_empty() {
-            self.say(self.reopen_from(&closed));
-        }
         self.clamp();
-    }
-
-    /// What the sidebar says of the notes that `closed` themselves.
-    fn reopen_from(&self, closed: &[String]) -> String {
-        let closed = closed.join(" · ");
-        say!(self.lang, closed_note_reopens_in_overview, closed)
     }
 
     /// The line of the state `named` names, or of its directory when it
@@ -1194,19 +1142,6 @@ impl Gallery {
                 self.write();
                 true
             }
-            Do::Close(dir, id) => {
-                self.close(&dir, &id);
-                true
-            }
-            Do::Reopen(dir, id) => {
-                self.draft = Some(Draft::new(Writing::Reopening(dir, id), &self.typesetter, self.side));
-                true
-            }
-            Do::Show(dir, id) => {
-                self.note = Some((dir, id));
-                self.acted = None;
-                true
-            }
             Do::Judge(answer) => {
                 self.judge(answer, Instant::now());
                 true
@@ -1251,7 +1186,7 @@ impl Gallery {
         };
         match notes::propose(&on, proposal) {
             Ok(id) => {
-                self.notes = notes_of(&self.root, &self.lines);
+                self.notes = notes_of(&self.lines);
                 self.say(say!(self.lang, proposal_saved, id));
                 self.note = Some((on.description, id));
             }
@@ -2021,9 +1956,7 @@ impl Gallery {
         let warmed = hot != self.hot;
         self.hot = hot;
         let over = self.pin_at(self.cursor).filter(|(dir, id)| {
-            self.notes.get(dir).is_some_and(|notes| {
-                notes.iter().any(|note| &note.id == id && note.status == Status::Answered)
-            })
+            self.notes.get(dir).is_some_and(|notes| notes.iter().any(|note| &note.id == id && !note.waits()))
         });
         let changed = over != self.hovered;
         self.hovered = over;
@@ -2132,8 +2065,7 @@ impl Gallery {
     /// conversation; then the assumption on the node picked, to answer;
     /// then the node picked (what it is, what it calls, and, folded into
     /// "details", its id and its label and box at each width), the region or the arrow picked, with a button
-    /// to write a note on it; then a description's closed notes. None when
-    /// none of these is there.
+    /// to write a note on it. None when none of these is there.
     fn cards(&self) -> Vec<Card<Do>> {
         let lang = self.lang;
         let mut cards: Vec<Card<Do>> = self.playing_card().into_iter().collect();
@@ -2167,9 +2099,6 @@ impl Gallery {
                 card.blocks.push(Block::Button(say!(lang, write_note_on_it), Do::Write));
             }
             cards.push(card);
-        }
-        if self.note.is_none() && self.draft.is_none() && !self.noting {
-            cards.extend(self.closed_card());
         }
         cards
     }
@@ -2490,7 +2419,7 @@ impl Gallery {
             ),
         ];
         if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
-            for note in notes.iter().filter(|note| note.status != Status::Closed) {
+            for note in notes {
                 let (Some(answers), On::Node { node: on, .. }) = (&note.answers, &note.on) else { continue };
                 if on.origin.written == node.origin.written {
                     let (id, mark, status) =
@@ -2575,7 +2504,7 @@ impl Gallery {
         };
         match notes::judge(&on, answers, "") {
             Ok(id) => {
-                self.notes = notes_of(&self.root, &self.lines);
+                self.notes = notes_of(&self.lines);
                 self.say(say!(self.lang, judged_right_saved, id));
             }
             Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
@@ -2603,48 +2532,17 @@ impl Gallery {
         Some(Card { ink: Ink::Answered, ..Card::new(say!(lang, confirming_title, on), blocks) })
     }
 
-    /// The card of the closed notes of the description whose overview is
-    /// shown, each with why it closed, a click on one picking it, to reopen;
-    /// none elsewhere, or when it has none.
-    fn closed_card(&self) -> Option<Card<Do>> {
-        let (Picture::Overview(_), Some(wanted)) = (&self.picture, &self.wanted) else {
-            return None;
-        };
-        let lang = self.lang;
-        let notes = self.notes.get(&wanted.dir)?;
-        let closed: Vec<&Note> = notes.iter().filter(|note| note.status == Status::Closed).collect();
-        if closed.is_empty() {
-            return None;
-        }
-        let blocks = closed
-            .into_iter()
-            .map(|note| {
-                let why = note.closed_because.clone().unwrap_or_else(|| say!(lang, closed_by_you));
-                Block::Button(
-                    format!("{} · {why} · {}", note.id, note.on.said(lang)),
-                    Do::Show(wanted.dir.clone(), note.id.clone()),
-                )
-            })
-            .collect();
-        Some(Card::new(say!(lang, closed_notes), blocks))
-    }
-
     /// The note picked, if the description it names has it.
     fn picked_note(&self) -> Option<&Note> {
         let (dir, id) = self.note.as_ref()?;
         self.notes.get(dir)?.iter().find(|note| &note.id == id)
     }
 
-    /// The card of the note picked, read as a conversation: where it is in
-    /// its life (and why it closed) and where it is, what the person and the
-    /// agent said, each in a bubble, and what the person can do with it:
-    /// close it, or say it is not done yet; reopen it once closed. The
-    /// field of the line that reopens it, in place, while it is written.
-    /// None when no note is picked.
+    /// The card of the note picked, read as a conversation: where it
+    /// stands and where it is, and what the person and the agent said, each
+    /// in a bubble. None when no note is picked.
     fn note_card(&self) -> Option<Card<Do>> {
-        let (Some(note), Some((dir, _))) = (self.picked_note(), &self.note) else {
-            return None;
-        };
+        let note = self.picked_note()?;
         let lang = self.lang;
         let answers = match &note.answers {
             Some(answers) => {
@@ -2654,30 +2552,13 @@ impl Gallery {
             None => String::new(),
         };
         let title = format!("{} · {} · {}{answers}", note.id, note_status(note, lang), note.on.said(lang));
-        let mut blocks: Vec<Block<Do>> = Vec::new();
-        blocks.extend(note.thread.iter().map(|said| Block::Bubble(said.by, said.says.clone())));
-        let (dir, id) = (dir.clone(), note.id.clone());
-        let reopening = matches!(&self.draft, Some(Draft { on: Writing::Reopening(at, of), .. }) if *at == dir && *of == id);
-        if reopening {
-            blocks.extend(self.field_blocks());
-        } else {
-            let close = (say!(lang, close), Do::Close(dir.clone(), id.clone()));
-            let reopen = Do::Reopen(dir, id);
-            blocks.push(Block::Row(match note.status {
-                Status::Open => vec![close],
-                Status::Answered => vec![close, (say!(lang, not_yet), reopen)],
-                Status::Closed if note.closed_because.is_some() => {
-                    vec![(say!(lang, reopen_whole_state), reopen)]
-                }
-                Status::Closed => vec![(say!(lang, reopen), reopen)],
-            }));
-        }
-        let ink = if note.status == Status::Answered { Ink::Answered } else { Ink::Note };
+        let blocks = note.messages.iter().map(|said| Block::Bubble(said.by, said.says.clone())).collect();
+        let ink = if note.waits() { Ink::Note } else { Ink::Answered };
         Some(Card { ink, ..Card::new(title, blocks) })
     }
 
     /// The field of the note being written, and what its keys do: Enter
-    /// sends what it holds, except a ✗ or a reopening with nothing in it.
+    /// sends what it holds, except a ✗ with nothing in it.
     fn field_blocks(&self) -> Vec<Block<Do>> {
         let Some(draft) = &self.draft else {
             return Vec::new();
@@ -2685,7 +2566,6 @@ impl Gallery {
         let lang = self.lang;
         let empty = match &draft.on {
             Writing::On(_) => say!(lang, ask_change),
-            Writing::Reopening(..) => say!(lang, ask_still_to_do),
             Writing::Rejecting(..) => say!(lang, ask_right),
         };
         let keys = if draft.text.is_blank() && !matches!(draft.on, Writing::On(_)) {
@@ -2798,14 +2678,12 @@ impl Gallery {
         let saved = match &draft.on {
             Writing::On(on) => notes::add(on, &draft.text.text())
                 .map(|id| (on.description.clone(), id, say!(lang, done_saved))),
-            Writing::Reopening(dir, id) => notes::reopen(dir, id, &draft.text.text())
-                .map(|()| (dir.clone(), id.clone(), say!(lang, done_reopened))),
             Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text.text())
                 .map(|id| (on.description.clone(), id, say!(lang, done_rejected))),
         };
         match saved {
             Ok((dir, id, done)) => {
-                self.notes = notes_of(&self.root, &self.lines);
+                self.notes = notes_of(&self.lines);
                 self.say(say!(lang, note_sent, id, done));
                 self.note = Some((dir, id));
             }
@@ -2813,18 +2691,6 @@ impl Gallery {
                 self.say(say!(lang, not_saved, e = format!("{e:#}")));
                 self.draft = Some(draft);
             }
-        }
-    }
-
-    /// The note of id `id`, in the description in `dir`, closed.
-    fn close(&mut self, dir: &Path, id: &str) {
-        match notes::close(dir, id) {
-            Ok(()) => {
-                self.notes = notes_of(&self.root, &self.lines);
-                self.note = None;
-                self.say(say!(self.lang, note_closed, id));
-            }
-            Err(e) => self.say(say!(self.lang, not_closed, e = format!("{e:#}"))),
         }
     }
 
@@ -2987,8 +2853,8 @@ impl Gallery {
         true
     }
 
-    /// The notes on what is shown, not closed, drawn on it; blue while open,
-    /// green once answered. On a state's pictures, each on a node or a
+    /// The notes on what is shown, drawn on it; blue while waiting on the
+    /// agent, green once answered. On a state's pictures, each on a node or a
     /// region a numbered pin at the top-right corner of its node, or of its
     /// region as it now is, in the picture of the state and width it was
     /// written in, and a faint dot there in every other that holds the
@@ -3003,10 +2869,9 @@ impl Gallery {
             Picture::Overview(_) => self.state_pins(),
             Picture::Flow(_) | Picture::Faults(_) => Vec::new(),
         };
-        let shown = |note: &&Note| note.status != Status::Closed;
         for (reference, (_, (x, y))) in self.arrow_references().into_iter().zip(self.arrow_spots()) {
             let Some(notes) = self.notes.get(&reference.description) else { continue };
-            let on = notes.iter().filter(shown).filter(|note| note.on == reference.on);
+            let on = notes.iter().filter(|note| note.on == reference.on);
             for (before, note) in on.enumerate() {
                 let x = x + before as f64 * (PIN + 2.0);
                 pins.push(self.pin(
@@ -3023,7 +2888,7 @@ impl Gallery {
     /// Note `note`, of the description in `dir`, drawn in `rect`: faint, or
     /// its pin.
     fn pin(&self, dir: &Path, note: &Note, rect: Rect, faint: bool) -> Pin {
-        let ink = if note.status == Status::Answered { Ink::Answered } else { Ink::Note };
+        let ink = if note.waits() { Ink::Note } else { Ink::Answered };
         Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint, region: None }
     }
 
@@ -3046,7 +2911,7 @@ impl Gallery {
             // next one beside them; and the whole state.
             let mut on: BTreeMap<String, usize> = BTreeMap::new();
             let mut whole = 0;
-            for note in notes.iter().filter(|note| note.status != Status::Closed) {
+            for note in notes {
                 let (written, r, key, width) = match &note.on {
                     On::Node { state: written, node } => {
                         let Some(placed) = page.placed(&node.origin) else { continue };
@@ -3094,10 +2959,8 @@ impl Gallery {
         let mut pins = Vec::new();
         for (thumb, (x, y, w, _)) in overview.thumbs.iter().zip(self.cells()) {
             let state = self.lines[thumb.line].state.as_ref();
-            let on = notes.iter().filter(|note| {
-                note.status != Status::Closed
-                    && matches!(&note.on, On::State { state: s } if Some(s) == state)
-            });
+            let on =
+                notes.iter().filter(|note| matches!(&note.on, On::State { state: s } if Some(s) == state));
             for (before, note) in on.enumerate() {
                 let right = x + w - PIN / 2.0 - before as f64 * (PIN + 2.0);
                 let at = rect(right - PIN / 2.0, y - CAPTION / 2.0 - PIN / 2.0 - 2.0, PIN, PIN);
@@ -3180,16 +3043,16 @@ impl Gallery {
         Some(Card::new(node.component.clone(), blocks))
     }
 
-    /// How many notes are open on the tree's line of `row` and `state`: on
-    /// the whole description, or on that state of it.
-    fn open_notes(&self, row: &Row, state: Option<&State>) -> usize {
+    /// How many notes wait on the agent on the tree's line of `row` and
+    /// `state`: on the whole description, or on that state of it.
+    fn waiting_notes(&self, row: &Row, state: Option<&State>) -> usize {
         let Some(notes) = row.description().and_then(|dir| self.notes.get(dir)) else {
             return 0;
         };
-        let open = notes.iter().filter(|note| note.status == Status::Open);
+        let waiting = notes.iter().filter(|note| note.waits());
         match state {
-            Some(state) => open.filter(|note| note.on.state() == Some(state)).count(),
-            None => open.count(),
+            Some(state) => waiting.filter(|note| note.on.state() == Some(state)).count(),
+            None => waiting.count(),
         }
     }
 
@@ -3451,7 +3314,7 @@ impl Gallery {
                 (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
             let mut right = tree - 14.0;
-            let open = self.open_notes(row, state.as_ref());
+            let open = self.waiting_notes(row, state.as_ref());
             if open > 0 {
                 let said = match open {
                     1 => say!(self.lang, notes_one),
@@ -3810,13 +3673,11 @@ fn answered(answer: Answer, lang: Lang) -> &'static str {
     }
 }
 
-/// Where `note` is in its life, as the sidebar says it in `lang`.
+/// Where `note` stands, as the sidebar says it in `lang`.
 fn note_status(note: &Note, lang: Lang) -> String {
-    match (&note.status, &note.closed_because) {
-        (Status::Open, _) => say!(lang, status_open),
-        (Status::Answered, _) => say!(lang, status_answered),
-        (Status::Closed, Some(why)) => say!(lang, status_closed_because, why),
-        (Status::Closed, None) => say!(lang, status_closed),
+    match note.stands() {
+        Stands::Waiting => say!(lang, status_waiting),
+        Stands::Answered => say!(lang, status_answered),
     }
 }
 
@@ -5323,10 +5184,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            written[0].thread[0].says,
+            written[0].messages[0].says,
             "cd-keep.tap in cancel-unpaid should go to default: declare the transition"
         );
-        let listed = notes::notes(&root, None, None, false, false).unwrap();
+        let listed = notes::notes(&root, None, None, false).unwrap();
         assert_eq!(
             listed["notes"][1]["proposes"],
             json!({ "on": "cd-keep.tap", "navigate": "ExportDocuments" })
@@ -5612,8 +5473,8 @@ mod tests {
         let written = notes::read(&root.join("orders")).unwrap();
         assert_eq!(written.len(), 1);
         let note = &written[0];
-        assert_eq!((note.id.as_str(), note.status), ("N1", Status::Open));
-        assert_eq!(note.thread[0].says, "价格太长\na b");
+        assert_eq!((note.id.as_str(), note.stands()), ("N1", Stands::Waiting));
+        assert_eq!(note.messages[0].says, "价格太长\na b");
         let On::Node { state, node } = &note.on else { panic!("not on a node: {note:?}") };
         assert_eq!(*state, State::Fixture("default".into()));
         let reference = gallery.reference().unwrap();
@@ -5631,7 +5492,7 @@ mod tests {
         let loading = state_of_in(&gallery, orders, "loading");
         let count = |gallery: &Gallery, line: usize| {
             let Line { row, state, .. } = &gallery.lines[line];
-            gallery.open_notes(row, state.as_ref())
+            gallery.waiting_notes(row, state.as_ref())
         };
         assert_eq!((count(&gallery, orders), count(&gallery, default), count(&gallery, loading)), (1, 1, 0));
         std::fs::remove_dir_all(root).unwrap();
@@ -5664,7 +5525,7 @@ mod tests {
     }
 
     #[test]
-    fn an_answered_note_turns_green_shows_its_reply_and_is_closed_or_reopened_by_the_person() {
+    fn an_answered_note_turns_green_shows_its_reply_and_is_never_closed() {
         let root = root_of("notes-answered", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
@@ -5694,7 +5555,10 @@ mod tests {
         assert_eq!(texts, ["N1 answered: renamed it Export"]);
         assert!(!gallery.hover(), "still over it: nothing changed");
         gallery.cursor = on_pin(&gallery, "N2");
-        assert!(gallery.hover() && gallery.reply_shown().is_empty(), "an open note has no reply to show");
+        assert!(
+            gallery.hover() && gallery.reply_shown().is_empty(),
+            "a note waiting on the agent has no reply to show"
+        );
 
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(gallery.press(), "clicking a pin picks its note");
@@ -5705,24 +5569,24 @@ mod tests {
             ["rename it", "renamed it Export"],
             "the person's words, then the agent's reply"
         );
-        assert!(click_panel_line(&mut gallery, "not yet…"));
-        type_text(&mut gallery, "and the icon");
-        press_keys(&mut gallery, &["Enter"]);
-        let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!(note.status, Status::Open, "reopened");
-        assert_eq!(note.thread.last().unwrap().says, "and the icon");
-
+        let panel = gallery.panel();
+        for gone in ["close", "not yet…", "reopen…", "reopen on the whole state…"] {
+            assert!(
+                !panel.iter().any(|line| line == gone),
+                "a note is never closed: no {gone:?} in {panel:?}"
+            );
+        }
         gallery.cursor = on_pin(&gallery, "N2");
         gallery.press();
-        assert!(click_panel_line(&mut gallery, "close"));
-        assert_eq!(notes::read(&dir).unwrap()[1].status, Status::Closed);
-        let left: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
-        assert!(left.iter().all(|id| id == "N1"), "a closed note is drawn no more: {left:?}");
+        assert_eq!(
+            gallery.panel()[0],
+            "N2 · waiting on the agent · on order-{index}-cancel in default at 390"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn a_note_whose_node_is_renamed_closes_itself_says_so_once_and_reopens_on_the_whole_state() {
+    fn a_note_whose_node_is_renamed_is_never_closed() {
         let root = root_of("notes-gone", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
@@ -5735,53 +5599,16 @@ mod tests {
         press_keys(&mut gallery, &["Enter"]);
         let dir = root.join("orders");
         notes::answer(&dir, "N1", "it says Export").unwrap();
+        let before = std::fs::read_to_string(dir.join(notes::NOTES)).unwrap();
 
         let file = dir.join(crate::SCREEN);
         let screen =
             std::fs::read_to_string(&file).unwrap().replace("\"id\": \"export\"", "\"id\": \"download\"");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
-        assert_eq!(
-            gallery.panel()[0],
-            "N1 closed: nav-export is gone (removed or renamed) · its description's overview lists it, to reopen"
-        );
+        assert_eq!(std::fs::read_to_string(dir.join(notes::NOTES)).unwrap(), before, "nothing closes it");
         let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!(note.status, Status::Closed, "an answered note closes itself too");
-        assert!(gallery.pins().is_empty(), "and is drawn no more");
-        assert_eq!(
-            gallery.panel()[1],
-            "N1 · closed: nav-export is gone (removed or renamed) · on nav-export in default at 390",
-            "the note picked says why"
-        );
-        (gallery.acted, gallery.note) = (None, None);
-        gallery.reload();
-        assert!(gallery.panel().is_empty(), "said once: {:?}", gallery.panel());
-
-        let orders = line_of(&gallery, "orders");
-        gallery.pick(orders);
-        assert_eq!(
-            gallery.panel(),
-            [
-                "closed notes · click one to read or reopen it",
-                "N1 · nav-export is gone (removed or renamed) · on nav-export in default at 390",
-            ]
-        );
-        assert!(click_panel_line(
-            &mut gallery,
-            "N1 · nav-export is gone (removed or renamed) · on nav-export in default at 390"
-        ));
-        assert_eq!(
-            gallery.panel()[0],
-            "N1 · closed: nav-export is gone (removed or renamed) · on nav-export in default at 390"
-        );
-        assert!(click_panel_line(&mut gallery, "reopen on the whole state…"));
-        type_text(&mut gallery, "the download link then");
-        press_keys(&mut gallery, &["Enter"]);
-        let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!(note.status, Status::Open);
-        assert_eq!(note.on, On::State { state: State::Fixture("default".into()) }, "on the whole state");
-        assert_eq!(note.closed_because, None);
-        assert_eq!(note.thread.len(), 3, "its thread kept, the new line added");
+        assert_eq!((note.stands(), note.messages.len()), (Stands::Answered, 2));
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5835,8 +5662,8 @@ mod tests {
         type_text(&mut gallery, "use the hosted fields");
         press_keys(&mut gallery, &["Enter"]);
         let wrong = notes::read(&dir).unwrap().remove(0);
-        assert_eq!(wrong.status, Status::Open);
-        assert_eq!(wrong.thread[0].says, "use the hosted fields");
+        assert_eq!(wrong.stands(), Stands::Waiting);
+        assert_eq!(wrong.messages[0].says, "use the hosted fields");
         let answers = wrong.answers.clone().unwrap();
         assert_eq!((answers.answer, answers.guess), (Answer::Wrong, Guess::Author));
         assert!(answers.assumed.starts_with("Card fields are drawn here;"));
@@ -5856,13 +5683,8 @@ mod tests {
         assert!(!gallery.confirm(Instant::now() + UNDO * 2), "written once");
         let right = notes::read(&dir).unwrap().remove(1);
         assert_eq!(right.answers.as_ref().map(|answers| answers.answer), Some(Answer::Right));
-        assert_eq!(right.thread[0].says, notes::RIGHT, "✓ needs no line");
-        assert!(
-            gallery
-                .panel()
-                .iter()
-                .any(|line| line == "N1 answers it ✗ wrong · open, for the agent to answer")
-        );
+        assert_eq!(right.messages[0].says, notes::RIGHT, "✓ needs no line");
+        assert!(gallery.panel().iter().any(|line| line == "N1 answers it ✗ wrong · waiting on the agent"));
 
         notes::answer(&dir, "N1", "kept them drawn: hosted fields are for the build").unwrap();
         let file = dir.join(crate::SCREEN);
@@ -5873,13 +5695,13 @@ mod tests {
         assert!(!screen.contains("Card fields are drawn here"), "the guess taken out");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
-        assert_eq!(
-            gallery.panel()[0],
-            "N2 closed: the assumption on card-number, confirmed, is taken out · its description's overview lists it, to reopen"
-        );
         let notes = notes::read(&dir).unwrap();
-        assert_eq!(notes[1].status, Status::Closed, "the ✓ closes itself");
-        assert_eq!(notes[0].status, Status::Answered, "the ✗ waits for the person, as any note does");
+        assert_eq!(
+            notes[1].stands(),
+            Stands::Waiting,
+            "the ✓ is never closed: it waits on the agent's answer"
+        );
+        assert_eq!(notes[0].stands(), Stands::Answered, "the agent spoke last in the ✗");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5917,7 +5739,7 @@ mod tests {
         type_text(&mut gallery, "x");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&root.join("orders")).unwrap().remove(0);
-        assert_eq!(note.thread[0].says, "x");
+        assert_eq!(note.messages[0].says, "x");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5955,7 +5777,7 @@ mod tests {
         assert!(gallery.ime(Ime::Commit("太".to_string())));
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&root.join("orders")).unwrap().remove(0);
-        assert_eq!(note.thread[0].says, "价格太", "what was committed, never what was composing");
+        assert_eq!(note.messages[0].says, "价格太", "what was committed, never what was composing");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5978,7 +5800,7 @@ mod tests {
     }
 
     #[test]
-    fn a_confirmed_screen_not_drawn_yet_closes_once_it_is_drawn() {
+    fn a_confirmed_screen_not_drawn_yet_is_noted_with_its_guess_and_never_closed() {
         let root = root_of("assume-undrawn", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
@@ -5996,18 +5818,12 @@ mod tests {
         let dir = root.join("orders");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.answers.unwrap().guess, Guess::Undrawn(vec!["ExportDocuments".into()]));
-        gallery.reload();
-        assert_eq!(notes::read(&dir).unwrap()[0].status, Status::Open, "not drawn yet: it stands");
 
         let drawn = root_of("assume-undrawn-export", &[("export", "export")]);
         std::fs::rename(drawn.join("export"), root.join("export")).unwrap();
         gallery.reload();
         let note = notes::read(&dir).unwrap().remove(0);
-        assert_eq!(note.status, Status::Closed);
-        assert_eq!(
-            note.closed_because.as_deref(),
-            Some("the assumption on nav-export, confirmed, is taken out")
-        );
+        assert_eq!(note.stands(), Stands::Waiting, "drawn now, but the agent has not answered: it waits");
         std::fs::remove_dir_all(root).unwrap();
         std::fs::remove_dir_all(drawn).unwrap();
     }
@@ -6030,7 +5846,7 @@ mod tests {
         let orders = line_of(&gallery, "orders");
         let dialog = state_of_in(&gallery, orders, "cancel-dialog");
         let Line { row, state, .. } = &gallery.lines[dialog];
-        assert_eq!(gallery.open_notes(row, state.as_ref()), 0, "a state counts the notes written in it");
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 0, "a state counts the notes written in it");
         show(&mut gallery, "orders", "loading");
         assert!(pins_shown(&gallery).is_empty(), "loading has no rows");
         std::fs::remove_dir_all(root).unwrap();
@@ -6080,11 +5896,11 @@ mod tests {
         gallery.cursor = on_pin(&gallery, "N1");
         gallery.note = None;
         assert!(gallery.press(), "clicking it picks its note");
-        assert_eq!(gallery.panel()[0], "N1 · open, for the agent to answer · on the whole of default");
+        assert_eq!(gallery.panel()[0], "N1 · waiting on the agent · on the whole of default");
         let orders = line_of(&gallery, "orders");
         let default = state_of_in(&gallery, orders, "default");
         let Line { row, state, .. } = &gallery.lines[default];
-        assert_eq!(gallery.open_notes(row, state.as_ref()), 1, "counted on its state");
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its state");
 
         showing(&mut gallery, orders);
         let pins: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
@@ -6130,7 +5946,7 @@ mod tests {
         gallery.note = None;
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(gallery.press());
-        assert!(gallery.panel()[0].starts_with("N1 · open, for the agent to answer · on transition from "));
+        assert!(gallery.panel()[0].starts_with("N1 · waiting on the agent · on transition from "));
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -6169,12 +5985,12 @@ mod tests {
         assert_eq!(
             gallery.panel()[0],
             format!(
-                "N1 · open, for the agent to answer · on navigate from {} on {} to {}",
+                "N1 · waiting on the agent · on navigate from {} on {} to {}",
                 link.from, link.node, link.to
             )
         );
         let Line { row, state, .. } = &gallery.lines[line_of(&gallery, "orders")];
-        assert_eq!(gallery.open_notes(row, state.as_ref()), 1, "counted on its description");
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its description");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -6238,7 +6054,7 @@ mod tests {
         assert!(gallery.press(), "its pin picks it");
         assert_eq!(
             gallery.panel()[0],
-            "N1 · open, for the agent to answer · on region 10, 145 · 370 × 30 covering 1 node in default at 390"
+            "N1 · waiting on the agent · on region 10, 145 · 370 × 30 covering 1 node in default at 390"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -6508,17 +6324,14 @@ mod tests {
         let note = notes::read(&dir).unwrap().remove(0);
         let On::Node { node, .. } = &note.on else { panic!("not on a node: {note:?}") };
         assert_eq!(node.origin.written, "order-row-cancel");
-        let listed = notes::notes(&root, None, None, false, false).unwrap();
+        let listed = notes::notes(&root, None, None, false).unwrap();
         assert_eq!(listed["notes"][0]["description"], "components/OrderRow", "{listed}");
 
         let file = root.join("components/OrderRow.json");
         let renamed = std::fs::read_to_string(&file).unwrap().replace(r#""id": "cancel""#, r#""id": "drop""#);
         std::fs::write(&file, renamed).unwrap();
         gallery.reload();
-        assert_eq!(
-            gallery.panel()[0],
-            "N1 closed: order-row-cancel is gone (removed or renamed) · its description's overview lists it, to reopen"
-        );
+        assert_eq!(notes::read(&dir).unwrap(), [note], "its node renamed, the note is never closed");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -6639,7 +6452,6 @@ mod tests {
         gallery.pick(pay);
         assert!(!inbox(&gallery).contains(&"orders".to_string()), "a directory's is what is under it");
 
-        notes::close(&dir, "N1").unwrap();
         let assumed = guesses[1].to_string();
         let guess = Guess::Undrawn(vec!["ExportDocuments".into()]);
         notes::judge(&on_export, Answers { assumed, guess, answer: Answer::Right }, "").unwrap();
@@ -6648,14 +6460,16 @@ mod tests {
         assert_eq!(
             inbox(&gallery),
             [
-                "waits on you · 1",
+                "waits on you · 2",
                 guesses[2],
                 guesses[3],
+                answered[0],
+                answered[1],
                 "▾ waiting on the agent · 2",
                 "N2 on the whole of default",
                 "N3 on nav-export in default at 390",
             ],
-            "closed, and answered ✓, they leave as the files change"
+            "answered ✓, the assumption leaves as the files change; the ✓ waits on the agent"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

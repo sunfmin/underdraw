@@ -110,7 +110,7 @@ enum Command {
         #[arg(long, hide = true)]
         window: bool,
     },
-    /// The person's open notes on the descriptions under a directory, each with where it is pinned; or one answered
+    /// The person's notes on the descriptions under a directory that wait on the agent, each a conversation with where it is pinned; or one answered
     #[command(after_long_help = include_str!("help/notes.txt"))]
     Notes {
         /// A description's directory, or a directory of them at any depth
@@ -118,24 +118,15 @@ enum Command {
         /// The note to answer, by its id (N3), in the description at <path>
         #[arg(long, value_name = "ID", requires = "reply")]
         answer: Option<String>,
-        /// The answer: one line saying what was done, or why not
-        #[arg(long, value_name = "LINE")]
+        /// The answer: what was done, or why not, or what you ask back; as many lines as it takes
+        #[arg(long, value_name = "TEXT")]
         reply: Option<String>,
-        /// Block until a note is open, then answer as without it: at once when one is open already
+        /// Block until a note waits on the agent (the person spoke last), then answer as without it: at once when one waits already
         #[arg(long)]
         wait: bool,
-        /// List the closed notes instead of the open, each closed by the person or, saying why, by itself
-        #[arg(long)]
-        closed: bool,
-        /// Refused: the person writes notes, in the gallery
+        /// Refused: the person starts notes, in the gallery
         #[arg(long, hide = true, alias = "add", num_args = 0..=1, default_missing_value = "")]
         create: Option<String>,
-        /// Refused: the person closes a note, in the gallery
-        #[arg(long, hide = true, num_args = 0..=1, default_missing_value = "")]
-        close: Option<String>,
-        /// Refused: the person reopens a note, in the gallery
-        #[arg(long, hide = true, num_args = 0..=1, default_missing_value = "")]
-        reopen: Option<String>,
     },
     /// The view model as a JSON Schema, to validate API responses and other data against
     #[command(after_long_help = include_str!("help/schema.txt"))]
@@ -208,11 +199,9 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Command::Gallery { root, lang, window: false } => gallery::gallery(&root, lang),
-        Command::Notes { create: Some(_), .. }
-        | Command::Notes { close: Some(_), .. }
-        | Command::Notes { reopen: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
-        Command::Notes { path, answer, reply, wait, closed, .. } => {
-            notes::notes(&path, answer.as_deref(), reply.as_deref(), wait, closed)
+        Command::Notes { create: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
+        Command::Notes { path, answer, reply, wait, .. } => {
+            notes::notes(&path, answer.as_deref(), reply.as_deref(), wait)
         }
         Command::Check { path, lang } => check(&path, lang),
         Command::Render { path, fixture, phase, width, scale, out, root, lang } => {
@@ -248,7 +237,7 @@ fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
     }
     let mut answer = serde_json::to_value(check_at(path, &ScreenParams::new())?)?;
     let dir = if describes(path) { path } else { path.parent().unwrap_or(Path::new(".")) };
-    answer["notes"] = notes::counted(dir, dir);
+    answer["notes"] = notes::counted(dir);
     Ok(answer)
 }
 
@@ -273,7 +262,8 @@ fn checked(screen: &Value, dir: &Path) -> anyhow::Result<underdraw_format::Check
 }
 
 /// What [`checked`] finds, and each navigate to a screen in `others` that
-/// does not give its params, and a kinds.json still beside it.
+/// does not give its params, a kinds.json still beside it, and a
+/// notes.json in the old form.
 fn checked_among(
     screen: &Value,
     dir: &Path,
@@ -291,6 +281,11 @@ fn checked_among(
             at: KINDS.to_string(),
             problem: "kinds.json is no longer read: move each of its components into screen.json's \"components\", declaring the params its look reads, then delete kinds.json (`underdraw check --help`, COMPONENTS)".to_string(),
         });
+    }
+    if let Some(old) = notes::old_form(dir) {
+        checked.ok = false;
+        checked.conditions.clear();
+        checked.findings.push(underdraw_format::Finding { at: notes::NOTES.to_string(), problem: old });
     }
     Ok(checked)
 }

@@ -17,7 +17,7 @@ fn underdraw(args: &[&str]) -> (Value, i32) {
 }
 
 /// A root of its own named `name`, holding a copy of the orders draft at
-/// `orders/` with two open notes, as the gallery writes them.
+/// `orders/` with two notes waiting on the agent, as the gallery writes them.
 fn root(name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("underdraw-notes-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -29,10 +29,9 @@ fn root(name: &str) -> PathBuf {
     let note = |id: &str, says: &str| {
         json!({
             "id": id,
-            "status": "open",
             "state": { "fixture": "default" },
             "node": { "id": "order-{index}-cancel", "at": "/root/children/1/item/children/1", "instance": [2], "label": 7, "width": 390 },
-            "thread": [{ "by": "person", "says": says }],
+            "messages": [{ "by": "person", "says": says }],
         })
     };
     let notes = json!({ "notes": [note("N1", "too red"), note("N2", "say what it cancels")] });
@@ -41,12 +40,13 @@ fn root(name: &str) -> PathBuf {
 }
 
 #[test]
-fn notes_lists_the_open_ones_under_a_root_and_answer_marks_one_answered_once() {
+fn notes_lists_the_waiting_ones_under_a_root_and_answer_adds_the_agents_message_once() {
     let root = root("answer");
     let dir = root.join("orders");
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
     assert_eq!(code, 0, "{answer}");
-    assert_eq!((&answer["open"], &answer["answered"]), (&json!(2), &json!(0)));
+    assert_eq!((&answer["waiting"], &answer["answered"]), (&json!(2), &json!(0)));
+    assert_eq!(answer["notes"][0]["stands"], "waiting");
     let first = &answer["notes"][0];
     assert_eq!((&first["description"], &first["id"]), (&json!("orders"), &json!("N1")));
     assert_eq!(first["node"]["id"], "order-{index}-cancel");
@@ -62,8 +62,8 @@ fn notes_lists_the_open_ones_under_a_root_and_answer_marks_one_answered_once() {
     let (answered, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "made it gray"]);
     assert_eq!(code, 0, "{answered}");
-    assert_eq!((&answered["changed"], &answered["note"]["status"]), (&json!(true), &json!("answered")));
-    assert_eq!(answered["note"]["thread"][1], json!({ "by": "agent", "says": "made it gray" }));
+    assert_eq!((&answered["changed"], &answered["note"]["stands"]), (&json!(true), &json!("answered")));
+    assert_eq!(answered["note"]["messages"][1], json!({ "by": "agent", "says": "made it gray" }));
     let file = std::fs::read_to_string(dir.join("notes.json")).unwrap();
     let (again, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "made it gray"]);
@@ -72,7 +72,7 @@ fn notes_lists_the_open_ones_under_a_root_and_answer_marks_one_answered_once() {
 
     let (answer, _) = underdraw(&["notes", root.to_str().unwrap()]);
     let ids: Vec<&Value> = answer["notes"].as_array().unwrap().iter().map(|note| &note["id"]).collect();
-    assert_eq!((ids, &answer["answered"]), (vec![&json!("N2")], &json!(1)), "only the open ones listed");
+    assert_eq!((ids, &answer["answered"]), (vec![&json!("N2")], &json!(1)), "only the waiting ones listed");
 
     let (refused, code) = underdraw(&["notes", root.to_str().unwrap(), "--answer", "N2", "--reply", "x"]);
     assert_eq!(code, 2);
@@ -84,12 +84,30 @@ fn notes_lists_the_open_ones_under_a_root_and_answer_marks_one_answered_once() {
 }
 
 #[test]
-fn the_agent_cannot_create_close_or_reopen_a_note() {
+fn answer_keeps_a_reply_of_many_lines_intact() {
+    let root = root("lines");
+    let dir = root.join("orders");
+    let reply = "Made it gray.\n\nTwo things to ask:\n  1. gray at 1120 too?\n  2. keep the icon?";
+    let (answered, code) = underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", reply]);
+    assert_eq!(code, 0, "{answered}");
+    assert_eq!(answered["note"]["messages"][1]["says"], reply);
+    let file: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+    assert_eq!(file["notes"][0]["messages"][1], json!({ "by": "agent", "says": reply }), "stored as given");
+    for key in ["status", "thread", "closed_because"] {
+        assert!(file["notes"][0].get(key).is_none(), "{key} is not stored: {file}");
+    }
+    let (more, _) = underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "and one more"]);
+    assert_eq!(more["note"]["messages"].as_array().unwrap().len(), 3, "the agent may say more: {more}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_agent_cannot_start_a_note_and_nothing_closes_or_reopens_one() {
     let root = root("refused");
     let dir = root.join("orders");
     let file = std::fs::read_to_string(dir.join("notes.json")).unwrap();
-    for args in [vec!["--create"], vec!["--add", "the price"], vec!["--close", "N1"], vec!["--reopen", "N1"]]
-    {
+    for args in [vec!["--create"], vec!["--add", "the price"]] {
         let mut all = vec!["notes", dir.to_str().unwrap()];
         all.extend(&args);
         let (answer, code) = underdraw(&all);
@@ -98,6 +116,13 @@ fn the_agent_cannot_create_close_or_reopen_a_note() {
             answer["error"].as_str().unwrap().contains("the person does that in the gallery"),
             "{args:?}: {answer}"
         );
+    }
+    for args in [vec!["--close", "N1"], vec!["--reopen", "N1"], vec!["--closed"]] {
+        let mut all = vec!["notes", dir.to_str().unwrap()];
+        all.extend(&args);
+        let (answer, code) = underdraw(&all);
+        assert_eq!(code, 2, "{args:?}: {answer}");
+        assert!(answer["error"].as_str().unwrap().contains("unexpected argument"), "{args:?}: {answer}");
     }
     assert_eq!(std::fs::read_to_string(dir.join("notes.json")).unwrap(), file, "nothing written");
     std::fs::remove_dir_all(root).unwrap();
@@ -109,14 +134,14 @@ fn check_counts_the_notes_and_exits_as_it_would_without_them() {
     let dir = root.join("orders");
     underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N2", "--reply", "it says the order now"]);
     let (one, code) = underdraw(&["check", dir.to_str().unwrap()]);
-    assert_eq!((code, &one["ok"]), (0, &json!(true)), "open notes are no fault: {one}");
-    assert_eq!(one["notes"], json!({ "open": 1, "answered": 1 }));
+    assert_eq!((code, &one["ok"]), (0, &json!(true)), "notes waiting are no fault: {one}");
+    assert_eq!(one["notes"], json!({ "waiting": 1, "answered": 1 }));
     let (all, code) = underdraw(&["check", root.to_str().unwrap()]);
     assert_eq!(code, 0, "{all}");
-    assert_eq!(all["notes"], json!({ "open": 1, "answered": 1 }));
-    assert_eq!(all["descriptions"][0]["notes"], json!({ "open": 1, "answered": 1 }));
+    assert_eq!(all["notes"], json!({ "waiting": 1, "answered": 1 }));
+    assert_eq!(all["descriptions"][0]["notes"], json!({ "waiting": 1, "answered": 1 }));
     let (none, _) = underdraw(&["check", ORDERS]);
-    assert_eq!(none["notes"], json!({ "open": 0, "answered": 0 }), "no notes.json, no notes");
+    assert_eq!(none["notes"], json!({ "waiting": 0, "answered": 0 }), "no notes.json, no notes");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -126,14 +151,13 @@ fn notes_lists_a_region_note_with_its_box_and_the_nodes_it_covered() {
     let dir = root.join("orders");
     let region = json!({
         "id": "N3",
-        "status": "open",
         "state": { "fixture": "default" },
         "region": {
             "box": { "x": 10, "y": 145, "width": 370, "height": 30 },
             "width": 390,
             "nodes": [{ "id": "match-count", "at": "/root/children/1/children/2", "instance": [] }],
         },
-        "thread": [{ "by": "person", "says": "too much air" }],
+        "messages": [{ "by": "person", "says": "too much air" }],
     });
     let mut notes: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
@@ -153,7 +177,7 @@ fn notes_lists_a_region_note_with_its_box_and_the_nodes_it_covered() {
     );
     let (answered, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "tightened it"]);
-    assert_eq!((code, &answered["note"]["status"]), (0, &json!("answered")), "{answered}");
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("answered")), "{answered}");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -186,14 +210,14 @@ fn answered(mut child: std::process::Child) -> (Value, i32) {
     (answer, out.status.code().unwrap())
 }
 
-/// The orders notes.json under `root` with note `id` set to `status`, as
-/// the gallery writes it when the person writes, closes or reopens one.
-fn set(root: &Path, id: &str, status: &str) {
+/// The orders notes.json under `root` with `by` having said `says` last in
+/// note `id`, as the gallery writes the person's and `--answer` the agent's.
+fn say(root: &Path, id: &str, by: &str, says: &str) {
     let file = root.join("orders/notes.json");
     let mut notes: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     for note in notes["notes"].as_array_mut().unwrap() {
         if note["id"] == id {
-            note["status"] = json!(status);
+            note["messages"].as_array_mut().unwrap().push(json!({ "by": by, "says": says }));
         }
     }
     // Put in place whole, as the gallery does, so --wait never reads half.
@@ -203,33 +227,37 @@ fn set(root: &Path, id: &str, status: &str) {
 }
 
 #[test]
-fn wait_answers_as_soon_as_a_note_is_open() {
+fn wait_answers_as_soon_as_the_person_spoke_last_in_a_note() {
     let root = root("wait");
-    set(&root, "N1", "answered");
-    set(&root, "N2", "closed");
+    say(&root, "N1", "agent", "made it gray");
+    say(&root, "N2", "agent", "it says the order now");
     let mut child = waiting(&root);
-    assert!(still_waiting(&mut child, 600), "no note open: it waits");
-    set(&root, "N2", "open");
+    assert!(still_waiting(&mut child, 600), "the agent spoke last in every note: it waits");
+    say(&root, "N1", "agent", "anything else?");
+    assert!(still_waiting(&mut child, 600), "the agent saying more wakes nothing");
+    say(&root, "N2", "person", "and the date");
     let (answer, code) = answered(child);
     assert_eq!(code, 0, "{answer}");
     let ids: Vec<&Value> = answer["notes"].as_array().unwrap().iter().map(|note| &note["id"]).collect();
-    assert_eq!((ids, &answer["open"], &answer["answered"]), (vec![&json!("N2")], &json!(1), &json!(1)));
+    assert_eq!((ids, &answer["waiting"], &answer["answered"]), (vec![&json!("N2")], &json!(1), &json!(1)));
+    let messages = answer["notes"][0]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 3, "the whole conversation: {answer}");
 
     let (now, code) = answered(waiting(&root));
-    assert_eq!((code, &now), (0, &answer), "a note open already: it answers at once, as `notes` does");
+    assert_eq!((code, &now), (0, &answer), "a note waiting already: it answers at once, as `notes` does");
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn wait_killed_and_run_again_loses_no_note() {
     let root = root("wait-killed");
-    set(&root, "N1", "closed");
-    set(&root, "N2", "closed");
+    say(&root, "N1", "agent", "done");
+    say(&root, "N2", "agent", "done");
     let mut child = waiting(&root);
     assert!(still_waiting(&mut child, 300));
     child.kill().unwrap();
     child.wait().unwrap();
-    set(&root, "N1", "open");
+    say(&root, "N1", "person", "not quite");
     let (answer, code) = answered(waiting(&root));
     assert_eq!((code, &answer["notes"][0]["id"]), (0, &json!("N1")), "{answer}");
     std::fs::remove_dir_all(root).unwrap();
@@ -251,7 +279,7 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
     let root = root("arrows");
     let dir = root.join("orders");
     let note = |id: &str, on: Value| {
-        let mut note = json!({ "id": id, "status": "open", "thread": [{ "by": "person", "says": "why?" }] });
+        let mut note = json!({ "id": id, "messages": [{ "by": "person", "says": "why?" }] });
         note.as_object_mut().unwrap().extend(on.as_object().unwrap().clone());
         note
     };
@@ -279,78 +307,56 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
     );
     let (answered, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "it goes there"]);
-    assert_eq!((code, &answered["note"]["status"]), (0, &json!("answered")), "{answered}");
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("answered")), "{answered}");
     let file: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
     assert_eq!(file["notes"][2]["navigate"], notes["notes"][2]["navigate"], "kept as written");
     std::fs::remove_dir_all(root).unwrap();
 }
 
-/// The orders description under `root` with `from` written `to`
-/// everywhere, as the agent renames a node.
-fn rename(root: &Path, from: &str, to: &str) {
-    let file = root.join("orders").join("screen.json");
-    let screen = std::fs::read_to_string(&file).unwrap().replace(from, to);
-    std::fs::write(file, screen).unwrap();
-}
-
 #[test]
-fn a_note_whose_node_is_renamed_closes_itself_saying_why_and_is_listed_with_closed() {
+fn a_note_whose_node_is_renamed_is_never_closed() {
     let root = root("gone");
     let dir = root.join("orders");
-    // Renamed in the tree only: the transition naming it is a fault, and a
-    // description half edited closes nothing.
     let file = dir.join("screen.json");
-    let whole = std::fs::read_to_string(&file).unwrap();
-    std::fs::write(&file, whole.replacen("\"id\": \"cancel\"", "\"id\": \"void\"", 1)).unwrap();
+    let screen =
+        std::fs::read_to_string(&file).unwrap().replace("order-{index}-cancel", "order-{index}-void");
+    std::fs::write(file, screen).unwrap();
+    let notes = std::fs::read_to_string(dir.join("notes.json")).unwrap();
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
-    assert_eq!((code, &answer["open"]), (0, &json!(2)), "{answer}");
-
-    rename(&root, "order-{index}-cancel", "order-{index}-void");
-    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
-    assert_eq!(code, 0, "{answer}");
-    assert_eq!((&answer["notes"], &answer["open"]), (&json!([]), &json!(0)), "closed ones are not listed");
-    let (closed, code) = underdraw(&["notes", root.to_str().unwrap(), "--closed"]);
-    assert_eq!(code, 0, "{closed}");
-    let listed = closed["notes"].as_array().unwrap();
-    assert_eq!(listed.len(), 2, "{closed}");
-    assert_eq!(listed[0]["status"], "closed");
-    assert_eq!(listed[0]["closed_because"], "order-{index}-cancel is gone (removed or renamed)");
-    let file: Value =
-        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
-    assert_eq!(file["notes"][1]["closed_because"], listed[1]["closed_because"], "kept in notes.json");
-
-    let (refused, code) = underdraw(&["notes", root.to_str().unwrap(), "--closed", "--wait"]);
-    assert_eq!(code, 2);
-    assert!(refused["error"].as_str().unwrap().contains("--closed"), "{refused}");
-    let (refused, code) = underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "x"]);
-    assert_eq!(code, 2, "a note closed itself is not answered: {refused}");
+    assert_eq!((code, &answer["waiting"]), (0, &json!(2)), "{answer}");
+    underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(std::fs::read_to_string(dir.join("notes.json")).unwrap(), notes, "nothing closes it");
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-fn check_closes_a_note_whose_state_is_gone_and_counts_it_no_more() {
-    let root = root("gone-check");
-    rename(&root, "\"error\"", "\"failed\"");
-    let notes = json!({ "notes": [{
-        "id": "N1", "status": "answered", "state": { "phase": "failed" },
-        "thread": [{ "by": "person", "says": "x" }, { "by": "agent", "says": "y" }],
-    }, {
-        "id": "N2", "status": "open",
-        "transition": { "from": "error", "on": "retry.tap", "outcome": "ok", "to": "default" },
-        "thread": [{ "by": "person", "says": "x" }],
-    }] });
+fn check_reports_notes_json_in_the_old_form_as_a_fault_to_delete() {
+    let root = root("old");
     let dir = root.join("orders");
-    std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
-    let (answer, _) = underdraw(&["check", root.to_str().unwrap()]);
-    assert_eq!(answer["notes"], json!({ "open": 0, "answered": 1 }), "{answer}");
-    let file: Value =
-        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
-    assert_eq!(file["notes"][0]["status"], "answered", "its phase is there");
-    assert_eq!(
-        file["notes"][1]["closed_because"],
-        "transition from error on retry.tap outcome ok to default is gone (removed or changed)"
-    );
+    let old = json!({ "notes": [{
+        "id": "N1", "status": "answered", "state": { "phase": "error" },
+        "thread": [{ "by": "person", "says": "x" }, { "by": "agent", "says": "y" }],
+    }] });
+    std::fs::write(dir.join("notes.json"), old.to_string()).unwrap();
+    for path in [&dir, &root] {
+        let (answer, code) = underdraw(&["check", path.to_str().unwrap()]);
+        assert_eq!((code, &answer["ok"]), (1, &json!(false)), "{answer}");
+        let findings =
+            if path == &dir { &answer["findings"] } else { &answer["descriptions"][0]["findings"] };
+        let found = findings
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|finding| finding["at"] == "notes.json")
+            .unwrap_or_else(|| panic!("no finding on notes.json: {answer}"));
+        let problem = found["problem"].as_str().unwrap();
+        assert!(problem.contains("old form") && problem.contains("delete it"), "{problem}");
+        assert!(problem.contains(dir.join("notes.json").to_str().unwrap()), "names the file: {problem}");
+    }
+    let (refused, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 2, "not read: {refused}");
+    assert!(refused["error"].as_str().unwrap().contains("old form"), "{refused}");
     std::fs::remove_dir_all(root).unwrap();
 }
 

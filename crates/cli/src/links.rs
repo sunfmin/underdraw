@@ -81,9 +81,9 @@ pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
     let mut counts = notes::Counts::default();
     for (dir, checked) in dirs.iter().zip(checked.into_iter().flatten()) {
         ok &= checked.ok;
-        let counted = notes::counted(dir, &root);
-        let count = |status: &str| counted[status].as_u64().unwrap_or(0) as usize;
-        counts = counts.add(notes::Counts { open: count("open"), answered: count("answered") });
+        let counted = notes::counted(dir);
+        let count = |stands: &str| counted[stands].as_u64().unwrap_or(0) as usize;
+        counts = counts.add(notes::Counts { waiting: count("waiting"), answered: count("answered") });
         descriptions.push(json!({
             "description": within(&root, dir),
             "screen": checked.screen,
