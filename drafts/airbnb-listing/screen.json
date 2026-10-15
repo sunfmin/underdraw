@@ -139,13 +139,13 @@
 
           { "id": "photos-carousel", "component": "ImageCarousel", "only": "compact",
             "each": "listing.photos", "aspectRatio": "4:3", "indicator": "counter",
-            "on": { "tap": { "navigate": "PhotoGallery", "with": { "start": "{index}" } } } },
+            "on": { "tap": { "navigate": "PhotoGallery", "with": { "listingId": "{listing.id}", "start": "{index}" } } } },
 
           { "id": "photos-grid", "component": "ImageGrid", "only": "regular",
             "each": "listing.photos", "limit": 5, "pattern": "1 large + 4 small", "radius": "radius.md",
             "overlay": { "id": "photos-show-all", "component": "Button", "variant": "secondary", "size": "small",
                          "text": "显示所有照片", "anchor": "bottom-trailing",
-                         "on": { "tap": { "navigate": "PhotoGallery" } } } },
+                         "on": { "tap": { "navigate": "PhotoGallery", "with": { "listingId": "{listing.id}", "start": 0 } } } } },
 
           { "id": "body", "component": "Columns", "gap": "space.12", "padding": "space.6",
             "columns": { "compact": ["1fr"], "regular": ["58%", "1fr"] },
