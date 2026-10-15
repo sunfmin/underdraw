@@ -28,6 +28,7 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
 use draw::{Shown, Wanted};
 use serde_json::{Value, json};
+use underdraw_format::ScreenParams;
 use underdraw_format::{Lang, State};
 
 use crate::project::{Project, TOKENS};
@@ -235,27 +236,39 @@ fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
     if path.is_dir() && !path.join(SCREEN).is_file() {
         return links::check_root(path, lang);
     }
-    let mut answer = serde_json::to_value(check_at(path)?)?;
+    let mut answer = serde_json::to_value(check_at(path, &ScreenParams::new())?)?;
     let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
     answer["notes"] = notes::counted(dir);
     Ok(answer)
 }
 
 /// What `check` says of the description at `path` (a directory or its
-/// screen.json).
-fn check_at(path: &Path) -> anyhow::Result<underdraw_format::Checked> {
+/// screen.json), among the screens under its root whose params `others`
+/// holds.
+fn check_at(path: &Path, others: &ScreenParams) -> anyhow::Result<underdraw_format::Checked> {
     let (screen, dir) = read(path)?;
     let kinds = read_kinds(&dir)?;
-    checked(&screen, &dir, kinds.as_ref())
+    checked_among(&screen, &dir, kinds.as_ref(), others)
 }
 
 /// Every fault in the description, overlays the picture would cut among
 /// them: laid out in the system's fonts, as `render` does.
 fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<underdraw_format::Checked> {
+    checked_among(screen, dir, kinds, &ScreenParams::new())
+}
+
+/// What [`checked`] finds, and each navigate to a screen in `others` that
+/// does not give its params.
+fn checked_among(
+    screen: &Value,
+    dir: &Path,
+    kinds: Option<&Value>,
+    others: &ScreenParams,
+) -> anyhow::Result<underdraw_format::Checked> {
     let tokens = Project::of(dir)?.tokens;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    underdraw_layout::check(screen, &tokens, kinds, &mut typesetter).map_err(anyhow::Error::msg)
+    underdraw_layout::check(screen, &tokens, kinds, others, &mut typesetter).map_err(anyhow::Error::msg)
 }
 
 /// The screen at `path` (a directory or its screen.json), with the domain

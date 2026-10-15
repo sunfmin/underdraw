@@ -17,12 +17,13 @@ READS
   notes. Writes nothing, but with --answer.
 
 DOES
-  A note is what the person says of a design, pinned where they clicked,
-  with the same fields ⌘C copies: one node of one state, as the description
-  writes it, with the instance they pointed at as context; a whole state; a
-  transition, as `transitions` in screen.json writes it; or a navigate, as
-  `underdraw check <root>` reports it among its "links", kept by the
-  description it is written in. Each
+  A note is what the person says of a design, pinned where they said it,
+  with the same fields ⌘C copies: one node of one state they clicked, as
+  the description writes it, with the instance they pointed at as context;
+  a region of one state they dragged over, its box and the nodes wholly
+  inside it; a whole state; a transition, as `transitions` in screen.json
+  writes it; or a navigate, as `underdraw check <root>` reports it among
+  its "links", kept by the description it is written in. Each
   is numbered N1, N2… within its description, and is:
     open      written by the person, or reopened by them with a line added:
               for the agent to act on and answer
@@ -31,11 +32,13 @@ DOES
     closed    closed by the person; nothing more to do
   `underdraw notes <path>` lists the open ones. Edit what it is on in that
   description's screen.json: the node where "node.at" points (the id
-  written there is "node.id", a template inside a repeat); the state's
-  fixture or phase; the entry of `transitions` the "transition" names; or
-  the navigate on the node "navigate.node". A note with "proposes" asks for
-  where acting on its node should go: declare the transition, or the
-  navigate, it names. Then answer:
+  written there is "node.id", a template inside a repeat); for a region,
+  the nodes each of "region.nodes" points at, or what belongs in the space
+  its box marks when it covers none; the state's fixture or phase; the
+  entry of `transitions` the "transition" names; or the navigate on the
+  node "navigate.node". A note with "proposes" asks for where acting on
+  its node should go: declare the transition, or the navigate, it names.
+  Then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
@@ -88,7 +91,14 @@ ANSWERS
                                  screen.json, "instance": the element of
                                  each repeat around it, outermost first,
                                  "label": its label or null, "width": the
-                                 width it was drawn at}; or
+                                 width it was drawn at}; or with
+                  "region":      {"box": {"x", "y", "width", "height"},
+                                 in whole points of the picture dragged
+                                 on, "width": that picture's width,
+                                 "nodes": [{"id", "at", "instance"}, …],
+                                 the outermost nodes wholly inside the
+                                 box, as "node" names one; [] when it
+                                 covers none ("this is too empty")}; or
                   "state" alone: on the whole state; or
                   "transition":  {"from", "on": "<node id>.<event>",
                                  "outcome" (for a call only), "to"}; or

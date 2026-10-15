@@ -1,7 +1,7 @@
 //! What the person says of a description, pinned where they said it
 //! (ADR 0019): kept in notes.json beside its screen.json, meant to be
-//! committed. The person writes a note in the gallery, on a node, a whole
-//! state, a transition's arrow or a navigate's arrow; the agent
+//! committed. The person writes a note in the gallery, on a node, a
+//! region, a whole state, a transition's arrow or a navigate's arrow; the agent
 //! answers it with one line; the person closes it, or reopens it with a
 //! line added. The agent never creates, closes or reopens one: what it
 //! wants to ask is an assumption. Each change is read from the file as it
@@ -46,16 +46,16 @@ pub struct Said {
 }
 
 /// One note, pinned as ⌘C references what it is on: a node as the
-/// description writes it with the instance the person pointed at, a whole
-/// state, a transition or a navigate. A navigate's note is kept by the
+/// description writes it with the instance the person pointed at, a region
+/// dragged with the nodes it covered, a whole state, a transition or a navigate. A navigate's note is kept by the
 /// description the navigate is written in.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     /// `N1`, `N2`…: numbered in the order written, within the description.
     pub id: String,
     pub status: Status,
-    /// What it is on, written as its fields: `state` and `node`, `state`,
-    /// `transition` or `navigate`.
+    /// What it is on, written as its fields: `state` and `node`, `state`
+    /// and `region`, `state`, `transition` or `navigate`.
     #[serde(flatten)]
     pub on: On,
     /// What the person wrote, then each reply and each line the person
@@ -378,7 +378,7 @@ pub fn counted(dir: &Path) -> Value {
 mod tests {
     use super::*;
     use crate::draw::{Origin, Shown};
-    use crate::reference::{Navigate, Pointed, Transition};
+    use crate::reference::{Frame, Navigate, Pointed, Region, Transition};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -480,6 +480,39 @@ mod tests {
         let to = Proposal { on: "cd-keep.tap".into(), goes: Goes::To("default".into()) };
         assert_eq!(serde_json::to_value(&to).unwrap(), json!({ "on": "cd-keep.tap", "to": "default" }));
         assert_eq!(read(&dir).unwrap()[1].proposes, Some(proposal), "read back as written");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_region_note_keeps_its_box_and_the_nodes_it_covered() {
+        let dir = dir("region");
+        let covered =
+            Origin { written: "nav-export".into(), at: "/root/children/0".into(), instance: vec![] };
+        let region =
+            Region { area: Frame { x: 8, y: 40, width: 200, height: 60 }, width: 390, nodes: vec![covered] };
+        let on = Reference {
+            description: dir.clone(),
+            on: On::Region { state: Shown::Fixture("default".into()), region },
+        };
+        assert_eq!(add(&on, "too busy").unwrap(), "N1");
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        assert_eq!(
+            file["notes"][0]["region"],
+            json!({
+                "box": { "x": 8, "y": 40, "width": 200, "height": 60 },
+                "width": 390,
+                "nodes": [{ "id": "nav-export", "at": "/root/children/0", "instance": [] }],
+            })
+        );
+        assert!(file["notes"][0].get("node").is_none(), "a region note is on no one node");
+        let note = read(&dir).unwrap().remove(0);
+        assert_eq!(note.reference(&dir), on, "read back as written");
+        let answered = note.answer(&dir, &dir);
+        assert_eq!(answered["region"], file["notes"][0]["region"], "`notes` lists its box and nodes");
+        assert!(answered["reference"].as_str().unwrap().contains("region 8, 40 · 200 × 60"));
+        let error =
+            propose(&on, Proposal { on: "x.tap".into(), goes: Goes::To("default".into()) }).unwrap_err();
+        assert!(error.to_string().contains("a proposal is on a node"), "{error}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

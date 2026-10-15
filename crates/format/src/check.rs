@@ -15,6 +15,7 @@ use crate::jobs;
 use crate::kinds::{Kinds, track_faults};
 use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
+use crate::params::{self, ScreenParams};
 use crate::schema::{Schema, Scope, object};
 use crate::template::{self, Format};
 use crate::transitions;
@@ -77,14 +78,24 @@ impl Findings {
 /// When there is none, which fixtures each condition holds in; a condition
 /// that holds in all of them, or in none, is then itself a fault. Every
 /// node's kind is one `kinds` (the project's kinds.json) or underdraw
-/// defines, and the project's looks are checked too.
+/// defines, and the project's looks are checked too. Where it navigates is
+/// not: one description alone cannot see the others.
 pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
+    check_among(screen, kinds, &ScreenParams::new())
+}
+
+/// What `check` makes of `screen`, among the screens under its root whose
+/// params `others` holds: each `navigate` to one of them gives each of its
+/// params, of its type, in `with`, and nothing else. A navigate to a screen
+/// not in `others` is held to nothing.
+pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams) -> Checked {
     let mut findings = Findings::default();
     let screen = &domain::expand(screen, &mut findings);
     let known = Kinds::read(kinds);
     known.check(kinds, &mut findings);
     let schema = Schema::read(screen, &mut findings);
     let fixtures = fixture::read(screen, &schema, &mut findings);
+    params::read(screen, &schema, &mut findings);
     let conditions = Conditions::read(screen, &schema, &mut findings);
     let operations = Operations::read(screen, &schema, &conditions, &mut findings);
     jobs::check(&operations, &schema, &fixtures, &mut findings);
@@ -93,6 +104,7 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     collect_opened(screen, &mut opened);
     let mut walk = Walk {
         opened: &opened,
+        others,
         schema: &schema,
         conditions: &conditions,
         operations: &operations,
@@ -226,6 +238,8 @@ fn collect_opened(value: &Value, opened: &mut BTreeSet<String>) {
 struct Walk<'a> {
     /// What the screen's `open` actions open, by name.
     opened: &'a BTreeSet<String>,
+    /// The params of the other screens under the root, by name.
+    others: &'a ScreenParams,
     schema: &'a Schema,
     conditions: &'a Conditions,
     operations: &'a Operations,
@@ -440,7 +454,66 @@ impl Walk<'_> {
             Some(called) => self.call(called, actions.get("with"), scope, known, at, node),
             None => {
                 self.ui_only(actions, scope, at);
-                self.node(handler, scope, known, at, "")
+                let others = self.others;
+                let opened =
+                    actions.get("navigate").and_then(Value::as_str).and_then(|to| others.get_key_value(to));
+                match opened {
+                    Some((to, params)) => {
+                        self.navigate(to, params, actions.get("with"), scope, known, at);
+                        let mut rest = actions.clone();
+                        rest.remove("with");
+                        self.node(&Value::Object(rest), scope, known, at, "")
+                    }
+                    None => self.node(handler, scope, known, at, ""),
+                }
+            }
+        }
+    }
+
+    /// `{"navigate": <to>, "with": {…}}` at `at`, to a screen opened with
+    /// `params`: it gives each, of its type, and nothing else.
+    fn navigate(
+        &mut self,
+        to: &str,
+        params: &[(String, Field)],
+        with: Option<&Value>,
+        scope: &Scope,
+        known: &Known,
+        at: &str,
+    ) {
+        let empty = Map::new();
+        let given = match with {
+            None => &empty,
+            Some(Value::Object(given)) => given,
+            Some(_) => {
+                return self.findings.add(&format!("{at}.with"), "with is an object: one value per param");
+            }
+        };
+        for (name, param) in params {
+            if !given.contains_key(name) {
+                self.findings.add(
+                    &format!("{at}.with"),
+                    &format!("{to} is opened with {name} ({}), which with does not give", param.describe()),
+                );
+            }
+        }
+        for (name, value) in given {
+            let at = format!("{at}.with.{name}");
+            match params.iter().find(|(param, _)| param == name) {
+                Some((_, param)) => self.argument(value, param, scope, known, &at),
+                None => {
+                    let declared: Vec<&str> = params.iter().map(|(param, _)| param.as_str()).collect();
+                    let declared = match declared.as_slice() {
+                        [] => "none".to_string(),
+                        _ => declared.join(", "),
+                    };
+                    self.findings.add(
+                        &at,
+                        &format!(
+                            "{to} declares no param {name}: it is opened with {declared}, its \"params\""
+                        ),
+                    );
+                }
             }
         }
     }

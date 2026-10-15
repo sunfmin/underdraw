@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
-use underdraw_format::Lang;
+use underdraw_format::{Lang, ScreenParams};
 
 use crate::gallery::{self, within};
 use crate::{SCREEN, notes, read};
@@ -33,6 +33,23 @@ pub fn declared(root: &Path) -> BTreeMap<String, PathBuf> {
     declared
 }
 
+/// The params each screen under `root` declares, by the screen's name;
+/// where two declare one, the first the tree lists. A screen that declares
+/// none is not in it.
+pub fn params(root: &Path) -> ScreenParams {
+    let dirs = description_dirs(root);
+    let mut params = ScreenParams::new();
+    for screen in screens(&dirs).into_iter().flatten() {
+        if let Some(name) = declares(&screen)
+            && !params.contains_key(&name)
+            && let Some(declared) = underdraw_format::params(&screen)
+        {
+            params.insert(name, declared);
+        }
+    }
+    params
+}
+
 /// `underdraw check <root>`, for a directory holding no screen.json: every
 /// description under it checked, and the links between them, what is
 /// assumed of one to a screen not drawn yet said in `lang`.
@@ -48,10 +65,12 @@ pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
             root.display()
         );
     }
+    let others = params(&root);
+    let others = &others;
     let mut checked: Vec<Option<underdraw_format::Checked>> = dirs.iter().map(|_| None).collect();
     std::thread::scope(|scope| {
         for (dir, found) in dirs.iter().zip(&mut checked) {
-            scope.spawn(move || *found = Some(gallery::checked(dir)));
+            scope.spawn(move || *found = Some(gallery::checked(dir, others)));
         }
     });
     let screens = screens(&dirs);
