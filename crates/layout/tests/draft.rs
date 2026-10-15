@@ -569,3 +569,42 @@ fn text_in_a_colour_token_is_drawn_in_the_ink_its_colour_reads_as() {
     assert_eq!(ink("dark"), underdraw_layout::Ink::Text);
     assert_eq!(ink("missing"), underdraw_layout::Ink::Text);
 }
+
+#[test]
+fn a_label_sits_left_of_its_node_clear_of_the_text_at_its_top_left() {
+    let own = serde_json::json!({ "components": { "Picture": { "look": {
+        "box": "column", "stroke": "line",
+        "children": [ { "text": "390", "ink": "muted" }, { "text": "a state, drawn small" } ] } },
+        "Sheet": { "look": { "box": "column", "padding": 24, "gap": 8, "children": ["$children"] } } } });
+    let column = serde_json::json!([{ "id": "body", "component": "Sheet", "children": [
+        { "id": "first", "component": "Picture", "on": { "tap": { "navigate": "Other" } } },
+        { "id": "second", "component": "Picture", "on": { "tap": { "navigate": "Other" } } } ] }]);
+    let page = tiny_with(column, Some(&own));
+    let (first, second) = (placed(&page, "first"), placed(&page, "second"));
+    assert_eq!((first.label, second.label), (Some(1), Some(2)), "each named by its own number");
+    let tags: Vec<underdraw_layout::Rect> = page
+        .marks()
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Tag { rect, ink: Ink::Label, .. } => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tags.len(), 2, "{tags:?}");
+    let texts: Vec<underdraw_layout::Rect> = page
+        .draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Text { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    let overlaps = |a: underdraw_layout::Rect, b: underdraw_layout::Rect| {
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    };
+    for (tag, node) in tags.iter().zip([first, second]) {
+        assert!(tag.x + tag.width <= node.rect.x, "left of {}: {tag:?} {:?}", node.id, node.rect);
+        assert_eq!(tag.y, node.rect.y, "level with the top of {}", node.id);
+        assert!(!texts.iter().any(|t| overlaps(*tag, *t)), "on no text: {tag:?} {texts:?}");
+    }
+}
