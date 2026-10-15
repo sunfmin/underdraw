@@ -20,7 +20,40 @@
         },
         {
           "by": "agent",
-          "says": "改好了：8 和 9 现在顶部对齐（都在 y=722）。原因是输入框下面多了一行错误提示，整体变高 70，而这一行默认垂直居中，按钮就往下掉了 11。新加了一个 FieldRow（输入框 + 按钮并排、顶部对齐），优惠码这一行用它；以后报错也不会再错位。",
+          "says": "改好了：8 和 9 现在顶部对齐（都在 y=722）。原因是输入框下面多了一行错误提示，整体变高 70，而这一行默认垂直居中，按钮就往下掉了 11。新加了一个 FieldRow（输入框 + 按钮并排、顶部对齐），优惠码这一行用它；以后报错也不会再错位。"
+        }
+      ]
+    },
+    {
+      "id": "N2",
+      "state": {
+        "fixture": "promo-invalid"
+      },
+      "node": {
+        "id": "address",
+        "at": "/root/children/1/children/0/children/0/children/0",
+        "instance": [],
+        "label": 2,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792063982,
+          "answers": {
+            "assumed": "这里跳转到 AddressBook，但根目录下没有任何描述声明它，所以猜测 AddressBook 是还没画的屏幕；也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。",
+            "guess": {
+              "undrawn": [
+                "AddressBook"
+              ]
+            },
+            "answer": "right"
+          }
+        },
+        {
+          "by": "agent",
+          "says": "已画好 AddressBook（drafts/checkout/address-book，和确认订单共用 tokens）：每个地址一张卡，圆点标出这一单现在寄到哪个，默认地址带「默认」，右边铅笔去改；底部「新增收货地址」。没有地址时显示空状态。点卡片就改寄到那里——选完是留在本页还是直接回确认订单，我标了橙色 ?。改地址/新增地址的 AddressForm 还没画。",
           "unread": true
         }
       ]

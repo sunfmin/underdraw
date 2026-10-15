@@ -1,0 +1,290 @@
+{
+  "$comment": "收货地址：从确认订单点地址打开。选一个作为这单的收货地址，或者改、加地址。",
+  "screen": "AddressBook",
+  "title": "收货地址",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "params": [],
+  "data": {
+    "addresses": {
+      "type": "AddressRow[] ..20",
+      "from": "listAddresses"
+    },
+    "count": {
+      "type": "int 0..20",
+      "derived": {
+        "app": "存过的地址有几个"
+      }
+    }
+  },
+  "types": {
+    "SavedAddress": {
+      "id": "string",
+      "name": "string 1..20",
+      "phone": "string",
+      "line": {
+        "type": "string 1..120",
+        "doc": "省、市、区和街道，一行"
+      },
+      "isDefault": {
+        "type": "bool",
+        "doc": "新订单默认用它"
+      },
+      "chosen": {
+        "type": "bool",
+        "doc": "这一单现在寄到它"
+      }
+    },
+    "AddressRow": {
+      "address": "SavedAddress"
+    }
+  },
+  "conditions": {
+    "hasAddresses": {
+      "when": "count > 0",
+      "label": "有地址"
+    }
+  },
+  "operations": {
+    "listAddresses": {
+      "query": "这个人存过的收货地址，默认的在前",
+      "result": "SavedAddress[] ..20"
+    },
+    "chooseAddress": {
+      "command": "这一单改寄到这个地址",
+      "params": {
+        "id": "string"
+      },
+      "fails": {
+        "notFound": "地址已被删除"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "addresses": [
+        {
+          "address": {
+            "id": "a1",
+            "name": "孙小明",
+            "phone": "138 **** 5678",
+            "line": "上海市 徐汇区 漕溪北路 88 号 2 栋 1203 室",
+            "isDefault": true,
+            "chosen": true
+          }
+        },
+        {
+          "address": {
+            "id": "a2",
+            "name": "孙小明",
+            "phone": "138 **** 5678",
+            "line": "上海市 浦东新区 世纪大道 100 号 环球金融中心 32 楼",
+            "isDefault": false,
+            "chosen": false
+          }
+        },
+        {
+          "address": {
+            "id": "a3",
+            "name": "李华",
+            "phone": "139 **** 2468",
+            "line": "江苏省 苏州市 姑苏区 平江路 52 号",
+            "isDefault": false,
+            "chosen": false
+          }
+        }
+      ],
+      "count": 3
+    },
+    "empty": {
+      "$patch": "default",
+      "addresses": [],
+      "count": 0
+    }
+  },
+  "root": {
+    "id": "address-book",
+    "component": "Screen",
+    "children": [
+      {
+        "id": "nav",
+        "component": "NavBar",
+        "leading": [
+          {
+            "id": "back",
+            "component": "IconButton",
+            "icon": "arrow_back",
+            "on": {
+              "tap": {
+                "back": true
+              }
+            }
+          }
+        ],
+        "children": [
+          {
+            "id": "title",
+            "component": "Text",
+            "font": "font.subhead",
+            "text": "收货地址"
+          }
+        ]
+      },
+      {
+        "id": "content",
+        "component": "Scroll",
+        "padding": "space.4",
+        "children": [
+          {
+            "id": "list",
+            "component": "List",
+            "if": "hasAddresses",
+            "gap": "space.3",
+            "each": "addresses",
+            "item": {
+              "id": "address-{index}",
+              "component": "Card",
+              "gap": "space.2",
+              "padding": "space.4",
+              "border": "color.border",
+              "radius": "radius.md",
+              "on": {
+                "tap": {
+                  "call": "chooseAddress",
+                  "with": {
+                    "id": "{item.address.id}"
+                  }
+                }
+              },
+              "children": [
+                {
+                  "id": "address-{index}-head",
+                  "component": "Row",
+                  "gap": "space.2",
+                  "leading": [
+                    {
+                      "id": "address-{index}-pick",
+                      "component": "Glyph",
+                      "icon": {
+                        "cases": [
+                          {
+                            "if": "item.address.chosen",
+                            "then": "radio_button_checked"
+                          },
+                          {
+                            "else": "radio_button_unchecked"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "id": "address-{index}-name",
+                      "component": "Text",
+                      "font": "font.subhead",
+                      "text": "{item.address.name}  {item.address.phone}"
+                    },
+                    {
+                      "id": "address-{index}-default",
+                      "component": "Badge",
+                      "if": "item.address.isDefault",
+                      "text": "默认"
+                    }
+                  ],
+                  "trailing": [
+                    {
+                      "id": "address-{index}-edit",
+                      "component": "IconButton",
+                      "icon": "edit",
+                      "on": {
+                        "tap": {
+                          "navigate": "AddressForm"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "address-{index}-line",
+                  "component": "Text",
+                  "font": "font.caption",
+                  "color": "color.textSecondary",
+                  "text": "{item.address.line}"
+                }
+              ]
+            },
+            "assumed": "点一张地址卡就把这一单改寄到那里，留在本页看到选中变化，再自己返回；也可能选完直接回到确认订单"
+          },
+          {
+            "id": "empty",
+            "component": "EmptyState",
+            "if": "!hasAddresses",
+            "icon": "location_on",
+            "title": "还没有收货地址",
+            "detail": "加一个地址，这一单才能寄出。"
+          }
+        ]
+      },
+      {
+        "id": "bar",
+        "component": "StickyBar",
+        "children": [
+          {
+            "id": "add",
+            "component": "Button",
+            "variant": "primary",
+            "text": "新增收货地址",
+            "on": {
+              "tap": {
+                "navigate": "AddressForm"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "phases": {
+    "loading": {
+      "id": "loading",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "loading-sk",
+          "component": "Skeleton",
+          "shape": [
+            "line 50%",
+            "line 90%",
+            "line 50%",
+            "line 90%"
+          ]
+        }
+      ]
+    },
+    "error": {
+      "id": "error",
+      "component": "Screen",
+      "children": [
+        {
+          "id": "error-state",
+          "component": "EmptyState",
+          "icon": "warning",
+          "title": "地址加载失败",
+          "detail": "请检查网络后重试。",
+          "action": {
+            "id": "error-retry",
+            "component": "Button",
+            "variant": "secondary",
+            "text": "重试",
+            "on": {
+              "tap": {
+                "call": "listAddresses"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
