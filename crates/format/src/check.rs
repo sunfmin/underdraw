@@ -1168,20 +1168,24 @@ impl Walk<'_> {
         // Inside a component, a use site reads only its params: a Bool one,
         // or one given a condition of the screen's.
         if let Some(frame) = self.frames.last() {
-            let problem = match self.schema.resolve(scope, name) {
-                _ if frame.conditions.contains_key(name) => None,
-                Some(resolved) if resolved.field.is_plain_bool() => None,
-                Some(resolved) => Some(format!("{name} is {}, not a Bool", resolved.field.describe())),
-                None if self.conditions.contains(name) => Some(format!(
+            let resolved = self.schema.resolve(scope, name);
+            let problem = if frame.conditions.contains_key(name) {
+                None
+            } else if let Some(resolved) = resolved {
+                (!resolved.field.is_plain_bool())
+                    .then(|| format!("{name} is {}, not a Bool", resolved.field.describe()))
+            } else if self.conditions.contains(name) {
+                Some(format!(
                     "{name} is a condition of the screen's, past the params of {}: declare a bool param and give it \"{{{name}}}\" in the instance's \"with\"",
                     frame.name
-                )),
-                None => Some(self.schema.misused(scope, name).unwrap_or_else(|| {
+                ))
+            } else {
+                Some(self.schema.misused(scope, name).unwrap_or_else(|| {
                     format!(
                         "{name} reaches past the params of {}: a component reads only the params it declares",
                         frame.name
                     )
-                })),
+                }))
             };
             if let Some(problem) = problem {
                 self.findings.add(at, &problem);
