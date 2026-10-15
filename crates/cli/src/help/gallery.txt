@@ -34,6 +34,12 @@ DOES
   do. ⌘\ (Ctrl+\ on Linux and Windows) hides the sidebar and shows it
   again; it is shown when the window opens, and while it is hidden the
   pictures take its width. Scroll the sidebar with the wheel over it.
+  The tree opens 260pt wide; drag the line between it and the pictures
+  (the pointer turns into a left-right arrow over it) to widen or narrow
+  it, from 160pt to what leaves the pictures room for the phone's at half
+  size. The pictures fit the width left as you drag; names too long for
+  the tree are cut at its edge. A press on the line picks nothing. The
+  width is not kept once the window closes.
 
   The tree holds the directories and descriptions as they are arranged on disk, under
   a first line for <root> itself when it holds no description (picked, it
