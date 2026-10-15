@@ -13,7 +13,7 @@ mod nodes;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Checked, Condition, Finding, Model, Node, State};
+use underdraw_format::{Breakpoint, Checked, Condition, Finding, Model, Node, Screen, State};
 
 pub use cli::{Arg, CommandSpec, Failure, Golden, Interface, cli};
 pub use code::Language;
@@ -129,7 +129,7 @@ const SHOWN: [&str; 7] = ["text", "title", "subtitle", "label", "detail", "value
 
 /// The handoff of `screen` to the platform `mapping` describes, with
 /// `tokens`. A description with faults is refused with what `check` says.
-pub fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handoff, Box<Checked>> {
+pub fn handoff(screen: &Screen, mapping: &Value, tokens: &Value) -> Result<Handoff, Box<Checked>> {
     let model = underdraw_format::model(screen)?;
     let mut findings = Vec::new();
     let platform = text(mapping, "platform");
@@ -164,20 +164,19 @@ pub fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handof
         });
     }
 
-    let components = underdraw_format::Subtrees::read(screen);
     let mut walk = nodes::Walk {
         platform: &platform,
         mapping,
-        instances: underdraw_format::Instances::new(&components),
+        instances: underdraw_format::Instances::new(screen.components.subtrees()),
         specs: Vec::new(),
         hidden: Vec::new(),
         findings: Vec::new(),
     };
-    if let Some(root) = screen.get("root") {
+    if let Some(root) = screen.description().get("root") {
         walk.node(root, None, "root");
     }
     for phase in &model.checked.phases {
-        if let Some(tree) = screen.pointer(&format!("/phases/{phase}")) {
+        if let Some(tree) = screen.description().pointer(&format!("/phases/{phase}")) {
             walk.node(tree, None, "phase");
         }
     }
@@ -291,7 +290,7 @@ pub(crate) fn states(model: &Model, hidden: &[String]) -> Vec<Expected> {
             State::Phase(name) => object([("phase", Value::from(name))]),
         };
         for breakpoint in Breakpoint::ALL {
-            let Ok(root) = model.instantiate(state, breakpoint) else {
+            let Ok(root) = model.instantiate(state, breakpoint, None) else {
                 continue;
             };
             let mut found = Expected {

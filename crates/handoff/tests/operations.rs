@@ -2,7 +2,8 @@
 //! each event calls.
 
 use serde_json::{Value, json};
-use underdraw_handoff::handoff;
+use underdraw_format::{Checked, Screen, Shared};
+use underdraw_handoff::Handoff;
 
 fn draft(file: &str) -> Value {
     let path = format!("{}/../../drafts/docs/{file}", env!("CARGO_MANIFEST_DIR"));
@@ -103,4 +104,13 @@ fn each_state_expects_the_calls_its_nodes_make() {
         json!([{ "on": "tap", "operation": "deleteDocs", "with": { "ids": ["c", "e"] } }]),
         "the bulk form, given the selection"
     );
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read_screen(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handoff, Box<Checked>> {
+    underdraw_handoff::handoff(&read_screen(screen), mapping, tokens)
 }

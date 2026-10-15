@@ -46,6 +46,8 @@ enum Side {
 
 impl Conditions {
     pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Conditions {
+        #[cfg(test)]
+        crate::screen::tests::count("conditions");
         let mut read = Vec::new();
         for (name, body) in object(screen, "conditions") {
             let at = format!("conditions.{name}");

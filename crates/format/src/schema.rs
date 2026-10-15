@@ -34,6 +34,8 @@ pub struct Resolved {
 
 impl Schema {
     pub fn read(screen: &Value, findings: &mut Findings) -> Schema {
+        #[cfg(test)]
+        crate::screen::tests::count("schema");
         let mut shapes = BTreeMap::new();
         for (name, body) in object(screen, "types") {
             let at = format!("types.{name}");

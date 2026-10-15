@@ -933,8 +933,9 @@ impl Gallery {
         let state = here.state.clone().unwrap_or_default();
         let on = format!("{}.{}", handlers.written, act::event(&handlers.events));
         let lang = self.lang;
-        let screen = crate::read(&here.dir).map(|(screen, _)| screen).unwrap_or(Value::Null);
-        match act::act(&screen, &state, &handlers.written, &handlers.events) {
+        let screen = crate::read(&here.dir).ok().map(|(screen, _)| screen);
+        let transitions = screen.as_ref().map_or(&[][..], |screen| screen.transitions.as_slice());
+        match act::act(transitions, &state, &handlers.written, &handlers.events) {
             Act::Go { to } => {
                 let says = say!(lang, acted_to_state, on, state, to);
                 self.go(Named { dir: here.dir, state: Some(to) }, says);
@@ -1925,19 +1926,18 @@ impl Gallery {
         let (On::Node { node, .. }, Picture::Pages(pages)) = (&on.on, &self.picture) else {
             return;
         };
-        let screen = crate::read(&on.description).map(|(screen, _)| screen).unwrap_or(Value::Null);
+        let screen = crate::read(&on.description).ok().map(|(screen, _)| screen);
         let id = self.node().map(|(id, _)| id.to_string()).unwrap_or_default();
         let component = pages
             .pages
             .iter()
             .find_map(|page| page.nodes.iter().find(|n| n.id == id))
-            .map(|n| n.component.clone());
-        let guess = Guess::of(
-            &screen,
-            &node.origin.written,
-            &component.unwrap_or_default(),
-            &links::drawn(&self.root),
-        );
+            .map(|n| n.component.clone())
+            .unwrap_or_default();
+        let guess = match &screen {
+            Some(screen) => Guess::of(screen, &node.origin.written, &component, &links::drawn(&self.root)),
+            None => Guess::Component(component),
+        };
         let answers = Answers { assumed, guess, answer };
         self.acted = None;
         match answer {

@@ -130,6 +130,8 @@ impl Operations {
         conditions: &Conditions,
         findings: &mut Findings,
     ) -> Operations {
+        #[cfg(test)]
+        crate::screen::tests::count("operations");
         let mut read = Vec::new();
         for (name, body) in object(screen, "operations") {
             if name.starts_with('$') {

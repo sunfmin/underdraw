@@ -8,14 +8,13 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
-use crate::check::Findings;
 use crate::components;
 use crate::conditions::{Conditions, UseSite};
-use crate::domain;
 use crate::expand::{Instances, Met};
-use crate::fixture;
-use crate::schema::{Schema, object};
-use crate::subtrees::{self, Subtrees};
+use crate::links::Undrawn;
+use crate::schema::object;
+use crate::screen::Screen;
+use crate::subtrees;
 use crate::template::{self, Decimals, Format};
 
 /// Which state of the screen to show.
@@ -91,28 +90,15 @@ pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", 
 const STRUCTURE: [&str; 11] =
     ["id", "component", "with", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
 
-/// The screen `screen` in `state`, at `breakpoint`. The description is
-/// expected to have passed `check`; what it cannot make sense of is an error.
-/// A screen read more than once is better read once: `Model::instantiate`.
-pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Result<Node, String> {
-    let mut ignored = Findings::default();
-    let screen = &domain::expand(screen, &mut ignored);
-    let schema = Schema::read(screen, &mut ignored);
-    let conditions = Conditions::read(screen, &schema, &mut ignored);
-    let mut fixtures = fixture::read(screen, &schema, &mut ignored);
-    conditions.fill(&schema, &mut fixtures);
-    build(screen, &conditions, &fixtures, state, breakpoint)
-}
-
-/// The screen `screen` in `state`, at `breakpoint`, with its conditions and
-/// fixtures already read.
+/// The screen `screen` in `state`, at `breakpoint`, each node that
+/// navigates to a screen `undrawn` says is not drawn yet marked assumed.
 pub(crate) fn build(
-    screen: &Value,
-    conditions: &Conditions,
-    fixtures: &[(String, Value)],
+    screen: &Screen,
     state: State,
     breakpoint: Breakpoint,
+    undrawn: Option<&Undrawn>,
 ) -> Result<Node, String> {
+    let (fixtures, description) = (&screen.fixtures, screen.description());
     let (tree, data) = match state {
         State::Fixture(name) => {
             let mut found = None;
@@ -122,11 +108,11 @@ pub(crate) fn build(
                 }
             }
             let data = found.ok_or_else(|| format!("there is no fixture {name}"))?;
-            (screen.get("root").ok_or("the screen has no root")?, data)
+            (description.get("root").ok_or("the screen has no root")?, data)
         }
         State::Phase(name) => {
             let mut found = None;
-            for (phase, tree) in object(screen, "phases") {
+            for (phase, tree) in object(description, "phases") {
                 if phase == name {
                     found = Some(tree);
                 }
@@ -134,13 +120,13 @@ pub(crate) fn build(
             (found.ok_or_else(|| format!("there is no phase {name}"))?, Value::Object(Map::new()))
         }
     };
-    let components = Subtrees::read(screen);
-    let mut fill = Fill { conditions, instances: Instances::new(&components), breakpoint };
+    let instances = Instances::new(screen.components.subtrees());
+    let mut fill = Fill { conditions: &screen.conditions, instances, breakpoint, undrawn };
     let at = match state {
         State::Fixture(_) => "/root".to_string(),
         State::Phase(name) => format!("/phases/{}", escaped(name)),
     };
-    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new() })?;
+    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new(), shared: false })?;
     built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
 }
 
@@ -150,6 +136,9 @@ pub(crate) fn build(
 struct Written {
     at: String,
     instance: Vec<usize>,
+    /// Whether it is written in a component the project shares, whose
+    /// nodes are never marked as navigating to a screen not drawn yet.
+    shared: bool,
 }
 
 impl Written {
@@ -159,7 +148,7 @@ impl Written {
             Some(index) => format!("{}/{}/{index}", self.at, escaped(key)),
             None => format!("{}/{}", self.at, escaped(key)),
         };
-        Written { at, instance: self.instance.clone() }
+        Written { at, instance: self.instance.clone(), shared: self.shared }
     }
 }
 
@@ -168,16 +157,17 @@ fn escaped(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
-struct Fill<'c, 'a> {
+struct Fill<'c> {
     conditions: &'c Conditions,
     /// The instances being built, each with where it is written and the
     /// scope it is in: what a `{"slot": …}` node inside stands for is
     /// built there.
-    instances: Instances<'c, 'a, (Written, Value)>,
+    instances: Instances<'c, (Written, Value)>,
     breakpoint: Breakpoint,
+    undrawn: Option<&'c Undrawn<'c>>,
 }
 
-impl Fill<'_, '_> {
+impl Fill<'_> {
     /// The nodes `written` becomes in `scope`: none when it is hidden, one
     /// otherwise, or what an instance gives in a slot.
     /// `at` is where it is written.
@@ -230,7 +220,7 @@ impl Fill<'_, '_> {
             };
             params.insert(name.clone(), value);
         }
-        let root = component.nodes;
+        let root = &component.nodes;
         let params = Value::Object(params);
         self.instances.enter(
             component,
@@ -240,12 +230,12 @@ impl Fill<'_, '_> {
             (at.clone(), scope.clone()),
         )?;
         let inner = Written {
-            at: format!(
-                "/{}/{}/nodes",
-                if component.shared { components::SHARED } else { subtrees::KEY },
-                escaped(component.name)
-            ),
+            at: match component.shared {
+                true => format!("{}/nodes", components::shared_at(&escaped(&component.name))),
+                false => format!("/{}/{}/nodes", subtrees::KEY, escaped(&component.name)),
+            },
             instance: at.instance.clone(),
+            shared: component.shared,
         };
         let built = if self.shown(root, &params) {
             self.build(root, &params, slot, &inner, id, written_id).map(Some)
@@ -319,7 +309,11 @@ impl Fill<'_, '_> {
             props: Map::new(),
             children: Vec::new(),
             slot: slot.to_string(),
-            assumed: object.get("assumed").and_then(Value::as_str).map(str::to_string),
+            assumed: match (object.get("assumed"), object.get("on"), self.undrawn) {
+                (Some(assumed), _, _) => assumed.as_str().map(str::to_string),
+                (None, Some(on), Some(undrawn)) if !at.shared => undrawn.of(on),
+                _ => None,
+            },
             interactive: object.contains_key("on") || object.contains_key("bind"),
         };
         let each = match object.get("each") {

@@ -1,7 +1,7 @@
 //! The Airbnb draft, instantiated in each state, says what the person would see.
 
 use serde_json::{Value, json};
-use underdraw_format::{Breakpoint, Node, State, instantiate};
+use underdraw_format::{Breakpoint, Node, Screen, Shared, State};
 
 fn draft() -> Value {
     serde_json::from_str(include_str!("../../../drafts/airbnb-listing/screen.json")).unwrap()
@@ -93,7 +93,8 @@ fn a_phase_is_its_own_tree() {
 
 #[test]
 fn a_model_shows_each_fixture_then_each_phase_as_instantiate_does() {
-    let screen = draft();
+    let description = draft();
+    let screen = read(&description);
     let model = underdraw_format::model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let names: Vec<String> = model.states().iter().map(|state| format!("{state:?}")).collect();
     assert_eq!(
@@ -109,7 +110,10 @@ fn a_model_shows_each_fixture_then_each_phase_as_instantiate_does() {
     );
     for state in model.states() {
         for breakpoint in Breakpoint::ALL {
-            assert_eq!(model.instantiate(state, breakpoint), instantiate(&screen, state, breakpoint));
+            assert_eq!(
+                model.instantiate(state, breakpoint, None),
+                instantiate(&description, state, breakpoint)
+            );
         }
     }
 }
@@ -154,4 +158,13 @@ fn each_node_says_where_it_is_written_and_for_which_element() {
     assert_eq!(amenity.instance, [9], "the tenth amenity");
     assert!(amenity.written_at.ends_with("/item"), "{}", amenity.written_at);
     assert_eq!(find(&root, "amenities-list").unwrap().instance, Vec::<usize>::new(), "outside any each");
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn instantiate(description: &Value, state: State, breakpoint: Breakpoint) -> Result<Node, String> {
+    read(description).instantiate(state, breakpoint, None)
 }

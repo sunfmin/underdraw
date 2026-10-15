@@ -8,7 +8,7 @@
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::model;
+use underdraw_format::{Screen, model};
 use underdraw_handoff::{Golden, cli};
 
 use crate::Finding;
@@ -40,7 +40,7 @@ pub struct CliChecked {
 /// made in. Refused, with why: a description with faults, a capture that is
 /// not one, a command line the derived CLI does not take, or one it has no
 /// golden output for.
-pub fn compare_cli(screen: &Value, fixture: &str, capture: &Value) -> Result<CliComparison, String> {
+pub fn compare_cli(screen: &Screen, fixture: &str, capture: &Value) -> Result<CliComparison, String> {
     let model = model(screen).map_err(|checked| {
         format!(
             "the description has {} finding(s), so it cannot say what the CLI should print: run `underdraw check` and fix them first",

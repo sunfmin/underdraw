@@ -3,7 +3,7 @@
 //! by the conditions that gate the node.
 
 use serde_json::Value;
-use underdraw_format::{Checked, check};
+use underdraw_format::{Checked, Screen, Shared};
 
 const DRAFT: &str = include_str!("../../../drafts/checkout/screen.json");
 
@@ -126,4 +126,13 @@ fn a_condition_that_gates_the_node_narrows_the_value() {
         let calls: Vec<_> = checked.findings.iter().filter(|f| f.at.contains(".with.")).collect();
         assert!(calls.is_empty(), "{name}: {calls:#?}");
     }
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

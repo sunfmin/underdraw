@@ -5,8 +5,8 @@
 use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
-use underdraw_format::{Breakpoint, Node, State, instantiate};
-use underdraw_handoff::handoff;
+use underdraw_format::{Breakpoint, Checked, Node, Screen, Shared, State};
+use underdraw_handoff::Handoff;
 
 /// `ItemRow` holds a `Tag` per tag, each given a trailing node, and places
 /// what its instance gives in `children` inside its row.
@@ -61,7 +61,11 @@ fn handoff_names_and_places_each_node_as_instantiation_does() {
     let handed: BTreeSet<(String, String)> =
         handoff.nodes.iter().map(|n| (n.id.clone(), n.parent.clone().unwrap_or_default())).collect();
     let mut built = BTreeSet::new();
-    drawn(&instantiate(&screen, State::Fixture("some"), Breakpoint::Compact).unwrap(), "", &mut built);
+    drawn(
+        &read_screen(&screen).instantiate(State::Fixture("some"), Breakpoint::Compact, None).unwrap(),
+        "",
+        &mut built,
+    );
     assert_eq!(handed, built);
     assert!(
         handed.contains(&("row-{index}-x-{index}".to_string(), "row-{index}-tag-{index}".to_string())),
@@ -80,4 +84,13 @@ fn handing_off_a_component_that_uses_itself_is_a_fault() {
         "{:?}",
         refused.findings
     );
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read_screen(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handoff, Box<Checked>> {
+    underdraw_handoff::handoff(&read_screen(screen), mapping, tokens)
 }

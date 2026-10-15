@@ -1,8 +1,8 @@
 //! A project's domain (docs/adr/0020): the types, conditions and operations
 //! every screen of the project shares, written once in domain.json at the
-//! project's root. The caller hands it over in the description under
-//! [`KEY`]; it is written into the description here, before anything reads
-//! it, so the domain's are read exactly as a screen's own. A screen may add
+//! project's root. The caller hands it over with the description
+//! (`Shared`); it is written into the description here, before anything
+//! reads it, so the domain's are read exactly as a screen's own. A screen may add
 //! its own, but one of a name the domain declares is a finding, and the
 //! domain's takes its place.
 
@@ -11,32 +11,29 @@ use serde_json::{Map, Value};
 use crate::check::Findings;
 use crate::jobs;
 
-/// Where the caller puts domain.json's contents in the description it
-/// hands over.
-pub const KEY: &str = "$domain";
-
 /// The file the domain is written in, as findings in it name it.
 const FILE: &str = "domain.json";
 
 /// What a domain declares, each section keyed by name as a screen's is.
 const SHARED: [&str; 3] = ["types", "conditions", "operations"];
 
-/// `screen` with what it took from its domain written in, and what each
-/// long command derives. The one way the description is read: everything
-/// that reads one reads what this answers.
-pub(crate) fn expand(screen: &Value, findings: &mut Findings) -> Value {
-    jobs::expand(&share(screen, findings), findings)
+/// `screen` with what it took from its `domain` written in, and what each
+/// long command derives. The first step of reading a description, which
+/// `Screen::read` takes; everything after it reads what this answers.
+pub(crate) fn expand(screen: &Value, domain: Option<&Value>, findings: &mut Findings) -> Value {
+    #[cfg(test)]
+    crate::screen::tests::count("domain");
+    jobs::expand(&share(screen, domain, findings), findings)
 }
 
-/// `screen` with the domain under [`KEY`] written in: each section the
-/// domain's entries first, in its order, then the screen's own. The domain
-/// is taken out, so what reads the result never sees it twice.
-fn share(screen: &Value, findings: &mut Findings) -> Value {
+/// `screen` with `domain` written in: each section the domain's entries
+/// first, in its order, then the screen's own.
+fn share(screen: &Value, domain: Option<&Value>, findings: &mut Findings) -> Value {
     let mut shared = screen.clone();
     let Some(root) = shared.as_object_mut() else {
         return shared;
     };
-    let domain = match root.remove(KEY) {
+    let domain = match domain {
         None => return shared,
         Some(Value::Object(domain)) => domain,
         Some(_) => {
@@ -103,14 +100,13 @@ mod tests {
             "screen": "Orders",
             "types": {"Order": {"id": "string"}, "Row": {"order": "Order"}},
             "operations": {"cancelOrder": {"command": "mine"}},
-            KEY: {
-                "types": {"Order": {"id": "string", "total": "number"}},
-                "operations": {"cancelOrder": {"command": "Cancels it"}, "listOrders": {"query": "Lists them"}},
-            },
+        });
+        let domain = json!({
+            "types": {"Order": {"id": "string", "total": "number"}},
+            "operations": {"cancelOrder": {"command": "Cancels it"}, "listOrders": {"query": "Lists them"}},
         });
         let mut findings = Findings::default();
-        let shared = share(&screen, &mut findings);
-        assert_eq!(shared.get(KEY), None, "the domain is taken out");
+        let shared = share(&screen, Some(&domain), &mut findings);
         let names = |key: &str| shared[key].as_object().unwrap().keys().cloned().collect::<Vec<_>>();
         assert_eq!(names("types"), ["Order", "Row"]);
         assert_eq!(names("operations"), ["cancelOrder", "listOrders"]);
@@ -124,13 +120,13 @@ mod tests {
     #[test]
     fn a_domain_of_the_wrong_shape_is_named_in_domain_json() {
         let mut findings = Findings::default();
-        share(&json!({KEY: {"types": [], "fixtures": {}}}), &mut findings);
+        share(&json!({}), Some(&json!({"types": [], "fixtures": {}})), &mut findings);
         let at: Vec<&str> = findings.0.iter().map(|f| f.at.as_str()).collect();
         assert_eq!(at, ["domain.json fixtures", "domain.json types"]);
 
         let mut findings = Findings::default();
         let alone = json!({"screen": "Alone", "types": {"A": {"x": "string"}}});
-        assert_eq!(share(&alone, &mut findings), alone, "no domain, nothing changes");
+        assert_eq!(share(&alone, None, &mut findings), alone, "no domain, nothing changes");
         assert!(findings.0.is_empty());
     }
 }
