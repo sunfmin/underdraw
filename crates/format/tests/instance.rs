@@ -137,7 +137,15 @@ fn each_node_says_where_it_is_written_and_for_which_element() {
             let written = screen.pointer(&node.written_at);
             let written =
                 written.unwrap_or_else(|| panic!("{} names nothing, for {}", node.written_at, node.id));
-            assert_eq!(written["id"], json!(node.written_id), "{state:?} {}", node.written_at);
+            // A component's root is named by its instance, and each node
+            // inside by the instance's id joined to its own.
+            match written["id"].as_str() {
+                Some(id) if node.written_at.starts_with("/components/") => {
+                    assert!(node.written_id.ends_with(&format!("-{id}")), "{state:?} {}", node.written_at);
+                }
+                Some(id) => assert_eq!(id, node.written_id, "{state:?} {}", node.written_at),
+                None => assert!(node.written_at.ends_with("/nodes"), "{state:?} {}", node.written_at),
+            }
         }
     }
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::Compact).unwrap();

@@ -32,7 +32,11 @@ pub fn navigates(screen: &Value) -> Vec<Navigate> {
             let mut screens = BTreeSet::new();
             targets(on, &mut screens);
             for to in screens {
-                found.push(Navigate { node: node.clone(), to });
+                // A component used in more than one tree is one node.
+                let navigate = Navigate { node: node.clone(), to };
+                if !found.contains(&navigate) {
+                    found.push(navigate);
+                }
             }
         }
     }

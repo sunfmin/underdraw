@@ -4268,7 +4268,7 @@ mod tests {
         notes::answer(&dir, "N1", "it says Export").unwrap();
 
         let file = dir.join(crate::SCREEN);
-        let screen = std::fs::read_to_string(&file).unwrap().replace("\"nav-export\"", "\"nav-download\"");
+        let screen = std::fs::read_to_string(&file).unwrap().replace("\"id\": \"export\"", "\"id\": \"download\"");
         std::fs::write(&file, screen).unwrap();
         gallery.reload();
         assert_eq!(
@@ -4732,7 +4732,7 @@ mod tests {
         gallery.copy();
         let line = gallery.reference().unwrap().line();
         assert!(
-            line.ends_with("· region 0, 0 · 390 × 56 at width 390 · covering nav at /components/nav"),
+            line.ends_with("· region 0, 0 · 390 × 56 at width 390 · covering nav at /components/Nav/nodes"),
             "{line}"
         );
         assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());

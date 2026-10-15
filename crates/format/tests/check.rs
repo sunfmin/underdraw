@@ -189,8 +189,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "cases-in-a-slot",
-            r#""leading":  [ { "ref": "nav-back" } ]"#,
-            r#""leading": { "cases": [ { "if": "hasDates", "then": { "ref": "nav-back" } }, { "else": { "ref": "nav-back" } } ] }"#,
+            r#""leading":  [ { "id": "nav-back", "component": "NavBack" } ]"#,
+            r#""leading": { "cases": [ { "if": "hasDates", "then": { "id": "nav-back", "component": "NavBack" } }, { "else": { "id": "nav-back", "component": "NavBack" } } ] }"#,
             "nav.leading",
             "a slot holds nodes, not cases",
         ),

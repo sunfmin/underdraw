@@ -246,7 +246,7 @@ impl<'a> Written<'_, 'a> {
             self.using.pop();
             return;
         }
-        if node.contains_key("component") {
+        if ["id", "component", "on"].iter().any(|key| node.contains_key(*key)) {
             self.found.push((id, node));
         }
         self.inside(node, prefix);
