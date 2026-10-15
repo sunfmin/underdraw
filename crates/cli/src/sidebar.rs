@@ -7,7 +7,6 @@
 
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
-pub use crate::chrome::SIDEBAR as WIDTH;
 use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, INSET};
 use crate::chrome::{
     BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
@@ -84,10 +83,16 @@ impl<A> Laid<'_, A> {
     }
 }
 
-/// `cards` laid out one under another in a sidebar whose left edge is at
-/// `left` and whose top is `top` (scrolled), its text set by `typesetter`.
-pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mut Typesetter) -> Laid<'a, A> {
-    let inner = WIDTH - 2.0 * GUTTER - 2.0 * PADDING;
+/// `cards` laid out one under another in a sidebar `width` wide whose left
+/// edge is at `left` and whose top is `top` (scrolled), its text set by
+/// `typesetter` to wrap within that width.
+pub fn lay_out<'a, A>(
+    cards: &'a [Card<A>],
+    (left, width): (f64, f64),
+    top: f64,
+    typesetter: &mut Typesetter,
+) -> Laid<'a, A> {
+    let inner = width - 2.0 * GUTTER - 2.0 * PADDING;
     let x = left + GUTTER + PADDING;
     let mut laid = Laid { draws: Vec::new(), buttons: Vec::new(), caret: None, height: 0.0 };
     let mut y = top + GUTTER;
@@ -139,7 +144,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mu
         }
         y += PADDING;
         laid.draws.push(Draw::Box {
-            rect: rect(left + GUTTER, card_top, WIDTH - 2.0 * GUTTER, y - card_top),
+            rect: rect(left + GUTTER, card_top, width - 2.0 * GUTTER, y - card_top),
             radius: CARD_RADIUS,
             fill: Some(Ink::Paper),
             stroke: Some(Ink::Line),
@@ -329,7 +334,7 @@ mod tests {
             ),
         ];
         let mut typesetter = Typesetter::new(None).unwrap();
-        let laid = lay_out(&cards, 1000.0, 0.0, &mut typesetter);
+        let laid = lay_out(&cards, (1000.0, 360.0), 0.0, &mut typesetter);
         assert_eq!(laid.buttons.len(), 2);
         let (first, second) = (laid.buttons[0].0, laid.buttons[1].0);
         assert!(first.y + first.height < second.y, "the second below the first");
@@ -342,7 +347,23 @@ mod tests {
             None,
             "the text above it does nothing"
         );
-        assert!(f64::from(first.x) >= 1000.0 && f64::from(first.x + first.width) <= 1000.0 + WIDTH);
+        assert!(f64::from(first.x) >= 1000.0 && f64::from(first.x + first.width) <= 1000.0 + 360.0);
         assert!(laid.height > f64::from(second.y + second.height), "the cards end below their last block");
+    }
+
+    #[test]
+    fn narrower_the_cards_rewrap_their_text_within_the_width() {
+        let cards = vec![Card::new(
+            "one".to_string(),
+            vec![Block::Text("a long line ".repeat(20)), Block::Button("go".to_string(), 1)],
+        )];
+        let mut typesetter = Typesetter::new(None).unwrap();
+        let wide = lay_out(&cards, (1000.0, 360.0), 0.0, &mut typesetter);
+        let narrow = lay_out(&cards, (1080.0, 280.0), 0.0, &mut typesetter);
+        assert!(narrow.height > wide.height, "taller, the text wrapped to more lines");
+        let button = narrow.buttons[0].0;
+        assert!(f64::from(button.x) >= 1080.0 && f64::from(button.x + button.width) <= 1080.0 + 280.0);
+        let middle = (f64::from(button.x + button.width / 2.0), f64::from(button.y + button.height / 2.0));
+        assert_eq!(narrow.at(middle), Some(&1), "the button clicked by its own box");
     }
 }

@@ -349,10 +349,26 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
         gallery.cursor = (gallery.tree, MARGIN);
         gallery.press();
         gallery.cursor = (0.0, MARGIN);
-        gallery.resize_tree();
+        gallery.resize();
         gallery.release();
     });
     assert_eq!(gallery.tree, TREE_LEAST);
+}
+
+#[test]
+fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
+    let gallery = held("sidebar-narrow", Path::new(DRAFTS), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.cursor = on_node(gallery, 1, "nav-save");
+        gallery.press();
+        gallery.release();
+        gallery.cursor = (gallery.pane_right(), MARGIN);
+        gallery.press();
+        gallery.cursor = (WINDOW.0, MARGIN);
+        gallery.resize();
+        gallery.release();
+    });
+    assert_eq!(gallery.side, SIDEBAR_LEAST);
 }
 
 #[test]
