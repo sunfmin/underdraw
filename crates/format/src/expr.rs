@@ -1,7 +1,12 @@
-//! The grammar of a condition's `when` (docs/format/expressions.md), and of
-//! a look's condition, whose names are placeholders (`value|first`). Syntax
-//! only: what a name refers to, and whether the types fit, is decided by
-//! `conditions` for a screen and by `look` for a component.
+//! The one grammar of a yes/no (docs/format/expressions.md), read by one
+//! parser into one tree wherever it is written: a condition's `when`, a use
+//! site (`if`, `disabled`, …) and a look's `if`. A name is read as written,
+//! a path or a placeholder (`value|first`). What each position accepts of
+//! the grammar is a check over the tree, decided by where it is used: a
+//! `when`'s names are paths ([`when`]), a use site is names joined by `&&`
+//! (`conditions::UseSite`), a look's `if` takes it whole. What a name
+//! refers to, and whether the types fit, is decided by `conditions` for a
+//! screen and by `look` for a component.
 //!
 //! ```text
 //! expr    = and ("||" and)*
@@ -138,6 +143,23 @@ pub enum Atom<N = String> {
 }
 
 impl Expr<String> {
+    /// Every name it uses, in the order written.
+    pub(crate) fn names<'e>(&'e self, names: &mut Vec<&'e str>) {
+        match self {
+            Expr::Or(items) | Expr::And(items) => {
+                for item in items {
+                    item.names(names);
+                }
+            }
+            Expr::Not(inner) => inner.names(names),
+            Expr::Compare(_, left, right) => {
+                left.names(names);
+                right.names(names);
+            }
+            Expr::Atom(atom) => atom.names(names),
+        }
+    }
+
     /// The same condition with each name read by `read`.
     pub(crate) fn named<N>(self, read: &impl Fn(String) -> N) -> Expr<N> {
         match self {
@@ -159,6 +181,14 @@ fn named_all<N>(items: Vec<Expr>, read: &impl Fn(String) -> N) -> Vec<Expr<N>> {
 }
 
 impl Atom<String> {
+    fn names<'e>(&'e self, names: &mut Vec<&'e str>) {
+        match self {
+            Atom::Name(name) => names.push(name),
+            Atom::Group(inner) => inner.names(names),
+            _ => {}
+        }
+    }
+
     fn named<N>(self, read: &impl Fn(String) -> N) -> Atom<N> {
         match self {
             Atom::Name(name) => Atom::Name(read(name)),
@@ -171,25 +201,37 @@ impl Atom<String> {
     }
 }
 
-/// What a name may be written as.
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Names {
-    /// A screen's: a path, `order.total`.
-    Paths,
-    /// A look's: a placeholder, a path then its filters, `value|first`,
-    /// `price|or:0`; `||` is still "or".
-    Placeholders,
+/// A screen condition's `when`: the grammar, each name a path, `order.total`.
+pub fn when(text: &str) -> Result<Expr, String> {
+    let expr = parse(text)?;
+    let mut names = Vec::new();
+    expr.names(&mut names);
+    for name in names {
+        if let Some(problem) = not_a_path(name) {
+            return Err(problem);
+        }
+    }
+    Ok(expr)
 }
 
-/// A screen condition.
+/// Why `name` is not a path, said as a `when` that wrote it is refused: at
+/// the first character a path cannot hold.
+fn not_a_path(name: &str) -> Option<String> {
+    let mut chars = name.chars();
+    let first = chars.next()?;
+    let wrong = if first.is_ascii_alphabetic() || first == '_' {
+        chars.find(|&c| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))?
+    } else {
+        first
+    };
+    Some(if wrong == '|' { "| is written ||".to_string() } else { format!("unexpected {wrong:?}") })
+}
+
+/// An expression, each name as it was written: a path, or a placeholder,
+/// a path then its filters (`value|first`, `price|or:0`), where `||` is
+/// still "or". Whatever the position, this is what reads it.
 pub fn parse(text: &str) -> Result<Expr, String> {
-    parse_names(text, Names::Paths)
-}
-
-/// A condition whose names are written as `names` says, each name as it
-/// was written.
-pub(crate) fn parse_names(text: &str, names: Names) -> Result<Expr, String> {
-    let mut cursor = Cursor::new(lex(text, names)?);
+    let mut cursor = Cursor::new(lex(text)?);
     let expr = or(&mut cursor)?;
     match cursor.peek() {
         None => Ok(expr),
@@ -301,7 +343,7 @@ fn atom(cursor: &mut Cursor) -> Result<Atom, String> {
     }
 }
 
-fn lex(text: &str, names: Names) -> Result<Vec<Token>, String> {
+fn lex(text: &str) -> Result<Vec<Token>, String> {
     let mut tokens = Vec::new();
     let mut chars = text.chars().peekable();
     while let Some(&c) = chars.peek() {
@@ -362,18 +404,7 @@ fn lex(text: &str, names: Names) -> Result<Vec<Token>, String> {
                 }
                 Token::Num(s.parse().map_err(|_| format!("{s} is not a number"))?)
             }
-            _ if names == Names::Paths && (c.is_ascii_alphabetic() || c == '_') => {
-                let mut s = c.to_string();
-                while let Some(&d) = chars.peek() {
-                    if !(d.is_ascii_alphanumeric() || d == '_' || d == '.') {
-                        break;
-                    }
-                    s.push(d);
-                    chars.next();
-                }
-                Token::Name(s)
-            }
-            _ if names == Names::Placeholders && (c.is_alphabetic() || c == '_' || c == '$') => {
+            _ if c.is_alphabetic() || c == '_' || c == '$' => {
                 let mut s = c.to_string();
                 while let Some(&d) = chars.peek() {
                     // A single `|` begins a filter; `||` is "or".
@@ -436,10 +467,34 @@ mod tests {
         }
     }
 
+    #[test]
+    fn reads_a_placeholder_as_one_name() {
+        let parsed = parse("price|or:0 > 0 || value|first").unwrap();
+        let expected = Expr::Or(vec![
+            Expr::Compare(Op::Gt, name("price|or:0"), Atom::Num(0.0)),
+            Expr::Atom(name("value|first")),
+        ]);
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn a_when_takes_only_paths_for_names() {
+        assert!(when("order.total > 0 && _a.b_1").is_ok());
+        for (text, said) in [
+            ("a|b", "| is written ||"),
+            ("a && price|or:0 > 1", "| is written ||"),
+            ("$a", "unexpected '$'"),
+            ("a:b", "unexpected ':'"),
+            ("été", "unexpected 'é'"),
+        ] {
+            assert_eq!(when(text), Err(said.to_string()), "{text:?}");
+        }
+    }
+
     proptest! {
         #[test]
         fn never_panics(text in ".*") {
-            let _ = parse(&text);
+            let _ = when(&text);
         }
     }
 }

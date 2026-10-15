@@ -441,15 +441,17 @@ impl Fill<'_> {
     }
 
     /// Whether the use site `used` holds: each of its `&&` terms (`!`, then
-    /// a condition or a Bool path) does.
+    /// a condition or a Bool path) does. One that is no use site never holds.
     fn holds(&self, used: &str, scope: &Value) -> bool {
-        UseSite::parse(used).terms.iter().all(|term| {
-            let holds = if self.conditions.contains(term.name) {
-                self.conditions.holds(term.name, scope)
-            } else {
-                lookup(scope, term.name) == Some(&Value::Bool(true))
-            };
-            holds != term.negated
+        UseSite::parse(used).is_some_and(|site| {
+            site.terms.iter().all(|term| {
+                let holds = if self.conditions.contains(&term.name) {
+                    self.conditions.holds(&term.name, scope)
+                } else {
+                    lookup(scope, &term.name) == Some(&Value::Bool(true))
+                };
+                holds != term.negated
+            })
         })
     }
 
