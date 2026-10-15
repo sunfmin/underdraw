@@ -5,7 +5,7 @@
 //! range as well, which Flux proves leaves no step to overflow.
 
 use flux_rs::attrs::*;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use underdraw_format::Field;
 use underdraw_format::length::{Computed, MOST, Operand};
 
@@ -48,9 +48,9 @@ impl Points {
     }
 }
 
-/// What `computed` comes to, each param read by `param` and each token
-/// from `tokens`; none when it does not parse, which `check` names.
-pub(crate) fn points(computed: &Computed, tokens: &Tokens, param: &dyn Fn(&str) -> Value) -> Option<Points> {
+/// What `computed` comes to, each param what `params` gives it and each
+/// token from `tokens`; none when it does not parse, which `check` names.
+pub(crate) fn points(computed: &Computed, tokens: &Tokens, params: &Map<String, Value>) -> Option<Points> {
     let products = computed.parsed.as_ref().ok()?;
     let mut sum = Points::held(0);
     for product in products {
@@ -63,7 +63,7 @@ pub(crate) fn points(computed: &Computed, tokens: &Tokens, param: &dyn Fn(&str) 
                         serde_json::Number::from_f64(f64::from(n)).map_or(Value::Null, Value::Number)
                     })
                 }
-                Operand::Param(name) => param(name),
+                Operand::Param(name) => params.get(name).cloned().unwrap_or(Value::Null),
             };
             multiplied = multiplied.times(Points::of(&whole(&value)));
         }
@@ -162,7 +162,11 @@ mod tests {
     fn a_length_comes_to_its_products_added() {
         let tokens = json!({ "space": { "4": 16 } });
         let computed = Computed::read("{depth} * space.4 + 12").unwrap();
-        let depth = |n: u64| move |_: &str| Value::from(n);
+        let depth = |n: u64| {
+            let mut params = Map::new();
+            params.insert("depth".to_string(), Value::from(n));
+            params
+        };
         assert_eq!(points(&computed, &Tokens(&tokens), &depth(0)).map(Points::get), Some(12));
         assert_eq!(points(&computed, &Tokens(&tokens), &depth(3)).map(Points::get), Some(60));
         let huge = Computed::read("{depth} * 10000 * 10000").unwrap();

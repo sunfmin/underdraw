@@ -536,11 +536,15 @@ impl Catalog<'_> {
                 Value::Array(read)
             }
             Parsed::Length(computed) => {
-                let param = |name: &str| match scope.vars.get(name) {
-                    Some(value) => value.clone(),
-                    None => scope.prop(name).cloned().unwrap_or(Value::Null),
-                };
-                crate::length::points(computed, self.tokens, &param)
+                let mut params = Map::new();
+                for name in computed.params() {
+                    let value = match scope.vars.get(name) {
+                        Some(value) => value.clone(),
+                        None => scope.prop(name).cloned().unwrap_or(Value::Null),
+                    };
+                    params.insert(name.to_string(), value);
+                }
+                crate::length::points(computed, self.tokens, &params)
                     .map_or(Value::Null, |points| Value::from(points.get()))
             }
             Parsed::Plain(value) => value.clone(),
