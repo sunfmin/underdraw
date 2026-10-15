@@ -220,7 +220,8 @@ _Avoid_: mockup viewer, preview
 **Sidebar**:
 The gallery's right-hand column, for the person: a card for each thing
 about what they picked, each with buttons for what they can do with it,
-in the language the gallery was opened in. Hidden and shown with ⌘\.
+then the **Note** on what they picked, and at its foot a box to say more
+in, in the language the gallery was opened in. Hidden and shown with ⌘\.
 _Avoid_: panel, inspector, debug view
 
 **Overview**:

@@ -1,9 +1,9 @@
 //! What the person and the agent say of a description, pinned where it is
 //! said (ADR 0019, ADR 0023): kept in notes.json beside its screen.json,
-//! meant to be committed. A note is a conversation on a node, a region, a
-//! whole state, a transition's arrow or a navigate's arrow: the person's
-//! messages and the agent's, in the order said. Only the person starts
-//! one, in the gallery; the agent answers in it, at any length, and may
+//! meant to be committed. A note is a conversation on a node, a whole
+//! state, a transition's arrow or a navigate's arrow: the person's
+//! messages and the agent's, in the order said, one for each. Only the
+//! person starts one, in the gallery, and says more in it there; the agent answers in it, at any length, and may
 //! ask back. It is never closed: while the person spoke last it waits on
 //! the agent, and once the agent did it is answered; that is read from
 //! the messages, never stored. What the agent wants to ask unprompted is
@@ -59,15 +59,16 @@ pub struct Said {
 }
 
 /// One note, a conversation, pinned as ⌘C references what it is on: a node as the
-/// description writes it with the instance the person pointed at, a region
-/// dragged with the nodes it covered, a whole state, a transition or a navigate. A navigate's note is kept by the
+/// description writes it with the instance the person pointed at, a whole
+/// state, a transition or a navigate. A navigate's note is kept by the
 /// description the navigate is written in.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     /// `N1`, `N2`…: numbered in the order written, within the description.
     pub id: String,
-    /// What it is on, written as its fields: `state` and `node`, `state`
-    /// and `region`, `state`, `transition` or `navigate`.
+    /// What it is on, written as its fields: `state` and `node`, `state`,
+    /// `transition` or `navigate`. A note written on a region before
+    /// regions went (ADR 0023) is read as on its whole state.
     #[serde(flatten)]
     pub on: On,
     /// What the person and the agent said, in the order said; the
@@ -311,17 +312,30 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
     Ok(answer)
 }
 
-/// A note the person started, saying `says`, on what `on` references,
-/// added to its description's notes, numbered after the last. Its id.
-pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
-    added(on, said(says)?, None, None)
+/// What the person said, `says`, added to the note on what `on`
+/// references: the last of its description's notes on the same thing
+/// ([`On::same`]), where the conversation goes on; or a note started on
+/// it, numbered after the last, when there is none. The note's id.
+pub fn say(on: &Reference, says: &str) -> anyhow::Result<String> {
+    let says = said(says)?;
+    let found = change(&on.description, |notes| {
+        let note = notes.iter_mut().rev().find(|note| note.on.same(&on.on));
+        Ok(note.map(|note| {
+            note.messages.push(Said { by: By::Person, says: says.clone() });
+            note.id.clone()
+        }))
+    })?;
+    match found {
+        Some(id) => Ok(id),
+        None => added(on, says, None, None),
+    }
 }
 
 /// What a ✓ note says when the person writes nothing more.
 pub const RIGHT: &str = "✓ right, keep it: take the guess out of the description";
 
 /// A note answering the assumption on the node `on` references, as
-/// `answers` says, added to its description's notes as [`add`] adds one:
+/// `answers` says, added to its description's notes, numbered after the last:
 /// ✓ says `says`, or [`RIGHT`] when that is empty; ✗ must say what is
 /// right, and is refused without it. Its id.
 pub fn judge(on: &Reference, answers: Answers, says: &str) -> anyhow::Result<String> {
@@ -337,7 +351,7 @@ pub fn judge(on: &Reference, answers: Answers, says: &str) -> anyhow::Result<Str
 }
 
 /// A note proposing where acting on the node `on` references should go,
-/// `proposal`, added to its description's notes as [`add`] adds one, its
+/// `proposal`, added to its description's notes, numbered after the last, its
 /// first message saying the proposal. Its id.
 pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
     let On::Node { state, .. } = &on.on else {
@@ -517,15 +531,6 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
         On::Node { node, .. } if state_gone.is_some() || !writes(&node.origin.written) => {
             in_state(format!("`{}`", node.origin.written))
         }
-        On::Region { region, .. }
-            if state_gone.is_some()
-                || (!region.nodes.is_empty() && region.nodes.iter().all(|node| !writes(&node.written))) =>
-        {
-            let covered: Vec<String> =
-                region.nodes.iter().map(|node| format!("`{}`", node.written)).collect();
-            let covering = if covered.is_empty() { "no node".to_string() } else { covered.join(", ") };
-            in_state(format!("a region covering {covering}"))
-        }
         On::State { state } if state_gone.is_some() => {
             now_gone(format!("the whole of {}", said_state(state)))
         }
@@ -545,7 +550,7 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
                 .any(|written| written.node == navigate.node && written.to == navigate.to);
             if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
         }
-        On::Node { .. } | On::Region { .. } | On::State { .. } => None,
+        On::Node { .. } | On::State { .. } => None,
     }
 }
 
@@ -649,8 +654,8 @@ pub fn settle(dir: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::Origin;
-    use crate::reference::{Frame, Navigate, Pointed, Region, Transition};
+    use crate::draw::{Origin, Shown};
+    use crate::reference::{Navigate, Pointed, Transition};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -677,8 +682,10 @@ mod tests {
     fn a_note_waits_or_is_answered_by_who_spoke_last() {
         let dir = dir("life");
         assert_eq!(read(&dir).unwrap(), [], "no notes.json: no notes");
-        assert_eq!(add(&on(&dir), "  the price is cut  ").unwrap(), "N1");
-        assert_eq!(add(&on(&dir), "and the date").unwrap(), "N2", "numbered after the last");
+        assert_eq!(say(&on(&dir), "  the price is cut  ").unwrap(), "N1");
+        let whole =
+            Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
+        assert_eq!(say(&whole, "and the date").unwrap(), "N2", "numbered after the last");
         let notes = read(&dir).unwrap();
         assert_eq!(notes[0].stands(), Stands::Waiting, "the person spoke last");
         assert_eq!(notes[0].messages, [Said { by: By::Person, says: "the price is cut".into() }]);
@@ -711,7 +718,7 @@ mod tests {
     #[test]
     fn a_reply_keeps_every_line_it_has() {
         let dir = dir("lines");
-        add(&on(&dir), "the price").unwrap();
+        say(&on(&dir), "the price").unwrap();
         let reply = "made it wrap.\n\nTwo questions:\n  - at 1120 too?\n  - and the date?";
         let (note, _) = answer(&dir, "N1", &format!("\n{reply}\n")).unwrap();
         assert_eq!(note.reply(), Some(reply), "kept as written, but for its ends");
@@ -735,7 +742,7 @@ mod tests {
         assert!(counted(&dir)["error"].as_str().unwrap().contains("old form"));
         std::fs::remove_dir_all(&dir).unwrap();
         let dir = self::dir("new");
-        add(&on(&dir), "x").unwrap();
+        say(&on(&dir), "x").unwrap();
         assert_eq!(old_form(&dir), None, "the new form");
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -789,20 +796,20 @@ mod tests {
     #[test]
     fn a_reply_says_something_and_names_a_note_there_is() {
         let dir = dir("refused");
-        add(&on(&dir), "the price").unwrap();
+        say(&on(&dir), "the price").unwrap();
         for reply in ["", "  ", "\n\n"] {
             assert!(answer(&dir, "N1", reply).is_err(), "{reply:?}");
         }
         let error = answer(&dir, "N9", "done").unwrap_err().to_string();
         assert!(error.contains("no note N9") && error.contains("[\"N1\"]"), "{error}");
-        assert!(add(&on(&dir), " ").is_err(), "a note says something");
+        assert!(say(&on(&dir), " ").is_err(), "a note says something");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn notes_json_is_written_as_the_reference_names_the_node() {
         let dir = dir("file");
-        add(&on(&dir), "the price").unwrap();
+        say(&on(&dir), "the price").unwrap();
         let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
         assert_eq!(
             file,
@@ -833,35 +840,49 @@ mod tests {
     }
 
     #[test]
-    fn a_region_note_keeps_its_box_and_the_nodes_it_covered() {
-        let dir = dir("region");
-        let covered =
-            Origin { written: "nav-export".into(), at: "/root/children/0".into(), instance: vec![] };
-        let region =
-            Region { area: Frame { x: 8, y: 40, width: 200, height: 60 }, width: 390, nodes: vec![covered] };
-        let on = Reference {
-            description: dir.clone(),
-            on: On::Region { state: Shown::Fixture("default".into()), region },
-        };
-        assert_eq!(add(&on, "too busy").unwrap(), "N1");
-        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+    fn saying_more_goes_on_in_the_note_on_the_same_thing_or_starts_one() {
+        let dir = dir("say");
+        assert_eq!(say(&on(&dir), "the price is cut").unwrap(), "N1", "none yet: one started");
+        let mut other = on(&dir);
+        if let On::Node { node, .. } = &mut other.on {
+            (node.origin.instance, node.label, node.width) = (vec![0], Some(9), 1120);
+        }
+        assert_eq!(say(&other, "  and the date  ").unwrap(), "N1", "another instance of the node: its note");
+        let state =
+            Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
+        assert_eq!(say(&state, "too busy").unwrap(), "N2", "the whole state: a note of its own");
+        answer(&dir, "N1", "made it wrap").unwrap();
+        assert_eq!(say(&on(&dir), "better").unwrap(), "N1");
+        let notes = read(&dir).unwrap();
+        let said: Vec<(By, &str)> = notes[0].messages.iter().map(|m| (m.by, m.says.as_str())).collect();
         assert_eq!(
-            file["notes"][0]["region"],
-            json!({
-                "box": { "x": 8, "y": 40, "width": 200, "height": 60 },
-                "width": 390,
-                "nodes": [{ "id": "nav-export", "at": "/root/children/0", "instance": [] }],
-            })
+            said,
+            [
+                (By::Person, "the price is cut"),
+                (By::Person, "and the date"),
+                (By::Agent, "made it wrap"),
+                (By::Person, "better")
+            ],
+            "in the order said"
         );
-        assert!(file["notes"][0].get("node").is_none(), "a region note is on no one node");
+        assert_eq!(notes[0].stands(), Stands::Waiting, "the person spoke last again");
+        assert!(say(&state, "   ").is_err(), "nothing said is not sent");
+        assert_eq!(read(&dir).unwrap()[1].messages.len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_note_written_on_a_region_is_read_as_on_its_whole_state() {
+        let dir = dir("region");
+        let region = json!({ "notes": [{
+            "id": "N1",
+            "state": { "fixture": "default" },
+            "region": { "box": { "x": 8, "y": 40, "width": 200, "height": 60 }, "width": 390, "nodes": [] },
+            "messages": [{ "by": "person", "says": "too busy" }],
+        }]});
+        std::fs::write(dir.join(NOTES), region.to_string()).unwrap();
         let note = read(&dir).unwrap().remove(0);
-        assert_eq!(note.reference(&dir), on, "read back as written");
-        let answered = note.answer(&dir, &dir);
-        assert_eq!(answered["region"], file["notes"][0]["region"], "`notes` lists its box and nodes");
-        assert!(answered["reference"].as_str().unwrap().contains("region 8, 40 · 200 × 60"));
-        let error =
-            propose(&on, Proposal { on: "x.tap".into(), goes: Goes::To("default".into()) }).unwrap_err();
-        assert!(error.to_string().contains("a proposal is on a node"), "{error}");
+        assert_eq!(note.on, On::State { state: Shown::Fixture("default".into()) });
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -885,9 +906,9 @@ mod tests {
             },
         };
         for on in [&state, &transition, &navigate] {
-            add(&Reference { description: dir.clone(), on: on.clone() }, "here").unwrap();
+            say(&Reference { description: dir.clone(), on: on.clone() }, "here").unwrap();
         }
-        add(&on(&dir), "and here").unwrap();
+        say(&on(&dir), "and here").unwrap();
         let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
         let pinned: Vec<Value> = file["notes"]
             .as_array()
