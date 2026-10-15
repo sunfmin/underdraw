@@ -1,0 +1,9 @@
+{
+  "$comment": "The person sees something waiting on them, opens the guess, says it is wrong and what is right, and the agent takes it.",
+  "steps": [
+    { "screen": "state", "state": "shown", "on": "inbox-{index}.tap" },
+    { "screen": "state", "state": "assumption", "on": "as-wrong.tap" },
+    { "screen": "state", "state": "wrong", "on": "send.tap", "outcome": "ok" },
+    { "screen": "state", "state": "waiting" }
+  ]
+}

@@ -4,6 +4,10 @@
   "tokens": "tokens.json",
   "$comment": "Today a journey is not drawn on the flow at all. Picking a directory shows its flow, and above it the journeys under it: picking one draws its path over the screens, each box on it numbered with its steps and the arrows it takes in the strong ink; the others fade.",
   "data": {
+    "bar": {
+      "type": "Bar",
+      "view": true
+    },
     "lines": "TreeRow[]",
     "journeys": "TreeJourney[]",
     "shown": {
@@ -53,10 +57,20 @@
     "FlowBox.leaves": {
       "when": "arrow != \"\"",
       "label": "Navigates on"
+    },
+    "sidebarShown": {
+      "when": "bar.sidebarShown",
+      "label": "The sidebar shown"
     }
   },
   "fixtures": {
     "no-journey": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -337,7 +351,15 @@
           "name": "checkout ?"
         }
       ],
-      "shownCount": 1
+      "shownCount": 1,
+      "bar": {
+        "forward": true,
+        "crumbs": "drafts › shop",
+        "mode": "play",
+        "agent": "away",
+        "waitingOnYou": 0,
+        "sidebar": false
+      }
     }
   },
   "transitions": [
@@ -353,175 +375,193 @@
     }
   ],
   "root": {
-    "id": "window",
-    "component": "Window",
+    "id": "screen",
+    "component": "Screen",
+    "gap": 0,
     "children": [
       {
-        "id": "tree",
-        "component": "Stack",
-        "gap": 0,
-        "padding": [
-          8,
-          0
-        ],
-        "border": "color.border",
-        "only": "regular",
-        "children": [
-          {
-            "id": "lines",
-            "component": "List",
-            "gap": 0,
-            "each": "lines",
-            "item": {
-              "id": "line-{index}",
-              "component": "TreeLine",
-              "name": "{item.name}",
-              "depth": "{item.depth}",
-              "heading": "{item.heading}",
-              "phase": "{item.phase}",
-              "meta": "{item.meta}",
-              "picked": false
-            }
-          },
-          {
-            "id": "journeys-heading",
-            "component": "TreeLine",
-            "name": "journeys/",
-            "depth": 2,
-            "heading": true,
-            "phase": false,
-            "meta": "paths through shop",
-            "picked": false
-          },
-          {
-            "id": "journeys",
-            "component": "List",
-            "gap": 0,
-            "each": "journeys",
-            "item": {
-              "id": "journey-{index}",
-              "component": "JourneyEntry",
-              "with": {
-                "journey": "{item.journey}",
-                "picked": "{item.played}"
-              }
-            }
-          }
-        ]
+        "id": "toolbar",
+        "component": "Toolbar",
+        "with": {
+          "bar": "{bar}"
+        }
       },
       {
-        "id": "pictures",
-        "component": "Stack",
-        "gap": 16,
-        "padding": 24,
+        "id": "window",
+        "component": "Window",
         "children": [
           {
-            "id": "title",
-            "component": "Text",
-            "text": "shop/",
-            "font": "font.heading"
-          },
-          {
-            "id": "pick-journeys",
-            "component": "Row",
-            "gap": 8,
+            "id": "tree",
+            "component": "Stack",
+            "gap": 0,
+            "padding": [
+              8,
+              0
+            ],
+            "border": "color.border",
+            "only": "regular",
             "children": [
               {
-                "id": "pick-say",
-                "component": "Text",
-                "text": "Draw a journey's path:",
-                "font": "font.caption",
-                "color": "color.textSecondary"
+                "id": "lines",
+                "component": "List",
+                "gap": 0,
+                "each": "lines",
+                "item": {
+                  "id": "line-{index}",
+                  "component": "TreeLine",
+                  "name": "{item.name}",
+                  "depth": "{item.depth}",
+                  "heading": "{item.heading}",
+                  "phase": "{item.phase}",
+                  "meta": "{item.meta}",
+                  "picked": false
+                }
               },
               {
-                "id": "pick-journey",
-                "component": "Row",
-                "gap": 8,
+                "id": "journeys-heading",
+                "component": "TreeLine",
+                "name": "journeys/",
+                "depth": 2,
+                "heading": true,
+                "phase": false,
+                "meta": "paths through shop",
+                "picked": false
+              },
+              {
+                "id": "journeys",
+                "component": "List",
+                "gap": 0,
                 "each": "journeys",
                 "item": {
-                  "id": "pick-journey-{index}",
-                  "component": "Chip",
-                  "text": "{item.journey.name}",
-                  "selected": "{item.drawn}",
-                  "on": {
-                    "tap": {
-                      "set": "shown",
-                      "to": []
-                    }
+                  "id": "journey-{index}",
+                  "component": "JourneyEntry",
+                  "with": {
+                    "journey": "{item.journey}",
+                    "picked": "{item.played}"
                   }
                 }
               }
             ]
           },
           {
-            "id": "path",
-            "component": "List",
-            "each": "shown",
-            "item": {
-              "id": "path-route",
-              "component": "RouteStrip",
-              "with": {
-                "journey": "{item}"
-              }
-            }
-          },
-          {
-            "id": "boxes",
-            "component": "Row",
-            "gap": 0,
-            "each": "boxes",
-            "item": {
-              "id": "box-{index}",
-              "component": "FlowBox",
-              "name": "{item.name}",
-              "steps": "{item.steps}",
-              "arrow": "{item.arrow}",
-              "onPath": "{item.onPath}",
-              "dim": {
-                "cases": [
+            "id": "pictures",
+            "component": "Stack",
+            "gap": 16,
+            "padding": 24,
+            "children": [
+              {
+                "id": "title",
+                "component": "Text",
+                "text": "shop/",
+                "font": "font.heading"
+              },
+              {
+                "id": "pick-journeys",
+                "component": "Row",
+                "gap": 8,
+                "children": [
                   {
-                    "if": "showing",
-                    "then": true
+                    "id": "pick-say",
+                    "component": "Text",
+                    "text": "Draw a journey's path:",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
                   },
                   {
-                    "else": false
+                    "id": "pick-journey",
+                    "component": "Row",
+                    "gap": 8,
+                    "each": "journeys",
+                    "item": {
+                      "id": "pick-journey-{index}",
+                      "component": "Chip",
+                      "text": "{item.journey.name}",
+                      "selected": "{item.drawn}",
+                      "on": {
+                        "tap": {
+                          "set": "shown",
+                          "to": []
+                        }
+                      }
+                    }
                   }
                 ]
+              },
+              {
+                "id": "path",
+                "component": "List",
+                "each": "shown",
+                "item": {
+                  "id": "path-route",
+                  "component": "RouteStrip",
+                  "with": {
+                    "journey": "{item}"
+                  }
+                }
+              },
+              {
+                "id": "boxes",
+                "component": "Row",
+                "gap": 0,
+                "each": "boxes",
+                "item": {
+                  "id": "box-{index}",
+                  "component": "FlowBox",
+                  "name": "{item.name}",
+                  "steps": "{item.steps}",
+                  "arrow": "{item.arrow}",
+                  "onPath": "{item.onPath}",
+                  "dim": {
+                    "cases": [
+                      {
+                        "if": "showing",
+                        "then": true
+                      },
+                      {
+                        "else": false
+                      }
+                    ]
+                  }
+                }
               }
-            }
-          }
-        ]
-      },
-      {
-        "id": "sidebar",
-        "component": "Stack",
-        "gap": 12,
-        "padding": 12,
-        "border": "color.border",
-        "children": [
+            ]
+          },
           {
-            "id": "guide",
-            "component": "Card",
-            "gap": 6,
+            "id": "sidebar",
+            "component": "Stack",
+            "gap": 12,
             "padding": 12,
             "border": "color.border",
             "children": [
               {
-                "id": "guide-title",
-                "component": "Text",
-                "text": "Nothing picked",
-                "font": "font.subhead"
-              },
-              {
-                "id": "guide-click",
-                "component": "Text",
-                "text": "Click a state, an arrow or a journey's mark.",
-                "font": "font.caption",
-                "color": "color.textSecondary"
+                "id": "guide",
+                "component": "Card",
+                "gap": 6,
+                "padding": 12,
+                "border": "color.border",
+                "children": [
+                  {
+                    "id": "guide-title",
+                    "component": "Text",
+                    "text": "Nothing picked",
+                    "font": "font.subhead"
+                  },
+                  {
+                    "id": "guide-click",
+                    "component": "Text",
+                    "text": "Click a state, an arrow or a journey's mark.",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  }
+                ]
               }
-            ]
+            ],
+            "if": "sidebarShown"
           }
-        ]
+        ],
+        "with": {
+          "sidebar": "{sidebarShown}"
+        }
       }
     ]
   },
