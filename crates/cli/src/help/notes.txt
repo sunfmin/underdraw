@@ -1,0 +1,130 @@
+WHEN
+  Whenever the person may have said something in the gallery: before each
+  round of edits, and after `underdraw check` answers "notes" with any
+  open. Each open note is something the person asked for: act on it, then
+  answer it. And between rounds, `--wait` in the background, to learn of a
+  note the moment the person writes one (WAITING, below).
+
+WHO
+  The agent that writes descriptions. The person writes the notes, in the
+  gallery (`underdraw gallery --help`); the agent only reads and answers
+  them.
+
+READS
+  notes.json beside each screen.json under <path>: <path> itself, when it
+  is a description's directory, or every description under it at any
+  depth, as the gallery finds them. A description with no notes.json has no
+  notes. Writes nothing, but with --answer.
+
+DOES
+  A note is what the person says of a design, pinned where they clicked,
+  with the same fields ⌘C copies: one node of one state, as the description
+  writes it, with the instance they pointed at as context; a whole state; a
+  transition, as `transitions` in screen.json writes it; or a navigate, as
+  `underdraw check <root>` reports it among its "links", kept by the
+  description it is written in. Each
+  is numbered N1, N2… within its description, and is:
+    open      written by the person, or reopened by them with a line added:
+              for the agent to act on and answer
+    answered  answered by the agent with one line of reply; the person
+              reads it in the gallery and closes the note, or reopens it
+    closed    closed by the person; nothing more to do
+  `underdraw notes <path>` lists the open ones. Edit what it is on in that
+  description's screen.json: the node where "node.at" points (the id
+  written there is "node.id", a template inside a repeat); the state's
+  fixture or phase; the entry of `transitions` the "transition" names; or
+  the navigate on the node "navigate.node". A note with "proposes" asks for
+  where acting on its node should go: declare the transition, or the
+  navigate, it names. Then answer:
+
+    underdraw notes <dir> --answer N3 --reply "made the price wrap"
+
+  <dir> is that description's directory: <path>/<"description">. The reply
+  is one line saying what was done, or why not. The note turns green in the
+  window, showing the reply. Answering again with the same reply changes
+  nothing more; with another, it takes the last reply's place. A closed note
+  is not answered.
+
+WAITING
+  `underdraw notes <root> --wait` blocks until a note is open under <root>,
+  then answers as `underdraw notes <root>` does, every open note listed,
+  and exits 0. When one is open already it answers at once; when none is,
+  it reads the files again every fraction of a second, and answers as soon
+  as the person writes a note, or reopens one, in the gallery. A note that
+  is answered or closed does not wake it. It keeps nothing between runs:
+  kill it and run it again, and no note is lost, for what is open is read
+  from the files.
+
+  Keep it running in the background, as a command the agent's harness
+  tells it of when it exits (in Claude Code, Bash with run_in_background).
+  When it answers: act on each open note it lists, answer every one with
+  --answer (a reply saying why not, for one you will not act on), then
+  start --wait again. A note left open makes the next --wait answer at
+  once.
+
+    underdraw notes <root> --wait
+
+  It waits as long as it takes; to stop waiting, kill it.
+
+  The agent cannot create, close or reopen a note: `--create`, `--close`
+  and `--reopen` are refused, saying the person does that in the gallery.
+  To ask the person something, write an assumption (`assumed`) in the
+  description: the gallery shows it, for them to answer.
+
+ANSWERS
+  {
+    "root":     <path>, resolved
+    "notes":    the open notes, description by description in the tree's
+                order, each in the order written:
+                [{"description": its directory, relative to root ("." for
+                                 root itself),
+                  "id":          "N3",
+                  "status":      "open",
+                  what it is on, as one of these:
+                  "state":       {"fixture": <name>} or {"phase": <name>},
+                                 the state it was written in, with
+                  "node":        {"id": the id as written, "at": the JSON
+                                 Pointer where it is written in
+                                 screen.json, "instance": the element of
+                                 each repeat around it, outermost first,
+                                 "label": its label or null, "width": the
+                                 width it was drawn at}; or
+                  "state" alone: on the whole state; or
+                  "transition":  {"from", "on": "<node id>.<event>",
+                                 "outcome" (for a call only), "to"}; or
+                  "navigate":    {"from": the screen it is in, "node": the
+                                 id as written, "to": the screen it names},
+                  "thread":      [{"by": "person" or "agent", "says"}, …],
+                                 what the person wrote, then each reply and
+                                 each line added on reopening, in order
+                  "proposes":    null, or, where acting on the node found
+                                 nothing declared and the person chose
+                                 where it should go: {"on": "<node id as
+                                 written>.<event>", "to": <state>}, a
+                                 transition to add to "transitions" from
+                                 "state", or {"on", "navigate": <screen>},
+                                 a navigate to give the node's handler
+                  "reference":   the same as one line, as ⌘C copies it}, …]
+    "open":     how many notes are open
+    "answered": how many are answered, waiting for the person
+  }
+  With --answer:
+  {
+    "note":    the note answered, as above
+    "changed": false when it already had that reply
+  }
+  With --wait: the same as without it, once a note is open.
+  Exits 2 with {"error"} when <path> is not a directory, --wait is given
+  with --answer, notes.json is
+  not notes as the gallery writes them, --answer names no note there, or
+  the note is closed.
+
+WHAT TRIPS YOU UP
+  - --answer takes the description's directory, not the root: ids are
+    numbered within each description, so two can each have an N1.
+  - --wait answers at once while any note is open: answer every note it
+    lists before you start it again, or it never waits.
+  - notes.json is the person's: commit it with the description, and never
+    edit it by hand.
+  - A note is not a fault: `underdraw check` counts the open and answered
+    ("notes": {"open", "answered"}) and exits as it would without them.
