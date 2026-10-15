@@ -179,7 +179,7 @@ fn guess_tags(shown: Rect, page: Rect) -> [Rect; 5] {
 pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Result<Page, TaffyError> {
     let mut tree: TaffyTree<usize> = TaffyTree::new();
     let mut texts = Vec::new();
-    let laid = add(&mut tree, root, &mut texts)?;
+    let laid = add(&mut tree, root, false, &mut texts)?;
     let mut style = root.style.clone();
     style.size.width = taffy::Dimension::length(width);
     tree.set_style(laid.id, style)?;
@@ -325,24 +325,34 @@ fn moved(draw: &Draw, scale: f32, x: f32, y: f32) -> Draw {
     }
 }
 
+/// Puts `elem` and everything in it into `tree`; `in_a_row` says its
+/// parent lays it out side by side with its siblings.
 fn add<'e>(
     tree: &mut TaffyTree<usize>,
     elem: &'e Elem,
+    in_a_row: bool,
     texts: &mut Vec<&'e Words>,
 ) -> Result<Laid, TaffyError> {
+    let mut style = elem.style.clone();
+    // A look's `self: "start"` means as wide as its content, not its
+    // column: in a row it sits across as its siblings do.
+    if in_a_row && style.align_self == Some(taffy::AlignSelf::FLEX_START) {
+        style.align_self = None;
+    }
     if let Some(words) = &elem.words {
         texts.push(words);
-        let id = tree.new_leaf_with_context(elem.style.clone(), texts.len() - 1)?;
+        let id = tree.new_leaf_with_context(style, texts.len() - 1)?;
         return Ok(Laid { id, children: Vec::new() });
     }
+    let row = style.display == taffy::Display::Flex && style.flex_direction == taffy::FlexDirection::Row;
     let mut children = Vec::new();
     let mut ids = Vec::new();
     for child in &elem.children {
-        let laid = add(tree, child, texts)?;
+        let laid = add(tree, child, row, texts)?;
         ids.push(laid.id);
         children.push(laid);
     }
-    let id = tree.new_with_children(elem.style.clone(), &ids)?;
+    let id = tree.new_with_children(style, &ids)?;
     Ok(Laid { id, children })
 }
 

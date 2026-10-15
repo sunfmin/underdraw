@@ -878,3 +878,21 @@ fn a_row_of_small_controls_keeps_every_word_whole_under_its_labels_and_marks() {
         assert!(!tags.iter().skip(i + 1).any(|b| overlaps(*a, *b)), "no tag on another: {tags:?}");
     }
 }
+
+#[test]
+fn a_badge_in_a_row_is_centred_across_as_its_siblings_are() {
+    let page = tiny(serde_json::json!([
+        { "id": "head", "component": "Row", "gap": "space.2", "children": [
+            { "id": "name", "component": "Text", "text": "Home" },
+            { "id": "tag", "component": "Badge", "text": "Default" },
+            { "id": "more", "component": "IconButton", "icon": "more_vert" } ] },
+        { "id": "alone", "component": "Badge", "text": "Default" }
+    ]));
+    let middle = |id: &str| {
+        let rect = placed(&page, id).rect;
+        rect.y + rect.height / 2.0
+    };
+    assert_eq!(middle("tag"), middle("name"), "centred on the row, as the text is");
+    let (alone, screen) = (placed(&page, "alone").rect, placed(&page, "tiny").rect);
+    assert!(alone.width < screen.width / 2.0, "in a column, as wide as its words: {alone:?}");
+}
