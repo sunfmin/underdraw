@@ -164,7 +164,8 @@ _Avoid_: mockup, screenshot
 **Gallery**:
 Every screen description under one directory, arranged as its directories
 are, where a person picks one, and then one of its states, to see its
-wireframe drawn from the description as it now stands.
+wireframe drawn from the description as it now stands, and can act on its
+nodes to click through its transitions and navigates as a prototype.
 _Avoid_: mockup viewer, preview
 
 **Label**:

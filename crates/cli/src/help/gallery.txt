@@ -35,6 +35,24 @@ DOES
   of its states, lists each finding as `underdraw check` names it (where,
   then what is wrong) instead of a picture. Fix them and check it again.
 
+  Click through a design as a prototype: a plain click inspects a node, as
+  above; hold ⌘ (Ctrl on Linux and Windows) and click to act on it. Acting
+  raises the node's tap (or its first event, when it has no tap) and
+  follows what the description says happens there:
+  - a transition declared from the state shown on that event shows its
+    `to` state. Where the event calls an operation and the transitions
+    name more than one outcome, the panel lists them (`ok → default`,
+    `shipped → cancel-ready`): click the one it answered with.
+  - a `navigate` shows the first state of the description under <root>
+    that declares that screen; to a screen no description declares, the
+    panel says it is not drawn yet.
+  - `back` returns along the path taken by acting, across screens, one
+    step each time. Picking a state in the tree starts a new path.
+  - nothing declared: the screen stays, and the panel says so ("no
+    transition from <state> on <node id as written>.tap"); declare it in
+    the description's `transitions` (`underdraw check --help`, FORMAT).
+  The panel says what each act came to, above what it says of the node.
+
   The window watches <root> and is drawn from the files as they now stand:
   edit a description's screen.json, tokens.json or kinds.json and the state
   shown is drawn again within a moment, scrolled where it was and with the
