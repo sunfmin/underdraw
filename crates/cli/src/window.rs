@@ -40,7 +40,7 @@ use winit::window::{CursorIcon, Window, WindowId};
 use crate::act::{self, Way};
 use crate::area::{over, rect};
 use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW, TOOLBAR};
-use crate::draw::{self, Shown as State, WIDTHS, Wanted};
+use crate::draw::{self, Shown as State, Wanted};
 use crate::field::{self, Edit, Field, Motion};
 use crate::flow::{self, Screen};
 use crate::gallery::{self, Answering, Row};
@@ -64,8 +64,6 @@ mod panes;
 mod picture;
 mod toolbar;
 
-/// The width each state is drawn at in a description's overview.
-const OVERVIEW: u32 = 390;
 /// How far one notch of a mouse wheel scrolls.
 const NOTCH: f64 = 40.0;
 /// How small the pictures of a state get, fitting the width left, before
@@ -319,8 +317,8 @@ enum Picked {
     /// Nothing: the state, description or directory shown, as a whole.
     Nothing,
     /// A node of the state shown, by its id, kept from state to state while
-    /// the state shown has it; and the picture, of those at each of
-    /// `WIDTHS`, it was picked in: the instance the person pointed at.
+    /// the state shown has it; and the picture, of those at each of the
+    /// widths its tokens name, it was picked in: the instance the person pointed at.
     Node { id: String, pointed: usize },
     /// An arrow of the overview or the flow shown, by its place among their
     /// arrows.
@@ -1332,7 +1330,8 @@ impl Gallery {
         }
     }
 
-    /// What picking line `index` shows: a state drawn at each of `WIDTHS`,
+    /// What picking line `index` shows: a state drawn at each of the widths
+    /// its tokens name,
     /// a description's overview, a directory's flow, or a journey's first
     /// step, kept in the window's history as a step when it is new.
     fn pick(&mut self, index: usize) {
@@ -1371,8 +1370,8 @@ impl Gallery {
         self.arrive();
     }
 
-    /// The state `state` of the description in `dir` drawn at each of
-    /// `WIDTHS`, given the screens `drawn` under the root; or why it
+    /// The state `state` of the description in `dir` drawn at each of the
+    /// widths its tokens name, given the screens `drawn` under the root; or why it
     /// cannot be.
     fn lay_out_pages(
         &self,
@@ -1384,7 +1383,9 @@ impl Gallery {
         let laid: Vec<anyhow::Result<Page>> = match self.description(dir) {
             // Each width laid out on a thread of its own, at once.
             Ok(description) => std::thread::scope(|scope| {
-                let laying: Vec<_> = WIDTHS
+                let laying: Vec<_> = description
+                    .widths()
+                    .into_iter()
                     .map(|width| {
                         let description = &description;
                         scope.spawn(move || {
@@ -1414,7 +1415,6 @@ impl Gallery {
                             })
                         })
                     })
-                    .into_iter()
                     .collect();
                 laying.into_iter().map(|laid| laid.join().expect("laying out a state panicked")).collect()
             }),
@@ -1457,7 +1457,8 @@ impl Gallery {
     }
 
     /// The journey on line `index` played from its step `at` (its last, past
-    /// the end): that step's state drawn at each of `WIDTHS`, the node it
+    /// the end): that step's state drawn at each of the widths its tokens
+    /// name, the node it
     /// acts on marked. One `check` finds broken shows its faults instead,
     /// and is not played. Kept in the window's history as a step when
     /// it is new.
@@ -1569,7 +1570,8 @@ impl Gallery {
     }
 
     /// The overview of the description on line `index`, in `dir`: its states
-    /// on the lines under it, each drawn at `OVERVIEW`, and its transitions.
+    /// on the lines under it, each drawn at the first of the widths its
+    /// tokens name, and its transitions.
     fn overview(
         &mut self,
         index: usize,
@@ -1585,16 +1587,14 @@ impl Gallery {
             .collect();
         let lang = self.lang;
         let description = self.description(dir)?;
-        let description = &description;
+        let (description, width) = (&description, description.widths()[0]);
         // Each state laid out on a thread of its own, all at once.
         let drawings: Vec<anyhow::Result<draw::Drawing>> = std::thread::scope(|scope| {
             let laying: Vec<_> = states
                 .iter()
                 .map(|(_, state)| {
                     scope.spawn(move || {
-                        Ok(description
-                            .lay_out(&state.wanted(OVERVIEW, 1), Some(drawn), lang)?
-                            .draw(1, u32::MAX))
+                        Ok(description.lay_out(&state.wanted(width, 1), Some(drawn), lang)?.draw(1, u32::MAX))
                     })
                 })
                 .collect();
@@ -1697,8 +1697,9 @@ impl Gallery {
         Flow { dir: dir.to_path_buf(), map, tiles }
     }
 
-    /// The box of the description in `dir`: its first state at the phone's
-    /// width, or how many faults keep it from being drawn.
+    /// The box of the description in `dir`: its first state at the first of
+    /// the widths its tokens name, or how many faults keep it from being
+    /// drawn.
     fn tile(&self, dir: &Path, drawn: &std::collections::BTreeSet<String>) -> Tile {
         let line = self.description_line(dir);
         let faults = line.map_or(0, |index| self.lines[index].row.faults.len());
@@ -1706,14 +1707,15 @@ impl Gallery {
             return Tile::Faulty(faults);
         }
         let first = line.and_then(|index| self.lines.get(index + 1)).and_then(|next| next.state.clone());
-        let wanted = match first {
-            Some(state) => state.wanted(WIDTHS[0], 1),
-            None => Wanted { fixture: None, phase: None, width: WIDTHS[0], scale: 1 },
-        };
-        match self
-            .description(dir)
-            .and_then(|description| description.lay_out(&wanted, Some(drawn), self.lang))
-        {
+        let laid = self.description(dir).and_then(|description| {
+            let width = description.widths()[0];
+            let wanted = match first {
+                Some(state) => state.wanted(width, 1),
+                None => Wanted { fixture: None, phase: None, width, scale: 1 },
+            };
+            description.lay_out(&wanted, Some(drawn), self.lang)
+        });
+        match laid {
             Ok(laid) => {
                 let drawing = laid.draw(1, u32::MAX);
                 Tile::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
@@ -1901,7 +1903,7 @@ impl Gallery {
             let states =
                 self.lines.iter().filter(|line| line.row.dir == dir).filter_map(|line| line.state.as_ref());
             for state in states {
-                let wanted = state.wanted(OVERVIEW, 1);
+                let wanted = state.wanted(description.widths()[0], 1);
                 let Ok(laid) = description.lay_out(&wanted, Some(drawn), self.lang) else { continue };
                 for node in &laid.page.nodes {
                     let (Some(assumed), Some(origin)) = (&node.assumed, laid.origins.get(&node.id)) else {
@@ -3574,6 +3576,28 @@ mod tests {
         assert_eq!(gallery.line, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
 
+    #[test]
+    fn a_state_is_drawn_at_the_widths_its_tokens_name() {
+        let root = todo_root("widths");
+        let tokens_file = root.join("todo").join(crate::TOKENS);
+        let mut tokens: Value =
+            serde_json::from_str(&std::fs::read_to_string(&tokens_file).unwrap()).unwrap();
+        tokens["widths"] = json!([360, 1440, 800]);
+        std::fs::write(&tokens_file, tokens.to_string()).unwrap();
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        let todo = line_of(&gallery, "todo");
+        over_row(&mut gallery, todo + 1);
+        assert!(gallery.press_here());
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("todo has no faults") };
+        let widths: Vec<f64> = pages.iter().map(|page| page.width).collect();
+        assert_eq!(widths, vec![360.0, 1440.0, 800.0], "in the order named");
+        over_row(&mut gallery, todo);
+        assert!(gallery.press_here());
+        let Picture::Overview(overview) = &gallery.picture else { panic!("not an overview") };
+        assert!(overview.thumbs.iter().all(|thumb| thumb.width == 360.0), "the overview at the first");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// The overview shown: each state's name, and each arrow as (from, to,
     /// label).
     fn overview(gallery: &Gallery) -> (Vec<&str>, Vec<(&str, &str, &str)>) {
@@ -3627,13 +3651,14 @@ mod tests {
         let retry =
             shown.arrows.iter().find(|arrow| shown.thumbs[arrow.from].state.name() == "error").unwrap();
         let error = orders + 1 + names.iter().position(|name| *name == "error").unwrap();
-        let drawing = draw::lay_out(
-            &drafts().join("orders"),
-            &gallery.lines[error].state.as_ref().unwrap().wanted(OVERVIEW, 1),
-            None,
-            Lang::En,
-        )
-        .unwrap();
+        let drawing = draw::Description::read(&drafts().join("orders"))
+            .unwrap()
+            .lay_out(
+                &gallery.lines[error].state.as_ref().unwrap().wanted(underdraw_layout::DEFAULT_WIDTHS[0], 1),
+                None,
+                Lang::En,
+            )
+            .unwrap();
         let label = drawing.page.nodes.iter().find(|node| node.id == "retry").unwrap().label.unwrap();
         assert_eq!(retry.label, format!("{label} · ok"));
 

@@ -17,8 +17,11 @@ READS
   beside it is a finding: its components belong in "components". Once the
   description has no other fault, its tokens.json too (the nearest at or
   above the screen, as `underdraw --help` says): every fixture and phase
-  is laid out at widths 390 and 1120, in the system's fonts as `render`
-  does, and an overlay that runs off the page is a finding. Writes nothing.
+  is laid out at each of the widths its tokens.json names ("widths",
+  TOKENS.JSON below; 390 and 1120 when it names
+  none), in the system's fonts as `render` does, and an overlay that runs
+  off the page is a finding, as are "widths" that are not a list of whole
+  numbers from 200 to 4000. Writes nothing.
 
   <path> may be <project root>/components/<Name>, the description that
   shows a shared component on its own: its fixtures, each held to its

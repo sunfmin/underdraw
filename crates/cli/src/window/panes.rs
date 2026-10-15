@@ -8,7 +8,7 @@
 
 use vello::kurbo::Rect as Area;
 
-use super::{SMALLEST, WIDTHS};
+use super::SMALLEST;
 use crate::chrome::{
     GRIP, MARGIN, ROW, SCROLLBAR_INSET, SCROLLBAR_WIDE, SIDEBAR, SIDEBAR_LEAST, TREE, TREE_LEAST,
 };
@@ -157,7 +157,7 @@ impl Panes {
             Edge::Tree => TREE_LEAST,
             Edge::Side => SIDEBAR_LEAST,
         };
-        let picture = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
+        let picture = f64::from(underdraw_layout::DEFAULT_WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
         (least, (self.window.0 - beside - picture).max(least))
     }
 
