@@ -58,6 +58,13 @@ screen a `navigate` names that no description under the root declares (a
 screen not drawn yet).
 _Avoid_: guess, TODO
 
+**Note**:
+What the person says to the agent about a design, pinned where they said it:
+a node, a region, a whole state, or an arrow. The agent answers it; the
+person closes it, or it closes itself, saying why, once what it is pinned to
+is gone. Confirming or rejecting an **Assumption** is a note on it.
+_Avoid_: comment, feedback
+
 ### Data and decisions
 
 **View model**:
