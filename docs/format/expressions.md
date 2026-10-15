@@ -128,13 +128,19 @@ type's fields, and a value of the type reads it as a Bool field.
 
 ## Use sites
 
-Where a node needs a yes/no (`if`, `disabled`, a `cases` branch), it names one:
+Where a node needs a yes/no (`if`, a `cases` branch, or a prop or param a
+component types `bool`, such as Button's `disabled`), it names one, or
+several joined by `&&`:
 
 ```
-use = "!"? (conditionName | path)
+use = "!"? (conditionName | path) ("&&" use)*
 ```
 
 A path here must be a Bool. Anything more complex is a named condition.
+Every value position has a type ([ADR 0024](../adr/0024-one-typed-expression-language-at-every-value-position.md)):
+a bool position takes a use site whatever its key is called
+(`"dim": "!bar.canBack"`), and text that is no use site is a finding there,
+never read as text. A prop a component lists without types is read as given.
 
 ## Cases
 

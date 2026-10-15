@@ -142,7 +142,7 @@ CONDITIONS
     name as a string.
   - A condition may use others by name; no cycles.
   - Every condition must be true in one fixture and false in another.
-  A use site ("if", "disabled", a cases branch's "if") is only terms
+  A use site ("if", a bool prop or param, a cases branch's "if") is only terms
   joined by &&, each !? <condition or Bool path>: "hasTodos", "!canAdd",
   "item.done", "walks && !picked". It holds when every term does, and a
   != null a condition in the chain makes reads the value under it, as in
@@ -196,6 +196,32 @@ CASES
   A slot (children, leading, …) is not a property: it holds nodes, never
   cases. To show one node or another, write both, each with its own "if".
 
+EXPRESSIONS
+  Every value position has a type, and is read by it, whatever its key is
+  called. A value of the wrong type is a finding at its position, never
+  read as a literal instead:
+    position                                  type   takes
+    a condition's "when"                      bool   the whole grammar (CONDITIONS)
+    a node's "if", a cases branch's "if"      bool   a use site: !? name joined by &&
+    a prop a look component types bool        bool   true, false, a use site
+                                                     ("!bar.canBack"), or one
+                                                     placeholder ("{item.on}",
+                                                     "{hasDates}")
+    a param a component types bool, in "with" bool   the same
+    a text prop (text, title, label, …)       text   a template (TEMPLATES AND FORMATS)
+    any other typed param or prop             its    a value of its type: one
+                                              type   placeholder, a literal, cases
+    a prop a look component lists, untyped    any    as given: a template, a literal
+    a look's "if", a look branch's "if"       bool   the grammar over props (LOOKS)
+    a look's lengths, inks, icons, words      each   LOOKS says each key's
+  A bool position given text that is no use site ("can go back", "n > 0")
+  is found at "<id>.<prop>" or "<id>.with.<param>": name the test in
+  conditions and give its name. "disabled" is one such prop, of Button
+  (BUILT-IN COMPONENTS), read as any other: nothing keys on its name. A
+  prop a component lists untyped is read as given, so "!canSave" there is
+  text, which always holds: check finds it where the look asks that prop
+  only as a yes/no, and the fix is to type the params, {"disabled": "bool"}.
+
 NODES
   A node is an object:
     "id"        unique in every state: "todo-{index}" inside an item
@@ -236,7 +262,7 @@ NODES
     "bind"      a path (or a list of paths) the person edits; its value is
                 given to the component as "value" ("bind": "composer.text";
                 a date range: ["booking.checkIn", "booking.checkOut"])
-    "disabled"  a use site: "!canAdd"
+    "disabled"  a bool prop of Button, so a use site: "!canAdd" (EXPRESSIONS)
     "on"        actions (ACTIONS below)
     "with"      the params of a screen's component, one value each (COMPONENTS)
     "assumed"   what you guessed there and what else it could be, in a
@@ -575,8 +601,8 @@ COMPONENTS
   "with" is: check refuses one missing (unless it has a default or is
   nullable) and one ill-typed, at "<id>.<prop>". A bool prop, typed or
   listed, may be given a condition of the screen's, "{hasDates}", and
-  holds where it does, in render and the gallery; anything more ("!a",
-  "a && b") is a condition of its own, named in "conditions".
+  holds where it does, in render, the gallery and handoff; a typed one
+  also takes a use site, "!bar.canBack" or "a && !b" (EXPRESSIONS).
   A look component declares in "params" every name its look reads, and its
   look reads nothing else: the first step of each placeholder ("{text}",
   "{label.short}" reads label), each name in an "if" or a branch of
@@ -614,7 +640,8 @@ COMPONENTS
     missing, one ill-typed and one it does not declare.
   - "with" gives each a template read where the instance is: "{item}" for a
     value, "#{item.number}" for text, a literal; a bool param may be given
-    a condition of the screen's, "{hasDates}", and holds where it does.
+    a condition of the screen's, "{hasDates}", or a use site, "!hasDates"
+    (EXPRESSIONS), and holds where it does.
   - nodes: one node, the root of its subtree. The root has no id: it is
     named by the instance's. Every node inside is named by the instance's
     id joined to its own: "cancel" in "order-3" is "order-3-cancel", and
@@ -797,9 +824,9 @@ BUILT-IN COMPONENTS
   Section          title, subtitle (font.heading / muted), then children; gap, padding
   Text             text, font (token, default font.body), color (an ink or colour token), maxLines,
                    align (start|center|end), underline
-  Link             text, font (default font.subhead), trailingIcon (adds ›)
+  Link             text, font (default font.subhead), trailingIcon (a bool: adds ›)
   Button           text, variant ("primary" filled | "secondary" outlined),
-                   size ("small"), disabled
+                   size ("small"), disabled (a bool: "!canAdd")
   IconButton       icon: a 40 circle
   Glyph            icon, size (default 24), font (a smaller icon), background (an ink)
   Badge            text: a small pill
@@ -936,8 +963,9 @@ LOOKS
   condition of the screen's, which holds where it does. A look's templates
   read the node's props (after the node's own templates are filled), not
   data, and only those its params declare. A prop is a path, a literal or,
-  for a bool, a condition's name in braces; typed params hold each to its
-  type (COMPONENTS).
+  for a bool, a condition's name in braces or, typed bool, a use site
+  ("!bar.canBack"); typed params hold each to its type (COMPONENTS,
+  EXPRESSIONS).
   A look is one of:
     {"box": "row"|"column"|"grid" or none, …box keys}    a box
     {"text": "…", …text keys}                            text
