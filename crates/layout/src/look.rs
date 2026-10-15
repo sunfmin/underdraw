@@ -1,16 +1,19 @@
 // A style is built one property per line, as CSS reads.
 #![allow(clippy::field_reassign_with_default)]
 
-//! Components as data: what each component of a node looks like, read from the
-//! screen's own components (over underdraw's) and turned into boxes for
-//! `place` to lay out. A look is a box, text, a `repeat`, `cases`, another
-//! component, or `"$children"`; it reads the node's props through `{prop|filter}`
-//! templates. Why: [ADR 0007](../../../docs/adr/0007-kinds-are-data.md),
+//! Components as data: what each component of a node looks like, parsed by
+//! underdraw-format from the screen's own components (over underdraw's) and
+//! evaluated here into boxes for `place` to lay out. A look is a box, text, a
+//! `repeat`, `cases`, another component, or `"$children"`; it reads the
+//! node's props through `{prop|filter}` templates. Nothing is parsed here. Why: [ADR 0007](../../../docs/adr/0007-kinds-are-data.md),
 //! [ADR 0021](../../../docs/adr/0021-kinds-become-components-one-screens-or-the-projects.md).
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{Anchor, Components, Edge, Lang, Node, Track};
+use underdraw_format::look::{
+    self, Condition, Element, Filter, Look as Parsed, Object, Piece, Placeholder, Template,
+};
+use underdraw_format::{Anchor, Atom, Components, Edge, Expr, Lang, Node, Track};
 
 use crate::place::{Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
@@ -32,12 +35,16 @@ struct Scope<'p, 'a> {
 }
 
 impl Scope<'_, '_> {
-    fn get(&self, name: &str) -> Value {
-        let mut segments = name.split('.');
-        let first = segments.next().unwrap_or("");
-        let mut value =
-            self.vars.get(first).or_else(|| self.props.get(first)).cloned().unwrap_or(Value::Null);
-        for segment in segments {
+    /// What `placeholder`'s path holds, before its filters.
+    fn get(&self, placeholder: &Placeholder) -> Value {
+        let Some(name) = placeholder.name() else {
+            return Value::Null;
+        };
+        let mut value = match self.vars.get(name) {
+            Some(value) => value.clone(),
+            None => self.prop(name).cloned().unwrap_or(Value::Null),
+        };
+        for segment in placeholder.steps() {
             value = match (&value, segment.parse::<usize>()) {
                 (Value::Array(items), Ok(at)) => items.get(at).cloned().unwrap_or(Value::Null),
                 (Value::Object(fields), _) => fields.get(segment).cloned().unwrap_or(Value::Null),
@@ -45,6 +52,13 @@ impl Scope<'_, '_> {
             };
         }
         value
+    }
+
+    /// The prop `name` of the component drawn.
+    fn prop(&self, name: &str) -> Option<&Value> {
+        #[cfg(test)]
+        tests::looked_up(name);
+        self.props.get(name)
     }
 }
 
@@ -77,57 +91,51 @@ impl Catalog<'_> {
 
     /// The one box `look` makes: the first, or an empty one when it makes
     /// none.
-    fn one<'a>(&self, look: &Value, scope: &Scope<'_, 'a>) -> Elem<'a> {
+    fn one<'a>(&self, look: &Parsed, scope: &Scope<'_, 'a>) -> Elem<'a> {
         let mut made = self.build(look, scope).into_iter();
         made.next().unwrap_or_else(|| Elem::new(Style::default()))
     }
 
     /// The boxes `look` makes in `scope`: none when its `if` fails, one per
     /// element for a `repeat`, the node's children for `"$children"`.
-    fn build<'a>(&self, look: &Value, scope: &Scope<'_, 'a>) -> Vec<Elem<'a>> {
+    fn build<'a>(&self, look: &Parsed, scope: &Scope<'_, 'a>) -> Vec<Elem<'a>> {
         let object = match look {
-            Value::String(name) if name == "$children" => {
+            Parsed::Children => {
                 return match scope.node {
                     Some(node) => self.children(node),
                     None => Vec::new(),
                 };
             }
-            Value::Array(looks) => {
+            Parsed::List(looks) => {
                 let mut made = Vec::new();
                 for look in looks {
                     made.append(&mut self.build(look, scope));
                 }
                 return made;
             }
-            Value::Object(object) => object,
-            _ => return Vec::new(),
+            Parsed::Object(object) => object,
+            Parsed::Text { .. } | Parsed::Plain(_) => return Vec::new(),
         };
-        if let Some(Value::String(condition)) = object.get("if")
+        if let Some(condition) = &object.when
             && !self.holds(condition, scope)
         {
             return Vec::new();
         }
-        if let Some(branches) = object.get("cases") {
-            return match self.branch(branches, scope) {
+        match object.element() {
+            Element::Cases(cases) => match self.branch(cases, scope) {
                 Some(chosen) => self.build(chosen, scope),
                 None => Vec::new(),
-            };
+            },
+            Element::Repeat { over, each } => self.repeat(over, each, scope),
+            Element::Component(name) => vec![self.nested(name, object, scope)],
+            Element::Text => vec![self.text(object, scope)],
+            Element::Box => vec![self.boxed(object, scope)],
         }
-        if let Some(over) = object.get("repeat") {
-            return self.repeat(over, object.get("each").unwrap_or(&Value::Null), scope);
-        }
-        if let Some(Value::String(name)) = object.get("component") {
-            return vec![self.nested(name, object, scope)];
-        }
-        if object.contains_key("text") {
-            return vec![self.text(object, scope)];
-        }
-        vec![self.boxed(object, scope)]
     }
 
     /// `each` once per element of `over`: a count, or a list whose elements
     /// are each `item`.
-    fn repeat<'a>(&self, over: &Value, each: &Value, scope: &Scope<'_, 'a>) -> Vec<Elem<'a>> {
+    fn repeat<'a>(&self, over: &Parsed, each: Option<&Parsed>, scope: &Scope<'_, 'a>) -> Vec<Elem<'a>> {
         let items = match self.resolve(over, scope) {
             Value::Array(items) => items,
             count => {
@@ -147,7 +155,9 @@ impl Catalog<'_> {
             vars.insert("n".to_string(), Value::from(index.saturating_add(1)));
             vars.insert("item".to_string(), item);
             let inner = Scope { props: scope.props, vars, node: scope.node };
-            made.append(&mut self.build(each, &inner));
+            if let Some(each) = each {
+                made.append(&mut self.build(each, &inner));
+            }
             index = index.saturating_add(1);
         }
         made
@@ -155,11 +165,11 @@ impl Catalog<'_> {
 
     /// Another component's look, inside this one, with the props written beside
     /// `component`. It is part of this node, not a node of its own.
-    fn nested<'a>(&self, name: &str, object: &Map<String, Value>, scope: &Scope<'_, 'a>) -> Elem<'a> {
+    fn nested<'a>(&self, name: &str, object: &Object, scope: &Scope<'_, 'a>) -> Elem<'a> {
         let mut props = Map::new();
-        for (key, value) in object {
-            if key != "component" && key != "if" {
-                props.insert(key.clone(), self.resolve(value, scope));
+        for key in &object.keys {
+            if key.name != "component" && key.name != "if" {
+                props.insert(key.name.clone(), self.resolve(&key.look, scope));
             }
         }
         match self.components.look(name) {
@@ -175,29 +185,28 @@ impl Catalog<'_> {
     /// (`fill`, `stroke`, `radius`, `cross`, `topLine`) and its `children`.
     /// A `frame` also takes the container props a description may set on
     /// the node: `padding`, `gap`, `radius`, `border`, `elevation`.
-    fn boxed<'a>(&self, object: &Map<String, Value>, scope: &Scope<'_, 'a>) -> Elem<'a> {
+    fn boxed<'a>(&self, object: &Object, scope: &Scope<'_, 'a>) -> Elem<'a> {
         let get = |key: &str| self.get(object, key, scope);
-        let mut style = get("box").as_str().and_then(box_style).unwrap_or_default();
+        let mut style = get("box").as_str().and_then(look::Flow::read).map(box_style).unwrap_or_default();
         self.style(object, scope, &mut style);
         let mut gap = self.tokens.find_length(&get("gap"));
         let mut radius = self.tokens.find_length(&get("radius")).unwrap_or(0.0);
         let mut stroke = ink(&get("stroke"));
         let mut clip = None;
         if get("frame") == Value::Bool(true) {
-            let props = scope.props;
-            if let Some([top, right, bottom, left]) =
-                props.get("padding").and_then(|padding| self.four(padding))
-            {
+            let [padding, framed_gap, framed_radius, border, elevation] =
+                look::FRAMED.map(|name| scope.prop(name));
+            if let Some([top, right, bottom, left]) = padding.and_then(|padding| self.four(padding)) {
                 style.padding = sides(top, right, bottom, left);
             }
-            gap = Some(self.tokens.length(props.get("gap"), gap.unwrap_or(0.0)));
-            let framed = self.tokens.length(props.get("radius"), 0.0);
+            gap = Some(self.tokens.length(framed_gap, gap.unwrap_or(0.0)));
+            let framed = self.tokens.length(framed_radius, 0.0);
             if framed > 0.0 {
                 radius = framed;
                 clip = Some(framed);
             }
             if stroke.is_none() {
-                stroke = match (props.get("border"), props.get("elevation")) {
+                stroke = match (border, elevation) {
                     (Some(border), _) => Some(tokens::ink(Some(border))),
                     (None, Some(_)) => Some(Ink::Line),
                     (None, None) => None,
@@ -240,7 +249,7 @@ impl Catalog<'_> {
 
     /// Text: `text` in `font`, `ink`, `weight`, `maxLines`, `align`,
     /// `underline`, `strike`; it sits among its siblings as `self` says.
-    fn text<'a>(&self, object: &Map<String, Value>, scope: &Scope<'_, 'a>) -> Elem<'a> {
+    fn text<'a>(&self, object: &Object, scope: &Scope<'_, 'a>) -> Elem<'a> {
         let get = |key: &str| self.get(object, key, scope);
         let mut style = Style::default();
         self.style(object, scope, &mut style);
@@ -250,7 +259,8 @@ impl Catalog<'_> {
         }
         let mut words = Words::new(said(&get("text")), font, ink(&get("ink")).unwrap_or(Ink::Text));
         words.max_lines = get("maxLines").as_u64().map(|n| n.min(100) as u32);
-        words.align = get("align").as_str().and_then(text_align).unwrap_or(Align::Start);
+        words.align =
+            get("align").as_str().and_then(look::TextAlign::read).map(text_align).unwrap_or(Align::Start);
         words.underline = get("underline") == Value::Bool(true);
         words.strike = get("strike") == Value::Bool(true);
         self.pin(Elem::text(style, words), &get("pin"))
@@ -259,7 +269,7 @@ impl Catalog<'_> {
     /// How a box sits among its siblings and holds its own: sizes, `grow`,
     /// `shrink`, `basis`, `self`, `items`, `justify`, `padding`, `margin`,
     /// grid `columns`, `rows` and `span`, and `overflowX`.
-    fn style(&self, object: &Map<String, Value>, scope: &Scope, style: &mut Style) {
+    fn style(&self, object: &Object, scope: &Scope, style: &mut Style) {
         let get = |key: &str| self.get(object, key, scope);
         if let Some(size) = self.dimension(&get("size")) {
             style.size = taffy::Size { width: size, height: size };
@@ -280,14 +290,14 @@ impl Catalog<'_> {
         if let Some(basis) = self.tokens.find_length(&get("basis")) {
             style.flex_basis = length(basis);
         }
-        if let Some(align) = get("self").as_str().and_then(align_self) {
-            style.align_self = Some(align);
+        if let Some(align) = get("self").as_str().and_then(look::SelfAlign::read) {
+            style.align_self = Some(align_self(align));
         }
-        if let Some(items) = get("items").as_str().and_then(align_items) {
-            style.align_items = items;
+        if let Some(items) = get("items").as_str().and_then(look::Items::read) {
+            style.align_items = align_items(items);
         }
-        if let Some(justify) = get("justify").as_str().and_then(justify_content) {
-            style.justify_content = justify;
+        if let Some(justify) = get("justify").as_str().and_then(look::Justify::read) {
+            style.justify_content = justify_content(justify);
         }
         if let Some([top, right, bottom, left]) = self.four(&get("padding")) {
             style.padding = sides(top, right, bottom, left);
@@ -315,8 +325,8 @@ impl Catalog<'_> {
             style.grid_column = span(cells);
             style.grid_row = span(cells);
         }
-        if let Some(x) = get("overflowX").as_str().and_then(overflow) {
-            style.overflow = taffy::Point { x, y: taffy::Overflow::Visible };
+        if let Some(x) = get("overflowX").as_str().and_then(look::Overflow::read) {
+            style.overflow = taffy::Point { x: overflow(x), y: taffy::Overflow::Visible };
         }
     }
 
@@ -417,116 +427,99 @@ impl Catalog<'_> {
 
     /// The value `key` holds in `object`, its templates and `cases` read in
     /// `scope`; null when it holds none.
-    fn get(&self, object: &Map<String, Value>, key: &str, scope: &Scope) -> Value {
+    fn get(&self, object: &Object, key: &str, scope: &Scope) -> Value {
         match object.get(key) {
-            Some(value) => self.resolve(value, scope),
+            Some(look) => self.resolve(look, scope),
             None => Value::Null,
         }
     }
 
-    /// `value` read in `scope`: a template gives text, or the value itself
-    /// when it is one placeholder; `cases` gives its chosen branch; lists
-    /// and objects are read through.
-    fn resolve(&self, value: &Value, scope: &Scope) -> Value {
-        match value {
-            Value::String(text) => self.template(text, scope),
-            Value::Object(object) if object.contains_key("cases") => {
-                match object.get("cases").and_then(|branches| self.branch(branches, scope)) {
+    /// `look` read in `scope` as a value: a template gives text, or the
+    /// value itself when it is one placeholder; `cases` gives its chosen
+    /// branch; lists and objects are read through.
+    fn resolve(&self, look: &Parsed, scope: &Scope) -> Value {
+        match look {
+            Parsed::Children => Value::String("$children".to_string()),
+            Parsed::Text { template, .. } => self.template(template, scope),
+            Parsed::Object(object) => match &object.cases {
+                Some(cases) => match self.branch(cases, scope) {
                     Some(chosen) => self.resolve(chosen, scope),
                     None => Value::Null,
+                },
+                None => {
+                    let mut read = Map::new();
+                    for key in &object.keys {
+                        read.insert(key.name.clone(), self.resolve(&key.look, scope));
+                    }
+                    Value::Object(read)
                 }
-            }
-            Value::Object(object) => {
-                let mut read = Map::new();
-                for (key, value) in object {
-                    read.insert(key.clone(), self.resolve(value, scope));
-                }
-                Value::Object(read)
-            }
-            Value::Array(items) => {
+            },
+            Parsed::List(items) => {
                 let mut read = Vec::new();
                 for item in items {
                     read.push(self.resolve(item, scope));
                 }
                 Value::Array(read)
             }
-            other => other.clone(),
+            Parsed::Plain(value) => value.clone(),
         }
     }
 
     /// The first branch of `cases` whose `if` holds, or its `else`.
-    fn branch<'v>(&self, branches: &'v Value, scope: &Scope) -> Option<&'v Value> {
-        let Value::Array(branches) = branches else {
-            return None;
-        };
-        for branch in branches {
-            if let Some(Value::String(condition)) = branch.get("if") {
+    fn branch<'l>(&self, cases: &'l look::Cases, scope: &Scope) -> Option<&'l Parsed> {
+        for branch in &cases.branches {
+            if let Some(condition) = &branch.when {
                 if self.holds(condition, scope) {
-                    return branch.get("then");
+                    return branch.then.as_ref();
                 }
-            } else if let Some(otherwise) = branch.get("else") {
+            } else if let Some(otherwise) = &branch.otherwise {
                 return Some(otherwise);
             }
         }
         None
     }
 
-    /// `text` with each `{placeholder}` filled; the placeholder's own value,
-    /// not text, when the whole of `text` is one placeholder.
-    fn template(&self, text: &str, scope: &Scope) -> Value {
-        if let Some(inner) = text.strip_prefix('{').and_then(|rest| rest.strip_suffix('}'))
-            && !inner.contains('{')
-            && !inner.contains('}')
-        {
-            return self.placeholder(inner, scope);
-        }
-        let mut filled = String::new();
-        let mut rest = text;
-        while let Some((before, after)) = rest.split_once('{') {
-            filled.push_str(before);
-            match after.split_once('}') {
-                Some((inner, next)) => {
-                    filled.push_str(&said(&self.placeholder(inner, scope)));
-                    rest = next;
+    /// `template` with each placeholder filled; the placeholder's own
+    /// value, not text, when the whole of it is one placeholder.
+    fn template(&self, template: &Template, scope: &Scope) -> Value {
+        match template {
+            Template::Whole(placeholder) => self.placeholder(placeholder, scope),
+            Template::Pieces(pieces) => {
+                let mut filled = String::new();
+                for piece in pieces {
+                    match piece {
+                        Piece::Words(words) => filled.push_str(words),
+                        Piece::Hole(placeholder) => {
+                            filled.push_str(&said(&self.placeholder(placeholder, scope)))
+                        }
+                    }
                 }
-                None => {
-                    filled.push('{');
-                    rest = after;
-                    break;
-                }
+                Value::String(filled)
             }
         }
-        filled.push_str(rest);
-        Value::String(filled)
     }
 
-    /// A path, then each `|filter` in turn: `or:value`, `count`, `first`,
-    /// `last`, `head` and `tail` (the first word and the rest), `slashes`
-    /// (2026-11-12 → 2026/11/12), `glyph`, `atLeast:n` and `atMost:n`.
-    fn placeholder(&self, inner: &str, scope: &Scope) -> Value {
-        let mut parts = inner.split('|');
-        let mut value = scope.get(parts.next().unwrap_or("").trim());
-        for filter in parts {
-            let (name, argument) = filter.split_once(':').unwrap_or((filter, ""));
-            value = match (name.trim(), value) {
-                ("or", Value::Null) => {
-                    serde_json::from_str(argument).unwrap_or(Value::String(argument.to_string()))
-                }
-                ("count", Value::Array(items)) => Value::from(items.len()),
-                ("count", _) => Value::from(0),
-                ("first", Value::Array(items)) => items.into_iter().next().unwrap_or(Value::Null),
-                ("last", Value::Array(items)) => items.into_iter().last().unwrap_or(Value::Null),
-                ("first" | "last", _) => Value::Null,
-                ("head", value) => {
+    /// What `placeholder`'s path holds, through each of its filters in turn.
+    fn placeholder(&self, placeholder: &Placeholder, scope: &Scope) -> Value {
+        let mut value = scope.get(placeholder);
+        for filter in &placeholder.filters {
+            value = match (filter, value) {
+                (Filter::Or(otherwise), Value::Null) => otherwise.clone(),
+                (Filter::Count, Value::Array(items)) => Value::from(items.len()),
+                (Filter::Count, _) => Value::from(0),
+                (Filter::First, Value::Array(items)) => items.into_iter().next().unwrap_or(Value::Null),
+                (Filter::Last, Value::Array(items)) => items.into_iter().last().unwrap_or(Value::Null),
+                (Filter::First | Filter::Last, _) => Value::Null,
+                (Filter::Head, value) => {
                     let text = said(&value);
                     Value::String(text.split_once(' ').map_or(text.as_str(), |(head, _)| head).to_string())
                 }
-                ("tail", value) => match said(&value).split_once(' ') {
+                (Filter::Tail, value) => match said(&value).split_once(' ') {
                     Some((_, tail)) => Value::String(tail.trim().to_string()),
                     None => Value::Null,
                 },
-                ("slashes", value) => Value::String(said(&value).replace('-', "/")),
-                ("glyph", value) => {
+                (Filter::Slashes, value) => Value::String(said(&value).replace('-', "/")),
+                (Filter::Glyph, value) => {
                     // A name that is no icon is drawn as a "?"; no name, as nothing.
                     let name = said(&value);
                     let glyph = underdraw_format::icons::glyph(&name).map(String::from);
@@ -535,175 +528,59 @@ impl Catalog<'_> {
                             .unwrap_or_else(|| if name.is_empty() { String::new() } else { "?".to_string() }),
                     )
                 }
-                ("atLeast", Value::Number(n)) => bound(&n, argument, f64::max),
-                ("atMost", Value::Number(n)) => bound(&n, argument, f64::min),
-                (_, value) => value,
+                (Filter::AtLeast(Some(limit)), Value::Number(n)) => bound(&n, *limit, f64::max),
+                (Filter::AtMost(Some(limit)), Value::Number(n)) => bound(&n, *limit, f64::min),
+                (Filter::Or(_) | Filter::AtLeast(_) | Filter::AtMost(_) | Filter::Unknown(_), value) => value,
             };
         }
         value
     }
 
-    /// Whether `condition` holds in `scope`. Its grammar is a screen
-    /// condition's (`&&`, `||`, `!`, `==`, `!=`, parentheses, literals), over
-    /// placeholders such as `value|first`; one alone holds when it is given
-    /// and not false.
-    fn holds(&self, condition: &str, scope: &Scope) -> bool {
-        let mut cursor = Cursor { tokens: lex(condition).into_iter() };
-        truthy(&self.or(&mut cursor, scope))
-    }
-
-    fn or(&self, cursor: &mut Cursor, scope: &Scope) -> Value {
-        let mut value = self.and(cursor, scope);
-        while cursor.peek() == Some(Token::Or) {
-            cursor.next();
-            let right = self.and(cursor, scope);
-            value = Value::Bool(truthy(&value) || truthy(&right));
-        }
-        value
-    }
-
-    fn and(&self, cursor: &mut Cursor, scope: &Scope) -> Value {
-        let mut value = self.not(cursor, scope);
-        while cursor.peek() == Some(Token::And) {
-            cursor.next();
-            let right = self.not(cursor, scope);
-            value = Value::Bool(truthy(&value) && truthy(&right));
-        }
-        value
-    }
-
-    fn not(&self, cursor: &mut Cursor, scope: &Scope) -> Value {
-        if cursor.peek() == Some(Token::Not) {
-            cursor.next();
-            return Value::Bool(!truthy(&self.not(cursor, scope)));
-        }
-        let left = self.atom(cursor, scope);
-        match cursor.peek() {
-            Some(Token::Eq) => {
-                cursor.next();
-                Value::Bool(left == self.atom(cursor, scope))
-            }
-            Some(Token::Ne) => {
-                cursor.next();
-                Value::Bool(left != self.atom(cursor, scope))
-            }
-            _ => left,
+    /// Whether `condition` holds in `scope`: what it comes to is given and
+    /// not false. One that does not parse never holds; `check` names it.
+    fn holds(&self, condition: &Condition, scope: &Scope) -> bool {
+        match &condition.parsed {
+            Ok(expr) => truthy(&self.expr(expr, scope)),
+            Err(_) => false,
         }
     }
 
-    fn atom(&self, cursor: &mut Cursor, scope: &Scope) -> Value {
-        match cursor.next() {
-            Some(Token::Open) => {
-                let inner = self.or(cursor, scope);
-                cursor.next();
-                inner
-            }
-            Some(Token::Literal(value)) => value,
-            Some(Token::Name(name)) => match name.as_str() {
-                "true" => Value::Bool(true),
-                "false" => Value::Bool(false),
-                "null" => Value::Null,
-                _ => self.placeholder(&name, scope),
-            },
-            _ => Value::Null,
-        }
-    }
-}
-
-#[derive(Clone, PartialEq)]
-enum Token {
-    Or,
-    And,
-    Not,
-    Eq,
-    Ne,
-    Open,
-    Close,
-    Literal(Value),
-    /// A placeholder: a path and its filters, `value|first`.
-    Name(String),
-}
-
-/// The tokens of a condition, read from the front.
-struct Cursor {
-    tokens: std::vec::IntoIter<Token>,
-}
-
-impl Cursor {
-    fn peek(&self) -> Option<Token> {
-        self.tokens.clone().next()
-    }
-
-    fn next(&mut self) -> Option<Token> {
-        self.tokens.next()
-    }
-}
-
-/// The tokens of `condition`. A `|` inside a name begins a filter; `||`
-/// is "or". What is not the grammar is skipped: `check` names it.
-fn lex(condition: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut chars = condition.chars().peekable();
-    while let Some(c) = chars.next() {
-        let token = match c {
-            _ if c.is_whitespace() => continue,
-            '|' if chars.peek() == Some(&'|') => {
-                chars.next();
-                Token::Or
-            }
-            '&' if chars.peek() == Some(&'&') => {
-                chars.next();
-                Token::And
-            }
-            '=' if chars.peek() == Some(&'=') => {
-                chars.next();
-                Token::Eq
-            }
-            '!' if chars.peek() == Some(&'=') => {
-                chars.next();
-                Token::Ne
-            }
-            '!' => Token::Not,
-            '(' => Token::Open,
-            ')' => Token::Close,
-            '"' => {
-                let mut text = String::new();
-                for c in chars.by_ref() {
-                    if c == '"' {
-                        break;
-                    }
-                    text.push(c);
+    /// What `expr` comes to in `scope`. Every side is read, so each name
+    /// it reads is looked up.
+    fn expr(&self, expr: &Expr<Placeholder>, scope: &Scope) -> Value {
+        match expr {
+            Expr::Or(items) => {
+                let mut any = false;
+                for item in items {
+                    any |= truthy(&self.expr(item, scope));
                 }
-                Token::Literal(Value::String(text))
+                Value::Bool(any)
             }
-            _ if c.is_ascii_digit() || c == '-' => {
-                let mut text = c.to_string();
-                while let Some(&d) = chars.peek() {
-                    if !(d.is_ascii_digit() || d == '.') {
-                        break;
-                    }
-                    text.push(d);
-                    chars.next();
+            Expr::And(items) => {
+                let mut all = true;
+                for item in items {
+                    all &= truthy(&self.expr(item, scope));
                 }
-                Token::Literal(serde_json::from_str(&text).unwrap_or(Value::Null))
+                Value::Bool(all)
             }
-            _ if c.is_alphanumeric() || c == '_' || c == '$' => {
-                let mut name = c.to_string();
-                while let Some(&d) = chars.peek() {
-                    let filter = d == '|' && !matches!(chars.clone().nth(1), Some('|'));
-                    if !(d.is_alphanumeric() || "_.:%$".contains(d) || filter) {
-                        break;
-                    }
-                    name.push(d);
-                    chars.next();
-                }
-                Token::Name(name)
+            Expr::Not(inner) => Value::Bool(!truthy(&self.expr(inner, scope))),
+            Expr::Compare(op, left, right) => {
+                Value::Bool(op.holds(&self.atom(left, scope), &self.atom(right, scope)))
             }
-            _ => continue,
-        };
-        tokens.push(token);
+            Expr::Atom(atom) => self.atom(atom, scope),
+        }
     }
-    tokens
+
+    fn atom(&self, atom: &Atom<Placeholder>, scope: &Scope) -> Value {
+        match atom {
+            Atom::Name(placeholder) => self.placeholder(placeholder, scope),
+            Atom::Str(text) => Value::String(text.clone()),
+            Atom::Num(n) => Value::from(*n),
+            Atom::Bool(b) => Value::Bool(*b),
+            Atom::Null => Value::Null,
+            Atom::Group(inner) => self.expr(inner, scope),
+        }
+    }
 }
 
 /// Whether a value counts as given: anything but null and false.
@@ -711,12 +588,9 @@ fn truthy(value: &Value) -> bool {
     !matches!(value, Value::Null | Value::Bool(false))
 }
 
-/// `n` held to `argument` by `keep` (max for at least, min for at most);
+/// `n` held to `limit` by `keep` (max for at least, min for at most);
 /// a whole number stays one, so it can still count a `repeat`.
-fn bound(n: &serde_json::Number, argument: &str, keep: fn(f64, f64) -> f64) -> Value {
-    let Ok(limit) = argument.trim().parse::<f64>() else {
-        return Value::Number(n.clone());
-    };
+fn bound(n: &serde_json::Number, limit: f64, keep: fn(f64, f64) -> f64) -> Value {
     let kept = keep(n.as_f64().unwrap_or(0.0), limit);
     if kept >= 0.0 && kept.fract() == 0.0 && kept <= u32::MAX as f64 {
         Value::from(kept as u64)
@@ -786,96 +660,254 @@ fn said(value: &Value) -> String {
     }
 }
 
-// What each word a look key takes draws as: one function per key of
-// underdraw_format::LOOK that takes words, and a test that they agree.
+// What each word a look key takes draws as: one function per key that
+// takes words, over the type underdraw_format::look reads it as.
 
 /// A box's `box`.
-fn box_style(word: &str) -> Option<Style> {
-    match word {
-        "row" => Some(Style {
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::CENTER,
-            ..Style::default()
-        }),
-        "column" => Some(Style { flex_direction: FlexDirection::Column, ..Style::default() }),
-        "grid" => Some(Style { display: Display::Grid, ..Style::default() }),
-        _ => None,
+fn box_style(flow: look::Flow) -> Style {
+    match flow {
+        look::Flow::Row => {
+            Style { flex_direction: FlexDirection::Row, align_items: AlignItems::CENTER, ..Style::default() }
+        }
+        look::Flow::Column => Style { flex_direction: FlexDirection::Column, ..Style::default() },
+        look::Flow::Grid => Style { display: Display::Grid, ..Style::default() },
     }
 }
 
 /// Text's `align`.
-fn text_align(word: &str) -> Option<Align> {
-    match word {
-        "start" => Some(Align::Start),
-        "center" => Some(Align::Center),
-        "end" => Some(Align::End),
-        _ => None,
+fn text_align(align: look::TextAlign) -> Align {
+    match align {
+        look::TextAlign::Start => Align::Start,
+        look::TextAlign::Center => Align::Center,
+        look::TextAlign::End => Align::End,
     }
 }
 
 /// A box's `self`.
-fn align_self(word: &str) -> Option<AlignSelf> {
-    match word {
-        "start" => Some(AlignSelf::FLEX_START),
-        _ => None,
+fn align_self(align: look::SelfAlign) -> AlignSelf {
+    match align {
+        look::SelfAlign::Start => AlignSelf::FLEX_START,
     }
 }
 
 /// A box's `items`.
-fn align_items(word: &str) -> Option<AlignItems> {
-    match word {
-        "start" => Some(AlignItems::START),
-        "center" => Some(AlignItems::CENTER),
-        _ => None,
+fn align_items(items: look::Items) -> AlignItems {
+    match items {
+        look::Items::Start => AlignItems::START,
+        look::Items::Center => AlignItems::CENTER,
     }
 }
 
 /// A box's `justify`.
-fn justify_content(word: &str) -> Option<JustifyContent> {
-    match word {
-        "center" => Some(JustifyContent::CENTER),
-        "between" => Some(JustifyContent::SPACE_BETWEEN),
-        "end" => Some(JustifyContent::END),
-        _ => None,
+fn justify_content(justify: look::Justify) -> JustifyContent {
+    match justify {
+        look::Justify::Center => JustifyContent::CENTER,
+        look::Justify::Between => JustifyContent::SPACE_BETWEEN,
+        look::Justify::End => JustifyContent::END,
     }
 }
 
 /// A box's `overflowX`.
-fn overflow(word: &str) -> Option<taffy::Overflow> {
-    match word {
-        "clip" => Some(taffy::Overflow::Clip),
-        _ => None,
+fn overflow(overflow: look::Overflow) -> taffy::Overflow {
+    match overflow {
+        look::Overflow::Clip => taffy::Overflow::Clip,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use underdraw_format::{LOOK, Takes};
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+
+    use proptest::prelude::*;
+    use serde_json::json;
+    use underdraw_format::look::Look as Parsed;
 
     use super::*;
 
-    /// Whether layout draws `word` for look key `key`.
-    fn drawn(key: &str, word: &str) -> bool {
-        match key {
-            "box" => box_style(word).is_some(),
-            "align" => text_align(word).is_some(),
-            "self" => align_self(word).is_some(),
-            "items" => align_items(word).is_some(),
-            "justify" => justify_content(word).is_some(),
-            "overflowX" => overflow(word).is_some(),
-            _ => panic!("{key} takes words, and layout has no reader for it"),
-        }
+    thread_local! {
+        static LOOKED_UP: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     }
 
-    #[test]
-    fn every_word_check_lets_through_is_drawn() {
-        for (key, takes) in LOOK {
-            if let Takes::Word(words) = takes {
-                for word in words {
-                    assert!(drawn(key, word), "{key}: {word} passes check but is not drawn");
+    /// Notes that evaluation looked up the prop `name`.
+    pub(super) fn looked_up(name: &str) {
+        LOOKED_UP.with(|all| all.borrow_mut().push(name.to_string()));
+    }
+
+    /// The props evaluating `look` with `props` looks up, and the names the
+    /// parsed look says it reads, each as a set.
+    fn both(look: &Value, props: &Map<String, Value>) -> (BTreeSet<String>, BTreeSet<String>) {
+        let parsed = Parsed::parse(look);
+        let mut read = Vec::new();
+        parsed.reads(&[], &mut read);
+        let tokens_json = json!({});
+        let tokens = Tokens(&tokens_json);
+        let components = Components::read(&json!({}));
+        let catalog = Catalog { tokens: &tokens, components: &components, lang: Lang::default() };
+        let scope = Scope { props, vars: Map::new(), node: None };
+        LOOKED_UP.with(|all| all.borrow_mut().clear());
+        match &parsed {
+            Parsed::Object(object) if object.keys.is_empty() => {
+                // A condition alone: `{"if": …}`.
+                if let Some(condition) = &object.when {
+                    catalog.holds(condition, &scope);
                 }
-                assert!(!drawn(key, "nonsense"), "{key}: a word check refuses is drawn");
             }
+            Parsed::Text { template, .. } => {
+                catalog.template(template, &scope);
+            }
+            _ => {
+                catalog.build(&parsed, &scope);
+            }
+        }
+        let looked_up = LOOKED_UP.with(|all| all.borrow_mut().drain(..).collect());
+        (looked_up, read.into_iter().collect())
+    }
+
+    /// The names a look reads, among them those a `repeat` binds.
+    const NAMES: [&str; 6] = ["a", "b", "c.d", "item", "n", "index"];
+
+    fn placeholder() -> impl Strategy<Value = String> {
+        let filter =
+            prop::sample::select(vec!["", "|first", "|count", "|or:0", "|head", "|atMost:3", "|upper"]);
+        (prop::sample::select(NAMES.to_vec()), filter).prop_map(|(name, filter)| format!("{name}{filter}"))
+    }
+
+    fn template() -> impl Strategy<Value = String> {
+        let piece = prop_oneof![
+            placeholder().prop_map(|p| format!("{{{p}}}")),
+            prop::sample::select(vec!["", "x ", " of ", "-"]).prop_map(String::from),
+        ];
+        prop::collection::vec(piece, 0..4).prop_map(|pieces| pieces.concat())
+    }
+
+    /// A condition in the screen grammar, each name a placeholder.
+    fn condition() -> impl Strategy<Value = String> {
+        let atom = prop_oneof![
+            placeholder(),
+            Just("\"x\"".to_string()),
+            Just("2".to_string()),
+            Just("true".to_string()),
+            Just("null".to_string()),
+        ];
+        atom.prop_recursive(3, 12, 2, |inner| {
+            let op = prop::sample::select(vec!["&&", "||", "==", "!=", "<", ">="]);
+            prop_oneof![
+                (inner.clone(), op, inner.clone()).prop_map(|(l, op, r)| format!("{l} {op} {r}")),
+                inner.clone().prop_map(|e| format!("!({e})")),
+                inner.prop_map(|e| format!("({e})")),
+            ]
+        })
+    }
+
+    /// A value a look's key holds: a template, or a number.
+    fn value() -> impl Strategy<Value = Value> {
+        prop_oneof![template().prop_map(Value::String), Just(json!(8))]
+    }
+
+    /// A look every part of which is drawn, whatever the props: text and
+    /// boxes holding only keys they always read, `repeat`s of a count.
+    fn drawn() -> impl Strategy<Value = Value> {
+        let text_keys =
+            prop::sample::subsequence(vec!["font", "ink", "maxLines", "align", "width", "grow"], 0..3);
+        let text = (template(), text_keys, value()).prop_map(|(text, keys, value)| {
+            let mut object = Map::new();
+            object.insert("text".to_string(), Value::String(text));
+            for key in keys {
+                object.insert(key.to_string(), value.clone());
+            }
+            Value::Object(object)
+        });
+        text.prop_recursive(3, 16, 3, |inner| {
+            let box_keys =
+                prop::sample::subsequence(vec!["box", "gap", "fill", "radius", "padding", "clip"], 0..3);
+            prop_oneof![
+                (prop::collection::vec(inner.clone(), 0..3), box_keys, value(), any::<bool>()).prop_map(
+                    |(children, keys, value, frame)| {
+                        let mut object = Map::new();
+                        for key in keys {
+                            object.insert(key.to_string(), value.clone());
+                        }
+                        if frame {
+                            object.insert("frame".to_string(), json!(true));
+                        }
+                        object.insert("children".to_string(), Value::Array(children));
+                        Value::Object(object)
+                    }
+                ),
+                (1..3u64, inner).prop_map(|(count, each)| json!({ "repeat": count, "each": each })),
+            ]
+        })
+    }
+
+    /// Any look: also `if`, `cases` and a `repeat` over a placeholder,
+    /// which leave parts of it undrawn.
+    fn any_look() -> impl Strategy<Value = Value> {
+        drawn().prop_recursive(2, 16, 3, |inner| {
+            prop_oneof![
+                (condition(), inner.clone()).prop_map(|(when, look)| {
+                    let mut look = look;
+                    if let Value::Object(object) = &mut look {
+                        object.insert("if".to_string(), Value::String(when));
+                    }
+                    look
+                }),
+                (condition(), inner.clone(), inner.clone()).prop_map(|(when, then, otherwise)| {
+                    json!({ "cases": [{ "if": when, "then": then }, { "else": otherwise }] })
+                }),
+                (placeholder(), inner)
+                    .prop_map(|(over, each)| json!({ "repeat": format!("{{{over}}}"), "each": each })),
+            ]
+        })
+    }
+
+    fn props() -> impl Strategy<Value = Map<String, Value>> {
+        let value = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            (0..4u64).prop_map(Value::from),
+            Just(json!("x y")),
+            Just(json!([1, 2])),
+            Just(json!({ "d": true })),
+        ];
+        prop::collection::vec(value, 6).prop_map(|values| {
+            let mut props = Map::new();
+            for (name, value) in ["a", "b", "c", "item", "n", "index"].into_iter().zip(values) {
+                props.insert(name.to_string(), value);
+            }
+            props
+        })
+    }
+
+    proptest! {
+        /// A condition or a template looks up exactly the names it says it
+        /// reads.
+        #[test]
+        fn a_condition_or_template_looks_up_exactly_what_it_reads(
+            condition in condition(),
+            template in template(),
+            props in props(),
+        ) {
+            let (looked_up, read) = both(&json!({ "if": condition }), &props);
+            prop_assert_eq!(looked_up, read, "{}", condition);
+            let (looked_up, read) = both(&Value::String(template.clone()), &props);
+            prop_assert_eq!(looked_up, read, "{}", template);
+        }
+
+        /// A look every part of which is drawn looks up exactly the names it
+        /// says it reads.
+        #[test]
+        fn a_drawn_look_looks_up_exactly_what_it_reads(look in drawn(), props in props()) {
+            let (looked_up, read) = both(&look, &props);
+            prop_assert_eq!(looked_up, read, "{}", look);
+        }
+
+        /// Any look looks up only names it says it reads: what `if`,
+        /// `cases` or an empty `repeat` leaves undrawn it does not look up.
+        #[test]
+        fn any_look_looks_up_only_what_it_reads(look in any_look(), props in props()) {
+            let (looked_up, read) = both(&look, &props);
+            prop_assert!(looked_up.is_subset(&read), "{} looked up {:?}, reads {:?}", look, looked_up, read);
         }
     }
 }

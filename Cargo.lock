@@ -2937,6 +2937,7 @@ dependencies = [
  "flux-alloc",
  "flux-core",
  "flux-rs",
+ "proptest",
  "serde",
  "serde_json",
  "taffy",
