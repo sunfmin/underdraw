@@ -1,0 +1,15 @@
+{
+  "platform": "web",
+  "language": "typescript",
+  "testId": "data-testid=\"{id}\"",
+  "tokenNaming": { "pattern": "var(--{group}-{name})" },
+  "kinds": {
+    "Screen": "<main>",
+    "Text": "<p>",
+    "Button": "<button>",
+    "List": "<ul>",
+    "Card": "<li>",
+    "Skeleton": "a shimmering placeholder"
+  },
+  "actions": { "call": "the shop client's method of the operation's name" }
+}

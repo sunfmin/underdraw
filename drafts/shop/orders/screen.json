@@ -1,0 +1,37 @@
+{
+  "screen": "ShopOrders",
+  "title": "Orders",
+  "tokens": "tokens.json",
+  "$comment": "The shop's latest orders; one not shipped yet can be cancelled from its card.",
+  "data": {
+    "orders": { "type": "Order[] ..20", "from": "listOrders" }
+  },
+  "fixtures": {
+    "default": {
+      "orders": [
+        { "id": "o-1042", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "cancellable": true },
+        { "id": "o-1041", "number": "#1041", "customer": "Ken Mori", "total": { "amount": 12800, "currency": "JPY" }, "cancellable": false }
+      ]
+    }
+  },
+  "root": {
+    "id": "orders", "kind": "Screen", "padding": "space.4", "gap": "space.3",
+    "children": [
+      { "id": "title", "kind": "Text", "text": "Orders", "font": "font.title" },
+      { "id": "list", "kind": "List", "gap": "space.3", "each": "orders",
+        "item": {
+          "id": "order-{index}", "kind": "Card", "border": "color.border", "radius": "radius.md", "padding": "space.4", "gap": "space.2",
+          "children": [
+            { "id": "order-{index}-number", "kind": "Text", "text": "{item.number} · {item.customer}" },
+            { "id": "order-{index}-total", "kind": "Text", "text": "{item.total|money}", "color": "color.textSecondary" },
+            { "id": "order-{index}-cancel", "kind": "Button", "if": "item.cancellable", "text": "Cancel order", "variant": "secondary", "size": "small",
+              "on": { "tap": { "call": "cancelOrder", "with": { "id": "{item.id}" } } } }
+          ]
+        } }
+    ]
+  },
+  "phases": {
+    "loading": { "id": "loading", "kind": "Screen", "padding": "space.4", "children": [
+      { "id": "sk", "kind": "Skeleton", "shape": ["line 90%", "line 90%", "line 60%"] } ] }
+  }
+}

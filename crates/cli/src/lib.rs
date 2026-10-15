@@ -258,7 +258,8 @@ fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<
     underdraw_layout::check(screen, &tokens, kinds, &mut typesetter).map_err(anyhow::Error::msg)
 }
 
-/// The screen at `path` (a directory or its screen.json), and the directory.
+/// The screen at `path` (a directory or its screen.json), with the domain
+/// its project shares, and the directory.
 fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
     let file = if path.is_dir() { path.join(SCREEN) } else { path.to_path_buf() };
     let text = std::fs::read_to_string(&file).with_context(|| {
@@ -271,7 +272,7 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
         format!("{} is not JSON: fix the line and column named here, then check again", file.display())
     })?;
     let dir = file.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    Ok((screen, dir))
+    Ok((Project::of(&dir)?.describe(screen), dir))
 }
 
 fn schema(path: &Path) -> anyhow::Result<Value> {
