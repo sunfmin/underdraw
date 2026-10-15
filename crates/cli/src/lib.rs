@@ -242,7 +242,7 @@ fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
     }
     let mut answer = serde_json::to_value(check_at(path, &ScreenParams::new())?)?;
     let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
-    answer["notes"] = notes::counted(dir);
+    answer["notes"] = notes::counted(dir, dir);
     Ok(answer)
 }
 

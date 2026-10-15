@@ -144,8 +144,14 @@ impl Marked {
 
     /// Where its "?" goes.
     fn guess_tag(&self) -> Rect {
-        tag(self.rect.x + self.rect.width - 12.0, self.rect.y - 6.0)
+        guess_tag(self.rect)
     }
+}
+
+/// Where the "?" of a node guessed, laid out at `rect`, goes: over its
+/// top-right corner.
+pub(crate) fn guess_tag(rect: Rect) -> Rect {
+    tag(rect.x + rect.width - 12.0, rect.y - 6.0)
 }
 
 pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Result<Page, TaffyError> {
