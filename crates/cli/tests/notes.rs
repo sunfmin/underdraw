@@ -180,6 +180,37 @@ fn a_note_written_on_a_region_before_regions_went_is_listed_on_its_whole_state()
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn a_note_on_the_whole_screen_is_listed_answered_and_counted() {
+    let root = root("screen");
+    let dir = root.join("orders");
+    let screen = json!({
+        "id": "N3",
+        "whole": "screen",
+        "messages": [{ "by": "person", "says": "this screen tries to do too much" }],
+    });
+    let mut notes: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+    notes["notes"].as_array_mut().unwrap().push(screen);
+    std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{answer}");
+    let listed = &answer["notes"][2];
+    assert_eq!((&listed["id"], &listed["whole"]), (&json!("N3"), &json!("screen")), "{listed}");
+    assert!(listed.get("state").is_none(), "apart from any one state: {listed}");
+    assert_eq!(listed["reference"], format!("{} · the whole screen", dir.display()));
+    let (counted, _) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(counted["notes"], json!({ "waiting": 3, "answered": 0 }));
+
+    let (answered, code) =
+        underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "split it in two"]);
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("unread")), "{answered}");
+    assert_eq!(answered["note"]["whole"], "screen");
+    let (counted, _) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(counted["notes"], json!({ "waiting": 2, "answered": 1 }));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// `underdraw notes <root> --wait` started in the background.
 fn waiting(root: &Path) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_underdraw"))

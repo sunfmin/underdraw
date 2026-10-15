@@ -72,9 +72,10 @@ _Avoid_: guess, TODO
 
 **Note**:
 A conversation between the person and the agent about a design, pinned
-where it is held: a node, a whole state, or an arrow, its messages kept in
-the order said. Each has at most one; one whose node or arrow is gone joins
-its state's note, saying where it was. Only the person starts one; the agent
+where it is held: a node of a state, a whole state, an arrow (a transition
+or a navigate), or the whole screen (its description picked, apart from any
+one state), its messages kept in the order said. Each has at most one; one
+whose node or arrow is gone joins its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, **taken** once `--wait` has handed that message to
 the agent; it is answered while the agent did, **unread** until the person

@@ -769,7 +769,7 @@ pub fn settle(dir: &Path) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::draw::{Origin, Shown};
-    use crate::reference::{Navigate, Pointed, Transition};
+    use crate::reference::{Navigate, Pointed, Transition, Whole};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -1171,6 +1171,7 @@ mod tests {
             note("N1", node("default", "price"), vec![person("there")]),
             note("N2", transition("empty"), vec![person("there")]),
             note("N3", navigate("Next"), vec![person("there")]),
+            note("N4", On::Screen { whole: Whole::Screen }, vec![person("too much")]),
         ];
         let mut notes = kept.clone();
         assert!(!join(&mut notes, &screen, &states), "nothing is gone");
