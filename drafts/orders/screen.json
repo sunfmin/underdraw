@@ -1,0 +1,804 @@
+{
+  "screen": "OrderList",
+  "title": "订单管理",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "$comment": "A shop owner's order list: search, status filters, a paged list of orders, and a confirm dialog that pops up over the list to cancel one.",
+  "data": {
+    "query": {
+      "type": "string ..40",
+      "view": true,
+      "doc": "What the person has typed in the search box"
+    },
+    "filters": "FilterChip[] 1..6",
+    "orders": { "type": "Order[] ..20", "from": "listOrders" },
+    "summary": "Summary",
+    "cancelling": {
+      "type": "CancelRequest?",
+      "view": true,
+      "doc": "The order whose cancel dialog is open; null while no dialog shows"
+    }
+  },
+  "types": {
+    "FilterChip": {
+      "id": "string",
+      "label": "string 1..8",
+      "count": "int 0..",
+      "selected": "bool = false"
+    },
+    "Order": {
+      "id": "string",
+      "number": "string 1..20",
+      "customer": "string 1..40",
+      "itemsSummary": {
+        "type": "string 1..60",
+        "derived": { "server": "first item's name and how many more; the items are not in the view model" }
+      },
+      "total": "money",
+      "placedAt": "date",
+      "statusLabel": {
+        "type": "string 1..6",
+        "derived": { "server": "待付款 / 待发货 / 已发货 / 已取消, from the order's status, which is not in the view model" }
+      },
+      "cancellable": {
+        "type": "bool = false",
+        "derived": { "server": "not shipped and not already cancelled" }
+      }
+    },
+    "Summary": {
+      "shown": {
+        "type": "int 0..",
+        "derived": { "app": "orders' length" }
+      },
+      "matching": {
+        "type": "int 0..",
+        "derived": { "server": "orders matching query and filter, across all pages" }
+      },
+      "hasMore": {
+        "type": "bool = false",
+        "derived": { "app": "matching > shown" }
+      }
+    },
+    "CancelRequest": {
+      "orderId": "string",
+      "number": "string 1..20",
+      "customer": "string 1..40",
+      "total": "money",
+      "paid": {
+        "type": "bool = false",
+        "doc": "Paid orders are refunded on cancel"
+      },
+      "reasons": "Reason[] 2..6",
+      "reasonChosen": {
+        "type": "bool = false",
+        "derived": { "app": "one reason is selected" }
+      },
+      "submitting": "bool = false"
+    },
+    "Reason": {
+      "id": "string",
+      "label": "string 1..20",
+      "selected": "bool = false"
+    }
+  },
+  "conditions": {
+    "searching": {
+      "when": "query != \"\"",
+      "label": "Searching"
+    },
+    "hasOrders": {
+      "when": "summary.shown > 0",
+      "label": "Has orders"
+    },
+    "noMatch": {
+      "when": "!hasOrders && searching",
+      "label": "Search found nothing"
+    },
+    "filterEmpty": {
+      "when": "!hasOrders && !searching",
+      "label": "Filter has no orders"
+    },
+    "hasMore": {
+      "when": "summary.hasMore",
+      "label": "More pages"
+    },
+    "dialogOpen": {
+      "when": "cancelling != null",
+      "label": "Cancel dialog open"
+    },
+    "willRefund": {
+      "when": "dialogOpen && cancelling.paid",
+      "label": "Order was paid"
+    },
+    "canConfirm": {
+      "when": "dialogOpen && cancelling.reasonChosen && !cancelling.submitting",
+      "label": "Reason chosen"
+    },
+    "submitting": {
+      "when": "dialogOpen && cancelling.submitting",
+      "label": "Cancelling"
+    }
+  },
+  "operations": {
+    "listOrders": {
+      "query": "The first page of orders with the status filter names, matching the search",
+      "params": {
+        "filter": "string",
+        "query": "string ..40"
+      },
+      "result": "Order[] ..20",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "moreOrders": {
+      "query": "The next page of the same orders, after the first ones shown",
+      "params": {
+        "after": "int 0.."
+      },
+      "result": "Order[] ..20",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "cancelOrder": {
+      "command": "Cancels the order for the reason chosen, refunding it when it was paid",
+      "params": {
+        "id": "string"
+      },
+      "requires": "canConfirm",
+      "fails": {
+        "shipped": "the order shipped meanwhile and can no longer be cancelled"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "query": "",
+      "filters": [
+        {
+          "id": "all",
+          "label": "全部",
+          "count": 128,
+          "selected": true
+        },
+        {
+          "id": "unpaid",
+          "label": "待付款",
+          "count": 6
+        },
+        {
+          "id": "toShip",
+          "label": "待发货",
+          "count": 14
+        },
+        {
+          "id": "shipped",
+          "label": "已发货",
+          "count": 97
+        },
+        {
+          "id": "cancelled",
+          "label": "已取消",
+          "count": 11
+        }
+      ],
+      "orders": [
+        {
+          "id": "o1",
+          "number": "20261014-0042",
+          "customer": "山田 花子",
+          "itemsSummary": "手冲咖啡壶 等 3 件",
+          "total": {
+            "amount": 12800,
+            "currency": "JPY"
+          },
+          "placedAt": "2026-10-14",
+          "statusLabel": "待发货",
+          "cancellable": true
+        },
+        {
+          "id": "o2",
+          "number": "20261014-0041",
+          "customer": "佐藤 健",
+          "itemsSummary": "陶瓷马克杯",
+          "total": {
+            "amount": 2400,
+            "currency": "JPY"
+          },
+          "placedAt": "2026-10-14",
+          "statusLabel": "待付款",
+          "cancellable": true
+        },
+        {
+          "id": "o3",
+          "number": "20261013-0039",
+          "customer": "Li Wei",
+          "itemsSummary": "滤纸 100 枚 等 2 件",
+          "total": {
+            "amount": 1650,
+            "currency": "JPY"
+          },
+          "placedAt": "2026-10-13",
+          "statusLabel": "已发货"
+        },
+        {
+          "id": "o4",
+          "number": "20261013-0037",
+          "customer": "田中 一郎",
+          "itemsSummary": "电动磨豆机",
+          "total": {
+            "amount": 23900,
+            "currency": "JPY"
+          },
+          "placedAt": "2026-10-13",
+          "statusLabel": "已取消"
+        },
+        {
+          "id": "o5",
+          "number": "20261012-0031",
+          "customer": "鈴木 美咲",
+          "itemsSummary": "咖啡豆 埃塞俄比亚 200g 等 4 件",
+          "total": {
+            "amount": 8760,
+            "currency": "JPY"
+          },
+          "placedAt": "2026-10-12",
+          "statusLabel": "已发货"
+        }
+      ],
+      "summary": {
+        "shown": 5,
+        "matching": 128,
+        "hasMore": true
+      },
+      "cancelling": null
+    },
+    "cancel-dialog": {
+      "$patch": "default",
+      "cancelling": {
+        "orderId": "o1",
+        "number": "20261014-0042",
+        "customer": "山田 花子",
+        "total": {
+          "amount": 12800,
+          "currency": "JPY"
+        },
+        "paid": true,
+        "reasons": [
+          {
+            "id": "customer",
+            "label": "顾客要求取消"
+          },
+          {
+            "id": "stock",
+            "label": "商品缺货"
+          },
+          {
+            "id": "address",
+            "label": "地址无法配送"
+          },
+          {
+            "id": "other",
+            "label": "其他原因"
+          }
+        ]
+      }
+    },
+    "cancel-ready": {
+      "$patch": "cancel-dialog",
+      "cancelling": {
+        "reasons": [
+          {
+            "id": "customer",
+            "label": "顾客要求取消"
+          },
+          {
+            "id": "stock",
+            "label": "商品缺货",
+            "selected": true
+          },
+          {
+            "id": "address",
+            "label": "地址无法配送"
+          },
+          {
+            "id": "other",
+            "label": "其他原因"
+          }
+        ],
+        "reasonChosen": true
+      }
+    },
+    "cancel-unpaid": {
+      "$patch": "default",
+      "cancelling": {
+        "orderId": "o2",
+        "number": "20261014-0041",
+        "customer": "佐藤 健",
+        "total": {
+          "amount": 2400,
+          "currency": "JPY"
+        },
+        "reasons": [
+          {
+            "id": "customer",
+            "label": "顾客要求取消",
+            "selected": true
+          },
+          {
+            "id": "stock",
+            "label": "商品缺货"
+          },
+          {
+            "id": "address",
+            "label": "地址无法配送"
+          },
+          {
+            "id": "other",
+            "label": "其他原因"
+          }
+        ],
+        "reasonChosen": true,
+        "submitting": true
+      }
+    },
+    "no-match": {
+      "$patch": "default",
+      "query": "高橋",
+      "orders": [],
+      "summary": {
+        "shown": 0,
+        "matching": 0,
+        "hasMore": false
+      }
+    },
+    "filter-empty": {
+      "$patch": "default",
+      "filters": [
+        {
+          "id": "all",
+          "label": "全部",
+          "count": 128
+        },
+        {
+          "id": "unpaid",
+          "label": "待付款",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "id": "toShip",
+          "label": "待发货",
+          "count": 14
+        },
+        {
+          "id": "shipped",
+          "label": "已发货",
+          "count": 97
+        },
+        {
+          "id": "cancelled",
+          "label": "已取消",
+          "count": 11
+        }
+      ],
+      "orders": [],
+      "summary": {
+        "shown": 0,
+        "matching": 0,
+        "hasMore": false
+      }
+    }
+  },
+  "components": {
+    "nav": {
+      "id": "nav",
+      "kind": "NavBar",
+      "leading": {
+        "id": "nav-back",
+        "kind": "IconButton",
+        "icon": "arrow_back",
+        "on": {
+          "tap": {
+            "back": true
+          }
+        }
+      },
+      "children": {
+        "id": "nav-title",
+        "kind": "Text",
+        "text": "订单管理",
+        "font": "font.heading"
+      },
+      "trailing": {
+        "id": "nav-export",
+        "kind": "IconButton",
+        "icon": "download",
+        "on": {
+          "tap": {
+            "navigate": "ExportDocuments"
+          }
+        }
+      }
+    }
+  },
+  "root": {
+    "id": "orders",
+    "kind": "Screen",
+    "children": [
+      {
+        "ref": "nav"
+      },
+      {
+        "id": "toolbar",
+        "kind": "Stack",
+        "gap": "space.3",
+        "padding": [
+          0,
+          16
+        ],
+        "children": [
+          {
+            "id": "search",
+            "kind": "SearchField",
+            "bind": "query",
+            "placeholder": "搜索订单号或顾客",
+            "debounceMs": 300
+          },
+          {
+            "id": "filters",
+            "kind": "ChipRow",
+            "gap": "space.2",
+            "each": "filters",
+            "item": {
+              "id": "filter-{index}",
+              "kind": "Chip",
+              "text": "{item.label} {item.count}",
+              "selected": "{item.selected}",
+              "on": {
+                "tap": {
+                  "call": "listOrders",
+                  "with": {
+                    "filter": "{item.id}",
+                    "query": "{query}"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "match-count",
+            "kind": "Text",
+            "if": "hasOrders",
+            "font": "font.caption",
+            "color": "color.textSecondary",
+            "text": "共 {summary.matching} 笔订单"
+          }
+        ]
+      },
+      {
+        "id": "table",
+        "kind": "Stack",
+        "if": "hasOrders",
+        "padding": [
+          0,
+          16
+        ],
+        "children": [
+          {
+            "id": "table-frame",
+            "kind": "Stack",
+            "radius": "radius.md",
+            "border": "color.border",
+            "children": [
+              {
+                "id": "table-head",
+                "kind": "OrderTableHeader",
+                "columns": {
+                  "compact": [
+                    "5fr",
+                    64,
+                    "3fr",
+                    40
+                  ],
+                  "regular": [
+                    "13fr",
+                    "10fr",
+                    "18fr",
+                    "9fr",
+                    "8fr",
+                    "9fr",
+                    48
+                  ]
+                },
+                "wide": {
+                  "compact": false,
+                  "regular": true
+                }
+              },
+              {
+                "id": "table-body",
+                "kind": "Stack",
+                "each": "orders",
+                "item": {
+                  "id": "order-{index}",
+                  "kind": "OrderTableRow",
+                  "title": "#{item.number}",
+                  "status": "{item.statusLabel}",
+                  "customer": "{item.customer}",
+                  "items": "{item.itemsSummary}",
+                  "placedAt": "{item.placedAt|date:short}",
+                  "total": "{item.total|money}",
+                  "on": {
+                    "tap": {
+                      "navigate": "OrderDetail",
+                      "with": {
+                        "id": "{item.id}"
+                      }
+                    }
+                  },
+                  "children": {
+                    "id": "order-{index}-cancel",
+                    "kind": "IconButton",
+                    "if": "item.cancellable",
+                    "icon": "cancel",
+                    "accessibilityLabel": "取消订单",
+                    "on": {
+                      "tap": {
+                        "open": "cancel-dialog",
+                        "with": {
+                          "id": "{item.id}"
+                        }
+                      }
+                    }
+                  },
+                  "columns": {
+                    "compact": [
+                      "5fr",
+                      64,
+                      "3fr",
+                      40
+                    ],
+                    "regular": [
+                      "13fr",
+                      "10fr",
+                      "18fr",
+                      "9fr",
+                      "8fr",
+                      "9fr",
+                      48
+                    ]
+                  },
+                  "wide": {
+                    "compact": false,
+                    "regular": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "load-more-bar",
+        "kind": "Stack",
+        "if": "hasMore",
+        "padding": [
+          8,
+          16,
+          24,
+          16
+        ],
+        "children": {
+          "id": "load-more",
+          "kind": "Button",
+          "variant": "secondary",
+          "text": "加载更多",
+          "on": {
+            "tap": {
+              "call": "moreOrders",
+              "with": {
+                "after": "{summary.shown}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "no-match",
+        "kind": "EmptyState",
+        "if": "noMatch",
+        "icon": "search_off",
+        "title": "没有找到“{query}”",
+        "detail": "试试订单号的后几位，或顾客的姓",
+        "action": {
+          "id": "clear-search",
+          "kind": "Button",
+          "variant": "secondary",
+          "text": "清除搜索",
+          "on": {
+            "tap": {
+              "set": "query",
+              "to": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "filter-empty",
+        "kind": "EmptyState",
+        "if": "filterEmpty",
+        "icon": "inbox",
+        "title": "这个状态下还没有订单"
+      }
+    ],
+    "overlay": {
+      "id": "cancel-dialog",
+      "kind": "Dialog",
+      "if": "dialogOpen",
+      "role": "alertdialog",
+      "dismissOnBackdrop": true,
+      "children": [
+        {
+          "id": "cd-title",
+          "kind": "Text",
+          "font": "font.heading",
+          "text": "取消订单 #{cancelling.number}？"
+        },
+        {
+          "id": "cd-who",
+          "kind": "Text",
+          "color": "color.textSecondary",
+          "text": "{cancelling.customer} · {cancelling.total|money}"
+        },
+        {
+          "id": "cd-refund",
+          "kind": "Text",
+          "if": "willRefund",
+          "text": "该订单已付款，取消后将原路退款 {cancelling.total|money}。"
+        },
+        {
+          "id": "cd-reasons",
+          "kind": "Stack",
+          "each": "cancelling.reasons",
+          "item": {
+            "id": "reason-{index}",
+            "kind": "ReasonOption",
+            "text": "{item.label}",
+            "selected": "{item.selected}",
+            "on": {
+              "tap": {
+                "set": "item.selected",
+                "to": true
+              }
+            }
+          }
+        },
+        {
+          "id": "cd-actions",
+          "kind": "Row",
+          "gap": "space.3",
+          "children": [
+            {
+              "id": "cd-keep",
+              "kind": "Button",
+              "variant": "secondary",
+              "text": "再想想",
+              "on": {
+                "tap": {
+                  "close": "cancel-dialog"
+                }
+              }
+            },
+            {
+              "id": "cd-confirm",
+              "kind": "Button",
+              "variant": "primary",
+              "disabled": "!canConfirm",
+              "text": {
+                "cases": [
+                  {
+                    "if": "submitting",
+                    "then": "正在取消…"
+                  },
+                  {
+                    "else": "确认取消"
+                  }
+                ]
+              },
+              "on": {
+                "tap": {
+                  "call": "cancelOrder",
+                  "with": {
+                    "id": "{cancelling.orderId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "width": {
+        "compact": "88%",
+        "regular": 480
+      },
+      "anchor": "center"
+    }
+  },
+  "phases": {
+    "loading": {
+      "id": "loading",
+      "kind": "Screen",
+      "children": [
+        {
+          "ref": "nav"
+        },
+        {
+          "id": "sk",
+          "kind": "Stack",
+          "padding": 16,
+          "children": [
+            {
+              "id": "sk-lines",
+              "kind": "Skeleton",
+              "shape": [
+                "line 100%",
+                "line 60%",
+                "line 90%",
+                "line 70%",
+                "line 90%",
+                "line 70%",
+                "line 90%",
+                "line 70%"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "error": {
+      "id": "error",
+      "kind": "Screen",
+      "children": [
+        {
+          "ref": "nav"
+        },
+        {
+          "id": "err",
+          "kind": "EmptyState",
+          "icon": "cloud_off",
+          "title": "订单加载失败",
+          "detail": "检查网络后重试",
+          "action": {
+            "id": "retry",
+            "kind": "Button",
+            "text": "重试",
+            "on": {
+              "tap": {
+                "call": "listOrders",
+                "with": {
+                  "filter": "all",
+                  "query": ""
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "transitions": [
+    { "from": "default", "on": "order-{index}-cancel.tap", "to": "cancel-dialog" },
+    { "from": "cancel-dialog", "on": "reason-{index}.tap", "to": "cancel-ready" },
+    { "from": "cancel-dialog", "on": "cd-keep.tap", "to": "default" },
+    { "from": "cancel-ready", "on": "cd-keep.tap", "to": "default" },
+    { "from": "cancel-ready", "on": "cd-confirm.tap", "outcome": "ok", "to": "default" },
+    { "from": "cancel-ready", "on": "cd-confirm.tap", "outcome": "shipped", "to": "cancel-ready" },
+    { "from": "default", "on": "filter-{index}.tap", "outcome": "ok", "to": "filter-empty" },
+    { "from": "filter-empty", "on": "filter-{index}.tap", "outcome": "ok", "to": "default" },
+    { "from": "no-match", "on": "clear-search.tap", "to": "default" },
+    { "from": "error", "on": "retry.tap", "outcome": "ok", "to": "default" },
+    { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" }
+  ]
+}
