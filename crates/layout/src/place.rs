@@ -2,7 +2,7 @@
 //! in page coordinates, with the tags a person refers to them by.
 
 use taffy::{AvailableSpace, LayoutOutput, NodeId, Style, TaffyError, TaffyTree};
-use underdraw_format::{Edge, Node};
+use underdraw_format::{Edge, Finding, Node};
 
 use crate::{Align, Draw, Font, Ink, Measure, Page, Placed, Rect};
 
@@ -28,14 +28,24 @@ pub(crate) struct Elem<'a> {
     /// It is a popup (a node in an `overlay` slot): drawn after the whole
     /// page, so nothing that comes after its node covers it.
     pub(crate) on_top: bool,
+    /// Why the other description's state it draws cannot be drawn, when
+    /// it draws one: it is crossed out instead.
+    pub(crate) unpictured: Option<String>,
     pub(crate) children: Vec<Elem<'a>>,
 }
 
 /// What a box draws over its own area, before its children.
 pub(crate) enum Look {
-    Box { radius: f32, fill: Option<Ink>, stroke: Option<Ink>, dashed: bool },
+    Box {
+        radius: f32,
+        fill: Option<Ink>,
+        stroke: Option<Ink>,
+        dashed: bool,
+    },
     Cross(Ink),
     TopLine(Ink),
+    /// Another description's state, scaled to fit the box, at its top.
+    Picture(Box<Page>),
 }
 
 /// A place on the parent: each axis at its start, centre or end, `inset`
@@ -69,6 +79,7 @@ impl<'a> Elem<'a> {
             pin: None,
             backdrop: false,
             on_top: false,
+            unpictured: None,
             children: Vec::new(),
         }
     }
@@ -207,7 +218,95 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             cut.push(id);
         }
     }
-    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut })
+    let mut unpictured = Vec::new();
+    unpictured_in(root, "", &mut unpictured);
+    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut, unpictured })
+}
+
+/// Each box in `elem` that cannot draw the state it draws, as a finding
+/// at the node it is part of: its own, or else `owner`'s.
+fn unpictured_in(elem: &Elem, owner: &str, found: &mut Vec<Finding>) {
+    let owner = match elem.source {
+        Some(node) if !node.id.is_empty() => node.id.as_str(),
+        _ => owner,
+    };
+    if let Some(problem) = &elem.unpictured {
+        let finding = Finding { at: owner.to_string(), problem: problem.clone() };
+        if !found.contains(&finding) {
+            found.push(finding);
+        }
+    }
+    for child in &elem.children {
+        unpictured_in(child, owner, found);
+    }
+}
+
+/// `page`'s draws scaled to fit `rect` and set at its top, in its middle
+/// across, cut to it. Its tags are left out: they number the nodes of
+/// another screen, which no one acts on here.
+fn pictured(page: &Page, rect: Rect) -> Draw {
+    let scale = if page.width > 0.0 && page.height > 0.0 {
+        (rect.width / page.width).min(rect.height / page.height)
+    } else {
+        0.0
+    };
+    let x = rect.x + (rect.width - page.width * scale) / 2.0;
+    let mut draws = Vec::new();
+    for draw in &page.draws {
+        if let Some(draw) = moved(draw, scale, x, rect.y) {
+            draws.push(draw);
+        }
+    }
+    Draw::Clip { rect, radius: 0.0, draws }
+}
+
+/// `draw` scaled by `scale` and moved by `x`, `y`; none for a tag.
+fn moved(draw: &Draw, scale: f32, x: f32, y: f32) -> Option<Draw> {
+    let at = |rect: &Rect| Rect {
+        x: x + rect.x * scale,
+        y: y + rect.y * scale,
+        width: rect.width * scale,
+        height: rect.height * scale,
+    };
+    Some(match draw {
+        Draw::Box { rect, radius, fill, stroke, dashed } => Draw::Box {
+            rect: at(rect),
+            radius: radius * scale,
+            fill: *fill,
+            stroke: *stroke,
+            dashed: *dashed,
+        },
+        Draw::Text { rect, text, font, ink, max_lines, align, underline, strike } => Draw::Text {
+            rect: at(rect),
+            text: text.clone(),
+            font: Font {
+                size: font.size * scale,
+                weight: font.weight,
+                line_height: font.line_height * scale,
+            },
+            ink: *ink,
+            max_lines: *max_lines,
+            align: *align,
+            underline: *underline,
+            strike: *strike,
+        },
+        Draw::Cross { rect, ink } => Draw::Cross { rect: at(rect), ink: *ink },
+        Draw::Line { from, to, ink } => Draw::Line {
+            from: [x + from[0] * scale, y + from[1] * scale],
+            to: [x + to[0] * scale, y + to[1] * scale],
+            ink: *ink,
+        },
+        Draw::Clip { rect, radius, draws } => {
+            let mut inside = Vec::new();
+            for draw in draws {
+                if let Some(draw) = moved(draw, scale, x, y) {
+                    inside.push(draw);
+                }
+            }
+            Draw::Clip { rect: at(rect), radius: radius * scale, draws: inside }
+        }
+        Draw::Tag { .. } => return None,
+    })
 }
 
 fn add<'e>(
@@ -285,6 +384,7 @@ fn emit<'t, 'n>(
             Look::TopLine(ink) => {
                 Draw::Line { from: [rect.x, rect.y], to: [rect.x + rect.width, rect.y], ink: *ink }
             }
+            Look::Picture(page) => pictured(page, rect),
         });
     }
     if let Some(words) = &elem.words {

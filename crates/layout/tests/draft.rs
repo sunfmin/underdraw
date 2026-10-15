@@ -18,7 +18,8 @@ fn page(state: State, width: f32) -> Page {
     let (screen, tokens) = (Screen::read(&read("screen.json"), Shared::default()), read("tokens.json"));
     let breakpoint = Breakpoint::for_width(&tokens, width as u32);
     let root = screen.instantiate(state, breakpoint, None).unwrap();
-    layout(&root, &tokens, &screen, width, Lang::default(), &mut Fixed).unwrap()
+    layout(&root, &tokens, &screen, width, Lang::default(), &mut Fixed, &underdraw_layout::NoPictures)
+        .unwrap()
 }
 
 fn placed<'a>(page: &'a Page, id: &str) -> &'a Placed {
@@ -160,7 +161,8 @@ fn tiny_with(children: Value, own: Option<&Value>) -> Page {
     let screen = Screen::read(&screen, Shared::default());
     let root =
         screen.instantiate(State::Fixture("default"), Breakpoint::for_width(&tokens, 390), None).unwrap();
-    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed).unwrap()
+    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed, &underdraw_layout::NoPictures)
+        .unwrap()
 }
 
 fn texts(page: &Page) -> Vec<&str> {
@@ -506,4 +508,97 @@ fn text_in_a_colour_token_is_drawn_in_the_ink_its_colour_reads_as() {
     assert_eq!(ink("secondary"), underdraw_layout::Ink::Muted);
     assert_eq!(ink("dark"), underdraw_layout::Ink::Text);
     assert_eq!(ink("missing"), underdraw_layout::Ink::Text);
+}
+
+/// Another screen's state as a picture: a 200 × 400 page holding one box,
+/// with a tag numbering it; or why it cannot be drawn.
+struct Album;
+
+impl underdraw_layout::Pictures for Album {
+    fn picture(&self, screen: &str, state: Option<&str>) -> Result<Page, String> {
+        if (screen, state) != ("List", Some("empty")) {
+            return Err(format!("no {screen} {state:?}"));
+        }
+        let rect = underdraw_layout::Rect { x: 0.0, y: 100.0, width: 200.0, height: 50.0 };
+        let tag = underdraw_layout::Rect { x: 0.0, y: 100.0, width: 18.0, height: 18.0 };
+        Ok(Page {
+            width: 200.0,
+            height: 400.0,
+            draws: vec![
+                Draw::Box { rect, radius: 8.0, fill: Some(Ink::Strong), stroke: None, dashed: false },
+                Draw::Tag { rect: tag, text: "1".to_string(), ink: Ink::Label },
+            ],
+            nodes: Vec::new(),
+            cut: Vec::new(),
+            unpictured: Vec::new(),
+        })
+    }
+}
+
+/// A screen of `children`, laid out at a phone's width with [`Album`].
+fn pictured(children: Value) -> Page {
+    let screen = serde_json::json!({
+        "screen": "Tiny", "data": {}, "types": {}, "fixtures": { "default": {} }, "conditions": {},
+        "root": { "id": "tiny", "component": "Screen", "children": children }
+    });
+    let tokens = read("tokens.json");
+    let screen = Screen::read(&screen, Shared::default());
+    let root =
+        screen.instantiate(State::Fixture("default"), Breakpoint::for_width(&tokens, 390), None).unwrap();
+    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed, &Album).unwrap()
+}
+
+#[test]
+fn a_wireframe_draws_the_state_it_names_scaled_to_its_box_without_its_labels() {
+    let page = pictured(serde_json::json!([
+        { "id": "shot", "component": "Wireframe", "screen": "List", "state": "empty" }
+    ]));
+    let shot = placed(&page, "shot").rect;
+    assert_eq!((shot.width, shot.height), (390.0, 780.0), "as tall as the state for its width");
+    assert!(page.unpictured.is_empty());
+    let inside = page
+        .draws
+        .iter()
+        .find_map(|d| match d {
+            Draw::Clip { rect, draws, .. } if *rect == shot => Some(draws),
+            _ => None,
+        })
+        .expect("the state is drawn cut to the box");
+    assert_eq!(inside.len(), 1, "its tag is left out: {inside:?}");
+    let Draw::Box { rect, radius, .. } = &inside[0] else { panic!("{inside:?}") };
+    assert_eq!(
+        (rect.x, rect.y - shot.y, rect.width, rect.height, *radius),
+        (shot.x, 195.0, 390.0, 97.5, 15.6)
+    );
+}
+
+#[test]
+fn a_wireframe_given_a_shape_fits_the_state_in_it_at_the_top() {
+    let page = pictured(serde_json::json!([
+        { "id": "shot", "component": "Wireframe", "screen": "List", "state": "empty", "aspectRatio": "1:1" }
+    ]));
+    let shot = placed(&page, "shot").rect;
+    assert_eq!((shot.width, shot.height), (390.0, 390.0));
+    let inside = page.draws.iter().find_map(|d| match d {
+        Draw::Clip { rect, draws, .. } if *rect == shot => Some(draws),
+        _ => None,
+    });
+    let Some([Draw::Box { rect, .. }]) = inside.map(Vec::as_slice) else { panic!("{inside:?}") };
+    // Scaled by 390 / 400 to fit the square's height: 195 wide, in its middle.
+    assert_eq!((rect.x - shot.x, rect.y - shot.y, rect.width), (97.5, 97.5, 195.0));
+}
+
+#[test]
+fn a_wireframe_that_cannot_be_drawn_is_crossed_out_and_said_at_its_node() {
+    let page = pictured(serde_json::json!([
+        { "id": "card", "component": "Card", "children": [
+            { "id": "shot", "component": "Wireframe", "screen": "List", "state": "gone" } ] },
+        { "id": "none", "component": "Wireframe" }
+    ]));
+    let at: Vec<(&str, &str)> = page.unpictured.iter().map(|f| (f.at.as_str(), f.problem.as_str())).collect();
+    assert_eq!(at[0], ("shot", "no List Some(\"gone\")"));
+    assert_eq!(at[1].0, "none");
+    assert!(at[1].1.contains("give it \"screen\""), "{at:?}");
+    let shot = placed(&page, "shot").rect;
+    assert!(page.draws.iter().any(|d| matches!(d, Draw::Cross { rect, .. } if *rect == shot)));
 }

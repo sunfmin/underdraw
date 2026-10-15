@@ -17,6 +17,7 @@ mod journeys;
 mod links;
 mod notes;
 mod paint;
+mod pictures;
 mod project;
 mod reference;
 mod scrollbar;
@@ -278,11 +279,27 @@ fn checked_among(
     dir: &Path,
     others: &ScreenParams,
 ) -> anyhow::Result<underdraw_format::Checked> {
-    let tokens = Project::of(dir)?.tokens;
+    checked_inside(screen, dir, others, &[])
+}
+
+/// What [`checked_among`] finds, of a description drawn inside each of
+/// the screens `outer` names in turn, outermost first: a node that draws
+/// one of them, or itself, draws itself, which is refused.
+fn checked_inside(
+    screen: &Screen,
+    dir: &Path,
+    others: &ScreenParams,
+    outer: &[String],
+) -> anyhow::Result<underdraw_format::Checked> {
+    let project = Project::of(dir)?;
+    let tokens = project.tokens;
+    let mut drawing = outer.to_vec();
+    drawing.push(screen.name().to_string());
+    let album = pictures::Album::new(&project.root, drawing, Lang::default());
     let locale = screen.description().get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    let mut checked =
-        underdraw_layout::check(screen, &tokens, others, &mut typesetter).map_err(anyhow::Error::msg)?;
+    let mut checked = underdraw_layout::check(screen, &tokens, others, &mut typesetter, &album)
+        .map_err(anyhow::Error::msg)?;
     if dir.join(KINDS).exists() {
         checked.fault(underdraw_format::Finding {
             at: KINDS.to_string(),

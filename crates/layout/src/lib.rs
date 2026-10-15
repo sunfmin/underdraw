@@ -13,7 +13,7 @@ mod tokens;
 
 use serde::Serialize;
 use serde_json::Value;
-use underdraw_format::{Lang, Node, Screen};
+use underdraw_format::{Finding, Lang, Node, Screen};
 
 pub use check::{DEFAULT_WIDTHS, WIDTH_RANGE, check, named_widths, widths};
 
@@ -133,6 +133,28 @@ pub struct Page {
     /// The ids of nodes floated over others (overlays) that run off the
     /// page, so the picture cuts them.
     pub cut: Vec<String>,
+    /// Each node that draws another description's state it cannot draw,
+    /// at its id, and why: drawn crossed out instead.
+    pub unpictured: Vec<Finding>,
+}
+
+/// Other descriptions' states, laid out, for a node that draws one inside
+/// it (a `wireframe` look, as the built-in `Wireframe` has): whoever lays
+/// out a screen reads them, since nothing here reads a file.
+pub trait Pictures {
+    /// The state `state` (its first fixture when none) of the description
+    /// under the project that declares the screen `screen`, laid out at
+    /// its own width; or why it cannot be drawn.
+    fn picture(&self, screen: &str, state: Option<&str>) -> Result<Page, String>;
+}
+
+/// No other description at all: every node that draws one is crossed out.
+pub struct NoPictures;
+
+impl Pictures for NoPictures {
+    fn picture(&self, screen: &str, _state: Option<&str>) -> Result<Page, String> {
+        Err(format!("no description under the project is read here, so {screen:?} is not drawn"))
+    }
 }
 
 /// Sets text, for layout: the size `text` takes in `font`, wrapped to
@@ -146,6 +168,7 @@ pub trait Measure {
 /// component drawn as `screen` (the screen `root` is a state of) says
 /// in the components it may use; a node of a component none of them
 /// defines is drawn as a box with its name, and assumed, said in `lang`.
+/// A node that draws another description's state takes it from `pictures`.
 pub fn layout(
     root: &Node,
     tokens: &Value,
@@ -153,8 +176,10 @@ pub fn layout(
     width: f32,
     lang: Lang,
     measure: &mut dyn Measure,
+    pictures: &dyn Pictures,
 ) -> Result<Page, String> {
     let tokens = tokens::Tokens(tokens);
-    let elem = look::Catalog { tokens: &tokens, components: &screen.components, lang }.node(root);
+    let catalog = look::Catalog { tokens: &tokens, components: &screen.components, lang, pictures };
+    let elem = catalog.node(root);
     place::place(&elem, width, measure).map_err(|e| format!("layout failed: {e}"))
 }

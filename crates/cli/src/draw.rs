@@ -12,7 +12,8 @@ use underdraw_format::{Breakpoint, Lang, Model, Node, Screen, State, Transition,
 use underdraw_layout::Page;
 use vello::Scene;
 
-use crate::{checked, paint, pick, read, text};
+use crate::pictures::Album;
+use crate::{checked_inside, paint, pick, read, text};
 
 /// The state to draw, and at what size.
 pub struct Wanted {
@@ -138,16 +139,36 @@ pub struct Description {
     dir: PathBuf,
     tokens: Value,
     checked: underdraw_format::Checked,
+    /// Its project's root, under which the descriptions it draws are.
+    root: PathBuf,
+    /// The screens being drawn, outermost first, itself last: each draws
+    /// the next inside it.
+    drawing: Vec<String>,
 }
 
 impl Description {
     /// The description at `path` (a directory or its screen.json), read
     /// and checked; an error only when it cannot be read.
     pub fn read(path: &Path) -> anyhow::Result<Description> {
+        Description::read_inside(path, &[])
+    }
+
+    /// The description at `path` as [`Description::read`] reads it, drawn
+    /// inside each of the screens `outer` names in turn, outermost first:
+    /// it draws none of them.
+    pub fn read_inside(path: &Path, outer: &[String]) -> anyhow::Result<Description> {
         let (screen, dir) = read(path)?;
-        let tokens = crate::project::Project::of(&dir)?.tokens;
-        let checked = checked(&screen, &dir)?;
-        Ok(Description { path: path.to_path_buf(), screen, dir, tokens, checked })
+        let project = crate::project::Project::of(&dir)?;
+        let checked = checked_inside(&screen, &dir, &underdraw_format::ScreenParams::new(), outer)?;
+        let mut drawing = outer.to_vec();
+        drawing.push(screen.name().to_string());
+        let (tokens, root) = (project.tokens, project.root);
+        Ok(Description { path: path.to_path_buf(), screen, dir, tokens, checked, root, drawing })
+    }
+
+    /// What `check` finds in it.
+    pub fn findings(&self) -> &[underdraw_format::Finding] {
+        &self.checked.findings
     }
 
     /// The widths its tokens name it drawn at, the first the one a single
@@ -182,7 +203,7 @@ impl Description {
         drawn: Option<&BTreeSet<String>>,
         lang: Lang,
     ) -> anyhow::Result<Laid> {
-        let Description { screen, dir, tokens, checked, .. } = self;
+        let Description { screen, dir, tokens, checked, root, drawing, .. } = self;
         if !checked.ok {
             bail!(
                 "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
@@ -197,20 +218,28 @@ impl Description {
         };
         let breakpoint = Breakpoint::for_width(tokens, wanted.width);
         let undrawn = drawn.map(|drawn| Undrawn { drawn, lang });
-        let root = screen.instantiate(state, breakpoint, undrawn.as_ref()).map_err(anyhow::Error::msg)?;
+        let node = screen.instantiate(state, breakpoint, undrawn.as_ref()).map_err(anyhow::Error::msg)?;
         let locale = screen.description().get("locale").and_then(Value::as_str);
         let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-        let page =
-            underdraw_layout::layout(&root, tokens, screen, wanted.width as f32, lang, &mut typesetter)
-                .map_err(anyhow::Error::msg)?;
+        let album = Album::new(root, drawing.clone(), lang);
+        let page = underdraw_layout::layout(
+            &node,
+            tokens,
+            screen,
+            wanted.width as f32,
+            lang,
+            &mut typesetter,
+            &album,
+        )
+        .map_err(anyhow::Error::msg)?;
         let mut calls = BTreeMap::new();
-        called(&root, &mut calls);
+        called(&node, &mut calls);
         let mut handlers = BTreeMap::new();
-        handled(&root, &mut handlers);
+        handled(&node, &mut handlers);
         let mut written = BTreeMap::new();
-        ids(&root, &mut written);
+        ids(&node, &mut written);
         let mut origins = BTreeMap::new();
-        originated(&root, &mut origins);
+        originated(&node, &mut origins);
         Ok(Laid { dir: dir.clone(), shown, breakpoint, page, calls, handlers, written, origins, typesetter })
     }
 
