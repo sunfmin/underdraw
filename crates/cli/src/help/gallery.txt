@@ -34,7 +34,7 @@ DOES
   to write in and a Send button, to talk to the agent (below). With nothing picked to talk
   about (an overview or a flow, no arrow picked), it says what a click, a
   ⌘-click and ⌘C do, and what the purple marks mean (below). ⌘\ (Ctrl+\ on Linux and Windows), or the toolbar's
-  button at its right, hides the sidebar and shows it
+  button at its right end, hides the sidebar and shows it
   again; it is shown when the window opens, and while it is hidden the
   pictures take its width. Scroll the sidebar with the wheel over it.
   The tree opens 260pt wide and the sidebar 360pt. Drag the line between
@@ -48,27 +48,41 @@ DOES
   as wide as it was dragged. The widths are not kept once the window
   closes.
 
-  Along the window's top, over the three parts, runs the toolbar. At its
-  left, "← back" and "→ forward" step through what the window has shown,
-  as a browser does: every change of what is shown is a step, whether
-  picked in the tree, clicked in a flow or an overview (a box, a state, a
-  journey's mark), stepped to in a journey, or reached by acting on a node
-  (⌘-click, or an outcome chosen in the sidebar), or an item of the
-  inbox clicked. ⌘[ and ⌘] (Ctrl+[
-  and Ctrl+] on Linux and Windows) do the same. A button with nowhere to
+  Along the window's top, over the three parts, runs the toolbar. It is
+  drawn from the gallery's own description of it, the Toolbar component
+  under drafts/gallery in underdraw's repository, laid out as `underdraw
+  render drafts/gallery/components/Toolbar` lays it out, with the window
+  as it now stands as its bar. At its left, ← and → step back and forward
+  through what the window has shown, as a browser does: every change of
+  what is shown is a step, whether picked in the tree, clicked in a flow
+  or an overview (a box, a state, a journey's mark), stepped to in a
+  journey, or reached by acting on a node (⌘-click, or an outcome chosen
+  in the sidebar), or an item of the inbox clicked. ⌘[ and ⌘] (Ctrl+[
+  and Ctrl+] on Linux and Windows) do the same. An arrow with nowhere to
   go is grayed. Showing something new after going back drops what was
   forward of it, and going back or forward starts a new path for `back`,
   as picking in the tree does. This history is the window's: acting on a
   node whose event is `back` still returns along the path taken by acting
-  (below), as the app would, and is itself a step of the window's. At its
-  right, "hide sidebar" hides the sidebar and "show sidebar" shows it, as
-  ⌘\ does. The history is not kept once the window closes; ← and → alone,
-  without ⌘, still step a journey played.
+  (below), as the app would, and is itself a step of the window's. The
+  history is not kept once the window closes; ← and → alone, without ⌘,
+  still step a journey played. Beside the arrows, where the window is,
+  from the root to the state shown.
 
-  Left of it, "hide marks ⌘." hides every mark the gallery draws over the
-  pictures, leaving the bare wireframe, and "show marks ⌘." shows them
-  again; ⌘. (Ctrl+. on Linux and Windows, as the button then says) does
-  the same. The marks are the purple marks of where acting goes (dashed
+  At its right: Inspect and Play, what a plain click on a picture does.
+  Inspect, as the window opens, picks the node under it; Play acts on it
+  as a ⌘-click does, so a design can be clicked through as the app would
+  be. Then whether an agent waits on this root with `underdraw notes
+  <root> --wait` (or on a directory above it): "Agent listening" while
+  one does, "No agent listening" otherwise. Then, while anything waits on
+  you under the root, "<how many> waiting on you": click it to list all
+  of it in the sidebar whatever is picked (the inbox, below), and again
+  to put it away. Last, the button that hides the sidebar and shows it
+  again, as ⌘\ does. In a narrow window only the arrows, where the window
+  is, and the inbox are shown.
+
+  ⌘. (Ctrl+. on Linux and Windows) hides every mark the gallery draws
+  over the pictures, leaving the bare wireframe, and shows them again.
+  The marks are the purple marks of where acting goes (dashed
   outlines, ↗ and → badges), the numbered labels, the orange "?" of each
   assumption and its outline, the blue pins of notes, and the journeys'
   marks: the double ring on the node a journey acts on next and each

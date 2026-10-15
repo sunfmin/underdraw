@@ -255,13 +255,17 @@ _Avoid_: panel, inspector, debug view
 
 **Toolbar**:
 The strip along the top of the gallery's window, over the tree, the
-pictures and the sidebar: back and forward through what the window has
-shown, every change of it a step, kept only while the window is open; the
-button that hides and shows every mark drawn over the pictures (the
-purple marks of where acting goes, the labels, the orange "?", the pins
-and the journeys' marks), leaving the bare **wireframe**, as ⌘. does; and
-the button that hides and shows the **sidebar**. Its back is the window's,
-not a design's `back`, which still returns along the path taken by acting.
+pictures and the sidebar, drawn from the gallery's own Toolbar component:
+back and forward through what the window has shown, every change of it a
+step, kept only while the window is open; where the window is; Inspect
+and Play, whether a plain click on a picture picks a node or acts on it;
+whether an agent is listening; how many things wait on the person, which
+opens the **inbox** of the whole root; and the button that hides and
+shows the **sidebar**. ⌘. hides and shows every mark drawn over the
+pictures (the purple marks of where acting goes, the labels, the orange
+"?", the pins and the journeys' marks), leaving the bare **wireframe**.
+Its back is the window's, not a design's `back`, which still returns
+along the path taken by acting.
 _Avoid_: navigation bar, header
 
 **Overview**:

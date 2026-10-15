@@ -7,8 +7,10 @@
 //! of what can be done with it; for a directory picked, the
 //! flow between the screens under it; for a journey picked (ADR 0022), its
 //! steps played one by one. Along the top, over all three, the toolbar
-//! ([`toolbar`]): back and forward through what the window has shown
-//! ([`history`]), and the button that hides and shows the sidebar. The person talks to the agent about what they
+//! ([`toolbar`]), drawn from the gallery's own Toolbar component: back
+//! and forward through what the window has shown ([`history`]), what a
+//! plain click does, whether an agent listens, the inbox, and the button
+//! that hides and shows the sidebar. The person talks to the agent about what they
 //! picked (ADR 0023): a node, a whole state, an arrow of an overview or
 //! a flow, or a whole journey played has one note, a conversation shown in the sidebar under its
 //! card, said more in from the box at its foot, and drawn as a numbered pin
