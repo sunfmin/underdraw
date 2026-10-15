@@ -1,5 +1,7 @@
 # Operations live in the screen, and are called by name
 
+Superseded in part: operations, types and conditions are shared in the project's domain by [ADR 0020](0020-a-project-shares-one-domain.md).
+
 A screen description declares its **operations** — the queries and
 commands behind it — in `screen.json`, beside the view model and conditions
 they are written in, and a node calls one with the `call` action. Before
