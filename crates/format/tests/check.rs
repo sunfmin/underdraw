@@ -2,9 +2,12 @@
 //! found where it was planted, and says what is wrong.
 
 use serde_json::{Value, json};
-use underdraw_format::{Checked, Components, check};
+use underdraw_format::{Checked, Screen, Shared};
 
-const DRAFT: &str = include_str!("../../../drafts/airbnb-listing/screen.json");
+/// A frozen copy of `drafts/airbnb-listing`, kept beside the tests so that
+/// designing in the live draft never moves a planted fault. The other crates'
+/// tests on the Airbnb draft read this copy too.
+const DRAFT: &str = include_str!("airbnb-listing/screen.json");
 
 fn draft() -> Value {
     serde_json::from_str(DRAFT).unwrap()
@@ -303,7 +306,9 @@ fn each_fault_in_a_screens_components_is_found() {
             { "box": "column", "backdrop": true },
             { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } },
             { "box": "stack", "justify": { "cases": [ { "if": "title", "then": "end" }, { "else": "left" } ] } },
-            { "text": "{title}", "underline": "yes", "pin": { "x": "right", "y": "{edge}", "z": 1 } }
+            { "text": "{title}", "underline": "yes", "pin": { "x": "right", "y": "{edge}", "z": 1 } },
+            { "text": "{title}", "if": "title = \"\"" },
+            { "cases": [ { "if": "title|loud", "then": "{title}" }, { "else": null } ] }
         ] }, "pinned": "yes" }
     }));
     let mut own = own;
@@ -326,6 +331,8 @@ fn each_fault_in_a_screens_components_is_found() {
         ("components.Wrong.look.children[8].underline", "underline is true or false"),
         ("components.Wrong.look.children[8].pin.x", "\"right\" is not an edge: write start, center, end"),
         ("components.Wrong.look.children[8].pin.z", "a pin holds x, y and inset"),
+        ("components.Wrong.look.children[9].if", "title = \"\" is not a condition: equality is written =="),
+        ("components.Wrong.look.children[10].cases[0].if", "loud is not a filter"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
@@ -354,14 +361,43 @@ fn a_component_with_a_backdrop_must_be_an_overlay() {
 }
 
 #[test]
+fn a_node_in_a_slot_a_look_never_draws_is_found() {
+    let slotted = r#""text": "房客推荐", "overlay": { "id": "dot", "component": "Badge", "text": "1" },
+        "trailing": [ { "id": "a", "component": "Icon", "icon": "star" }, { "id": "b", "component": "Icon", "icon": "star" } ],"#;
+    let checked = check(&planted("slotted", r#""text": "房客推荐","#, slotted));
+    assert!(
+        found(&checked, "guest-favorite.overlay", "Badge's look places no \"$children\", so dot in overlay"),
+        "{:#?}",
+        checked.findings
+    );
+    assert!(found(&checked, "guest-favorite.trailing", "so a, b in trailing"), "{:#?}", checked.findings);
+
+    // A look that places "$children", even in one branch of its cases, draws them.
+    let mut placed: Value = serde_json::from_str(&DRAFT.replace(r#""text": "房客推荐","#, slotted)).unwrap();
+    placed["components"]["Badge"] = json!({ "params": ["text"], "look": { "box": "row", "children": [
+        { "text": "{text}" }, { "cases": [ { "if": "text", "then": "$children" }, { "else": null } ] } ] } });
+    let checked = check(&placed);
+    assert!(!checked.findings.iter().any(|f| f.at.starts_with("guest-favorite.")), "{:#?}", checked.findings);
+}
+
+#[test]
 fn a_component_says_whether_it_scrolls_or_is_pinned() {
-    let defaults = Components::read(&json!({}));
+    let defaults = read(&json!({})).components;
     assert!(defaults.scrolls("Carousel") && defaults.pinned("StickyBar"));
     assert!(!defaults.scrolls("Row") && !defaults.pinned("Row"));
     let screen = json!({ "components": {
         "Feed": { "scrolls": true, "look": "$children" },
         "StickyBar": { "look": "$children" } } });
-    let components = Components::read(&screen);
+    let components = read(&screen).components;
     assert!(components.scrolls("Feed"), "a screen's own component scrolls when it says so");
     assert!(!components.pinned("StickyBar"), "a screen's own component replaces underdraw's whole");
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

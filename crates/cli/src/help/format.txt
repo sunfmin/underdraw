@@ -210,7 +210,8 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
-  A component draws its slots only if its look places "$children".
+  A component draws its slots only if its look places "$children"; check
+  refuses a node in a slot of one whose look does not (IconButton, Badge).
   "each" with no "item" passes the elements to the component as "items" (photos):
     { "id": "photos", "component": "ImageCarousel", "each": "listing.photos" }
   "item" sees item and index; "children" of the same node are drawn once
@@ -828,7 +829,8 @@ LOOKS
   (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.
     "columns": "{columns|or:2}"     "repeat": "{items|count|atMost:5}"
   A look's "if" uses the condition grammar over props written without
-  braces: "value && value != \"\"", "size == \"small\"", "value|first".
+  braces: "value && value != \"\"", "size == \"small\"", "value|first";
+  check refuses one that is not the grammar, and a filter that is none.
   A prop holds when given and not false; "" counts as given.
   Any key named icon or ending in Icon holds a Material Symbols name.
 

@@ -6,19 +6,17 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
-use crate::components::{self, Components, Declared, track_faults};
+use crate::components::{Components, Declared, track_faults};
 use crate::conditions::{Conditions, UseSite};
-use crate::domain;
 use crate::expand::{Frame, Instances, Met};
 use crate::field::{Base, Field};
-use crate::fixture;
-use crate::instance::{State, build};
+use crate::instance::build;
 use crate::jobs;
 use crate::operations::{BulkOf, Operation, Operations};
 use crate::overlay::Anchor;
-use crate::params::{self, ScreenParams};
-use crate::schema::{Schema, Scope, object};
-use crate::showcase;
+use crate::params::ScreenParams;
+use crate::schema::{Schema, Scope};
+use crate::screen::Screen;
 use crate::subtrees::{self, Subtree, Subtrees};
 use crate::template::{self, Format};
 use crate::transitions;
@@ -76,14 +74,14 @@ impl Findings {
     }
 }
 
-/// Every fault in the screen description `screen`: the view model, the
-/// fixtures, the conditions, and every node's paths, templates and cases.
-/// When there is none, which fixtures each condition holds in; a condition
-/// that holds in all of them, or in none, is then itself a fault. Every
-/// node's component is one the screen's own `"components"` or underdraw
-/// defines, and the screen's own components are checked too. Where it navigates is
-/// not: one description alone cannot see the others.
-pub fn check(screen: &Value) -> Checked {
+/// Every fault in the screen description `screen`: what reading it found
+/// (the view model, the fixtures, the conditions, the components), and
+/// every node's paths, templates and cases. When there is none, which
+/// fixtures each condition holds in; a condition that holds in all of
+/// them, or in none, is then itself a fault. Every node's component is one
+/// the screen's own `"components"`, the project's or underdraw defines.
+/// Where it navigates is not: one description alone cannot see the others.
+pub fn check(screen: &Screen) -> Checked {
     check_among(screen, &ScreenParams::new())
 }
 
@@ -91,43 +89,17 @@ pub fn check(screen: &Value) -> Checked {
 /// params `others` holds: each `navigate` to one of them gives each of its
 /// params, of its type, in `with`, and nothing else. A navigate to a screen
 /// not in `others` is held to nothing.
-pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
-    let mut findings = Findings::default();
-    let screen = &domain::expand(screen, &mut findings);
-    let known = Components::read(screen);
-    known.check(screen, &mut findings);
-    let schema = Schema::read(screen, &mut findings);
-    let mut fixtures = fixture::read(screen, &schema, &mut findings);
-    if let Some(name) = showcase::shows(screen) {
-        // A showcase's view model is the component's params.
-        let unknown = "data has no field ";
-        for finding in &mut findings.0 {
-            if let Some(param) = finding.problem.strip_prefix(unknown) {
-                finding.problem = format!(
-                    "{name} has no param {param}: a fixture gives each of its params, and nothing else"
-                );
-            }
-        }
-    }
-    if let Some(name) = showcase::shows(screen)
-        && fixtures.is_empty()
-    {
-        findings.add(
-            "fixtures",
-            &format!("{name} is shared by the project, so it is shown on its own: give components/{name}.json \"fixtures\", each a value of its params, to draw it in"),
-        );
-    }
-    params::read(screen, &schema, &mut findings);
-    let conditions = Conditions::read(screen, &schema, &mut findings);
-    conditions.fill(&schema, &mut fixtures);
-    let operations = Operations::read(screen, &schema, &conditions, &mut findings);
-    jobs::check(&operations, &schema, &fixtures, &mut findings);
-    subtrees::check(screen, &schema, &mut findings);
-    let components = Subtrees::read(screen);
-    for Declared { name, body, at, .. } in components::declared(screen) {
+pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
+    let mut findings = Findings(screen.findings().to_vec());
+    let Screen { components: known, schema, fixtures, conditions, operations, transitions, .. } = screen;
+    let description = screen.description();
+    jobs::check(operations, schema, fixtures, &mut findings);
+    subtrees::check(known.declared(), schema, &mut findings);
+    let components = known.subtrees();
+    for Declared { name, body, at, .. } in known.declared() {
         if body.get("nodes").is_some() && known.has(name) {
             findings.add(
-                &at,
+                at,
                 &format!(
                     "{name} is underdraw's own component: give the screen's whose body is nodes its own name"
                 ),
@@ -135,46 +107,40 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
         }
     }
     let mut opened = BTreeSet::new();
-    collect_opened(screen, &mut opened);
+    collect_opened(description, &mut opened);
     let mut walk = Walk {
         opened: &opened,
         others,
-        schema: &schema,
-        conditions: &conditions,
-        operations: &operations,
-        components: &components,
-        known: &known,
-        instances: Instances::new(&components),
+        schema,
+        conditions,
+        operations,
+        components,
+        known,
+        instances: Instances::new(components),
         findings: &mut findings,
     };
-    match screen.get("root") {
+    match description.get("root") {
         Some(root) => walk.node(root, &schema.roots(), &Known::default(), "root", ""),
         None => walk.findings.add("root", "the screen needs a root node"),
     }
-    let mut phases = Vec::new();
-    for (name, tree) in object(screen, "phases") {
-        if name.starts_with('$') {
-            continue;
+    let phases = screen.phases();
+    for name in &phases {
+        if let Some(tree) = description.get("phases").and_then(|phases| phases.get(name)) {
+            // A phase renders before data arrives: nothing in it may read data.
+            walk.node(tree, &Vec::new(), &Known::default(), &format!("phases.{name}"), "");
         }
-        // A phase renders before data arrives: nothing in it may read data.
-        walk.node(tree, &Vec::new(), &Known::default(), &format!("phases.{name}"), "");
-        phases.push(name.clone());
     }
-    let fixture_names: Vec<String> = fixtures.iter().map(|(name, _)| name.clone()).collect();
+    let fixture_names = screen.fixture_names();
     let states: Vec<String> = fixture_names.iter().chain(&phases).cloned().collect();
-    transitions::check(screen, &states, &operations, &mut findings);
+    transitions::check(description, components, &states, operations, &mut findings);
     // Which nodes a state shows is known only by building it, and only a
     // description with no other fault can be built.
     if findings.0.is_empty() {
-        for (index, transition) in transitions::read(screen).iter().enumerate() {
+        for (index, transition) in transitions.iter().enumerate() {
             let from = transition.from.as_str();
-            let state = if fixture_names.iter().any(|name| name == from) {
-                State::Fixture(from)
-            } else {
-                State::Phase(from)
-            };
+            let state = screen.state(from);
             let shown = Breakpoint::ALL.into_iter().any(|breakpoint| {
-                build(screen, &conditions, &fixtures, state, breakpoint)
+                build(screen, state, breakpoint, None)
                     .is_ok_and(|tree| transitions::holds(&tree, &transition.node))
             });
             if !shown {
@@ -200,8 +166,8 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
                 // One on a type holds of each value: it must be true of one
                 // and false of another, wherever the fixtures hold any.
                 let (mut of_some, mut fails_of_some) = (false, false);
-                for (name, data) in &fixtures {
-                    let (holds, fails) = conditions.of_values(&schema, &condition.name, data);
+                for (name, data) in fixtures {
+                    let (holds, fails) = conditions.of_values(schema, &condition.name, data);
                     if holds {
                         holds_in.push(name.clone());
                     }
@@ -222,7 +188,7 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
                 });
                 continue;
             }
-            for (name, data) in &fixtures {
+            for (name, data) in fixtures {
                 if conditions.holds(&condition.name, data) {
                     holds_in.push(name.clone());
                 }
@@ -238,7 +204,7 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
         }
     }
     Checked {
-        screen: screen.get("screen").and_then(Value::as_str).unwrap_or_default().to_string(),
+        screen: screen.name().to_string(),
         ok: findings.0.is_empty(),
         fixtures: fixture_names,
         phases,
@@ -308,11 +274,11 @@ struct Walk<'a> {
     schema: &'a Schema,
     conditions: &'a Conditions,
     operations: &'a Operations,
-    components: &'a Subtrees<'a>,
+    components: &'a Subtrees,
     /// Every component a node may be: underdraw's and the screen's look components.
     known: &'a Components,
     /// The instances whose nodes are being walked, outermost first.
-    instances: Instances<'a, 'a, Around>,
+    instances: Instances<'a, Around>,
     findings: &'a mut Findings,
 }
 
@@ -421,6 +387,28 @@ impl<'a> Walk<'a> {
                 &format!("component {kind} has a backdrop, which only an overlay draws: put it in \"overlay\", or take backdrop out of its look"),
             );
         }
+        if let Some(Value::String(kind)) = object.get("component")
+            && self.known.look(kind).is_some_and(|look| !look.places_children())
+        {
+            for (slot, held) in object {
+                if !crate::instance::SLOTS.contains(&slot.as_str()) {
+                    continue;
+                }
+                let held = match held {
+                    Value::Array(nodes) => nodes.iter().collect(),
+                    node => vec![node],
+                };
+                if held.is_empty() {
+                    continue;
+                }
+                let ids: Vec<&str> = held.iter().filter_map(|node| node.get("id")?.as_str()).collect();
+                let what = if ids.is_empty() { "what it holds".to_string() } else { ids.join(", ") };
+                self.findings.add(
+                    &format!("{at}.{slot}"),
+                    &format!("{kind}'s look places no \"$children\", so {what} in {slot} is never drawn: move it to a container, or define a component whose look places \"$children\""),
+                );
+            }
+        }
         let mut known = known.clone();
         if key == "overlay"
             && let Some(Value::String(kind)) = object.get("component")
@@ -525,7 +513,7 @@ impl<'a> Walk<'a> {
     /// component's nodes read only those params.
     fn instance(
         &mut self,
-        component: &Subtree<'a>,
+        component: &'a Subtree,
         object: &Map<String, Value>,
         scope: &Scope,
         known: &Known,

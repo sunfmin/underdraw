@@ -7,12 +7,10 @@
 use std::collections::BTreeSet;
 
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::Lang;
-
-/// The parts of a description that hold nodes, and so actions.
-const TREES: [&str; 3] = ["root", "phases", "components"];
+use crate::subtrees::Subtrees;
 
 /// One `navigate`: the node it is on, by its id as written and, inside a
 /// component, joined to its instance's (empty for a node with none), and
@@ -23,11 +21,12 @@ pub struct Navigate {
     pub to: String,
 }
 
-/// Every `navigate` in `screen`, a handler's `cases` included: node by node
-/// in the order written, each node's screens by name, each once.
-pub fn navigates(screen: &Value) -> Vec<Navigate> {
+/// Every `navigate` in the description `screen`, whose components with
+/// nodes are `subtrees`, a handler's `cases` included: node by node in the
+/// order written, each node's screens by name, each once.
+pub(crate) fn navigates(screen: &Value, subtrees: &Subtrees) -> Vec<Navigate> {
     let mut found = Vec::new();
-    for (node, written) in crate::subtrees::written(screen) {
+    for (node, written) in crate::subtrees::written(screen, subtrees) {
         if let Some(on) = written.get("on") {
             let mut screens = BTreeSet::new();
             targets(on, &mut screens);
@@ -65,54 +64,30 @@ fn targets(on: &Value, to: &mut BTreeSet<String>) {
     }
 }
 
-/// `screen` with each node that navigates to a screen not in `drawn` marked
-/// `"assumed"`, saying which: drawn with the orange "?" for the person to
-/// confirm, in `lang`. A node's own `"assumed"` is kept.
-pub fn assume_undrawn(screen: &Value, drawn: &BTreeSet<String>, lang: Lang) -> Value {
-    let Value::Object(object) = screen else {
-        return screen.clone();
-    };
-    let mut marked = Map::new();
-    for (key, value) in object {
-        let value = if TREES.contains(&key.as_str()) { mark(value, drawn, lang) } else { value.clone() };
-        marked.insert(key.clone(), value);
-    }
-    Value::Object(marked)
+/// Which screens are drawn: each `navigate` to one that is not is marked
+/// assumed when the screen is instantiated, for the person to confirm,
+/// drawn with the orange "?" and said in `lang`. A node's own `"assumed"`
+/// is kept.
+pub struct Undrawn<'a> {
+    pub drawn: &'a BTreeSet<String>,
+    pub lang: Lang,
 }
 
-fn mark(value: &Value, drawn: &BTreeSet<String>, lang: Lang) -> Value {
-    match value {
-        Value::Object(object) => {
-            let mut marked = Map::new();
-            for (key, inner) in object {
-                let inner = if key == "on" { inner.clone() } else { mark(inner, drawn, lang) };
-                marked.insert(key.clone(), inner);
+impl Undrawn<'_> {
+    /// What a node whose handlers are `on` assumes: that each screen it
+    /// navigates to and is not drawn will be; none when all are.
+    pub(crate) fn of(&self, on: &Value) -> Option<String> {
+        let mut to = BTreeSet::new();
+        targets(on, &mut to);
+        let mut undrawn = Vec::new();
+        for screen in to {
+            if !self.drawn.contains(&screen) {
+                undrawn.push(screen);
             }
-            if let Some(on) = object.get("on")
-                && !object.contains_key("assumed")
-            {
-                let mut to = BTreeSet::new();
-                targets(on, &mut to);
-                let mut undrawn = Vec::new();
-                for screen in to {
-                    if !drawn.contains(&screen) {
-                        undrawn.push(screen);
-                    }
-                }
-                if !undrawn.is_empty() {
-                    let why = crate::assumption::undrawn(&undrawn, lang);
-                    marked.insert("assumed".to_string(), Value::String(why));
-                }
-            }
-            Value::Object(marked)
         }
-        Value::Array(items) => {
-            let mut marked = Vec::new();
-            for item in items {
-                marked.push(mark(item, drawn, lang));
-            }
-            Value::Array(marked)
+        match undrawn.is_empty() {
+            true => None,
+            false => Some(crate::assumption::undrawn(&undrawn, self.lang)),
         }
-        _ => value.clone(),
     }
 }

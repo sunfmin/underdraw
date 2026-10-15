@@ -2,7 +2,7 @@
 //! time: each is found where it was planted, and says what is wrong.
 
 use serde_json::Value;
-use underdraw_format::{Checked, Does, Fill, check, model};
+use underdraw_format::{Checked, Does, Fill, Screen, Shared};
 
 const DRAFT: &str = include_str!("../../../drafts/docs/screen.json");
 
@@ -19,7 +19,8 @@ fn found(checked: &Checked, at: &str, said: &str) -> bool {
 #[test]
 fn the_draft_declares_its_operations_and_passes() {
     let screen: Value = serde_json::from_str(DRAFT).unwrap();
-    let model = model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let screen = read(&screen);
+    let model = underdraw_format::model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let read: Vec<_> = model
         .operations
         .all()
@@ -595,4 +596,13 @@ fn set_and_toggle_write_view_state_and_the_rest_moves_the_ui() {
         let checked = check(&planted(name, from, to));
         assert!(checked.ok, "{name}: {:#?}", checked.findings);
     }
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

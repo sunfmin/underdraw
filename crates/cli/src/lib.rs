@@ -35,8 +35,7 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
 use draw::{Shown, Wanted};
 use serde_json::{Value, json};
-use underdraw_format::ScreenParams;
-use underdraw_format::{Lang, State};
+use underdraw_format::{Lang, Screen, ScreenParams, State};
 
 use crate::project::{Project, TOKENS};
 
@@ -258,7 +257,7 @@ fn check_at(path: &Path, others: &ScreenParams) -> anyhow::Result<underdraw_form
 
 /// Every fault in the description, overlays the picture would cut among
 /// them: laid out in the system's fonts, as `render` does.
-fn checked(screen: &Value, dir: &Path) -> anyhow::Result<underdraw_format::Checked> {
+fn checked(screen: &Screen, dir: &Path) -> anyhow::Result<underdraw_format::Checked> {
     checked_among(screen, dir, &ScreenParams::new())
 }
 
@@ -266,12 +265,12 @@ fn checked(screen: &Value, dir: &Path) -> anyhow::Result<underdraw_format::Check
 /// does not give its params, a kinds.json still beside it, and a
 /// notes.json in the old form.
 fn checked_among(
-    screen: &Value,
+    screen: &Screen,
     dir: &Path,
     others: &ScreenParams,
 ) -> anyhow::Result<underdraw_format::Checked> {
     let tokens = Project::of(dir)?.tokens;
-    let locale = screen.get("locale").and_then(Value::as_str);
+    let locale = screen.description().get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     let mut checked =
         underdraw_layout::check(screen, &tokens, others, &mut typesetter).map_err(anyhow::Error::msg)?;
@@ -291,14 +290,14 @@ fn checked_among(
     Ok(checked)
 }
 
-/// The screen at `path` (a directory or its screen.json), with the domain
-/// and components its project shares, and the directory; or, at
+/// The screen at `path` (a directory or its screen.json), read with the
+/// domain and components its project shares, and the directory; or, at
 /// `components/<Name>` under the project's root, the description showing
 /// that shared component on its own.
-fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
+fn read(path: &Path) -> anyhow::Result<(Screen, PathBuf)> {
     if let Some((name, file)) = project::showcased(path) {
         let shown = underdraw_format::showcase(&name, &project::read_json(&file)?);
-        return Ok((Project::of(path)?.describe(shown), path.to_path_buf()));
+        return Ok((Project::of(path)?.screen(&shown), path.to_path_buf()));
     }
     let file = if path.is_dir() { path.join(SCREEN) } else { path.to_path_buf() };
     let text = std::fs::read_to_string(&file).with_context(|| {
@@ -307,11 +306,11 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
             file.display()
         )
     })?;
-    let screen = serde_json::from_str(&text).with_context(|| {
+    let screen: Value = serde_json::from_str(&text).with_context(|| {
         format!("{} is not JSON: fix the line and column named here, then check again", file.display())
     })?;
     let dir = file.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    Ok((Project::of(&dir)?.describe(screen), dir))
+    Ok((Project::of(&dir)?.screen(&screen), dir))
 }
 
 fn schema(path: &Path) -> anyhow::Result<Value> {
@@ -396,7 +395,7 @@ fn compare(
     };
     let tokens = Project::of(&dir)?.tokens;
     let mapping = read_platform(&dir, platform)?;
-    let locale = screen.get("locale").and_then(Value::as_str);
+    let locale = screen.description().get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     let comparison =
         underdraw_compare::compare(&screen, &mapping, &tokens, state, &capture_value, &mut typesetter)

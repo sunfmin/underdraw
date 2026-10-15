@@ -1,0 +1,15 @@
+tree
+  root/
+    ▸ broken  [2 faults]
+picture
+  faults
+    broken has 2 faults, so it is not drawn: `underdraw check` it
+    data
+    the screen needs a `data` object of root fields
+    root
+    the screen needs a root node
+sidebar
+  Nothing picked
+    Click a node, a state or an arrow to see it and talk about it.
+    ⌘-click a node to act on it, as a prototype.
+    ⌘C copies a reference · ⌘\ hides this sidebar

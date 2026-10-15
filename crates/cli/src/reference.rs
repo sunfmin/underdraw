@@ -170,11 +170,7 @@ impl Reference {
 /// shows a shared component on its own, a node outside the component's
 /// nodes is the instance the gallery draws it as, written nowhere.
 fn written_in(at: &str, description: &std::path::Path) -> String {
-    let shared = at
-        .strip_prefix('/')
-        .and_then(|at| at.strip_prefix(underdraw_format::SHARED_COMPONENTS))
-        .and_then(|at| at.strip_prefix('/'));
-    match shared.and_then(|at| at.split_once('/')) {
+    match underdraw_format::in_shared(at) {
         Some((name, inside)) => format!("/{inside} in {}/{name}.json", crate::project::COMPONENTS),
         None => match crate::project::showcased(description) {
             Some((name, _)) => format!("the instance shown of {}/{name}.json", crate::project::COMPONENTS),
@@ -197,6 +193,21 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    /// Where the shop's orders list writes its first order's total: in
+    /// OrderRow, the component the project shares.
+    fn shared_node_at() -> String {
+        fn find(node: &underdraw_format::Node) -> Option<String> {
+            if node.written_id.ends_with("total") {
+                return Some(node.written_at.clone());
+            }
+            node.children.iter().find_map(find)
+        }
+        let orders = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/shop/orders"));
+        let (screen, _) = crate::read(orders).unwrap();
+        let state = underdraw_format::State::Fixture("default");
+        find(&screen.instantiate(state, underdraw_format::Breakpoint::Compact, None).unwrap()).unwrap()
+    }
 
     #[test]
     fn a_state_names_its_description_and_itself() {
@@ -223,7 +234,7 @@ mod tests {
             "/d/orders · fixture default · order-{index} at /root/children/1/item in screen.json · pointed at [2], label 4, width 390"
         );
         assert_eq!(
-            written_in("/$components/OrderRow/nodes/children/1", Path::new("/d/orders")),
+            written_in(&shared_node_at(), Path::new("/d/orders")),
             "/nodes/children/1 in components/OrderRow.json",
             "a node of a component the project shares is written in its file"
         );

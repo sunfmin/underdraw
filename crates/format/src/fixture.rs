@@ -10,6 +10,8 @@ use crate::schema::{Schema, Shape, object};
 
 /// Every fixture by name, in the order written, with defaults filled in.
 pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(String, Value)> {
+    #[cfg(test)]
+    crate::screen::tests::count("fixtures");
     let roots = schema.roots();
     let mut merged: Vec<(String, Value)> = Vec::new();
     let mut read: Vec<(String, Value)> = Vec::new();

@@ -1,31 +1,90 @@
-//! The components a description may use and what each looks like:
-//! underdraw's own, with the project's shared ones and the screen's own
-//! `"components"` over them by name. The look itself is drawn by
+//! The components a description may use and what each is: underdraw's
+//! own, with the project's shared ones and the screen's own
+//! `"components"` over them by name, each a look or nodes, in one table
+//! read once with the screen. The look itself is drawn by
 //! underdraw-layout; here it is read and checked. Why:
 //! [ADR 0021](../../../docs/adr/0021-kinds-become-components-one-screens-or-the-projects.md),
 //! and [ADR 0007](../../../docs/adr/0007-kinds-are-data.md) for the look
 //! vocabulary.
 
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
+
 use serde_json::{Map, Value};
 
 use crate::check::Findings;
 use crate::icons;
+use crate::look::{
+    Cases, Condition, Filter, Flow, Items, Justify, Look, NOTES, Overflow, SelfAlign, TextAlign,
+};
 use crate::overlay::Edge;
 use crate::schema::object;
+use crate::subtrees::{Subtree, Subtrees};
 
 /// The components underdraw ships, in the form a screen's own take.
 const BUILTINS: &str = include_str!("../components.json");
 
-/// Where the caller puts the components the project shares: each
-/// `components/<Name>.json` under the project's root, its contents by its
-/// name.
-pub const SHARED: &str = "$components";
+/// The first step of where a node of a component the project shares is
+/// written ([`Node::written_at`](crate::Node::written_at)):
+/// `/$components/OrderRow/nodes/…`.
+const SHARED: &str = "$components";
+
+/// Where the nodes of the project's component `name` are written:
+/// `/$components/OrderRow`, and then its `nodes/…`.
+pub(crate) fn shared_at(name: &str) -> String {
+    format!("/{SHARED}/{name}")
+}
+
+/// Where the node written at `at` (a [`Node::written_at`](crate::Node::written_at))
+/// is, when it is one of a component the project shares: the component's
+/// name, and the pointer to it inside its `components/<Name>.json`
+/// (`nodes/children/1`, without the leading `/`).
+pub fn in_shared(at: &str) -> Option<(&str, &str)> {
+    let inside = at.strip_prefix('/')?.strip_prefix(SHARED)?.strip_prefix('/')?;
+    inside.split_once('/')
+}
+
+/// Components whose body is a look, by name: each entry (`look`,
+/// `params`, `scrolls`…) with its look parsed.
+#[derive(Default)]
+struct Looks {
+    entries: Map<String, Value>,
+    looks: BTreeMap<String, Look>,
+}
+
+impl Looks {
+    /// `component`, named `name`, when it has a look.
+    fn add(&mut self, name: &str, component: &Value) {
+        if let Some(look) = component.get("look") {
+            self.entries.insert(name.to_string(), component.clone());
+            self.looks.insert(name.to_string(), Look::parse(look));
+        }
+    }
+}
+
+/// underdraw's own components, parsed once for the process.
+fn builtins() -> &'static Looks {
+    static PARSED: OnceLock<Looks> = OnceLock::new();
+    PARSED.get_or_init(parse_builtins)
+}
+
+fn parse_builtins() -> Looks {
+    #[cfg(test)]
+    tests::BUILTINS_PARSED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mut builtins = Looks::default();
+    if let Ok(parsed) = serde_json::from_str::<Value>(BUILTINS) {
+        for (name, component) in object(&parsed, "components") {
+            builtins.add(name, component);
+        }
+    }
+    builtins
+}
 
 /// One component a screen may use besides underdraw's: one the project
 /// shares, or the screen's own.
-pub(crate) struct Declared<'a> {
-    pub name: &'a str,
-    pub body: &'a Value,
+pub(crate) struct Declared {
+    pub name: String,
+    pub body: Value,
     /// Whether the project shares it, in its `components/<Name>.json`.
     pub shared: bool,
     /// Where findings in it are named: `components/OrderRow.json` for the
@@ -33,26 +92,23 @@ pub(crate) struct Declared<'a> {
     pub at: String,
 }
 
-/// Every component `screen` declares, the one list each reader takes: the
-/// project's first, then the screen's own. One of the screen's own of a
-/// name the project shares is left out and the project's is used;
-/// [`Components::check`] names it.
-pub(crate) fn declared(screen: &Value) -> Vec<Declared<'_>> {
+/// Every component the description `screen` declares, with the ones its
+/// project `shared`: the project's first, then the screen's own. One of
+/// the screen's own of a name the project shares is left out and the
+/// project's is used; [`Components::check`] names it.
+fn declared(screen: &Value, shared: &Map<String, Value>) -> Vec<Declared> {
     let mut all = Vec::new();
-    for (name, body) in object(screen, SHARED) {
-        all.push(Declared { name, body, shared: true, at: format!("components/{name}.json") });
+    for (name, body) in shared {
+        let at = format!("components/{name}.json");
+        all.push(Declared { name: name.clone(), body: body.clone(), shared: true, at });
     }
     for (name, body) in object(screen, "components") {
-        if !shares(screen, name) {
-            all.push(Declared { name, body, shared: false, at: format!("components.{name}") });
+        if !shared.contains_key(name) {
+            let at = format!("components.{name}");
+            all.push(Declared { name: name.clone(), body: body.clone(), shared: false, at });
         }
     }
     all
-}
-
-/// Whether the project `screen` is in shares a component named `name`.
-fn shares(screen: &Value, name: &str) -> bool {
-    screen.get(SHARED).and_then(|shared| shared.get(name)).is_some()
 }
 
 /// What a look key takes, as far as `check` can tell before the look is
@@ -63,7 +119,8 @@ pub enum Takes {
     Any,
     /// true or false.
     Bool,
-    /// One of these words, each of which underdraw-layout draws.
+    /// One of these words: those the key's type in [`crate::look`] reads,
+    /// which underdraw-layout draws.
     Word(&'static [&'static str]),
     /// Grid tracks: a count, or a list of [`Track`]s.
     Tracks,
@@ -85,10 +142,10 @@ pub const LOOK: [(&str, Takes); 43] = [
     ("ink", Takes::Any),
     ("weight", Takes::Any),
     ("maxLines", Takes::Any),
-    ("align", Takes::Word(&["start", "center", "end"])),
+    ("align", Takes::Word(TextAlign::WORDS)),
     ("underline", Takes::Bool),
     ("strike", Takes::Bool),
-    ("box", Takes::Word(&["row", "column", "grid"])),
+    ("box", Takes::Word(Flow::WORDS)),
     ("frame", Takes::Bool),
     ("fill", Takes::Any),
     ("stroke", Takes::Any),
@@ -107,13 +164,13 @@ pub const LOOK: [(&str, Takes); 43] = [
     ("grow", Takes::Any),
     ("shrink", Takes::Any),
     ("basis", Takes::Any),
-    ("self", Takes::Word(&["start"])),
-    ("items", Takes::Word(&["start", "center"])),
-    ("justify", Takes::Word(&["center", "between", "end"])),
+    ("self", Takes::Word(SelfAlign::WORDS)),
+    ("items", Takes::Word(Items::WORDS)),
+    ("justify", Takes::Word(Justify::WORDS)),
     ("columns", Takes::Tracks),
     ("rows", Takes::Tracks),
     ("span", Takes::Any),
-    ("overflowX", Takes::Word(&["clip"])),
+    ("overflowX", Takes::Word(Overflow::WORDS)),
     ("pin", Takes::Pin),
     ("backdrop", Takes::Bool),
     ("itemWidth", Takes::Any),
@@ -124,16 +181,9 @@ pub fn takes(key: &str) -> Option<Takes> {
     LOOK.into_iter().find(|(name, _)| *name == key).map(|(_, takes)| takes)
 }
 
-/// Keys a look may also hold, read by people and not drawn.
-const NOTES: [&str; 2] = ["$comment", "doc"];
-
 /// What a component may say of itself beside its look, each true or false: how a
 /// platform treats it, which `compare` reads.
 const FLAGS: [&str; 2] = ["scrolls", "pinned"];
-
-/// The filters a placeholder in a look may apply.
-pub const FILTERS: [&str; 10] =
-    ["or", "count", "first", "last", "head", "tail", "slashes", "glyph", "atLeast", "atMost"];
 
 /// One grid track, in `columns` or `rows`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -179,12 +229,6 @@ pub(crate) fn track_faults(tracks: &Value, at: &str, findings: &mut Findings) {
             );
         }
     }
-}
-
-/// Whether a box in a look asks for a backdrop and does not float by its
-/// own `pin`: only a component's whole look, put in an `overlay`, may.
-fn backdrop_without_pin(look: &Map<String, Value>) -> bool {
-    look.get("backdrop") == Some(&Value::Bool(true)) && !look.contains_key("pin")
 }
 
 /// Every fault in `value`, at `at`, as what look key `key` takes. A
@@ -238,50 +282,80 @@ fn pin_faults(pin: &Value, at: &str, findings: &mut Findings) {
     }
 }
 
-/// The names a `repeat` binds for its `each`, which no component declares.
-const REPEATED: [&str; 3] = ["item", "index", "n"];
+/// What a component's body is.
+pub enum Body<'c> {
+    /// A look: drawn as one element.
+    Look(&'c Look),
+    /// Nodes: a subtree, each node in it named by the instance's id joined
+    /// to its own.
+    Nodes(&'c Subtree),
+}
 
-/// The props a `frame` takes from its node, as its component's params.
-const FRAMED: [&str; 5] = ["padding", "gap", "radius", "border", "elevation"];
-
-/// Every component a screen may use: underdraw's own, with the look
-/// components the screen [`declared`] (the project's and its own that have
-/// a `"look"`) over them by name. A component whose body is nodes is not
-/// here: `Subtrees` has those.
+/// Every component a screen may use, in one table read once with the
+/// screen: underdraw's own, with those the screen [`declared`] (the
+/// project's and its own) over them by name, each a look or nodes.
 pub struct Components {
-    components: Map<String, Value>,
+    /// Each declared component, the project's first, as [`declared`] lists
+    /// them; what [`Components::check`] reads.
+    declared: Vec<Declared>,
+    /// The declared components whose body is a look: over underdraw's own
+    /// of the same name.
+    looks: Looks,
+    /// The declared components whose body is nodes.
+    subtrees: Subtrees,
 }
 
 impl Components {
-    /// underdraw's components, with the look components `screen` declares
-    /// over them by name.
-    pub fn read(screen: &Value) -> Components {
-        let mut components = Components { components: Map::new() };
-        if let Ok(builtins) = serde_json::from_str::<Value>(BUILTINS) {
-            for (name, component) in object(&builtins, "components") {
-                components.add(name, component);
-            }
+    /// underdraw's components, with those the description `screen`
+    /// declares and those its project `shared` over them by name. Each
+    /// fault in them is added to `findings`, as [`Components::check`] says.
+    pub(crate) fn read(screen: &Value, shared: &Map<String, Value>, findings: &mut Findings) -> Components {
+        #[cfg(test)]
+        crate::screen::tests::count("components");
+        let declared = declared(screen, shared);
+        let mut looks = Looks::default();
+        for Declared { name, body, .. } in &declared {
+            looks.add(name, body);
         }
-        for Declared { name, body, .. } in declared(screen) {
-            components.add(name, body);
-        }
+        let subtrees = Subtrees::read(&declared);
+        let components = Components { declared, looks, subtrees };
+        components.check(screen, shared, findings);
         components
     }
 
-    /// `component`, named `name`, when it has a look.
-    fn add(&mut self, name: &str, component: &Value) {
-        if component.get("look").is_some() {
-            self.components.insert(name.to_string(), component.clone());
+    /// Which table holds `component`, when its body is a look: the
+    /// screen's, or underdraw's own.
+    fn with_look(&self, component: &str) -> Option<&Looks> {
+        [&self.looks, builtins()].into_iter().find(|looks| looks.looks.contains_key(component))
+    }
+
+    /// What `component`'s body is, when it is one the screen may use. One
+    /// declared with nodes under a name underdraw's own has is nodes.
+    pub fn body(&self, component: &str) -> Option<Body<'_>> {
+        match self.subtrees.get(component) {
+            Some(subtree) => Some(Body::Nodes(subtree)),
+            None => self.look(component).map(Body::Look),
         }
     }
 
+    /// Whether `component` is one whose body is a look.
     pub fn has(&self, component: &str) -> bool {
-        self.components.contains_key(component)
+        self.with_look(component).is_some()
+    }
+
+    /// The components whose body is nodes.
+    pub fn subtrees(&self) -> &Subtrees {
+        &self.subtrees
+    }
+
+    /// Each component the screen declares, the project's first.
+    pub(crate) fn declared(&self) -> &[Declared] {
+        &self.declared
     }
 
     /// What `component` looks like, when it is one.
-    pub fn look(&self, component: &str) -> Option<&Value> {
-        self.components.get(component).and_then(|entry| entry.get("look"))
+    pub fn look(&self, component: &str) -> Option<&Look> {
+        self.with_look(component).and_then(|looks| looks.looks.get(component))
     }
 
     /// Whether `component` says `"scrolls": true`: its content scrolls or pages
@@ -297,21 +371,24 @@ impl Components {
     }
 
     fn flag(&self, component: &str, key: &str) -> bool {
-        self.components.get(component).and_then(|entry| entry.get(key)) == Some(&Value::Bool(true))
+        let entry = self.with_look(component).and_then(|looks| looks.entries.get(component));
+        entry.and_then(|entry| entry.get(key)) == Some(&Value::Bool(true))
     }
 
     /// Whether `component`'s whole look has a backdrop, which draws only when its
     /// node is in an `overlay`.
     pub fn backdrop(&self, component: &str) -> bool {
-        self.look(component).and_then(Value::as_object).is_some_and(backdrop_without_pin)
+        matches!(self.look(component), Some(Look::Object(look)) if look.backdrop_without_pin())
     }
 
-    /// Every fault in the components `screen` declares, each at where
-    /// [`declared`] says: one of the screen's own of a name the project
-    /// shares, or with fixtures, which only a shared one is shown in; one with both a look and nodes or neither; in a look, a key
-    /// no look reads, a filter or component that does not exist, and a
-    /// name it reads that is not one of its declared params.
-    pub(crate) fn check(&self, screen: &Value, findings: &mut Findings) {
+    /// Every fault in the components the description `screen` declares,
+    /// with those its project `shared`, each at where [`declared`] says:
+    /// one of the screen's own of a name the project shares, or with
+    /// fixtures, which only a shared one is shown in; one with both a look
+    /// and nodes or neither; in a look, a key no look reads, a filter or
+    /// component that does not exist, and a name it reads that is not one
+    /// of its declared params.
+    fn check(&self, screen: &Value, shared: &Map<String, Value>, findings: &mut Findings) {
         if screen.get("icons").is_some() {
             findings.add(
                 "icons",
@@ -325,7 +402,7 @@ impl Components {
             );
         }
         for (name, _) in object(screen, "components") {
-            if shares(screen, name) {
+            if shared.contains_key(name) {
                 findings.add(
                     &format!("components.{name}"),
                     &format!(
@@ -334,7 +411,7 @@ impl Components {
                 );
             }
         }
-        for Declared { body: component, at, shared, .. } in declared(screen) {
+        for Declared { name, body: component, at, shared } in &self.declared {
             if !shared && component.get("fixtures").is_some() {
                 findings.add(
                     &format!("{at}.fixtures"),
@@ -343,18 +420,22 @@ impl Components {
             }
             match (component.get("look"), component.get("nodes")) {
                 (Some(_), Some(_)) => findings.add(
-                    &at,
+                    at,
                     "a component's body is a look or nodes, never both: draw it as one element with \"look\", or as a subtree with \"nodes\"",
                 ),
                 (None, None) => findings.add(
-                    &at,
+                    at,
                     "a component needs a body: \"look\" (what it is drawn as) or \"nodes\" (the subtree it is)",
                 ),
-                (Some(look), None) => self.look_component(component, look, &at, findings),
+                (Some(_), None) => {
+                    if let Some(look) = self.look(name) {
+                        self.look_component(component, look, at, findings)
+                    }
+                }
                 (None, Some(_)) => {}
             }
         }
-        for Declared { name, body, at, .. } in declared(screen) {
+        for Declared { name, body, at, .. } in &self.declared {
             if body.get("nodes").is_none()
                 && let Some(cycle) = self.cycle(name, &mut vec![name.to_string()])
             {
@@ -371,7 +452,7 @@ impl Components {
     fn cycle(&self, first: &str, through: &mut Vec<String>) -> Option<Vec<String>> {
         let mut nested = Vec::new();
         if let Some(look) = through.last().and_then(|last| self.look(last)) {
-            nests(look, &mut nested);
+            look.nests(&mut nested);
         }
         for name in nested {
             if name == first {
@@ -393,7 +474,7 @@ impl Components {
     }
 
     /// Every fault in the look component `component`, whose look is `look`.
-    fn look_component(&self, component: &Value, look: &Value, at: &str, findings: &mut Findings) {
+    fn look_component(&self, component: &Value, look: &Look, at: &str, findings: &mut Findings) {
         if component.get("assumed").is_some() {
             findings.add(&format!("{at}.assumed"), "underdraw draws no guesses: finish this component's look and take assumed out; a note for people goes in \"doc\"");
         }
@@ -419,7 +500,7 @@ impl Components {
             }
         };
         let mut read = Vec::new();
-        reads(look, &[], &mut read);
+        look.reads(&[], &mut read);
         let mut named: Vec<&str> = Vec::new();
         for name in &read {
             if !params.contains(&name.as_str()) && !named.contains(&name.as_str()) {
@@ -438,23 +519,25 @@ impl Components {
 
     /// `top`: `look` is what the component's node is drawn as, which an overlay
     /// pins; anything inside it floats only by its own `pin`.
-    fn look_faults(&self, look: &Value, at: &str, top: bool, findings: &mut Findings) {
+    fn look_faults(&self, look: &Look, at: &str, top: bool, findings: &mut Findings) {
         match look {
-            Value::String(text) if text.starts_with('$') => {
-                if text != "$children" {
-                    findings
-                        .add(at, &format!("{text} is not a look; \"$children\" places the node's children"));
+            Look::Text { written, .. } if written.starts_with('$') => {
+                findings
+                    .add(at, &format!("{written} is not a look; \"$children\" places the node's children"));
+            }
+            Look::Text { template, .. } => {
+                for placeholder in template.placeholders() {
+                    filter_faults(&placeholder.filters, at, findings);
                 }
             }
-            Value::String(text) => self.template_faults(text, at, findings),
-            Value::Array(looks) => {
+            Look::List(looks) => {
                 for (index, look) in looks.iter().enumerate() {
                     self.look_faults(look, &format!("{at}[{index}]"), false, findings);
                 }
             }
-            Value::Object(object) => {
-                let nested = object.get("component").and_then(Value::as_str);
-                if !top && backdrop_without_pin(object) {
+            Look::Object(object) => {
+                let nested = object.component();
+                if !top && object.backdrop_without_pin() {
                     findings.add(
                         at,
                         "backdrop is drawn only by a box that floats: the whole look of a component put in \"overlay\", or a box with \"pin\"",
@@ -470,189 +553,120 @@ impl Components {
                         ),
                     );
                 }
-                for (key, value) in object {
-                    if key == "cases" {
-                        self.branch_faults(value, &format!("{at}.cases"), top, findings);
-                        continue;
-                    }
-                    if nested.is_none() && !NOTES.contains(&key.as_str()) {
-                        match takes(key) {
-                            Some(takes) => value_faults(takes, key, value, &format!("{at}.{key}"), findings),
+                if let Some(condition) = &object.when {
+                    condition_faults(condition, &format!("{at}.if"), findings);
+                }
+                for key in &object.keys {
+                    let (name, value) = (key.name.as_str(), &key.written);
+                    if nested.is_none() && !NOTES.contains(&name) {
+                        match takes(name) {
+                            Some(takes) => {
+                                value_faults(takes, name, value, &format!("{at}.{name}"), findings)
+                            }
                             None => findings.add(
                                 at,
                                 &format!(
-                                    "{key} is not a key a look reads; see `underdraw check --help`, LOOKS"
+                                    "{name} is not a key a look reads; see `underdraw check --help`, LOOKS"
                                 ),
                             ),
                         }
                     }
                     if nested.is_some()
-                        && icons::is_icon_key(key)
+                        && icons::is_icon_key(name)
                         && let Value::String(icon) = value
                         && !icon.contains('{')
-                        && !icons::known(icon)
+                        && !icons::known(icon.as_str())
                     {
-                        findings.add(&format!("{at}.{key}"), &icons::unknown(icon));
+                        findings.add(&format!("{at}.{name}"), &icons::unknown(icon.as_str()));
                     }
-                    if key != "pin" && !NOTES.contains(&key.as_str()) {
-                        self.look_faults(value, &format!("{at}.{key}"), false, findings);
+                    if name != "pin" && !NOTES.contains(&name) {
+                        self.look_faults(&key.look, &format!("{at}.{name}"), false, findings);
                     }
                 }
+                if let Some(cases) = &object.cases {
+                    self.branch_faults(cases, &format!("{at}.cases"), top, findings);
+                }
             }
-            _ => {}
+            Look::Children | Look::Plain(_) => {}
         }
     }
 
     /// `cases`: a list of `{"if", "then"}`, ending in `{"else"}`.
-    fn branch_faults(&self, branches: &Value, at: &str, top: bool, findings: &mut Findings) {
-        let Value::Array(branches) = branches else {
+    fn branch_faults(&self, cases: &Cases, at: &str, top: bool, findings: &mut Findings) {
+        if !cases.listed {
             return findings.add(at, "cases is a list of {\"if\", \"then\"} ending in {\"else\"}");
-        };
-        if !branches.last().is_some_and(|branch| branch.get("else").is_some()) {
+        }
+        if !cases.branches.last().is_some_and(|branch| branch.otherwise.is_some()) {
             findings.add(at, "the last branch of cases must be {\"else\": …}");
         }
-        for (index, branch) in branches.iter().enumerate() {
+        for (index, branch) in cases.branches.iter().enumerate() {
             let at = format!("{at}[{index}]");
-            for key in ["then", "else"] {
-                if let Some(value) = branch.get(key) {
-                    self.look_faults(value, &format!("{at}.{key}"), top, findings);
+            if let Some(condition) = &branch.when {
+                condition_faults(condition, &format!("{at}.if"), findings);
+            }
+            for (key, side) in [("then", &branch.then), ("else", &branch.otherwise)] {
+                if let Some(look) = side {
+                    self.look_faults(look, &format!("{at}.{key}"), top, findings);
                 }
-            }
-        }
-    }
-
-    fn template_faults(&self, text: &str, at: &str, findings: &mut Findings) {
-        let mut rest = text;
-        while let Some((_, after)) = rest.split_once('{') {
-            let Some((inner, next)) = after.split_once('}') else {
-                break;
-            };
-            for filter in inner.split('|').skip(1) {
-                let name = filter.split_once(':').map_or(filter, |(name, _)| name).trim();
-                if !name.is_empty() && !name.contains(['&', '=', '!']) && !FILTERS.contains(&name) {
-                    findings.add(at, &format!("{name} is not a filter; there are {}", FILTERS.join(", ")));
-                }
-            }
-            rest = next;
-        }
-    }
-}
-
-/// Each component `look` nests (`{"component": "Chip", …}`), at any depth
-/// of it, added to `nested`.
-fn nests(look: &Value, nested: &mut Vec<String>) {
-    match look {
-        Value::Array(looks) => {
-            for look in looks {
-                nests(look, nested);
-            }
-        }
-        Value::Object(object) => {
-            if let Some(Value::String(name)) = object.get("component") {
-                nested.push(name.clone());
-            }
-            for value in object.values() {
-                nests(value, nested);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Each name `look` reads from its component's params, in the order read,
-/// leaving out those `bound` (what a `repeat` around it binds): the first
-/// step of each placeholder's path, each name a condition reads, and the
-/// props a `frame` takes.
-fn reads(look: &Value, bound: &[&str], read: &mut Vec<String>) {
-    match look {
-        Value::String(text) if text.starts_with('$') => {}
-        Value::String(text) => {
-            let mut rest = text.as_str();
-            while let Some((_, after)) = rest.split_once('{') {
-                let Some((inner, next)) = after.split_once('}') else {
-                    break;
-                };
-                let path = inner.split('|').next().unwrap_or_default();
-                read_name(path, bound, read);
-                rest = next;
-            }
-        }
-        Value::Array(looks) => {
-            for look in looks {
-                reads(look, bound, read);
-            }
-        }
-        Value::Object(object) => {
-            if object.get("frame") == Some(&Value::Bool(true)) && !object.contains_key("component") {
-                for name in FRAMED {
-                    read_name(name, bound, read);
-                }
-            }
-            for (key, value) in object {
-                match (key.as_str(), value) {
-                    ("if", Value::String(condition)) => condition_reads(condition, bound, read),
-                    ("cases", Value::Array(branches)) => {
-                        for branch in branches {
-                            if let Some(Value::String(condition)) = branch.get("if") {
-                                condition_reads(condition, bound, read);
-                            }
-                            for side in ["then", "else"] {
-                                if let Some(value) = branch.get(side) {
-                                    reads(value, bound, read);
-                                }
-                            }
-                        }
-                    }
-                    ("each", each) if object.contains_key("repeat") => {
-                        let mut inner = bound.to_vec();
-                        inner.extend(REPEATED);
-                        reads(each, &inner, read);
-                    }
-                    ("component", _) => {}
-                    (key, _) if NOTES.contains(&key) => {}
-                    (_, value) => reads(value, bound, read),
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Each name the look condition `condition` reads (`value && value !=
-/// ""`): every word that is not a literal, as a placeholder's path.
-fn condition_reads(condition: &str, bound: &[&str], read: &mut Vec<String>) {
-    let mut chars = condition.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '"' {
-            for c in chars.by_ref() {
-                if c == '"' {
-                    break;
-                }
-            }
-        } else if c.is_ascii_digit() || c == '-' {
-            while chars.next_if(|d| d.is_ascii_digit() || *d == '.').is_some() {}
-        } else if c.is_alphanumeric() || c == '_' || c == '$' {
-            let mut word = c.to_string();
-            while let Some(d) = chars.next_if(|d| d.is_alphanumeric() || "_.:%$".contains(*d)) {
-                word.push(d);
-            }
-            // A filter (`value|first`) is part of its placeholder; `||` is "or".
-            while chars.peek() == Some(&'|') && chars.clone().nth(1) != Some('|') {
-                chars.next();
-                while chars.next_if(|d| d.is_alphanumeric() || "_.:%$".contains(*d)).is_some() {}
-            }
-            if !["true", "false", "null"].contains(&word.as_str()) {
-                read_name(&word, bound, read);
             }
         }
     }
 }
 
-/// The first step of `path` added to `read`, unless `bound` holds it or it
-/// is a `$` name.
-fn read_name(path: &str, bound: &[&str], read: &mut Vec<String>) {
-    let name = path.trim().split('.').next().unwrap_or_default();
-    if !name.is_empty() && !name.starts_with('$') && !bound.contains(&name) {
-        read.push(name.to_string());
+/// Every fault in a look's condition, at `at`: what is not the grammar of
+/// a screen's condition, and each filter that does not exist.
+fn condition_faults(condition: &Condition, at: &str, findings: &mut Findings) {
+    if let Err(why) = &condition.parsed {
+        findings.add(
+            at,
+            &format!(
+                "{} is not a condition: {why}; a look's condition is written as a screen's, its names placeholders such as value|first",
+                condition.written
+            ),
+        );
+    }
+    for placeholder in condition.placeholders() {
+        filter_faults(&placeholder.filters, at, findings);
+    }
+}
+
+/// Each filter in `filters`, at `at`, that does not exist.
+fn filter_faults(filters: &[Filter], at: &str, findings: &mut Findings) {
+    for filter in filters {
+        if let Filter::Unknown(name) = filter
+            && !name.is_empty()
+            && !name.contains(['&', '=', '!'])
+        {
+            findings.add(at, &format!("{name} is not a filter; there are {}", Filter::names().join(", ")));
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    /// How many times underdraw's own components were parsed in this
+    /// process.
+    pub(crate) static BUILTINS_PARSED: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn underdraws_own_are_parsed_once_for_the_process() {
+        for _ in 0..3 {
+            let mut findings = Findings::default();
+            let components = Components::read(&serde_json::json!({}), &Map::new(), &mut findings);
+            assert!(components.has("Button"));
+        }
+        assert!(builtins().looks.contains_key("Button"));
+        assert_eq!(BUILTINS_PARSED.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_node_of_a_shared_component_is_written_in_its_file() {
+        let at = format!("{}/nodes/children/1", shared_at("OrderRow"));
+        assert_eq!(in_shared(&at), Some(("OrderRow", "nodes/children/1")));
+        assert_eq!(in_shared("/root/children/1"), None);
     }
 }

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Lang, Model, Node, State, Transition};
+use underdraw_format::{Breakpoint, Lang, Model, Node, Screen, State, Transition, Undrawn};
 use underdraw_layout::Page;
 use vello::Scene;
 
@@ -151,7 +151,7 @@ pub fn lay_out(
 /// until its files change.
 pub struct Description {
     path: PathBuf,
-    screen: Value,
+    screen: Screen,
     dir: PathBuf,
     tokens: Value,
     checked: underdraw_format::Checked,
@@ -188,10 +188,9 @@ impl Description {
             State::Phase(_) => Shown::Phase(name),
         };
         let breakpoint = Breakpoint::for_width(tokens, wanted.width);
-        let marked = drawn.map(|drawn| underdraw_format::assume_undrawn(screen, drawn, lang));
-        let shows = marked.as_ref().unwrap_or(screen);
-        let root = underdraw_format::instantiate(shows, state, breakpoint).map_err(anyhow::Error::msg)?;
-        let locale = screen.get("locale").and_then(Value::as_str);
+        let undrawn = drawn.map(|drawn| Undrawn { drawn, lang });
+        let root = screen.instantiate(state, breakpoint, undrawn.as_ref()).map_err(anyhow::Error::msg)?;
+        let locale = screen.description().get("locale").and_then(Value::as_str);
         let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
         let page =
             underdraw_layout::layout(&root, tokens, screen, wanted.width as f32, lang, &mut typesetter)
@@ -210,7 +209,7 @@ impl Description {
     /// The transitions it declares, as [`transitions`] says.
     pub fn transitions(&self) -> anyhow::Result<Vec<Transition>> {
         match Model::read(&self.screen, self.checked.clone()) {
-            Ok(model) => Ok(model.transitions),
+            Ok(model) => Ok(model.transitions.clone()),
             Err(checked) => bail!(
                 "the description has {} finding(s): run `underdraw check {}` and fix them first",
                 checked.findings.len(),
@@ -297,7 +296,7 @@ impl Laid {
 mod tests {
     use super::*;
 
-    const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
+    const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
     fn wanted(width: u32) -> Wanted {
         Wanted { fixture: None, phase: None, width, scale: 2 }

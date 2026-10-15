@@ -3,7 +3,7 @@
 //! operation and gating each call to it as a screen's own condition does.
 
 use serde_json::{Value, json};
-use underdraw_format::{Breakpoint, Checked, DOMAIN, Node, State, check, model};
+use underdraw_format::{Breakpoint, Checked, Node, Screen, Shared, State};
 
 fn domain() -> Value {
     json!({
@@ -30,7 +30,6 @@ fn screen(cancel: Value) -> Value {
     let order = |id: &str, status: &str, note: Value| json!({ "id": id, "status": status, "note": note, "customer": { "name": "Ana" } });
     json!({
         "screen": "Orders",
-        DOMAIN: domain(),
         "data": { "orders": "Order[] ..20" },
         "fixtures": {
             "default": { "orders": [order("a", "pending", json!(null)), order("b", "shipped", json!("leave it at the door"))] }
@@ -86,13 +85,14 @@ fn a_row_gates_its_cancel_button_on_the_orders_condition() {
             ]
         );
     }
-    let model = model(&screen(button(json!({ "if": "item.cancellable" })))).unwrap();
+    let screen = read(&screen(button(json!({ "if": "item.cancellable" }))));
+    let model = underdraw_format::model(&screen).unwrap();
     let orders = &model.fixtures[0].1["orders"];
     assert_eq!(orders[0]["cancellable"], true, "each Order reads it as a Bool field");
     assert_eq!(orders[1]["cancellable"], false);
     assert_eq!(orders[0]["quiet"], true, "one condition on a type names another by its short name");
     let mut shown = Vec::new();
-    ids(&model.instantiate(State::Fixture("default"), Breakpoint::Compact).unwrap(), &mut shown);
+    ids(&model.instantiate(State::Fixture("default"), Breakpoint::Compact, None).unwrap(), &mut shown);
     assert!(shown.contains(&"order-0-cancel".to_string()), "{shown:?}");
     assert!(!shown.contains(&"order-1-cancel".to_string()), "a shipped order has no cancel: {shown:?}");
     assert!(shown.contains(&"order-1-note".to_string()) && !shown.contains(&"order-0-note".to_string()));
@@ -174,4 +174,14 @@ fn check_names_a_condition_on_a_type_that_is_written_wrong() {
         "{:#?}",
         checked.findings
     );
+}
+
+/// `description` read as a screen of the project whose domain is
+/// [`domain`].
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared { domain: Some(&domain()), components: None })
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

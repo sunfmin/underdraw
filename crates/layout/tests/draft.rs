@@ -2,10 +2,10 @@
 //! character is half the font size wide, so the geometry is exact.
 
 use serde_json::Value;
-use underdraw_format::{Breakpoint, Lang, State, instantiate};
+use underdraw_format::{Breakpoint, Lang, Screen, Shared, State};
 use underdraw_layout::{Draw, Page, Placed, layout};
 
-const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
+const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
 mod fixed;
 use fixed::Fixed;
@@ -15,9 +15,9 @@ fn read(name: &str) -> Value {
 }
 
 fn page(state: State, width: f32) -> Page {
-    let (screen, tokens) = (read("screen.json"), read("tokens.json"));
+    let (screen, tokens) = (Screen::read(&read("screen.json"), Shared::default()), read("tokens.json"));
     let breakpoint = Breakpoint::for_width(&tokens, width as u32);
-    let root = instantiate(&screen, state, breakpoint).unwrap();
+    let root = screen.instantiate(state, breakpoint, None).unwrap();
     layout(&root, &tokens, &screen, width, Lang::default(), &mut Fixed).unwrap()
 }
 
@@ -140,7 +140,9 @@ fn tiny_with(children: Value, own: Option<&Value>) -> Page {
         screen["components"] = own["components"].clone();
     }
     let tokens = read("tokens.json");
-    let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
+    let screen = Screen::read(&screen, Shared::default());
+    let root =
+        screen.instantiate(State::Fixture("default"), Breakpoint::for_width(&tokens, 390), None).unwrap();
     layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed).unwrap()
 }
 

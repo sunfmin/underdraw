@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use serde_json::json;
-use underdraw_format::{Lang, Navigate, assume_undrawn, navigates};
+use underdraw_format::{Breakpoint, Lang, Navigate, Screen, Shared, State, Undrawn};
 
 fn screen() -> serde_json::Value {
     json!({
@@ -22,8 +22,11 @@ fn screen() -> serde_json::Value {
 
 #[test]
 fn every_navigate_on_every_node_cases_included() {
-    let found: Vec<(String, String)> =
-        navigates(&screen()).into_iter().map(|Navigate { node, to }| (node, to)).collect();
+    let found: Vec<(String, String)> = Screen::read(&screen(), Shared::default())
+        .navigates()
+        .into_iter()
+        .map(|Navigate { node, to }| (node, to))
+        .collect();
     let expected = [("open-a", "A"), ("pick", "B"), ("pick", "C"), ("guessed", "D"), ("retry", "A")];
     assert_eq!(
         found,
@@ -35,12 +38,16 @@ fn every_navigate_on_every_node_cases_included() {
 #[test]
 fn a_node_navigating_to_a_screen_not_drawn_is_assumed() {
     let drawn = BTreeSet::from(["A".to_string(), "B".to_string()]);
-    let marked = assume_undrawn(&screen(), &drawn, Lang::En);
-    let children = &marked["root"]["children"];
-    assert_eq!(children[0].get("assumed"), None, "A is drawn");
-    let why = children[1]["assumed"].as_str().unwrap();
+    let screen = Screen::read(&screen(), Shared::default());
+    let undrawn = Undrawn { drawn: &drawn, lang: Lang::En };
+    let marked = screen.instantiate(State::Fixture("default"), Breakpoint::Compact, Some(&undrawn)).unwrap();
+    let assumed: Vec<Option<&str>> = marked.children.iter().map(|child| child.assumed.as_deref()).collect();
+    assert_eq!(assumed[0], None, "A is drawn");
+    let why = assumed[1].unwrap();
     assert!(why.contains('C') && !why.contains("B,"), "{why}");
-    assert_eq!(children[2]["assumed"], "its own", "a node's own assumption is kept");
-    assert_eq!(marked["phases"]["error"].get("assumed"), None);
-    assert_eq!(marked["fixtures"], screen()["fixtures"], "fixtures untouched");
+    assert_eq!(assumed[2], Some("its own"), "a node's own assumption is kept");
+    let error = screen.instantiate(State::Phase("error"), Breakpoint::Compact, Some(&undrawn)).unwrap();
+    assert_eq!(error.assumed, None);
+    let unmarked = screen.instantiate(State::Fixture("default"), Breakpoint::Compact, None).unwrap();
+    assert_eq!(unmarked.children[1].assumed, None, "marked only when asked")
 }
