@@ -74,7 +74,7 @@ impl Conditions {
                     Some(type_name.to_string())
                 }
             };
-            match expr::parse(when) {
+            match expr::when(when) {
                 Ok(when) => read.push(Condition { name: name.clone(), label, when, on }),
                 Err(problem) => findings.add(&at, &problem),
             }
@@ -684,37 +684,52 @@ pub(crate) fn what_if_is(written: &Value) -> &'static str {
     }
 }
 
-/// Where a node or a branch asks a yes/no (`if`, `disabled`): terms joined
-/// by `&&`, each `!` to turn it round, then a condition's name or a Bool
-/// path. It holds when every term does.
-pub(crate) struct UseSite<'a> {
-    pub(crate) terms: Vec<Term<'a>>,
+/// Where a node or a branch asks a yes/no (`if`, `disabled`): read by the
+/// one parser a condition is, and taking of its grammar only terms joined by
+/// `&&`, each `!` to turn it round, then a condition's name or a Bool path.
+/// It holds when every term does.
+pub(crate) struct UseSite {
+    pub(crate) terms: Vec<Term>,
 }
 
 /// One term of a use site's `&&` chain.
-pub(crate) struct Term<'a> {
+pub(crate) struct Term {
     pub(crate) negated: bool,
-    pub(crate) name: &'a str,
+    pub(crate) name: String,
 }
 
-impl<'a> UseSite<'a> {
-    pub(crate) fn parse(used: &'a str) -> UseSite<'a> {
-        let terms = used
-            .split("&&")
-            .map(|term| {
-                let term = term.trim();
-                match term.strip_prefix('!') {
-                    Some(name) => Term { negated: true, name: name.trim_start() },
-                    None => Term { negated: false, name: term },
+impl UseSite {
+    /// `used` as a use site; none where it is not the grammar, or is more
+    /// of it than a use site takes.
+    pub(crate) fn parse(used: &str) -> Option<UseSite> {
+        let expr = expr::parse(used).ok()?;
+        let items = match expr {
+            Expr::And(items) => items,
+            only => vec![only],
+        };
+        let mut terms = Vec::new();
+        for item in items {
+            let (negated, atom) = match item {
+                Expr::Not(inner) => match *inner {
+                    Expr::Atom(atom) => (true, atom),
+                    _ => return None,
+                },
+                Expr::Atom(atom) => (false, atom),
+                _ => return None,
+            };
+            match atom {
+                Atom::Name(name) if name.split('.').all(crate::field::is_identifier) => {
+                    terms.push(Term { negated, name })
                 }
-            })
-            .collect();
-        UseSite { terms }
+                _ => return None,
+            }
+        }
+        Some(UseSite { terms })
     }
 
     /// The one term, when the chain is just one `!`-turned term: where it
     /// fails, that term holds.
-    pub(crate) fn only_negated(&self) -> Option<&'a str> {
+    pub(crate) fn only_negated(&self) -> Option<&str> {
         match self.terms.as_slice() {
             [Term { negated: true, name }] => Some(name),
             _ => None,
@@ -753,5 +768,42 @@ fn number_bound(op: Op, n: f64, int: bool) -> Option<(Option<f64>, Option<f64>)>
         Op::Le => Some((None, Some(if int { n.floor() } else { n }))),
         Op::Lt => Some((None, Some(if int { n.ceil() - 1.0 } else { n }))),
         Op::Ne => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UseSite;
+
+    fn terms(used: &str) -> Option<Vec<(bool, String)>> {
+        let site = UseSite::parse(used)?;
+        Some(site.terms.into_iter().map(|term| (term.negated, term.name)).collect())
+    }
+
+    #[test]
+    fn a_use_site_is_names_each_maybe_turned_round_joined_by_and() {
+        let expected = vec![(false, "hasDates".to_string()), (true, "item.done".to_string())];
+        assert_eq!(terms("hasDates && ! item.done"), Some(expected));
+        assert_eq!(UseSite::parse("!open").unwrap().only_negated(), Some("open"));
+    }
+
+    #[test]
+    fn a_use_site_refuses_more_of_the_grammar() {
+        for used in [
+            "a || b",
+            "n > 0",
+            "a && n > 0",
+            "!!a",
+            "(a)",
+            "a &&",
+            "",
+            "true",
+            "a..b",
+            "1a",
+            "a|first",
+            "a b",
+        ] {
+            assert!(UseSite::parse(used).is_none(), "{used:?} should be refused");
+        }
     }
 }

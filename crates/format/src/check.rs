@@ -610,7 +610,8 @@ impl<'a> Walk<'a> {
                     // may read what it guards.
                     let mut enabled = known.clone();
                     if let Some(Value::String(used)) = object.get("disabled")
-                        && let Some(name) = UseSite::parse(used).only_negated()
+                        && let Some(site) = UseSite::parse(used)
+                        && let Some(name) = site.only_negated()
                     {
                         enabled.extend(self.held(name, scope));
                     }
@@ -1448,8 +1449,7 @@ impl<'a> Walk<'a> {
     /// name or a Bool path. What it guarantees when it holds: what each term
     /// does, the paths not null and the conditions true.
     fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> Known {
-        let UseSite { terms } = UseSite::parse(used);
-        if !terms.iter().all(|term| term.name.split('.').all(crate::field::is_identifier)) {
+        let Some(UseSite { terms }) = UseSite::parse(used) else {
             self.findings.add(
                 at,
                 &format!(
@@ -1457,10 +1457,10 @@ impl<'a> Walk<'a> {
                 ),
             );
             return Known::default();
-        }
+        };
         let mut known = Known::default();
         for Term { negated, name } in terms {
-            known.extend(self.use_term(negated, name, scope, at));
+            known.extend(self.use_term(negated, &name, scope, at));
         }
         known
     }
