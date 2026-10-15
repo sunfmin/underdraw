@@ -6,10 +6,14 @@
 //! line added. The agent never creates, closes or reopens one: what it
 //! wants to ask is an assumption. A note whose target is gone from the
 //! description closes itself, saying why; reopened, it is on the whole
-//! state. Each change is read from the file as it
+//! state. An assumption is answered with a note on its node: ✓ says the
+//! guess was right, and that note closes itself once the agent has taken
+//! the guess out; ✗ says it was wrong, with what is right, and runs as any
+//! note does. Each change is read from the file as it
 //! now stands and written back whole, so the window and the agent never
 //! undo each other's.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow, bail};
@@ -75,6 +79,99 @@ pub struct Note {
     /// person reopens it, on the whole state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closed_because: Option<String>,
+    /// The assumption on its node it answers, and how: none for a note
+    /// that answers none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Answers>,
+}
+
+/// What a note answering an assumption says of it: the guess as the panel
+/// showed it, what made it, and the person's answer. Written as one
+/// object: `{"assumed", "guess", "answer"}`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Answers {
+    pub assumed: String,
+    pub guess: Guess,
+    pub answer: Answer,
+}
+
+/// The person's answer to an assumption.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Answer {
+    /// ✓: the guess was right; the agent takes it out of the description,
+    /// and the note closes itself.
+    Right,
+    /// ✗: the guess was wrong, and the note says what is right.
+    Wrong,
+}
+
+/// What made an assumption: written `"author"`, `{"undrawn": [<screen>,
+/// …]}` or `{"kind": <kind>}`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Guess {
+    /// The node's own `assumed`, written by the agent.
+    Author,
+    /// A navigate to these screens, which no description under the root
+    /// declares: screens not drawn yet.
+    Undrawn(Vec<String>),
+    /// A kind underdraw does not know.
+    Kind(String),
+}
+
+impl Guess {
+    /// What made the assumption on the node written `written` in `screen`,
+    /// of kind `kind`, drawn among the screens `drawn`: its own `assumed`,
+    /// else a navigate to a screen not drawn, else its kind.
+    pub fn of(screen: &Value, written: &str, kind: &str, drawn: &BTreeSet<String>) -> Guess {
+        let node = underdraw_format::written_node(screen, written);
+        if node.is_some_and(|node| node.contains_key("assumed")) {
+            return Guess::Author;
+        }
+        let undrawn = undrawn(screen, written, drawn);
+        if undrawn.is_empty() { Guess::Kind(kind.to_string()) } else { Guess::Undrawn(undrawn) }
+    }
+
+    /// Whether the guess is still made of the node written `written` in
+    /// `screen`, in the description in `dir`, among the screens `drawn`
+    /// under the root: its `assumed` still written; a screen it named still
+    /// navigated to and not drawn; its kind still its kind and still
+    /// unknown.
+    fn stands(
+        &self,
+        screen: &Value,
+        dir: &Path,
+        written: &str,
+        drawn: impl FnOnce() -> BTreeSet<String>,
+    ) -> bool {
+        let node = underdraw_format::written_node(screen, written);
+        match self {
+            Guess::Author => node.is_some_and(|node| node.contains_key("assumed")),
+            Guess::Undrawn(screens) => {
+                let undrawn = undrawn(screen, written, &drawn());
+                screens.iter().any(|screen| undrawn.contains(screen))
+            }
+            Guess::Kind(kind) => {
+                let still = node.and_then(|node| node.get("kind")).and_then(Value::as_str) == Some(kind);
+                let kinds = crate::read_kinds(dir).ok().flatten();
+                let components = screen.get("components").and_then(Value::as_object);
+                still
+                    && !underdraw_format::Kinds::read(kinds.as_ref()).has(kind)
+                    && !components.is_some_and(|components| components.contains_key(kind))
+            }
+        }
+    }
+}
+
+/// The screens the node written `written` in `screen` navigates to that
+/// are not among `drawn`.
+fn undrawn(screen: &Value, written: &str, drawn: &BTreeSet<String>) -> Vec<String> {
+    underdraw_format::navigates(screen)
+        .into_iter()
+        .filter(|navigate| navigate.node == written && !drawn.contains(&navigate.to))
+        .map(|navigate| navigate.to)
+        .collect()
 }
 
 /// Where the person proposes acting on a node should go, where the
@@ -139,6 +236,9 @@ impl Note {
         }
         if let Some(why) = &self.closed_because {
             answer["closed_because"] = json!(why);
+        }
+        if let Some(answers) = &self.answers {
+            answer["answers"] = json!(answers);
         }
         answer
     }
@@ -209,7 +309,26 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
 /// A note the person wrote, `says`, on what `on` references, added to its
 /// description's notes: open, numbered after the last. Its id.
 pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
-    added(on, said(says)?, None)
+    added(on, said(says)?, None, None)
+}
+
+/// What a ✓ note says when the person writes nothing more.
+pub const RIGHT: &str = "✓ right, keep it: take the guess out of the description";
+
+/// A note answering the assumption on the node `on` references, as
+/// `answers` says, added to its description's notes as [`add`] adds one:
+/// ✓ says `says`, or [`RIGHT`] when that is empty; ✗ must say what is
+/// right, and is refused without it. Its id.
+pub fn judge(on: &Reference, answers: Answers, says: &str) -> anyhow::Result<String> {
+    if !matches!(on.on, On::Node { .. }) {
+        bail!("an assumption is on a node: pick the node with the orange \"?\" first");
+    }
+    let says = match (answers.answer, says.trim()) {
+        (Answer::Right, "") => RIGHT.to_string(),
+        (Answer::Wrong, "") => bail!("✗ says what is right, for the agent to change: write it first"),
+        (_, says) => says.to_string(),
+    };
+    added(on, says, None, Some(answers))
 }
 
 /// A note proposing where acting on the node `on` references should go,
@@ -219,12 +338,17 @@ pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
     let On::Node { state, .. } = &on.on else {
         bail!("a proposal is on a node, where acting on it should go: pick one first");
     };
-    added(on, proposal.says(state.name()), Some(proposal))
+    added(on, proposal.says(state.name()), Some(proposal), None)
 }
 
 /// A note saying `says`, and proposing `proposes`, on what `on` references,
 /// added to its description's notes: open, numbered after the last. Its id.
-fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Result<String> {
+fn added(
+    on: &Reference,
+    says: String,
+    proposes: Option<Proposal>,
+    answers: Option<Answers>,
+) -> anyhow::Result<String> {
     change(&on.description, |notes| {
         let last = notes.iter().filter_map(|note| note.id.strip_prefix('N')?.parse::<u32>().ok()).max();
         let id = format!("N{}", last.unwrap_or(0) + 1);
@@ -235,6 +359,7 @@ fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Re
             thread: vec![Said { by: By::Person, says }],
             proposes,
             closed_because: None,
+            answers,
         });
         Ok(id)
     })
@@ -314,6 +439,27 @@ fn whole(dir: &Path, on: &On) -> anyhow::Result<Shown> {
     })
 }
 
+/// Why `note` closes itself, in `screen`, the description in `dir` as it
+/// is now written, among the screens `drawn` under the root: what it is
+/// pinned to is gone, or, for a ✓, the assumption it confirmed has been
+/// taken out. None while neither is.
+fn closes(
+    screen: &Value,
+    dir: &Path,
+    note: &Note,
+    drawn: impl FnOnce() -> BTreeSet<String>,
+) -> Option<String> {
+    if let Some(why) = gone(screen, &note.on) {
+        return Some(why);
+    }
+    let (Some(answers), On::Node { node, .. }) = (&note.answers, &note.on) else {
+        return None;
+    };
+    let written = &node.origin.written;
+    let taken = answers.answer == Answer::Right && !answers.guess.stands(screen, dir, written, drawn);
+    taken.then(|| format!("the assumption on {written}, confirmed, is taken out"))
+}
+
 /// Why what `on` is pinned to is gone from `screen`, the description as it
 /// is now written; none while it is there. A node is gone once no tree
 /// writes its id; a region once its state is, or every node it covered;
@@ -361,16 +507,21 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
 }
 
 /// The notes of the description in `dir` that are not closed and whose
-/// target is gone from it, closed, each saying why (`closed_because`):
-/// whoever reads the notes first, the window or a command, closes them.
-/// Judged only once the description checks clean, so that one half edited
-/// closes nothing. The notes it closed, as they now stand.
-pub fn settle(dir: &Path) -> anyhow::Result<Vec<Note>> {
+/// target is gone from it, or that confirmed an assumption since taken
+/// out, closed, each saying why (`closed_because`): whoever reads the
+/// notes first, the window or a command, closes them. A screen not drawn
+/// yet is judged among the descriptions under `root`. Judged only once the
+/// description checks clean, so that one half edited closes nothing. The
+/// notes it closed, as they now stand.
+pub fn settle(dir: &Path, root: &Path) -> anyhow::Result<Vec<Note>> {
     let notes = read(dir)?;
     let Ok((screen, _)) = crate::read(dir) else {
         return Ok(Vec::new());
     };
-    if !notes.iter().any(|note| note.status != Status::Closed && gone(&screen, &note.on).is_some()) {
+    let drawn = std::cell::OnceCell::new();
+    let drawn = || drawn.get_or_init(|| crate::links::drawn(root)).clone();
+    let closing = |note: &Note| note.status != Status::Closed && closes(&screen, dir, note, drawn).is_some();
+    if !notes.iter().any(closing) {
         return Ok(Vec::new());
     }
     let clean = crate::read_kinds(dir)
@@ -382,7 +533,7 @@ pub fn settle(dir: &Path) -> anyhow::Result<Vec<Note>> {
     change(dir, |notes| {
         let mut closed = Vec::new();
         for note in notes.iter_mut().filter(|note| note.status != Status::Closed) {
-            if let Some(why) = gone(&screen, &note.on) {
+            if let Some(why) = closes(&screen, dir, note, drawn) {
                 note.status = Status::Closed;
                 note.closed_because = Some(why);
                 closed.push(note.clone());
@@ -483,7 +634,7 @@ fn listed(root: &Path, status: Status) -> anyhow::Result<(Vec<Value>, Counts)> {
         .collect();
     let (mut open, mut counts) = (Vec::new(), Counts::default());
     for dir in &dirs {
-        settle(dir)?;
+        settle(dir, root)?;
         let notes = read(dir)?;
         counts = counts.add(Counts::of(&notes));
         open.extend(notes.iter().filter(|note| note.status == status).map(|note| note.answer(root, dir)));
@@ -491,11 +642,11 @@ fn listed(root: &Path, status: Status) -> anyhow::Result<(Vec<Value>, Counts)> {
     Ok((open, counts))
 }
 
-/// What `check` says of the notes of the description in `dir`: how many are
-/// open and answered, each whose target is gone closed first, or why they
-/// cannot be read. Never a fault.
-pub fn counted(dir: &Path) -> Value {
-    match settle(dir).and_then(|_| read(dir)) {
+/// What `check` says of the notes of the description in `dir`, under
+/// `root`: how many are open and answered, each that closes itself closed
+/// first, or why they cannot be read. Never a fault.
+pub fn counted(dir: &Path, root: &Path) -> Value {
+    match settle(dir, root).and_then(|_| read(dir)) {
         Ok(notes) => json!(Counts::of(&notes)),
         Err(e) => json!({ "open": 0, "answered": 0, "error": format!("{e:#}") }),
     }
@@ -560,6 +711,68 @@ mod tests {
         let error = answer(&dir, "N1", "more").unwrap_err().to_string();
         assert!(error.contains("only the person reopens it"), "{error}");
         assert_eq!(Counts::of(&read(&dir).unwrap()), Counts { open: 1, answered: 0 });
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_assumption_is_answered_right_or_wrong_and_listed_with_how() {
+        let dir = dir("judged");
+        let answers =
+            |answer| Answers { assumed: "Card fields; or hosted".into(), guess: Guess::Author, answer };
+        assert_eq!(judge(&on(&dir), answers(Answer::Right), " ").unwrap(), "N1");
+        let error = judge(&on(&dir), answers(Answer::Wrong), "").unwrap_err().to_string();
+        assert!(error.contains("✗ says what is right"), "{error}");
+        assert_eq!(judge(&on(&dir), answers(Answer::Wrong), "hosted fields").unwrap(), "N2");
+        let state =
+            Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
+        assert!(judge(&state, answers(Answer::Right), "").is_err(), "an assumption is on a node");
+
+        let notes = read(&dir).unwrap();
+        assert_eq!(notes[0].thread, [Said { by: By::Person, says: RIGHT.into() }], "✓ needs no line");
+        assert_eq!(notes[1].thread[0].says, "hosted fields");
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        assert_eq!(
+            file["notes"][1]["answers"],
+            json!({ "assumed": "Card fields; or hosted", "guess": "author", "answer": "wrong" })
+        );
+        assert_eq!(notes[0].answer(&dir, &dir)["answers"]["answer"], "right", "`notes` lists how it answers");
+        assert_eq!(notes[1].answers.as_ref().unwrap().answer, Answer::Wrong);
+        let others = [Guess::Undrawn(vec!["OrderDetail".into()]), Guess::Kind("Gauge".into())];
+        assert_eq!(
+            others.map(|guess| serde_json::to_value(guess).unwrap()),
+            [json!({ "undrawn": ["OrderDetail"] }), json!({ "kind": "Gauge" })]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_guess_stands_while_the_description_still_makes_it() {
+        let dir = dir("stands");
+        let screen = json!({ "root": { "id": "list", "kind": "Column", "children": [
+            { "id": "card", "kind": "TextField", "assumed": "drawn here; or hosted" },
+            { "id": "gauge", "kind": "Gauge" },
+            { "id": "row", "kind": "Row", "on": { "tap": { "navigate": "OrderDetail" } } },
+        ] } });
+        let none = BTreeSet::new;
+        assert_eq!(Guess::of(&screen, "card", "TextField", &none()), Guess::Author);
+        assert_eq!(Guess::of(&screen, "row", "Row", &none()), Guess::Undrawn(vec!["OrderDetail".into()]));
+        assert_eq!(Guess::of(&screen, "gauge", "Gauge", &none()), Guess::Kind("Gauge".into()));
+        for (guess, written) in [
+            (Guess::Author, "card"),
+            (Guess::Undrawn(vec!["OrderDetail".into()]), "row"),
+            (Guess::Kind("Gauge".into()), "gauge"),
+        ] {
+            assert!(guess.stands(&screen, &dir, written, none), "{guess:?}");
+        }
+        let drawn = || BTreeSet::from(["OrderDetail".to_string()]);
+        assert!(!Guess::Undrawn(vec!["OrderDetail".into()]).stands(&screen, &dir, "row", drawn), "drawn now");
+        let taken = json!({ "root": { "id": "list", "kind": "Column", "children": [
+            { "id": "card", "kind": "TextField" },
+            { "id": "gauge", "kind": "Text" },
+        ] } });
+        assert!(!Guess::Author.stands(&taken, &dir, "card", none), "its assumed taken out");
+        assert!(!Guess::Kind("Gauge".into()).stands(&taken, &dir, "gauge", none), "another kind now");
+        assert!(!Guess::Kind("Row".into()).stands(&screen, &dir, "row", none), "a kind underdraw knows");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -691,7 +904,7 @@ mod tests {
         assert_eq!(read, [state, transition, navigate, on(&dir).on], "each read back as written");
 
         std::fs::write(dir.join(NOTES), "{").unwrap();
-        assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
+        assert!(counted(&dir, &dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
