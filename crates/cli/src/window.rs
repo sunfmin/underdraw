@@ -2429,7 +2429,8 @@ impl Gallery {
             return None;
         };
         let line = self.directory_line(&flow.dir).and_then(|index| self.lines.get(index));
-        let directory = line.map_or_else(|| gallery::within(&self.root, &flow.dir), |line| line.row.name.clone());
+        let directory =
+            line.map_or_else(|| gallery::within(&self.root, &flow.dir), |line| line.row.name.clone());
         Some(Card::new(say!(self.lang, these_screens, directory), Vec::new()))
     }
 
@@ -5314,7 +5315,11 @@ mod tests {
         assert_eq!(file["notes"][0]["whole"], "screens", "kept in the directory's own notes.json");
         assert_eq!(
             talk_shown(&gallery),
-            ["note N1 · waiting on the agent", "these screens repeat the same header", "waiting for the agent"]
+            [
+                "note N1 · waiting on the agent",
+                "these screens repeat the same header",
+                "waiting for the agent"
+            ]
         );
         let Line { row, state, .. } = &gallery.lines[app];
         assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its directory");
