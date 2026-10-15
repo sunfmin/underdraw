@@ -1,5 +1,5 @@
-//! Opens the gallery over the drafts with the real binary, reads the JSON it
-//! answers, and closes the window it started.
+//! Opens the gallery with the real binary, reads the JSON it answers, and
+//! closes the windows it started.
 
 use std::process::Command;
 
@@ -33,12 +33,49 @@ fn opens_one_window_over_every_draft_and_answers_at_once() {
         answer["descriptions"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
     assert!(found.contains(&"airbnb-listing") && found.contains(&"todo"), "{found:?}");
     assert!(!found.iter().any(|d| d.contains("platforms") || d.contains("captures")), "{found:?}");
+    close(&answer);
+}
+
+/// The window's process `answer` names ended, as a crash would end it.
+fn close(answer: &Value) {
     let pid = answer["pid"].as_u64().unwrap().to_string();
     #[cfg(unix)]
     let closed = Command::new("kill").arg(&pid).status().unwrap();
     #[cfg(windows)]
     let closed = Command::new("taskkill").args(["/PID", &pid, "/F"]).status().unwrap();
     assert!(closed.success(), "the window's process {pid} was running");
+}
+
+#[test]
+fn one_window_per_root_brought_forward_while_it_is_open() {
+    let base = std::env::temp_dir().join(format!("underdraw-gallery-once-{}", std::process::id()));
+    let (one, two) = (base.join("one"), base.join("two"));
+    for root in [&one, &two] {
+        std::fs::create_dir_all(root.join("screen")).unwrap();
+        std::fs::write(root.join("screen").join("screen.json"), "{}").unwrap();
+    }
+    let (one, two) = (one.to_str().unwrap(), two.to_str().unwrap());
+    let (first, code) = underdraw(&["gallery", one], &[]);
+    if code == 2 {
+        assert!(first["error"].as_str().unwrap().contains("display"), "{first}");
+        return;
+    }
+    assert_eq!((code, &first["opened"]), (0, &Value::Bool(true)), "{first}");
+    let (again, _) = underdraw(&["gallery", one], &[]);
+    assert_eq!(again["opened"], false, "brought forward, not opened: {again}");
+    assert_eq!(again["pid"], first["pid"], "the same window");
+    let (other, _) = underdraw(&["gallery", two], &[]);
+    assert_eq!(other["opened"], true, "another root, another window: {other}");
+    assert_ne!(other["pid"], first["pid"]);
+    close(&first);
+    // Ended with no chance to tidy up, as a crash ends it.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let (after, _) = underdraw(&["gallery", one], &[]);
+    assert_eq!(after["opened"], true, "a window that crashed does not stop the next: {after}");
+    assert_ne!(after["pid"], first["pid"]);
+    close(&after);
+    close(&other);
+    std::fs::remove_dir_all(base).unwrap();
 }
 
 #[test]

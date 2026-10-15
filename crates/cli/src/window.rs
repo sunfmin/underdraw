@@ -15,11 +15,11 @@ use vello::peniko::Fill;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
 use crate::draw::{self, Shown as State, Wanted};
-use crate::gallery::{self, Row};
+use crate::gallery::{self, Answering, Row};
 use crate::{gpu, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
@@ -38,11 +38,14 @@ const CAPTION: f64 = 26.0;
 /// How far one notch of a mouse wheel scrolls.
 const NOTCH: f64 = 40.0;
 
+/// What a later run of the command over the same root asks of the window.
+struct ComeForward;
+
 /// Opens the window over `root` and runs it until the person closes it.
 /// Says on stdout, in one JSON line, whether the window opened, and nothing
 /// after: the command that started this process reads that line and exits.
 pub fn run(root: &Path) {
-    let event_loop = match EventLoop::new() {
+    let event_loop = match EventLoop::with_user_event().build() {
         Ok(event_loop) => event_loop,
         Err(e) => return report(&json!({ "error": e.to_string() })),
     };
@@ -52,6 +55,7 @@ pub fn run(root: &Path) {
         Err(e) => return report(&json!({ "error": e })),
     };
     let mut gallery = Gallery::new(root, typesetter);
+    gallery.proxy = Some(event_loop.create_proxy());
     if let Err(e) = event_loop.run_app(&mut gallery)
         && !gallery.reported
     {
@@ -85,6 +89,10 @@ struct Gallery {
     shown: Option<Shown>,
     /// Whether the starting command has been told the window opened.
     reported: bool,
+    /// What brings the window forward, from another thread.
+    proxy: Option<EventLoopProxy<ComeForward>>,
+    /// Later runs of the command answered, once the window is open.
+    answering: Option<Answering>,
 }
 
 /// One line of the tree: a directory, a description, or one of a
@@ -150,6 +158,8 @@ impl Gallery {
             typesetter,
             shown: None,
             reported: false,
+            proxy: None,
+            answering: None,
         }
     }
 
@@ -384,7 +394,7 @@ fn words(rect: Rect, text: String, ink: Ink, weight: u16) -> Draw {
     }
 }
 
-impl ApplicationHandler for Gallery {
+impl ApplicationHandler<ComeForward> for Gallery {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.shown.is_some() {
             return;
@@ -403,6 +413,10 @@ impl ApplicationHandler for Gallery {
             Ok(shown) => {
                 let size = shown.window.inner_size().to_logical::<f64>(shown.window.scale_factor());
                 self.size = (size.width, size.height);
+                if let Some(proxy) = self.proxy.clone() {
+                    self.answering =
+                        Answering::start(&self.root, move || proxy.send_event(ComeForward).is_ok());
+                }
                 report(&json!({ "opened": true }));
                 self.reported = true;
                 // Drawn once the command has been told, so it answers at once.
@@ -417,6 +431,14 @@ impl ApplicationHandler for Gallery {
                 self.reported = true;
                 event_loop.exit();
             }
+        }
+    }
+
+    fn user_event(&mut self, _: &ActiveEventLoop, _: ComeForward) {
+        if let Some(shown) = &self.shown {
+            shown.window.set_minimized(false);
+            shown.window.set_visible(true);
+            shown.window.focus_window();
         }
     }
 
