@@ -1,6 +1,6 @@
 //! The gallery's window, run in a process of its own: the tree of
-//! descriptions on the left and, for the one picked, its first fixture
-//! drawn at a phone and a desktop width side by side. The tree and panels
+//! descriptions and their states on the left and, for the state picked, its
+//! picture drawn at a phone and a desktop width side by side. The tree and panels
 //! are drawn by hand, in the inks a wireframe is drawn in.
 
 use std::io::Write;
@@ -19,7 +19,7 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
-use crate::draw::{self, Wanted};
+use crate::draw::{self, Shown as State, Wanted};
 use crate::gallery::{self, Row};
 use crate::{gpu, paint, text};
 
@@ -71,8 +71,8 @@ fn report(line: &Value) {
 
 struct Gallery {
     root: PathBuf,
-    rows: Vec<Row>,
-    /// The row of the description shown.
+    lines: Vec<Line>,
+    /// The line of the state shown, or of the description when it has none.
     picked: Option<usize>,
     picture: Picture,
     /// How far the pictures, and the tree, are scrolled down, in points.
@@ -88,6 +88,32 @@ struct Gallery {
     shown: Option<Shown>,
     /// Whether the starting command has been told the window opened.
     reported: bool,
+}
+
+/// One line of the tree: a directory, a description, or one of a
+/// description's states, listed under it.
+struct Line {
+    /// The directory or description; for a state, the description it is of,
+    /// one level further in and named as the state is.
+    row: Row,
+    state: Option<State>,
+}
+
+/// The lines of the tree over `root`: each description followed by its
+/// states, as `check` finds them. A description that cannot be read has none.
+fn lines(root: &Path) -> Vec<Line> {
+    let mut lines = Vec::new();
+    for row in gallery::tree(root) {
+        let states = row.description.as_deref().map(draw::states).and_then(Result::ok).unwrap_or_default();
+        let (depth, description, faults) = (row.depth + 1, row.description.clone(), row.faults.clone());
+        lines.push(Line { row, state: None });
+        for state in states {
+            let name = state.name().to_string();
+            let row = Row { depth, name, description: description.clone(), faults: faults.clone() };
+            lines.push(Line { row, state: Some(state) });
+        }
+    }
+    lines
 }
 
 /// The window open, and the GPU drawing in it.
@@ -118,7 +144,7 @@ impl Gallery {
     fn new(root: &Path, typesetter: text::Typesetter) -> Gallery {
         Gallery {
             root: root.to_path_buf(),
-            rows: gallery::tree(root),
+            lines: lines(root),
             picked: None,
             picture: Picture::Faults(Vec::new()),
             scroll: 0.0,
@@ -142,39 +168,58 @@ impl Gallery {
         self.clamp();
     }
 
-    /// A press where the pointer is: picks the description on the row of the
-    /// tree under it. Whether that changed what is shown.
+    /// A press where the pointer is: picks the state, or the description, on
+    /// the line of the tree under it. Whether that changed what is shown.
     fn press(&mut self) -> bool {
         if self.cursor.0 >= TREE {
             return false;
         }
-        let row = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
-        if row < 0.0 || Some(row as usize) == self.picked {
+        let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
+        if line < 0.0 {
             return false;
         }
-        let before = self.picked;
-        self.pick(row as usize);
-        self.picked != before
+        match self.shows(line as usize) {
+            Some(index) if Some(index) != self.picked => {
+                self.pick(index);
+                true
+            }
+            _ => false,
+        }
     }
 
-    /// The description on row `index` drawn, in its first fixture; its
-    /// faults instead, when it has any.
+    /// The line whose picture picking line `index` shows: a state's own; a
+    /// description's first state, the line under it, or the description
+    /// itself when it has none; nothing for a directory.
+    fn shows(&self, index: usize) -> Option<usize> {
+        let line = self.lines.get(index)?;
+        line.row.description.as_ref()?;
+        let first = self.lines.get(index + 1).filter(|next| line.state.is_none() && next.state.is_some());
+        Some(if first.is_some() { index + 1 } else { index })
+    }
+
+    /// What picking line `index` shows drawn at each of `WIDTHS`.
     fn pick(&mut self, index: usize) {
-        let Some(row) = self.rows.get(index) else {
+        let Some(index) = self.shows(index) else {
             return;
         };
-        let Some(dir) = row.description.clone() else {
+        let line = &self.lines[index];
+        let Some(dir) = line.row.description.clone() else {
             return;
         };
+        let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
         self.scroll = 0.0;
-        if !row.faults.is_empty() {
-            self.picture = Picture::Faults(row.faults.clone());
+        if !faults.is_empty() {
+            self.picture = Picture::Faults(faults);
             return;
         }
         let mut pages = Vec::new();
         for width in WIDTHS {
-            let wanted = Wanted { fixture: None, phase: None, width, scale: 1 };
+            let wanted = match &state {
+                Some(state) => state.wanted(width, 1),
+                // A description with no state: lay_out says why.
+                None => Wanted { fixture: None, phase: None, width, scale: 1 },
+            };
             match draw::lay_out(&dir, &wanted) {
                 Ok(laid) => {
                     let drawing = laid.draw(1, u32::MAX);
@@ -227,7 +272,7 @@ impl Gallery {
             return (Vec::new(), 0.0);
         };
         let wide = pane - 2.0 * MARGIN;
-        let path = self.picked.and_then(|i| self.rows.get(i)?.description.clone()).unwrap_or_default();
+        let path = self.picked.and_then(|i| self.lines.get(i)?.row.description.clone()).unwrap_or_default();
         let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
         let heading = match faults.len() {
             1 => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
@@ -255,7 +300,7 @@ impl Gallery {
         let (width, height) = self.size;
         let below = (self.pictures_height(width - TREE) - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
-        let below = (self.rows.len() as f64 * ROW + MARGIN - height).max(0.0);
+        let below = (self.lines.len() as f64 * ROW + MARGIN - height).max(0.0);
         self.tree_scroll = self.tree_scroll.clamp(0.0, below);
     }
 
@@ -264,7 +309,7 @@ impl Gallery {
         let (width, height) = self.size;
         let mut list =
             vec![Draw::Line { from: [TREE as f32, 0.0], to: [TREE as f32, height as f32], ink: Ink::Line }];
-        for (index, row) in self.rows.iter().enumerate() {
+        for (index, Line { row, state }) in self.lines.iter().enumerate() {
             let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
             if self.picked == Some(index) {
                 list.push(Draw::Box {
@@ -276,12 +321,14 @@ impl Gallery {
                 });
             }
             let x = 12.0 + row.depth as f64 * INDENT;
-            let (name, ink, weight) = match row.description {
-                Some(_) => (row.name.clone(), Ink::Text, 400),
-                None => (format!("{}/", row.name), Ink::Muted, 600),
+            let (name, ink, weight) = match (&row.description, state) {
+                (None, _) => (format!("{}/", row.name), Ink::Muted, 600),
+                (Some(_), None) => (row.name.clone(), Ink::Text, 600),
+                (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
+                (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
             let mut right = TREE - 8.0;
-            if !row.faults.is_empty() {
+            if state.is_none() && !row.faults.is_empty() {
                 let mark = match row.faults.len() {
                     1 => "1 fault".to_string(),
                     n => format!("{n} faults"),
@@ -406,7 +453,7 @@ impl ApplicationHandler for Gallery {
                 report(&json!({ "opened": true }));
                 self.reported = true;
                 // Drawn once the command has been told, so it answers at once.
-                if let Some(first) = self.rows.iter().position(|row| row.description.is_some()) {
+                if let Some(first) = self.lines.iter().position(|line| line.row.description.is_some()) {
                     self.pick(first);
                 }
                 shown.window.request_redraw();
@@ -478,22 +525,61 @@ mod tests {
         gallery.cursor = (40.0, MARGIN / 2.0 + (index as f64 + 0.5) * ROW);
     }
 
-    fn row_of(gallery: &Gallery, name: &str) -> usize {
-        gallery.rows.iter().position(|row| row.name == name).unwrap()
+    /// The line of the description named `name`.
+    fn line_of(gallery: &Gallery, name: &str) -> usize {
+        gallery.lines.iter().position(|line| line.row.name == name && line.state.is_none()).unwrap()
+    }
+
+    /// The names of the pictures drawn, each with its width.
+    fn captions(gallery: &Gallery) -> Vec<&str> {
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
+        pages.iter().map(|page| page.caption.as_str()).collect()
     }
 
     #[test]
-    fn picking_a_row_draws_its_first_fixture_at_both_widths() {
+    fn each_description_lists_its_fixtures_then_its_phases_as_written() {
+        let gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        let states: Vec<(&str, usize)> = gallery.lines[listing + 1..]
+            .iter()
+            .take_while(|line| line.state.is_some())
+            .map(|line| (line.row.name.as_str(), line.row.depth))
+            .collect();
+        let depth = gallery.lines[listing].row.depth + 1;
+        assert_eq!(
+            states,
+            ["default", "no-dates", "unavailable", "new-listing", "loading", "error"]
+                .map(|name| (name, depth))
+        );
+        assert!(matches!(gallery.lines[listing + 5].state, Some(State::Phase(_))), "loading is a phase");
+    }
+
+    #[test]
+    fn picking_a_phase_draws_its_tree() {
         let mut gallery = gallery();
-        let docs = row_of(&gallery, "docs");
+        let loading = line_of(&gallery, "airbnb-listing") + 5;
+        over_row(&mut gallery, loading);
+        assert!(gallery.press());
+        assert_eq!(gallery.picked, Some(loading));
+        assert_eq!(captions(&gallery), ["loading · 390", "loading · 1120"]);
+    }
+
+    #[test]
+    fn picking_a_description_picks_its_first_state_at_both_widths() {
+        let mut gallery = gallery();
+        let docs = line_of(&gallery, "docs");
+        over_row(&mut gallery, docs + 2);
+        assert!(gallery.press(), "a later state is picked");
         over_row(&mut gallery, docs);
-        assert!(gallery.press(), "a description's row is picked");
-        assert_eq!(gallery.picked, Some(docs));
+        assert!(gallery.press(), "the description's line is picked");
+        assert_eq!(gallery.picked, Some(docs + 1), "its first state, the line under it");
         let Picture::Pages(pages) = &gallery.picture else { panic!("docs has no faults") };
         let widths: Vec<f64> = pages.iter().map(|page| page.width).collect();
         assert_eq!(widths, vec![390.0, 1120.0]);
-        assert!(pages[0].caption.starts_with("default"), "the first fixture: {}", pages[0].caption);
+        assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
         assert!(!gallery.press(), "picking it again changes nothing");
+        over_row(&mut gallery, docs + 1);
+        assert!(!gallery.press(), "nor does picking the state it shows");
         gallery.cursor = (TREE + 100.0, 100.0);
         assert!(!gallery.press(), "a press on the pictures picks nothing");
     }
@@ -501,7 +587,7 @@ mod tests {
     #[test]
     fn a_tall_page_scrolls_as_far_as_its_end() {
         let mut gallery = gallery();
-        let listing = row_of(&gallery, "airbnb-listing");
+        let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing);
         gallery.press();
         let end = gallery.pictures_height(1440.0 - TREE) - 900.0;
@@ -515,11 +601,10 @@ mod tests {
         assert_eq!(gallery.scroll, 0.0, "no further than the top");
         over_row(&mut gallery, 0);
         gallery.wheel(500.0);
-        assert_eq!(
-            (gallery.scroll, gallery.tree_scroll),
-            (0.0, 0.0),
-            "over the tree, the tree scrolls, and it fits"
-        );
+        assert_eq!((gallery.scroll, gallery.tree_scroll), (0.0, 500.0), "over the tree, the tree scrolls");
+        gallery.wheel(1e6);
+        let end = gallery.lines.len() as f64 * ROW + MARGIN - 900.0;
+        assert_eq!(gallery.tree_scroll, end, "as far as its last line");
     }
 
     #[test]
@@ -529,7 +614,7 @@ mod tests {
         std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
-        let broken = &gallery.rows[0];
+        let broken = &gallery.lines[0].row;
         assert!(!broken.faults.is_empty(), "the tree marks it");
         let found = broken.faults.clone();
         gallery.pick(0);
@@ -548,6 +633,23 @@ mod tests {
                 "{texts:?}"
             );
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_state_of_a_description_with_faults_shows_them_too() {
+        let root = std::env::temp_dir().join(format!("underdraw-window-state-faults-{}", std::process::id()));
+        let todo = Path::new(DRAFTS).join("todo");
+        std::fs::create_dir_all(root.join("todo")).unwrap();
+        let mut screen: Value =
+            serde_json::from_str(&std::fs::read_to_string(todo.join(crate::SCREEN)).unwrap()).unwrap();
+        screen["data"]["stray"] = json!("nonsense");
+        std::fs::write(root.join("todo").join(crate::SCREEN), screen.to_string()).unwrap();
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        assert!(!gallery.lines[0].row.faults.is_empty(), "the stray field is a fault");
+        assert!(gallery.lines[1].state.is_some(), "its states are still listed");
+        gallery.pick(1);
+        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
         std::fs::remove_dir_all(root).unwrap();
     }
 }
