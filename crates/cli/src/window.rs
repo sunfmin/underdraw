@@ -36,8 +36,8 @@ use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::chrome::{
-    ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SPACE,
-    THUMB, THUMB_TALL, TREE, TREE_LEAST,
+    ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SIDEBAR,
+    SIDEBAR_LEAST, SPACE, THUMB, THUMB_TALL, TREE, TREE_LEAST,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::field::{Edit, Field, Motion};
@@ -48,6 +48,7 @@ use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
 use crate::scrollbar::{self, Axis};
+use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
 
@@ -159,11 +160,14 @@ struct Gallery {
     details: bool,
     /// The tree's width, in points: where the line between it and the
     /// pictures is, and the pictures' pane starts. Dragging the line moves
-    /// it, held to [`Gallery::tree_bounds`].
+    /// it, held to [`Gallery::bounds`].
     tree: f64,
-    /// Whether the line between the tree and the pictures is held, being
-    /// dragged.
-    resizing: bool,
+    /// The sidebar's width, in points, kept while it is hidden: where the
+    /// line between the pictures and it is, from the window's right edge.
+    /// Dragging the line moves it, held to [`Gallery::bounds`].
+    side: f64,
+    /// The line between two panes held, being dragged; none while no line is.
+    resizing: Option<Edge>,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
@@ -237,9 +241,10 @@ struct Draft {
 }
 
 impl Draft {
-    /// A note on `on`, nothing typed yet, set by `typesetter`'s fonts.
-    fn new(on: Writing, typesetter: &text::Typesetter) -> Draft {
-        Draft { on, text: Field::new(typesetter) }
+    /// A note on `on`, nothing typed yet, set by `typesetter`'s fonts in a
+    /// sidebar `width` wide.
+    fn new(on: Writing, typesetter: &text::Typesetter, width: f64) -> Draft {
+        Draft { on, text: Field::new(typesetter, sidebar::field_width(width)) }
     }
 }
 
@@ -459,6 +464,16 @@ struct Shown {
     surface: gpu::Window<'static>,
 }
 
+/// A line between two panes, dragged to widen or narrow the pane beside
+/// the pictures it bounds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Edge {
+    /// Between the tree and the pictures.
+    Tree,
+    /// Between the pictures and the sidebar.
+    Side,
+}
+
 /// What the picked description shows.
 enum Picture {
     /// One state at each of `WIDTHS`.
@@ -632,7 +647,8 @@ impl Gallery {
             sidebar: true,
             details: false,
             tree: TREE,
-            resizing: false,
+            side: SIDEBAR,
+            resizing: None,
             cursor: (0.0, 0.0),
             acting: false,
             history: Vec::new(),
@@ -688,7 +704,7 @@ impl Gallery {
     /// Where the pictures' pane ends on the right, in window points: where
     /// the sidebar starts while it is shown, else the window's edge.
     fn pane_right(&self) -> f64 {
-        if self.sidebar { self.size.0 - sidebar::WIDTH } else { self.size.0 }
+        if self.sidebar { self.size.0 - self.side } else { self.size.0 }
     }
 
     /// How wide the pictures' pane is, between the tree and the sidebar.
@@ -696,29 +712,59 @@ impl Gallery {
         self.pane_right() - self.tree
     }
 
-    /// The least and the most the tree's width can be: [`TREE_LEAST`], and
-    /// what leaves the pictures' pane room for the phone's picture at
+    /// The least and the most the width of the pane `edge` bounds can be:
+    /// [`TREE_LEAST`] or [`SIDEBAR_LEAST`], and what leaves the pictures'
+    /// pane, beside the other pane, room for the phone's picture at
     /// [`SMALLEST`], with the space around it. In a window too narrow for
     /// both, the least.
-    fn tree_bounds(&self) -> (f64, f64) {
+    fn bounds(&self, edge: Edge) -> (f64, f64) {
         let picture = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
-        (TREE_LEAST, (self.pane_right() - picture).max(TREE_LEAST))
+        let (least, beside) = match edge {
+            Edge::Tree => (TREE_LEAST, self.size.0 - self.pane_right()),
+            Edge::Side => (SIDEBAR_LEAST, self.tree),
+        };
+        (least, (self.size.0 - beside - picture).max(least))
     }
 
-    /// Whether the pointer is on the line between the tree and the
-    /// pictures, near enough to take hold of it.
-    fn on_tree_line(&self) -> bool {
-        (self.cursor.0 - self.tree).abs() <= chrome::GRIP
-    }
-
-    /// The pointer moved, the line held: the tree as wide as where the
-    /// pointer is, within its bounds, and the pictures fitted to what is
-    /// left. Whether the line is held.
-    fn resize_tree(&mut self) -> bool {
-        if !self.resizing {
-            return false;
+    /// Where `edge`'s line is, in window points; none for the sidebar's
+    /// while it is hidden.
+    fn edge_x(&self, edge: Edge) -> Option<f64> {
+        match edge {
+            Edge::Tree => Some(self.tree),
+            Edge::Side => self.sidebar.then(|| self.pane_right()),
         }
-        self.tree = self.cursor.0;
+    }
+
+    /// The width of the pane `edge` bounds: the tree's, or the sidebar's.
+    fn width_mut(&mut self, edge: Edge) -> &mut f64 {
+        match edge {
+            Edge::Tree => &mut self.tree,
+            Edge::Side => &mut self.side,
+        }
+    }
+
+    /// The line between two panes the pointer is on, near enough to take
+    /// hold of it.
+    fn edge_at(&self) -> Option<Edge> {
+        [Edge::Tree, Edge::Side]
+            .into_iter()
+            .find(|&edge| self.edge_x(edge).is_some_and(|x| (self.cursor.0 - x).abs() <= chrome::GRIP))
+    }
+
+    /// The pointer moved, a line held: the pane it bounds as wide as
+    /// reaches where the pointer is, within its bounds, and the pictures
+    /// fitted to what is left; the other pane keeps its width. Whether a
+    /// line is held.
+    fn resize(&mut self) -> bool {
+        let Some(edge) = self.resizing else {
+            return false;
+        };
+        let (least, most) = self.bounds(edge);
+        let reach = match edge {
+            Edge::Tree => self.cursor.0,
+            Edge::Side => self.size.0 - self.cursor.0,
+        };
+        *self.width_mut(edge) = reach.clamp(least, most);
         self.clamp();
         true
     }
@@ -738,10 +784,10 @@ impl Gallery {
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
-        // On the line between the tree and the pictures, only taking hold
-        // of it: no line of the tree, nor region, is picked.
-        if self.on_tree_line() {
-            self.resizing = true;
+        // On a line between two panes, only taking hold of it: no line of
+        // the tree, nor region, is picked, nor button pressed.
+        if let Some(edge) = self.edge_at() {
+            self.resizing = Some(edge);
             return false;
         }
         if self.cursor.0 >= self.pane_right() {
@@ -857,7 +903,7 @@ impl Gallery {
     /// Whether that changed what is shown.
     fn release(&mut self) -> bool {
         self.selecting = None;
-        self.resizing = false;
+        self.resizing = None;
         let Some(from) = self.held.take() else {
             return false;
         };
@@ -1110,7 +1156,7 @@ impl Gallery {
                 true
             }
             Do::Reopen(dir, id) => {
-                self.draft = Some(Draft::new(Writing::Reopening(dir, id), &self.typesetter));
+                self.draft = Some(Draft::new(Writing::Reopening(dir, id), &self.typesetter, self.side));
                 true
             }
             Do::Show(dir, id) => {
@@ -1972,7 +2018,8 @@ impl Gallery {
             return None;
         }
         let cards = self.sidebar_cards();
-        let laid = sidebar::lay_out(&cards, self.pane_right(), -self.side_scroll, &mut self.typesetter);
+        let laid =
+            sidebar::lay_out(&cards, (self.pane_right(), self.side), -self.side_scroll, &mut self.typesetter);
         laid.at(at).cloned()
     }
 
@@ -2052,7 +2099,7 @@ impl Gallery {
         self.cards()
             .into_iter()
             .flat_map(|card| {
-                let blocks = card.blocks.iter().flat_map(Block::says).map(str::to_string).collect::<Vec<_>>();
+                let blocks = card.blocks.iter().flat_map(Block::says).collect::<Vec<_>>();
                 std::iter::once(card.title).chain(blocks)
             })
             .collect()
@@ -2251,28 +2298,35 @@ impl Gallery {
                 blocks.push(Block::Muted(gallery::within(&self.root, dir)));
             }
             for item in &inbox.yours {
-                blocks.push(match item {
+                blocks.push(Block::Item(match item {
                     Item::Guess(guess) => {
                         let (written, state, (guessed, _)) =
                             (&guess.written, guess.state.name(), parts(&guess.assumed));
-                        Block::Button(
-                            chrome!(
-                                lang,
-                                "? {written} in {state}: {guessed}",
-                                "? {written}（{state}）：{guessed}"
-                            ),
-                            Do::Visit(Visit::Guess((*dir).clone(), guess.state.clone(), guess.id.clone())),
-                        )
+                        Listed {
+                            mark: "?".to_string(),
+                            mark_ink: Ink::Assumed,
+                            on: chrome!(lang, "{written} in {state}", "{written}（{state}）"),
+                            says: guessed.to_string(),
+                            ink: Ink::Muted,
+                            does: Do::Visit(Visit::Guess(
+                                (*dir).clone(),
+                                guess.state.clone(),
+                                guess.id.clone(),
+                            )),
+                        }
                     }
                     Item::Answered(note) => {
-                        let (id, on, reply) =
-                            (&note.id, note.on.said(lang), note.reply().unwrap_or_default());
-                        Block::Button(
-                            chrome!(lang, "{id} · {on} · agent: {reply}", "{id} · {on} · 代理：{reply}"),
-                            Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
-                        )
+                        let reply = note.reply().unwrap_or_default();
+                        Listed {
+                            mark: note.id.clone(),
+                            mark_ink: Ink::Note,
+                            on: note.on.said(lang),
+                            says: chrome!(lang, "agent: {reply}", "代理：{reply}"),
+                            ink: Ink::Answered,
+                            does: Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
+                        }
                     }
-                });
+                }));
             }
         }
         let yours: usize = inboxes.iter().map(|(_, inbox)| inbox.yours.len()).sum();
@@ -2282,7 +2336,7 @@ impl Gallery {
         let agents: usize = inboxes.iter().map(|(_, inbox)| inbox.agents.len()).sum();
         if agents > 0 {
             let fold = if self.waiting { "▾" } else { "▸" };
-            blocks.push(Block::Button(
+            blocks.push(Block::Fold(
                 chrome!(lang, "{fold} waiting on the agent · {agents}", "{fold} 等代理处理 · {agents}"),
                 Do::Waiting,
             ));
@@ -2290,13 +2344,17 @@ impl Gallery {
         if self.waiting {
             for (dir, inbox) in &inboxes {
                 for note in &inbox.agents {
-                    let (id, on) = (&note.id, note.on.said(lang));
-                    let said = if grouped {
-                        format!("{} · {id} · {on}", gallery::within(&self.root, dir))
-                    } else {
-                        format!("{id} · {on}")
-                    };
-                    blocks.push(Block::Button(said, Do::Visit(Visit::Note((*dir).clone(), note.id.clone()))));
+                    let on = note.on.said(lang);
+                    let on =
+                        if grouped { format!("{} · {on}", gallery::within(&self.root, dir)) } else { on };
+                    blocks.push(Block::Item(Listed {
+                        mark: note.id.clone(),
+                        mark_ink: Ink::Note,
+                        on,
+                        says: String::new(),
+                        ink: Ink::Muted,
+                        does: Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
+                    }));
                 }
             }
         }
@@ -2416,7 +2474,7 @@ impl Gallery {
             return 0.0;
         }
         let cards = self.sidebar_cards();
-        sidebar::lay_out(&cards, 0.0, 0.0, &mut self.typesetter).height
+        sidebar::lay_out(&cards, (0.0, self.side), 0.0, &mut self.typesetter).height
     }
 
     /// The card of the arrow picked: what it is.
@@ -2437,12 +2495,13 @@ impl Gallery {
         let (guessed, other) = parts(&assumed);
         let mut blocks = vec![
             Block::Big(guessed.to_string()),
-            Block::Muted(match other {
-                Some(other) => chrome!(lang, "or else  {other}", "也可能  {other}"),
-                None => {
-                    chrome!(lang, "or else  not said: ✗ says what it is", "也可能  没说：用 ✗ 说明是什么")
-                }
-            }),
+            Block::Fact(
+                chrome!(lang, "or else", "也可能"),
+                match other {
+                    Some(other) => other.to_string(),
+                    None => chrome!(lang, "not said: ✗ says what it is", "没说：用 ✗ 说明是什么"),
+                },
+            ),
         ];
         if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
             for note in notes.iter().filter(|note| note.status != Status::Closed) {
@@ -2525,7 +2584,9 @@ impl Gallery {
                 }
                 self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
-            Answer::Wrong => self.draft = Some(Draft::new(Writing::Rejecting(on, answers), &self.typesetter)),
+            Answer::Wrong => {
+                self.draft = Some(Draft::new(Writing::Rejecting(on, answers), &self.typesetter, self.side))
+            }
         }
     }
 
@@ -2781,7 +2842,7 @@ impl Gallery {
     fn draft_on(&mut self, on: Reference) {
         self.acted = None;
         self.note = None;
-        self.draft = Some(Draft::new(Writing::On(on), &self.typesetter));
+        self.draft = Some(Draft::new(Writing::On(on), &self.typesetter, self.side));
     }
 
     /// The note being written saved to notes.json, and its pin drawn; or,
@@ -2959,7 +3020,8 @@ impl Gallery {
             return None;
         }
         let cards = self.sidebar_cards();
-        sidebar::lay_out(&cards, self.pane_right(), -self.side_scroll, &mut self.typesetter).field
+        sidebar::lay_out(&cards, (self.pane_right(), self.side), -self.side_scroll, &mut self.typesetter)
+            .field
     }
 
     /// The caret of the note being written put where the pointer is on its
@@ -3136,11 +3198,11 @@ impl Gallery {
         );
         let mut blocks = Vec::new();
         if region.nodes.is_empty() {
-            blocks.push(Block::Muted(chrome!(lang, "covers  no node", "覆盖  没有节点")));
+            blocks.push(Block::Fact(chrome!(lang, "covers", "覆盖"), chrome!(lang, "no node", "没有节点")));
         }
         for origin in &region.nodes {
             let node = format!("{}{}", origin.written, reference::instance(&origin.instance));
-            blocks.push(Block::Muted(chrome!(lang, "covers  {node}", "覆盖  {node}")));
+            blocks.push(Block::Fact(chrome!(lang, "covers", "覆盖"), node));
         }
         Some(Card::new(title, blocks))
     }
@@ -3156,40 +3218,42 @@ impl Gallery {
         let lang = self.lang;
         let (page, node) =
             pages.iter().find_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?)))?;
-        let mut blocks = vec![Block::Text(match page.calls.get(id) {
-            Some(operations) => {
-                let operations = operations.join(", ");
-                chrome!(lang, "calls  {operations}", "调用  {operations}")
-            }
-            None => chrome!(lang, "calls  nothing", "调用  无"),
-        })];
+        let calls = match page.calls.get(id) {
+            Some(operations) => operations.join(", "),
+            None => chrome!(lang, "nothing", "无"),
+        };
+        let mut blocks = vec![Block::Fact(chrome!(lang, "calls", "调用"), calls)];
         let (fold, details) = match lang {
             Lang::En => (if self.details { "▾" } else { "▸" }, "details"),
             Lang::Zh => (if self.details { "▾" } else { "▸" }, "详情"),
         };
-        blocks.push(Block::Button(format!("{fold} {details}"), Do::Details));
+        blocks.push(Block::Fold(format!("{fold} {details}"), Do::Details));
         if self.details {
-            blocks.push(Block::Muted(chrome!(lang, "id  {id}", "标识  {id}")));
+            blocks.push(Block::Fact(chrome!(lang, "id", "标识"), id.clone()));
             for page in pages {
                 let width = page.width;
-                blocks.push(Block::Muted(match page.nodes.iter().find(|n| &n.id == id) {
-                    Some(node) => {
-                        let r = node.rect;
-                        let label = match (node.label, lang) {
-                            (Some(n), Lang::En) => format!("label {n}"),
-                            (Some(n), Lang::Zh) => format!("编号 {n}"),
-                            (None, Lang::En) => "no label".to_string(),
-                            (None, Lang::Zh) => "无编号".to_string(),
-                        };
-                        let (x, y, w, h) = (r.x, r.y, r.width, r.height);
-                        chrome!(
-                            lang,
-                            "at {width}  {label} · box {x}, {y} · {w} × {h}",
-                            "宽 {width}  {label} · 框 {x}, {y} · {w} × {h}"
-                        )
-                    }
-                    None => chrome!(lang, "at {width}  not in this state", "宽 {width}  这个状态里没有"),
-                }));
+                let at = chrome!(lang, "at {width}", "宽 {width}");
+                blocks.push(Block::Fact(
+                    at,
+                    match page.nodes.iter().find(|n| &n.id == id) {
+                        Some(node) => {
+                            let r = node.rect;
+                            let label = match (node.label, lang) {
+                                (Some(n), Lang::En) => format!("label {n}"),
+                                (Some(n), Lang::Zh) => format!("编号 {n}"),
+                                (None, Lang::En) => "no label".to_string(),
+                                (None, Lang::Zh) => "无编号".to_string(),
+                            };
+                            let (x, y, w, h) = (r.x, r.y, r.width, r.height);
+                            chrome!(
+                                lang,
+                                "{label} · box {x}, {y} · {w} × {h}",
+                                "{label} · 框 {x}, {y} · {w} × {h}"
+                            )
+                        }
+                        None => chrome!(lang, "not in this state", "这个状态里没有"),
+                    },
+                ));
             }
         }
         Some(Card::new(node.component.clone(), blocks))
@@ -3382,11 +3446,18 @@ impl Gallery {
         (list, y)
     }
 
-    /// The tree's width kept within its bounds, and the scrolls inside
-    /// what there is to scroll.
+    /// The tree's width, then the sidebar's, kept within their bounds: a
+    /// window narrowed, or the sidebar shown, narrows the tree first. And
+    /// the scrolls inside what there is to scroll.
     fn clamp(&mut self) {
-        let (least, most) = self.tree_bounds();
-        self.tree = self.tree.clamp(least, most);
+        for edge in [Edge::Tree, Edge::Side] {
+            let (least, most) = self.bounds(edge);
+            let width = self.width_mut(edge);
+            *width = width.clamp(least, most);
+        }
+        if let Some(draft) = &mut self.draft {
+            draft.text.fit(sidebar::field_width(self.side));
+        }
         let height = self.size.1;
         let below = (self.pictures_height(self.pane()) - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
@@ -3582,7 +3653,7 @@ impl Gallery {
                 to: [right as f32, height as f32],
                 ink: Ink::Line,
             }];
-            let laid = sidebar::lay_out(&cards, right, -self.side_scroll, &mut self.typesetter);
+            let laid = sidebar::lay_out(&cards, (right, self.side), -self.side_scroll, &mut self.typesetter);
             self.caret = laid.caret;
             side.extend(laid.draws);
             side
@@ -4064,13 +4135,13 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
                 let window = shown.window.clone();
-                let grip = if self.resizing || self.on_tree_line() {
+                let grip = if self.resizing.is_some() || self.edge_at().is_some() {
                     CursorIcon::EwResize
                 } else {
                     CursorIcon::Default
                 };
                 window.set_cursor(grip);
-                let resized = self.resize_tree();
+                let resized = self.resize();
                 if resized || self.hover() || self.held.is_some() || self.drag_field() {
                     window.request_redraw();
                 }
@@ -4590,7 +4661,7 @@ mod tests {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
-        assert_eq!(gallery.pane_right(), 1440.0 - sidebar::WIDTH, "the sidebar is shown by default");
+        assert_eq!(gallery.pane_right(), 1440.0 - SIDEBAR, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
         assert_eq!(
             shown.last().map(|card| card.title.as_str()),
@@ -4602,7 +4673,7 @@ mod tests {
         let narrow = gallery.zoom(gallery.pane());
         let (left, _) = gallery.origins()[1];
         assert!(left + 1120.0 * narrow <= gallery.pane_right(), "the pictures end before the sidebar");
-        gallery.cursor = (1440.0 - sidebar::WIDTH / 2.0, 890.0);
+        gallery.cursor = (1440.0 - SIDEBAR / 2.0, 890.0);
         assert!(!gallery.press(), "a press in the sidebar off its buttons does nothing");
         assert_eq!(gallery.node.as_deref(), Some("nav-save"), "and leaves the node picked");
 
@@ -4613,7 +4684,7 @@ mod tests {
         assert!(gallery.press(), "a node near the window's right edge is picked, no sidebar there");
         assert_eq!(gallery.pointed, 1);
         gallery.toggle_sidebar();
-        assert_eq!(gallery.pane_right(), 1440.0 - sidebar::WIDTH, "and shown again");
+        assert_eq!(gallery.pane_right(), 1440.0 - SIDEBAR, "and shown again");
     }
 
     #[test]
@@ -4663,7 +4734,7 @@ mod tests {
         assert_eq!(gallery.picked, picked, "and picks no line of the tree");
         assert!(gallery.held.is_none(), "nor starts a region");
         gallery.cursor = (400.0, 320.0);
-        assert!(gallery.resize_tree(), "the drag moves the line");
+        assert!(gallery.resize(), "the drag moves the line");
         assert_eq!(gallery.tree, 400.0, "to where the pointer is");
         assert_eq!(gallery.origins()[0].0, 400.0 + MARGIN, "the pictures start after it");
         assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
@@ -4671,27 +4742,101 @@ mod tests {
         assert_eq!(gallery.picked, picked);
         assert!(gallery.region.is_none());
         gallery.cursor = (500.0, 320.0);
-        assert!(!gallery.resize_tree(), "let go, the line stays");
+        assert!(!gallery.resize(), "let go, the line stays");
         assert_eq!(gallery.tree, 400.0);
         gallery.toggle_sidebar();
 
         gallery.cursor = (402.0, 300.0);
         gallery.press();
         gallery.cursor = (20.0, 300.0);
-        gallery.resize_tree();
+        gallery.resize();
         assert_eq!(gallery.tree, TREE_LEAST, "no narrower than 160pt");
         gallery.cursor = (1400.0, 300.0);
-        gallery.resize_tree();
+        gallery.resize();
         let room = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
         assert_eq!(gallery.tree, gallery.pane_right() - room, "the pictures keep room for a half-size phone");
         gallery.release();
 
         gallery.size = (900.0, 900.0);
         gallery.clamp();
-        assert_eq!(gallery.tree, 900.0 - sidebar::WIDTH - room, "a narrower window narrows the tree too");
+        assert_eq!(gallery.tree, 900.0 - SIDEBAR - room, "a narrower window narrows the tree too");
         gallery.size = (500.0, 900.0);
         gallery.clamp();
         assert_eq!(gallery.tree, TREE_LEAST, "never below its least");
+    }
+
+    #[test]
+    fn dragging_the_line_between_the_pictures_and_the_sidebar_resizes_the_sidebar_within_its_bounds() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        gallery.press();
+        gallery.release();
+        assert_eq!(gallery.side, SIDEBAR, "the window opens with the sidebar at 360pt");
+        // A window wide enough for the pictures above half size, to shrink.
+        let width = 2400.0;
+        gallery.size = (width, 900.0);
+        gallery.clamp();
+        let wide = gallery.zoom(gallery.pane());
+        let line = width - SIDEBAR;
+
+        gallery.cursor = (line - 3.0, 300.0);
+        assert_eq!(gallery.edge_at(), Some(Edge::Side), "the pointer takes hold of the line");
+        assert!(!gallery.press(), "a press on the line changes nothing shown");
+        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "and leaves the node picked");
+        assert!(gallery.held.is_none(), "nor starts a region");
+        assert!(!gallery.details, "nor presses a button");
+        gallery.cursor = (line - 400.0, 320.0);
+        assert!(gallery.resize(), "the drag moves the line");
+        assert_eq!(gallery.side, SIDEBAR + 400.0, "to where the pointer is");
+        assert_eq!(gallery.tree, TREE, "the tree keeps its width");
+        assert!(gallery.zoom(gallery.pane()) < wide, "the pictures fit the width left");
+        assert!(!gallery.release(), "letting go picks nothing");
+        assert_eq!(gallery.node.as_deref(), Some("nav-save"));
+        assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded, wide");
+        assert!(gallery.region.is_none());
+
+        gallery.cursor = (line - 400.0, 300.0);
+        gallery.press();
+        gallery.cursor = (width - 40.0, 300.0);
+        gallery.resize();
+        gallery.release();
+        assert_eq!(gallery.side, SIDEBAR_LEAST, "no narrower than 280pt");
+        let cards = gallery.sidebar_cards();
+        let laid =
+            sidebar::lay_out(&cards, (gallery.pane_right(), gallery.side), 0.0, &mut gallery.typesetter);
+        let inside = |r: &Rect| f64::from(r.x) > gallery.pane_right() && f64::from(r.x + r.width) < width;
+        assert!(laid.buttons.iter().all(|(r, _, _)| inside(r)), "its buttons inside it");
+        assert!(click_panel_line(&mut gallery, "▾ details"), "each still clicked by its own box");
+        assert!(!gallery.details);
+
+        gallery.toggle_sidebar();
+        gallery.cursor = (width - SIDEBAR_LEAST, 300.0);
+        assert_eq!(gallery.edge_at(), None, "hidden, there is no line");
+        gallery.toggle_sidebar();
+        assert_eq!(gallery.side, SIDEBAR_LEAST, "shown again, at the width it was dragged to");
+        assert_eq!(gallery.pane_right(), width - SIDEBAR_LEAST);
+
+        gallery.cursor = (gallery.pane_right(), 300.0);
+        gallery.press();
+        gallery.cursor = (0.0, 300.0);
+        gallery.resize();
+        gallery.release();
+        let room = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
+        assert_eq!(gallery.side, width - TREE - room, "the pictures keep room for a half-size phone");
+        gallery.cursor = (TREE, 300.0);
+        gallery.press();
+        gallery.cursor = (600.0, 300.0);
+        gallery.resize();
+        gallery.release();
+        assert_eq!(gallery.tree, TREE, "the tree widens no further than leaves that room");
+        gallery.size = (1200.0, 900.0);
+        gallery.clamp();
+        assert_eq!(gallery.side + gallery.tree, 1200.0 - room, "a narrower window narrows them too");
+        gallery.size = (600.0, 900.0);
+        gallery.clamp();
+        assert_eq!((gallery.tree, gallery.side), (TREE_LEAST, SIDEBAR_LEAST), "never below their least");
     }
 
     #[test]
@@ -5330,8 +5475,12 @@ mod tests {
     /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
         let cards = gallery.sidebar_cards();
-        let laid =
-            sidebar::lay_out(&cards, gallery.pane_right(), -gallery.side_scroll, &mut gallery.typesetter);
+        let laid = sidebar::lay_out(
+            &cards,
+            (gallery.pane_right(), gallery.side),
+            -gallery.side_scroll,
+            &mut gallery.typesetter,
+        );
         let Some(r) = laid.buttons.iter().find(|(_, says, _)| *says == text).map(|(r, _, _)| *r) else {
             panic!("no button {text:?}: {:?}", gallery.panel())
         };
@@ -5696,7 +5845,8 @@ mod tests {
         assert_eq!(shown.text, "ani haob", "composed at the caret");
         assert_eq!(&shown.text[shown.composing.clone()], "ni hao", "drawn underlined");
         let cards = gallery.cards();
-        let laid = sidebar::lay_out(&cards, gallery.pane_right(), 0.0, &mut gallery.typesetter);
+        let laid =
+            sidebar::lay_out(&cards, (gallery.pane_right(), gallery.side), 0.0, &mut gallery.typesetter);
         let underlined =
             laid.draws.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
         assert_eq!(underlined, 1, "one line under what is composed");
@@ -6318,7 +6468,7 @@ mod tests {
             .inbox_card()
             .into_iter()
             .flat_map(|card| {
-                let blocks = card.blocks.iter().flat_map(Block::says).map(str::to_string).collect::<Vec<_>>();
+                let blocks = card.blocks.iter().flat_map(Block::says).collect::<Vec<_>>();
                 std::iter::once(card.title).chain(blocks)
             })
             .collect()
@@ -6331,13 +6481,16 @@ mod tests {
         gallery.size = (1440.0, 900.0);
         let orders = line_of(&gallery, "orders");
         gallery.pick(orders);
+        // Each assumption an item: its "?" and what it is on, then what was guessed.
         let guesses = [
-            "? nav-export in default: This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet",
-            "? order-{index} in default: This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet",
+            "? nav-export in default",
+            "This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet",
+            "? order-{index} in default",
+            "This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet",
         ];
-        assert_eq!(inbox(&gallery), ["waits on you · 2", guesses[0], guesses[1]]);
+        assert_eq!(inbox(&gallery)[..], [&["waits on you · 2"][..], &guesses].concat());
 
-        assert!(click_panel_line(&mut gallery, guesses[0]));
+        assert!(click_panel_line(&mut gallery, "nav-export in default"), "an item is clicked by its box");
         assert_eq!(shown(&gallery), "orders · default", "clicking an item shows its state");
         assert_eq!(gallery.node.as_deref(), Some("nav-export"), "with its node picked");
         assert_eq!(gallery.panel()[0], "assumed, for you to answer", "its assumption, to answer");
@@ -6353,16 +6506,16 @@ mod tests {
         notes::add(&whole, "too dense").unwrap();
         gallery.reload();
         gallery.pick(orders);
-        let answered = "N1 · on nav-export in default at 390 · agent: it says Export now";
+        let answered = ["N1 on nav-export in default at 390", "agent: it says Export now"];
         assert_eq!(
-            inbox(&gallery),
-            ["waits on you · 3", guesses[0], guesses[1], answered, "▸ waiting on the agent · 1"],
+            inbox(&gallery)[..],
+            [&["waits on you · 3"][..], &guesses, &answered, &["▸ waiting on the agent · 1"]].concat(),
             "two assumptions unanswered and one note answered; the open note folded to its count"
         );
         assert!(click_panel_line(&mut gallery, "▸ waiting on the agent · 1"));
-        assert_eq!(inbox(&gallery)[4..], ["▾ waiting on the agent · 1", "N2 · on the whole of default"]);
+        assert_eq!(inbox(&gallery)[7..], ["▾ waiting on the agent · 1", "N2 on the whole of default"]);
 
-        assert!(click_panel_line(&mut gallery, answered));
+        assert!(click_panel_line(&mut gallery, "on nav-export in default at 390"));
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(gallery.node.as_deref(), Some("nav-export"), "the note's node picked");
         assert_eq!(
@@ -6381,8 +6534,8 @@ mod tests {
             everything.iter().position(|line| line == "pay/checkout").unwrap(),
         );
         assert_eq!(
-            everything[at_orders + 1..at_orders + 4],
-            [guesses[0], guesses[1], answered],
+            everything[at_orders + 1..at_orders + 7],
+            [&guesses[..], &answered].concat(),
             "{everything:?}"
         );
         assert!(at_orders < at_checkout, "grouped by description, in the tree's order");
@@ -6395,7 +6548,7 @@ mod tests {
         assert!(!inbox(&gallery).contains(&"orders".to_string()), "a directory's is what is under it");
 
         notes::close(&dir, "N1").unwrap();
-        let assumed = guesses[0].split_once(": ").unwrap().1.to_string();
+        let assumed = guesses[1].to_string();
         let guess = Guess::Undrawn(vec!["ExportDocuments".into()]);
         notes::judge(&on_export, Answers { assumed, guess, answer: Answer::Right }, "").unwrap();
         gallery.reload();
@@ -6404,10 +6557,11 @@ mod tests {
             inbox(&gallery),
             [
                 "waits on you · 1",
-                guesses[1],
+                guesses[2],
+                guesses[3],
                 "▾ waiting on the agent · 2",
-                "N2 · on the whole of default",
-                "N3 · on nav-export in default at 390",
+                "N2 on the whole of default",
+                "N3 on nav-export in default at 390",
             ],
             "closed, and answered ✓, they leave as the files change"
         );

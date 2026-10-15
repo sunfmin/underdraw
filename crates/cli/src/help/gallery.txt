@@ -26,7 +26,7 @@ DOES
   a second, so run it after every round of edits.
 
   The window has three parts. On the left, the tree. In the middle, what
-  is picked is drawn. On the right, the sidebar (360pt wide): a card for
+  is picked is drawn. On the right, the sidebar: a card for
   each thing about what is picked (the node, region, arrow or note picked,
   the journey played, what an act came to, the note being written), each
   with buttons, clicked by their own box, for what can be done with it;
@@ -34,12 +34,16 @@ DOES
   do. ⌘\ (Ctrl+\ on Linux and Windows) hides the sidebar and shows it
   again; it is shown when the window opens, and while it is hidden the
   pictures take its width. Scroll the sidebar with the wheel over it.
-  The tree opens 260pt wide; drag the line between it and the pictures
-  (the pointer turns into a left-right arrow over it) to widen or narrow
-  it, from 160pt to what leaves the pictures room for the phone's at half
-  size. The pictures fit the width left as you drag; names too long for
-  the tree are cut at its edge. A press on the line picks nothing. The
-  width is not kept once the window closes.
+  The tree opens 260pt wide and the sidebar 360pt. Drag the line between
+  either and the pictures (the pointer turns into a left-right arrow over
+  it) to widen or narrow it: the tree from 160pt, the sidebar from 280pt,
+  each up to what leaves the pictures, beside the other, room for the
+  phone's at half size. The pictures fit the width left as you drag; names
+  too long for the tree are cut at its edge, and the sidebar's cards
+  rewrap to its width. A press on a line picks nothing and presses no
+  button. While the sidebar is hidden it has no line; shown again, it is
+  as wide as it was dragged. The widths are not kept once the window
+  closes.
 
   Each pane that scrolls shows a scrollbar while what it holds is larger
   than it, and none while it fits: the tree and the sidebar on their right
@@ -227,7 +231,7 @@ DOES
   reply. Click a pin to read its note in the sidebar, as a conversation:
   its status in its title (open, answered, or closed and why), then what
   you wrote, in blue bubbles on the right, and each reply of the agent, in
-  gray on the left, in order. Under them, [close] closes it; on an
+  bubbles outlined green on the left, in order. Under them, [close] closes it; on an
   answered note, [not yet…] opens a field in place for what is still to
   do, and Enter sends that line: it is open again, for the agent. It is
   not sent empty. A closed note is drawn no more.
@@ -265,14 +269,16 @@ DOES
 
   The inbox: with a description, one of its states, or a directory (the
   root's line too) picked, and no node, region or arrow, the sidebar lists
-  what waits on you there, in a card "waits on you · <how many>": each
-  assumption no note answers yet ("? <node id as written> in <state>: what
-  was guessed"), then each note the agent has answered ("N2 · on … · agent:
-  <its reply>"), for you to close or reopen. A directory's lists every
-  description under it, each under its directory's name, in the order the
-  tree lists them. The notes still open, waiting on the agent, are folded
-  to how many there are ("▸ waiting on the agent · 2"); click it to list
-  them, and again to fold them. Click an item to show its state with what
+  what waits on you there, in a card "waits on you · <how many>", one box
+  an item: each assumption no note answers yet, marked with an orange "?"
+  ("<node id as written> in <state>", what was guessed under it), then each
+  note the agent has answered, marked with its blue id ("N2", what it is
+  on, and "agent: <its reply>" under it in green), for you to close or
+  reopen. A directory's lists every description under it, each under its
+  directory's name, in the order the tree lists them. The notes still
+  open, waiting on the agent, are folded to how many there are
+  ("▸ waiting on the agent · 2"); click it to list them, each a box marked
+  with its id, and again to fold them. Click an item to show its state with what
   it is on picked, the node, region or arrow (a transition's in the
   overview, a navigate's in the flow of the directory above it), and its
   card: the node's, to answer the assumption with ✓ or ✗, or the note's,

@@ -35,11 +35,18 @@ fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Galler
     let mut gallery = Gallery::new(root, text::Typesetter::new(None).unwrap());
     gallery.size = size;
     // A root of a test's own is named for its process: its line is named
-    // the same in every run, for the frame to hold.
-    if let Some(line) = gallery.lines.first_mut().filter(|line| line.row.dir == root && !line.row.described) {
-        line.row.name = "root".to_string();
-    }
+    // the same in every run, for the frame to hold, and again after acts
+    // that reload the tree.
+    let named = |gallery: &mut Gallery| {
+        if let Some(line) =
+            gallery.lines.first_mut().filter(|line| line.row.dir == root && !line.row.described)
+        {
+            line.row.name = "root".to_string();
+        }
+    };
+    named(&mut gallery);
     acts(&mut gallery);
+    named(&mut gallery);
     gallery.clamp();
     let scene = gallery.frame();
     let (width, height) = (size.0 as u32, size.1 as u32);
@@ -98,6 +105,34 @@ fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
     press_keys(gallery, &["Enter"]);
 }
 
+/// That every text of the sidebar fits the box it is set in, inside the
+/// sidebar's gutters: none is cut, in English or in Chinese.
+fn fits(gallery: &mut Gallery) {
+    let cards = gallery.sidebar_cards();
+    let (left, width) = (gallery.pane_right(), gallery.side);
+    let laid = sidebar::lay_out(&cards, (left, width), -gallery.side_scroll, &mut gallery.typesetter);
+    let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
+    for draw in &laid.draws {
+        let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
+        let (x, right) = (f64::from(rect.x), f64::from(rect.x + rect.width));
+        assert!(x >= inside && right <= outside, "{text:?} set outside the sidebar's gutters");
+        let wrap = if *max_lines == Some(1) { None } else { Some(rect.width) };
+        let set = gallery.typesetter.text(text, *font, wrap);
+        assert!(
+            set.width <= rect.width + 0.5,
+            "{text:?} is wider than its box: {} > {}",
+            set.width,
+            rect.width
+        );
+        assert!(
+            set.height <= rect.height + 0.5,
+            "{text:?} is taller than its box: {} > {}",
+            set.height,
+            rect.height
+        );
+    }
+}
+
 /// Whether a line of the sidebar reads `line`.
 fn panel_has(gallery: &Gallery, line: &str) -> bool {
     gallery.panel().iter().any(|l| l.trim() == line)
@@ -147,9 +182,16 @@ fn the_inbox_of_the_root_grouped_by_description() {
     notes::add(&whole, "too dense").unwrap();
     notes::add(&whole, "a bigger title").unwrap();
     notes::answer(&dir, "N2", "the title is a heading now").unwrap();
-    let gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
+    let mut gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
     let card = gallery.inbox_card().expect("the inbox of everything under the root");
     assert_eq!(card.title, "waits on you · 6");
+    fits(&mut gallery);
+    let mut gallery = held("inbox-zh", &root, WINDOW, |gallery| {
+        gallery.lang = Lang::Zh;
+        gallery.pick(0);
+    });
+    assert_eq!(gallery.inbox_card().unwrap().title, "等你处理 · 6");
+    fits(&mut gallery);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -177,31 +219,34 @@ fn a_description_with_faults() {
 
 #[test]
 fn a_journey_playing() {
-    let gallery = held("journey", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("journey", Path::new(DRAFTS), WINDOW, |gallery| {
         let journey = journey_of(gallery, "cancel-an-order");
         showing(gallery, journey);
         press_keys(gallery, &["→"]);
     });
+    fits(&mut gallery);
     assert_eq!(played(&gallery).0, 2, "its second step, its node marked");
 }
 
 #[test]
 fn a_prototype_act_and_its_outcomes() {
-    let gallery = held("act", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("act", Path::new(DRAFTS), WINDOW, |gallery| {
         show(gallery, "orders", "cancel-ready");
         act_on(gallery, "cd-confirm");
     });
+    fits(&mut gallery);
     assert!(panel_has(&gallery, "ok → default") && panel_has(&gallery, "shipped → cancel-ready"));
 }
 
 #[test]
 fn a_region_dragged_for_a_note() {
     let root = root_of("frame-region", &[("orders", "orders")]);
-    let gallery = held("region", &root, WINDOW, |gallery| {
+    let mut gallery = held("region", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         press_keys(gallery, &["n"]);
         drag(gallery, 0, (10.0, 145.0), (380.0, 175.0));
     });
+    fits(&mut gallery);
     assert!(!gallery.regions().is_empty(), "drawn dashed");
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -238,7 +283,7 @@ fn note_pins_open_and_answered_with_its_reply() {
 #[test]
 fn an_assumption_picked_by_its_question_mark() {
     let root = root_of("frame-assumption", &[("checkout", "checkout")]);
-    let gallery = held("assumption", &root, WINDOW, |gallery| {
+    let mut gallery = held("assumption", &root, WINDOW, |gallery| {
         let checkout = line_of(gallery, "checkout");
         let mut offset = 1;
         loop {
@@ -254,6 +299,7 @@ fn an_assumption_picked_by_its_question_mark() {
         gallery.cursor = on_guess(gallery, 0, "card-number");
         gallery.press();
     });
+    fits(&mut gallery);
     assert_eq!(gallery.node.as_deref(), Some("card-number"));
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -261,7 +307,7 @@ fn an_assumption_picked_by_its_question_mark() {
 #[test]
 fn a_note_read_as_a_conversation() {
     let root = root_of("frame-conversation", &[("orders", "orders")]);
-    let gallery = held("conversation", &root, WINDOW, |gallery| {
+    let mut gallery = held("conversation", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         note_on(gallery, "nav-export", "rename it, and say what it exports");
         notes::answer(&root.join("orders"), "N1", "renamed it Export orders").unwrap();
@@ -269,6 +315,7 @@ fn a_note_read_as_a_conversation() {
         gallery.cursor = on_pin(gallery, "N1");
         gallery.press();
     });
+    fits(&mut gallery);
     assert!(gallery.panel().iter().any(|line| line == "not yet…"));
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -276,7 +323,7 @@ fn a_note_read_as_a_conversation() {
 #[test]
 fn a_wrong_assumption_written_with_an_input_method() {
     let root = root_of("frame-rejecting", &[("orders", "orders")]);
-    let gallery = held("rejecting", &root, WINDOW, |gallery| {
+    let mut gallery = held("rejecting", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         gallery.cursor = on_guess(gallery, 0, "nav-export");
         gallery.press();
@@ -284,6 +331,7 @@ fn a_wrong_assumption_written_with_an_input_method() {
         type_text(gallery, "导出是");
         gallery.ime(Ime::Preedit("dui hua kuang".to_string(), None));
     });
+    fits(&mut gallery);
     assert!(gallery.draft.as_ref().is_some_and(|draft| draft.text.is_composing()));
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -291,12 +339,13 @@ fn a_wrong_assumption_written_with_an_input_method() {
 #[test]
 fn a_confirmation_waiting_to_be_undone() {
     let root = root_of("frame-confirming", &[("orders", "orders")]);
-    let gallery = held("confirming", &root, WINDOW, |gallery| {
+    let mut gallery = held("confirming", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
         gallery.cursor = on_guess(gallery, 0, "nav-export");
         gallery.press();
         assert!(click_panel_line(gallery, "✓ right, keep it"));
     });
+    fits(&mut gallery);
     assert!(gallery.confirming.is_some());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -311,12 +360,13 @@ fn a_shared_component_in_the_components_section() {
 
 #[test]
 fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
-    let gallery = held("node", Path::new(DRAFTS), WINDOW, |gallery| {
+    let mut gallery = held("node", Path::new(DRAFTS), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.cursor = on_node(gallery, 0, "nav-save");
         gallery.press();
         gallery.details = true;
     });
+    fits(&mut gallery);
     assert!(panel_has(&gallery, "id  nav-save"));
 }
 
@@ -349,16 +399,33 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
         gallery.cursor = (gallery.tree, MARGIN);
         gallery.press();
         gallery.cursor = (0.0, MARGIN);
-        gallery.resize_tree();
+        gallery.resize();
         gallery.release();
     });
     assert_eq!(gallery.tree, TREE_LEAST);
 }
 
 #[test]
+fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
+    let mut gallery = held("sidebar-narrow", Path::new(DRAFTS), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.cursor = on_node(gallery, 1, "nav-save");
+        gallery.press();
+        gallery.release();
+        gallery.cursor = (gallery.pane_right(), MARGIN);
+        gallery.press();
+        gallery.cursor = (WINDOW.0, MARGIN);
+        gallery.resize();
+        gallery.release();
+    });
+    assert_eq!(gallery.side, SIDEBAR_LEAST);
+    fits(&mut gallery);
+}
+
+#[test]
 fn the_window_in_chinese() {
     let root = root_of("frame-zh", &[("checkout", "checkout")]);
-    let gallery = held("zh", &root, WINDOW, |gallery| {
+    let mut gallery = held("zh", &root, WINDOW, |gallery| {
         gallery.lang = Lang::Zh;
         let checkout = line_of(gallery, "checkout");
         showing(gallery, checkout + 1);
@@ -367,6 +434,7 @@ fn the_window_in_chinese() {
         gallery.cursor = on_node(gallery, 0, &guessed);
         gallery.press();
     });
+    fits(&mut gallery);
     assert!(panel_has(&gallery, "▸ 详情"));
     std::fs::remove_dir_all(root).unwrap();
 }

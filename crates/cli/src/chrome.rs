@@ -54,8 +54,10 @@ pub const CARD_TITLE: Font = Font { size: 13.0, weight: 600, line_height: 18.0 }
 pub const CARD_TEXT: Font = Font { size: 13.0, weight: 400, line_height: 18.0 };
 pub const BUTTON: Font = Font { size: 13.0, weight: 600, line_height: 16.0 };
 
-/// The sidebar's width, on the right of the window, in points.
+/// The sidebar's width as the window opens, and the least it is dragged
+/// to, in points: the gallery keeps the width it has now.
 pub const SIDEBAR: f64 = 360.0;
+pub const SIDEBAR_LEAST: f64 = 280.0;
 /// The space around the sidebar's cards, and between them; inside a card,
 /// around what it holds; and between one block of a card and the next.
 pub const GUTTER: f64 = 12.0;
@@ -67,8 +69,8 @@ pub const BUTTON_PAD: f64 = 7.0;
 /// in points: the gallery keeps the width it has now.
 pub const TREE: f64 = 260.0;
 pub const TREE_LEAST: f64 = 160.0;
-/// How near the line between the tree and the pictures, either side, the
-/// pointer takes hold of it, in points.
+/// How near a line between two panes, either side, the pointer takes hold
+/// of it, in points.
 pub const GRIP: f64 = 4.0;
 /// One row of the tree, in points.
 pub const ROW: f64 = 28.0;
@@ -112,6 +114,9 @@ pub const BIG: Font = Font { size: 20.0, weight: 600, line_height: 26.0 };
 pub const INSET: f64 = 8.0;
 pub const BUBBLE: f64 = 0.82;
 pub const BUBBLE_RADIUS: f32 = 10.0;
+/// How wide the name of a fact on a card is (what a node calls, its id,
+/// where it is at a width), its value set beside it.
+pub const FACT: f64 = 64.0;
 /// A pane's scrollbar, drawn while what it holds is larger than it is and
 /// never faded out: only its thumb, as wide as this, set in this far from
 /// the pane's edge and from either end of its track, never shorter than
