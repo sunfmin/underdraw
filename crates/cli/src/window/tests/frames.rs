@@ -165,7 +165,10 @@ fn an_overview_with_its_arrows_and_journey_marks() {
         let order = description_in(gallery, "shop/order");
         showing(gallery, order);
     });
-    assert!(!gallery.arrows().is_empty(), "its transitions");
+    assert!(
+        matches!(&gallery.picture, Picture::Overview(overview) if !overview.arrows.is_empty()),
+        "its transitions"
+    );
     assert_eq!(passes_shown(&gallery).len(), 2, "the journey's marks");
 }
 
@@ -209,7 +212,9 @@ fn a_description_with_faults() {
     std::fs::create_dir_all(root.join("broken")).unwrap();
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
     let gallery = held("faults", &root, WINDOW, |gallery| gallery.pick(1));
-    assert!(matches!(&gallery.picture, Picture::Faults(faults) if !faults.is_empty()));
+    assert!(
+        matches!(&gallery.picture, Picture::Faults(Faults { findings: faults, .. }) if !faults.is_empty())
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -243,7 +248,7 @@ fn a_region_dragged_for_a_note() {
         drag(gallery, 0, (10.0, 145.0), (380.0, 175.0));
     });
     fits(&mut gallery);
-    assert!(!gallery.regions().is_empty(), "drawn dashed");
+    assert!(strong(&mut gallery, true) > 0, "drawn dashed");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -282,7 +287,8 @@ fn an_assumption_picked_by_its_question_mark() {
         let mut offset = 1;
         loop {
             showing(gallery, checkout + offset);
-            if matches!(&gallery.picture, Picture::Pages(pages) if pages[0].has("card-number")) {
+            if matches!(&gallery.picture, Picture::Pages(Pages { pages, .. }) if pages[0].has("card-number"))
+            {
                 break;
             }
             offset += 1;
@@ -387,7 +393,7 @@ fn a_narrow_window_at_half_size_scrolled_across() {
         gallery.wheel_by(1e6, 0.0);
         gallery.press_at(on_node(gallery, 1, "nav-save"));
     });
-    assert_eq!(gallery.zoom(gallery.pane()), SMALLEST);
+    assert_eq!(zoom(&gallery), SMALLEST);
     assert_eq!(picked_node(&gallery), Some("nav-save"), "picked, scaled and scrolled");
 }
 
@@ -423,7 +429,7 @@ fn the_window_in_chinese() {
         gallery.lang = Lang::Zh;
         let checkout = line_of(gallery, "checkout");
         showing(gallery, checkout + 1);
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         let guessed = pages[0].nodes.iter().find(|node| node.assumed.is_some()).unwrap().id.clone();
         gallery.press_at(on_node(gallery, 0, &guessed));
     });
@@ -439,7 +445,7 @@ fn the_window_in_japanese() {
         gallery.speak(Lang::Ja).unwrap();
         let checkout = line_of(gallery, "checkout");
         showing(gallery, checkout + 1);
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         let guessed = pages[0].nodes.iter().find(|node| node.assumed.is_some()).unwrap().id.clone();
         gallery.press_at(on_node(gallery, 0, &guessed));
     });

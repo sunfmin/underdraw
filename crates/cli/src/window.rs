@@ -35,22 +35,29 @@ use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::act::{self, Act};
+use crate::area::{over, rect};
 use crate::chrome::{
-    ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SIDEBAR,
-    SIDEBAR_LEAST, SPACE, THUMB, THUMB_TALL, TREE, TREE_LEAST,
+    ARROW_FONT, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SIDEBAR, SIDEBAR_LEAST, TREE,
+    TREE_LEAST,
 };
-use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
+use crate::draw::{self, Shown as State, Wanted};
 use crate::field::{Edit, Field, Motion};
-use crate::flow::{self, Map, Screen};
+use crate::flow::{self, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Stands};
-use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
+use crate::reference::{self, Frame, On, Reference, Region};
 use crate::scrollbar::{Axis, Bar, Part};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
+
+mod picture;
+
+use self::picture::{
+    Arrow, Faults, Flow, Overview, Page, Pages, Pane, Pass, Picture, Pin, Seen, Target, Thumb, Tile,
+};
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
@@ -331,6 +338,21 @@ enum Picked {
     Note { dir: PathBuf, id: String },
 }
 
+impl Picked {
+    /// What is picked, as a target on the picture shown: none for nothing,
+    /// or a note, which is picked as what it is on ([`Gallery::thing`]).
+    fn target(&self) -> Option<Target> {
+        match self {
+            Picked::Node { id, pointed } => Some(Target::Node { id: id.clone(), pointed: *pointed }),
+            Picked::Region { region, pointed } => {
+                Some(Target::Region { region: region.clone(), pointed: *pointed })
+            }
+            Picked::Arrow(arrow) => Some(Target::Arrow(*arrow)),
+            Picked::Nothing | Picked::Note { .. } => None,
+        }
+    }
+}
+
 /// What the person is doing beside picking.
 enum Mode {
     /// Looking, picking and acting.
@@ -408,22 +430,6 @@ enum Visit {
     Guess(PathBuf, State, String),
     /// The note of this id, of the description in this directory.
     Note(PathBuf, String),
-}
-
-/// One note drawn on a picture: its pin, numbered, where it was written, or
-/// a faint dot, in another state or width that holds its node, or the
-/// nodes its region covers.
-struct Pin {
-    /// The directory of the description that keeps it.
-    dir: PathBuf,
-    id: String,
-    /// Where it is, in window points.
-    rect: Rect,
-    ink: Ink,
-    faint: bool,
-    /// For a pin on a region, where it was written: the region, as it is
-    /// now drawn, in window points.
-    region: Option<Rect>,
 }
 
 /// Every description's notes on the lines of the tree, by its directory,
@@ -567,156 +573,6 @@ struct Grab {
     scrolled: f64,
 }
 
-/// What the picked description shows.
-enum Picture {
-    /// One state at each of `WIDTHS`.
-    Pages(Vec<Page>),
-    /// Every state of the description, small, and its transitions.
-    Overview(Overview),
-    /// Why it cannot be drawn: what `check` finds wrong with it.
-    Faults(Vec<Finding>),
-    /// For a directory picked: the flow between the screens under it.
-    Flow(Flow),
-}
-
-/// The flow between the screens under a directory: the map of them, and
-/// what each of its boxes shows.
-struct Flow {
-    map: Map,
-    /// One for each of the map's places, in their order.
-    tiles: Vec<Tile>,
-}
-
-/// What one box of the flow shows under its name.
-enum Tile {
-    /// The description's first state, drawn at the phone's width.
-    Picture { scene: Box<Scene>, width: f64 },
-    /// A description that cannot be drawn: how many faults it has.
-    Faulty(usize),
-    /// A screen not drawn yet: a dashed box marked "?".
-    Undrawn,
-}
-
-/// One state drawn at one width, at one pixel per point.
-struct Page {
-    caption: String,
-    scene: Scene,
-    width: f64,
-    height: f64,
-    /// Every node with an id, in the order drawn: one drawn later is over
-    /// one drawn before, and an overlay is drawn after what it floats over.
-    nodes: Vec<Placed>,
-    /// The labels the nodes are tagged with, and the "?" of each guess, in
-    /// the page's points: drawn apart from `scene`, at their own size.
-    tags: Vec<Draw>,
-    /// The operations each node calls when acted on, by id.
-    calls: BTreeMap<String, Vec<String>>,
-    /// What each node does when acted on, by id.
-    handlers: BTreeMap<String, Handlers>,
-    /// Where each node is written in the description, by id.
-    origins: BTreeMap<String, Origin>,
-}
-
-/// A description's overview: each of its states, in the order the tree
-/// lists them, and each transition it declares as an arrow between two.
-struct Overview {
-    thumbs: Vec<Thumb>,
-    arrows: Vec<Arrow>,
-}
-
-/// One state in the overview, drawn at `OVERVIEW` at one pixel per point.
-struct Thumb {
-    name: String,
-    phase: bool,
-    /// The tree's line of the state.
-    line: usize,
-    scene: Scene,
-    width: f64,
-    height: f64,
-    /// The journeys that pass through the state, one mark for each step of
-    /// one that is in it.
-    journeys: Vec<Pass>,
-}
-
-/// One step of a journey in a state of the overview, marked over its
-/// picture: picking the mark plays the journey from that step.
-struct Pass {
-    /// The tree's line of the journey.
-    line: usize,
-    /// The step, from 0.
-    step: usize,
-    label: String,
-    /// How wide the label is set, in points.
-    wide: f64,
-}
-
-/// One transition: from one state to another, by their places in
-/// [`Overview::thumbs`], labelled with the label of the node acted on and,
-/// for a call, the outcome.
-struct Arrow {
-    from: usize,
-    to: usize,
-    label: String,
-    /// How wide the label is set, in points.
-    wide: f64,
-    /// The transition, as a reference names it.
-    transition: reference::Transition,
-}
-
-impl Page {
-    /// The node that a press at `at`, in the page's points, is on: the
-    /// innermost there, an overlay before what it floats over.
-    /// A press on a node's orange "?" is on that node, whatever is under
-    /// it.
-    fn node_at(&self, at: (f64, f64)) -> Option<&Placed> {
-        let over = |r: Rect| {
-            let (x, y) = (f64::from(r.x), f64::from(r.y));
-            (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1)
-        };
-        let guessed = self.nodes.iter().rev().find(|node| node.guess_tag().is_some_and(over));
-        guessed.or_else(|| self.nodes.iter().rev().find(|node| over(node.rect)))
-    }
-
-    /// Whether a node of id `id` is in it.
-    fn has(&self, id: &str) -> bool {
-        self.nodes.iter().any(|node| node.id == id)
-    }
-
-    /// The node written where `origin` says, for the same instance, as it
-    /// is placed here.
-    fn placed(&self, origin: &Origin) -> Option<&Placed> {
-        let id = self.origins.iter().find_map(|(id, at)| {
-            (at.written == origin.written && at.instance == origin.instance).then_some(id)
-        })?;
-        self.nodes.iter().find(|node| &node.id == id)
-    }
-
-    /// Where `region` is drawn here: around the nodes it covers that are
-    /// here, as the layout now places them; where none of them is, at its
-    /// box, in a picture of the width it was dragged at; elsewhere, nowhere.
-    fn region(&self, region: &Region) -> Option<Rect> {
-        let found: Vec<Rect> =
-            region.nodes.iter().filter_map(|origin| Some(self.placed(origin)?.rect)).collect();
-        let Some(first) = found.first() else {
-            let Frame { x, y, width, height } = region.area;
-            let here = self.width as u32 == region.width;
-            return here.then_some(Rect {
-                x: x as f32,
-                y: y as f32,
-                width: width as f32,
-                height: height as f32,
-            });
-        };
-        let (mut x, mut y) = (first.x, first.y);
-        let (mut right, mut bottom) = (first.x + first.width, first.y + first.height);
-        for r in &found {
-            (x, y) = (x.min(r.x), y.min(r.y));
-            (right, bottom) = (right.max(r.x + r.width), bottom.max(r.y + r.height));
-        }
-        Some(Rect { x, y, width: right - x, height: bottom - y })
-    }
-}
-
 impl Gallery {
     /// Says its own words in `lang`, set in the fonts of its writing: the
     /// same Han character is drawn one way in Japanese, another in Chinese.
@@ -741,7 +597,7 @@ impl Gallery {
             lines,
             line: None,
             wanted: None,
-            picture: Picture::Faults(Vec::new()),
+            picture: Picture::Faults(Faults { findings: Vec::new(), within: String::new(), journey: false }),
             picked: Picked::Nothing,
             held: None,
             scroll: 0.0,
@@ -916,6 +772,32 @@ impl Gallery {
         self.pane_right() - self.tree
     }
 
+    /// The pictures' pane: where it is, and how far it is scrolled.
+    fn pane_at(&self) -> Pane {
+        Pane { left: self.tree, width: self.pane(), scroll: self.scroll, across: self.across }
+    }
+
+    /// What is at `at`, a point in the window, on the picture shown.
+    fn target_at(&self, at: (f64, f64)) -> Option<Target> {
+        self.picture.shows().target_at(at, &self.pane_at())
+    }
+
+    /// Whether `at`, a point in the window, is on one of a state's pages.
+    fn on_page(&self, at: (f64, f64)) -> bool {
+        let Picture::Pages(pages) = &self.picture else {
+            return false;
+        };
+        pages.on_page(at, &self.pane_at()).is_some()
+    }
+
+    /// `findings` shown as the faults of the line shown.
+    fn faulty(&self, findings: Vec<Finding>) -> Picture {
+        let path = self.line.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
+        let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
+        let journey = self.line.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
+        Picture::Faults(Faults { findings, within, journey })
+    }
+
     /// The least and the most the width of the pane `edge` bounds can be:
     /// [`TREE_LEAST`] or [`SIDEBAR_LEAST`], and what leaves the pictures'
     /// pane, beside the other pane, room for the phone's picture at
@@ -1046,7 +928,7 @@ impl Gallery {
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
             }
-            if self.on_picture(self.cursor).is_some() && self.pin_at(self.cursor).is_none() {
+            if self.on_page(self.cursor) && self.pin_at(self.cursor).is_none() {
                 self.held = Some(self.cursor);
             }
             if matches!(self.mode, Mode::Noting) {
@@ -1059,43 +941,29 @@ impl Gallery {
             if let Some((dir, id)) = self.pin_at(self.cursor) {
                 return self.pick_thing(Picked::Note { dir, id });
             }
-            if let Some(arrow) = self.arrow_at(self.cursor) {
-                return self.pick_thing(Picked::Arrow(arrow));
-            }
-            return match &self.picture {
-                Picture::Flow(flow) => {
-                    let at = self.in_flow(self.cursor);
-                    let Some(Screen::Drawn(dir)) = flow.map.place_at(at).map(|place| &place.screen) else {
-                        return self.pick_thing(Picked::Nothing);
-                    };
-                    let Some(index) = self.description_line(dir) else {
+            return match self.target_at(self.cursor) {
+                Some(Target::Node { id, pointed }) => self.pick_thing(Picked::Node { id, pointed }),
+                Some(Target::Arrow(arrow)) => self.pick_thing(Picked::Arrow(arrow)),
+                Some(Target::Box(dir)) => {
+                    let Some(index) = self.description_line(&dir) else {
                         return false;
                     };
                     self.pick(index);
                     true
                 }
-                Picture::Overview(_) => {
-                    if let Some((line, step)) = self.pass_at(self.cursor) {
-                        self.history.clear();
-                        self.acted = None;
-                        self.play(line, step);
-                        return true;
-                    }
-                    let Some(line) = self.state_at(self.cursor) else {
-                        return self.pick_thing(Picked::Nothing);
-                    };
+                Some(Target::Pass { journey, step, .. }) => {
+                    self.history.clear();
+                    self.acted = None;
+                    self.play(journey, step);
+                    true
+                }
+                Some(Target::State(line)) => {
                     self.history.clear();
                     self.acted = None;
                     self.pick(line);
                     true
                 }
-                Picture::Pages(_) | Picture::Faults(_) => {
-                    let picked = match self.hit(self.cursor) {
-                        Some((pointed, _, node)) => Picked::Node { id: node.id.clone(), pointed },
-                        None => Picked::Nothing,
-                    };
-                    self.pick_thing(picked)
-                }
+                Some(Target::Caption | Target::Region { .. }) | None => self.pick_thing(Picked::Nothing),
             };
         }
         let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
@@ -1134,7 +1002,7 @@ impl Gallery {
         let kept = match &self.picked {
             Picked::Nothing | Picked::Arrow(_) => false,
             Picked::Node { id, .. } => match &self.picture {
-                Picture::Pages(pages) => pages.iter().any(|page| page.has(id)),
+                Picture::Pages(pages) => pages.pages.iter().any(|page| page.has(id)),
                 Picture::Overview(_) | Picture::Faults(_) => described,
                 Picture::Flow(_) => false,
             },
@@ -1162,7 +1030,7 @@ impl Gallery {
             return Picked::Nothing;
         };
         match (&note.on, &self.picture) {
-            (On::Node { node, .. }, Picture::Pages(pages)) => {
+            (On::Node { node, .. }, Picture::Pages(Pages { pages, .. })) => {
                 let mut order: Vec<usize> = (0..pages.len()).collect();
                 order.sort_by_key(|&at| pages[at].width as u32 != node.width);
                 let found = order.into_iter().find_map(|pointed| {
@@ -1170,7 +1038,7 @@ impl Gallery {
                 });
                 found.unwrap_or(Picked::Nothing)
             }
-            (On::Region { state, region }, Picture::Pages(pages))
+            (On::Region { state, region }, Picture::Pages(Pages { pages, .. }))
                 if self.state_shown().as_ref() == Some(state) =>
             {
                 let pointed = pages.iter().position(|page| page.width as u32 == region.width).unwrap_or(0);
@@ -1178,7 +1046,7 @@ impl Gallery {
             }
             (On::Transition { .. } | On::Navigate { .. }, _) => {
                 let wanted = Reference { description: dir.clone(), on: note.on.clone() };
-                let at = self.arrow_references().iter().position(|arrow| *arrow == wanted);
+                let at = self.picture.arrow_references().iter().position(|arrow| *arrow == wanted);
                 at.map_or(Picked::Nothing, Picked::Arrow)
             }
             _ => Picked::Nothing,
@@ -1269,9 +1137,13 @@ impl Gallery {
     /// points, and the outermost nodes wholly inside it, in the order laid
     /// out. With the picture's place among them.
     fn region_between(&self, from: (f64, f64), to: (f64, f64)) -> Option<(usize, Region)> {
-        let (pointed, page, start) = self.on_picture(from)?;
-        let (left, top) = self.origins()[pointed];
-        let zoom = self.zoom(self.pane());
+        let Picture::Pages(pages) = &self.picture else {
+            return None;
+        };
+        let pane = self.pane_at();
+        let (pointed, page, start) = pages.on_page(from, &pane)?;
+        let (left, top) = pages.origins(&pane)[pointed];
+        let zoom = pages.zoom(pane.width);
         let end =
             (((to.0 - left) / zoom).clamp(0.0, page.width), ((to.1 - top) / zoom).clamp(0.0, page.height));
         let (x, y) = (start.0.min(end.0).round(), start.1.min(end.1).round());
@@ -1311,7 +1183,7 @@ impl Gallery {
         self.guessed.borrow_mut().clear();
         self.notes = notes_of(&self.lines);
         self.line = None;
-        self.picture = Picture::Faults(Vec::new());
+        self.picture = self.faulty(Vec::new());
         let playing = journey.and_then(|(file, at)| {
             Some((self.lines.iter().position(|line| line.journey && line.row.dir == file)?, at))
         });
@@ -1334,7 +1206,8 @@ impl Gallery {
             // window's own note, written, comes back as a change.
             self.scroll = scroll;
             self.acted = acted;
-            if let Some(at) = arrow.and_then(|arrow| self.arrow_references().iter().position(|r| *r == arrow))
+            if let Some(at) =
+                arrow.and_then(|arrow| self.picture.arrow_references().iter().position(|r| *r == arrow))
             {
                 self.picked = Picked::Arrow(at);
             }
@@ -1360,12 +1233,14 @@ impl Gallery {
     /// the path taken. The panel says what came of it, and so where nothing
     /// is declared. Whether that changed what is shown.
     fn act(&mut self) -> bool {
-        let Some((pointed, id, handlers, calls)) = self.hit(self.cursor).map(|(pointed, page, node)| {
-            let handlers = page.handlers.get(&node.id).cloned().unwrap_or_default();
-            (pointed, node.id.clone(), handlers, page.calls.get(&node.id).cloned().unwrap_or_default())
-        }) else {
+        let (Some(Target::Node { id, pointed }), Picture::Pages(pages)) =
+            (self.target_at(self.cursor), &self.picture)
+        else {
             return self.pick_thing(Picked::Nothing);
         };
+        let page = &pages.pages[pointed];
+        let handlers = page.handlers.get(&id).cloned().unwrap_or_default();
+        let calls = page.calls.get(&id).cloned().unwrap_or_default();
         self.pick_thing(Picked::Node { id, pointed });
         let Some(here) = self.wanted.clone() else {
             return true;
@@ -1564,16 +1439,15 @@ impl Gallery {
         self.picture = if !described {
             Picture::Flow(self.flow(&dir))
         } else if !faults.is_empty() {
-            Picture::Faults(faults)
+            self.faulty(faults)
         } else if state.is_none() && self.lines.get(index + 1).is_some_and(|next| next.state.is_some()) {
             // The screens drawn under the root as they now stand: a
             // navigate to any other is a screen not drawn yet.
             match self.overview(index, &dir, &links::drawn(&self.root)) {
                 Ok(overview) => Picture::Overview(overview),
-                Err(e) => Picture::Faults(vec![Finding {
-                    at: crate::SCREEN.to_string(),
-                    problem: format!("{e:#}"),
-                }]),
+                Err(e) => {
+                    self.faulty(vec![Finding { at: crate::SCREEN.to_string(), problem: format!("{e:#}") }])
+                }
             }
         } else {
             self.lay_out_pages(&dir, state.as_ref(), &links::drawn(&self.root))
@@ -1631,10 +1505,8 @@ impl Gallery {
             Err(e) => vec![Err(e)],
         };
         match laid.into_iter().collect::<anyhow::Result<Vec<Page>>>() {
-            Ok(pages) => Picture::Pages(pages),
-            Err(e) => {
-                Picture::Faults(vec![Finding { at: crate::SCREEN.to_string(), problem: format!("{e:#}") }])
-            }
+            Ok(pages) => Picture::Pages(Pages { dir: dir.to_path_buf(), state: state.cloned(), pages }),
+            Err(e) => self.faulty(vec![Finding { at: crate::SCREEN.to_string(), problem: format!("{e:#}") }]),
         }
     }
 
@@ -1651,20 +1523,19 @@ impl Gallery {
         (self.scroll, self.across) = (0.0, 0.0);
         if !faults.is_empty() {
             self.wanted = None;
-            self.picture = Picture::Faults(faults);
+            self.picture = self.faulty(faults);
             return;
         }
         let steps = match journeys::steps(&file) {
             Ok(steps) => steps,
             Err(e) => {
-                self.picture =
-                    Picture::Faults(vec![Finding { at: String::new(), problem: format!("{e:#}") }]);
+                self.picture = self.faulty(vec![Finding { at: String::new(), problem: format!("{e:#}") }]);
                 return;
             }
         };
         let at = at.min(steps.len().saturating_sub(1));
         let Some(step) = steps.get(at) else {
-            self.picture = Picture::Faults(Vec::new());
+            self.picture = self.faulty(Vec::new());
             return;
         };
         let state = draw::states(&step.dir)
@@ -1673,7 +1544,7 @@ impl Gallery {
         let Some(state) = state else {
             let (within, state) = (gallery::within(&self.root, &step.dir), &step.state);
             let problem = say!(self.lang, no_such_state, within, state);
-            self.picture = Picture::Faults(vec![Finding { at: format!("steps.{at}"), problem }]);
+            self.picture = self.faulty(vec![Finding { at: format!("steps.{at}"), problem }]);
             return;
         };
         // Acting on a node from here goes on as the prototype does, from
@@ -1698,36 +1569,17 @@ impl Gallery {
     /// each picture: the first instance of its id as written; none in a
     /// picture that does not show it, or in the last step.
     fn marked(&self) -> Vec<Option<&Placed>> {
-        let (Some(playing), Picture::Pages(pages)) = (&self.playing, &self.picture) else {
+        let (Some(written), Picture::Pages(pages)) = (self.written_marked(), &self.picture) else {
             return Vec::new();
         };
-        let Some((written, _)) = &playing.steps[playing.at].on else {
-            return Vec::new();
-        };
-        pages
-            .iter()
-            .map(|page| {
-                page.nodes
-                    .iter()
-                    .find(|node| page.origins.get(&node.id).is_some_and(|o| &o.written == written))
-            })
-            .collect()
+        pages.marked(written)
     }
 
-    /// The marks around the node the journey played acts on next, in
-    /// window points, in each picture that shows it.
-    fn marks(&self) -> Vec<Rect> {
-        let zoom = self.zoom(self.pane());
-        self.marked()
-            .into_iter()
-            .zip(self.origins())
-            .filter_map(|(node, (left, top))| {
-                let r = node?.rect;
-                let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
-                let (w, h) = (f64::from(r.width) * zoom, f64::from(r.height) * zoom);
-                Some(rect(x - 4.0, y - 4.0, w + 8.0, h + 8.0))
-            })
-            .collect()
+    /// The id, as written, of the node the journey played acts on in the
+    /// step shown; none in the last step.
+    fn written_marked(&self) -> Option<&str> {
+        let playing = self.playing.as_ref()?;
+        playing.steps[playing.at].on.as_ref().map(|(written, _)| written.as_str())
     }
 
     /// The card of the journey played: which step is shown, of how many,
@@ -1808,8 +1660,7 @@ impl Gallery {
                 .collect();
             labels.push(labelled);
             thumbs.push(Thumb {
-                name: state.name().to_string(),
-                phase: matches!(state, State::Phase(_)),
+                state: state.clone(),
                 line,
                 width: f64::from(drawing.page.width),
                 height: f64::from(drawing.page.height),
@@ -1822,7 +1673,7 @@ impl Gallery {
         // and picking it shows its faults.
         for (line, journey) in self.lines.iter().enumerate().filter(|(_, line)| line.journey) {
             for (step, on) in journeys::steps(&journey.row.dir).unwrap_or_default().iter().enumerate() {
-                let thumb = thumbs.iter().position(|thumb| thumb.name == on.state);
+                let thumb = thumbs.iter().position(|thumb| thumb.state.name() == on.state);
                 let Some(thumb) = thumb.filter(|_| on.dir == dir) else { continue };
                 let (name, number) = (&journey.row.name, step + 1);
                 let label = say!(lang, journey_mark, name, number);
@@ -1830,7 +1681,7 @@ impl Gallery {
                 thumbs[thumb].journeys.push(Pass { line, step, label, wide });
             }
         }
-        let at = |name: &str| thumbs.iter().position(|thumb| thumb.name == name);
+        let at = |name: &str| thumbs.iter().position(|thumb| thumb.state.name() == name);
         let mut arrows = Vec::new();
         for transition in description.transitions()? {
             let (Some(from), Some(to)) = (at(&transition.from), at(&transition.to)) else { continue };
@@ -1851,224 +1702,7 @@ impl Gallery {
             };
             arrows.push(Arrow { from, to, label, wide, transition });
         }
-        Ok(Overview { thumbs, arrows })
-    }
-
-    /// How many states a row of the overview holds in a pane `pane` wide.
-    fn columns(pane: f64) -> usize {
-        ((pane - 2.0 * MARGIN + SPACE) / (THUMB + SPACE)).floor().max(1.0) as usize
-    }
-
-    /// Where each state's picture is in the overview, in window points:
-    /// its left, top, width and height, the height no more than
-    /// `THUMB_TALL`.
-    fn cells(&self) -> Vec<(f64, f64, f64, f64)> {
-        let Picture::Overview(overview) = &self.picture else {
-            return Vec::new();
-        };
-        let columns = Self::columns(self.pane());
-        overview
-            .thumbs
-            .iter()
-            .enumerate()
-            .map(|(index, thumb)| {
-                let (column, row) = ((index % columns) as f64, (index / columns) as f64);
-                let x = self.tree + MARGIN + column * (THUMB + SPACE);
-                let y = MARGIN - self.scroll + CAPTION + row * (CAPTION + THUMB_TALL + SPACE);
-                (x, y, THUMB, (thumb.height * THUMB / thumb.width).min(THUMB_TALL))
-            })
-            .collect()
-    }
-
-    /// The marks of the journeys through each state of the overview, in
-    /// window points, stacked down from its picture's top left corner, each
-    /// no wider than the picture.
-    fn passes(&self) -> Vec<(Rect, &Pass)> {
-        let Picture::Overview(overview) = &self.picture else {
-            return Vec::new();
-        };
-        let mut list = Vec::new();
-        for (thumb, (x, y, w, _)) in overview.thumbs.iter().zip(self.cells()) {
-            for (index, pass) in thumb.journeys.iter().enumerate() {
-                let top = y + MARK_INSET + index as f64 * (MARK_TALL + MARK_INSET / 2.0);
-                let wide = pass.wide.min(w - 2.0 * MARK_INSET);
-                list.push((rect(x + MARK_INSET, top, wide, MARK_TALL), pass));
-            }
-        }
-        list
-    }
-
-    /// The journey, by its tree line, and its step whose mark in the
-    /// overview is under `at`, a point in the window.
-    fn pass_at(&self, at: (f64, f64)) -> Option<(usize, usize)> {
-        self.passes().into_iter().find_map(|(r, pass)| {
-            let (x, y) = (f64::from(r.x), f64::from(r.y));
-            let over =
-                (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1);
-            over.then_some((pass.line, pass.step))
-        })
-    }
-
-    /// The tree's line of the state whose picture in the overview is under
-    /// `at`, a point in the window.
-    fn state_at(&self, at: (f64, f64)) -> Option<usize> {
-        let Picture::Overview(overview) = &self.picture else {
-            return None;
-        };
-        let cells = self.cells();
-        let index = cells
-            .iter()
-            .position(|&(x, y, w, h)| (x..=x + w).contains(&at.0) && (y - CAPTION..=y + h).contains(&at.1))?;
-        Some(overview.thumbs[index].line)
-    }
-
-    /// The overview's arrows, in window points: each as the stretches it is
-    /// drawn with, and where its label is. An arrow runs from the edge of
-    /// one picture to the edge of the other, each to the right of its way,
-    /// so that two between the same states, either way, run apart, and is
-    /// labelled nearer where it starts, so that their labels do too; one
-    /// that stays in its state loops out of its right.
-    fn overview_arrows(&self) -> Vec<(Vec<(f64, f64)>, Rect)> {
-        let Picture::Overview(overview) = &self.picture else {
-            return Vec::new();
-        };
-        let cells = self.cells();
-        let mut list = Vec::new();
-        for (index, arrow) in overview.arrows.iter().enumerate() {
-            let before =
-                overview.arrows[..index].iter().filter(|a| (a.from, a.to) == (arrow.from, arrow.to)).count();
-            let (x, y, w, h) = cells[arrow.from];
-            let (path, middle) = if arrow.from == arrow.to {
-                let top = y + 16.0 + before as f64 * 32.0;
-                let out = x + w + 20.0;
-                let path = vec![(x + w, top), (out, top), (out, top + 18.0), (x + w + 2.0, top + 18.0)];
-                (path, (out + 4.0 + arrow.wide / 2.0, top + 9.0))
-            } else {
-                let to = cells[arrow.to];
-                let (from_middle, to_middle) =
-                    ((x + w / 2.0, y + h / 2.0), (to.0 + to.2 / 2.0, to.1 + to.3 / 2.0));
-                let (dx, dy) = (to_middle.0 - from_middle.0, to_middle.1 - from_middle.1);
-                let length = dx.hypot(dy).max(1.0);
-                let way = (dx / length, dy / length);
-                let off = 6.0 + before as f64 * 20.0;
-                let right = (-way.1 * off, way.0 * off);
-                let start = edge((x, y, w, h), (from_middle.0 + right.0, from_middle.1 + right.1), way, 3.0);
-                let end = edge(to, (to_middle.0 + right.0, to_middle.1 + right.1), (-way.0, -way.1), 3.0);
-                let along = 0.3 + before as f64 * 0.15;
-                (vec![start, end], (start.0 + (end.0 - start.0) * along, start.1 + (end.1 - start.1) * along))
-            };
-            list.push((path, rect(middle.0 - arrow.wide / 2.0, middle.1 - 9.0, arrow.wide, 18.0)));
-        }
-        list
-    }
-
-    /// The overview's arrows and their labels drawn, in window points; the
-    /// one picked in the strong ink.
-    fn arrows(&self) -> Vec<Draw> {
-        let Picture::Overview(overview) = &self.picture else {
-            return Vec::new();
-        };
-        let (mut list, picked) = (Vec::new(), self.arrow());
-        for (index, (arrow, (path, at))) in overview.arrows.iter().zip(self.overview_arrows()).enumerate() {
-            // The arrow picked stands out; the others are drawn quieter
-            // than their labels, which are what a person reads.
-            let (ink, edge, said) = if picked == Some(index) {
-                (Ink::Strong, Ink::Strong, Ink::Strong)
-            } else {
-                (Ink::Muted, Ink::Line, Ink::Text)
-            };
-            for pair in path.windows(2) {
-                list.push(line(pair[0], pair[1], ink));
-            }
-            list.extend(head(path[path.len() - 2], path[path.len() - 1], ink));
-            list.push(Draw::Box {
-                rect: at,
-                radius: chrome::MARK_RADIUS,
-                fill: Some(Ink::Paper),
-                stroke: Some(edge),
-                dashed: false,
-            });
-            let label = Draw::Text {
-                rect: rect(f64::from(at.x), f64::from(at.y) + 1.0, f64::from(at.width), 16.0),
-                text: arrow.label.clone(),
-                font: ARROW_FONT,
-                ink: said,
-                max_lines: Some(1),
-                align: Align::Center,
-                underline: false,
-                strike: false,
-            };
-            list.push(label);
-        }
-        list
-    }
-
-    /// Where each arrow shown is labelled, in window points, and where its
-    /// notes' pins go: each transition of the overview, or each navigate of
-    /// the flow, in the order of [`Gallery::arrow_references`].
-    fn arrow_spots(&self) -> Vec<(Rect, (f64, f64))> {
-        match &self.picture {
-            Picture::Overview(_) => self
-                .overview_arrows()
-                .into_iter()
-                .map(|(_, at)| {
-                    let pin =
-                        (f64::from(at.x + at.width) + PIN / 2.0 + 4.0, f64::from(at.y + at.height / 2.0));
-                    (at, pin)
-                })
-                .collect(),
-            Picture::Flow(flow) => {
-                let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.pane()));
-                let window = |(x, y): (f64, f64)| (left + x * zoom, top + y * zoom);
-                flow_arrows(flow)
-                    .into_iter()
-                    .map(|(path, at)| {
-                        let (x, y) = window((f64::from(at.x), f64::from(at.y)));
-                        let label = rect(x, y, f64::from(at.width) * zoom, f64::from(at.height) * zoom);
-                        let (start, next) = (window(path[0]), window(path[1]));
-                        let middle = ((start.0 + next.0) / 2.0, (start.1 + next.1) / 2.0 + PIN / 2.0 + 3.0);
-                        (label, middle)
-                    })
-                    .collect()
-            }
-            Picture::Pages(_) | Picture::Faults(_) => Vec::new(),
-        }
-    }
-
-    /// The arrow whose label is under `at`, a point in the window.
-    fn arrow_at(&self, at: (f64, f64)) -> Option<usize> {
-        self.arrow_spots().iter().position(|(r, _)| {
-            let (x, y) = (f64::from(r.x), f64::from(r.y));
-            (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1)
-        })
-    }
-
-    /// The reference to each arrow shown: each transition of the overview,
-    /// in its description, or each navigate of the flow, in the description
-    /// it is written in.
-    fn arrow_references(&self) -> Vec<Reference> {
-        match (&self.picture, &self.wanted) {
-            (Picture::Overview(overview), Some(wanted)) => overview
-                .arrows
-                .iter()
-                .map(|arrow| Reference {
-                    description: wanted.dir.clone(),
-                    on: On::Transition { transition: arrow.transition.clone() },
-                })
-                .collect(),
-            (Picture::Flow(flow), _) => flow
-                .map
-                .arrows
-                .iter()
-                .map(|arrow| {
-                    let link = &arrow.link;
-                    let navigate =
-                        Navigate { from: link.from.clone(), node: link.node.clone(), to: link.to.clone() };
-                    Reference { description: link.description.clone(), on: On::Navigate { navigate } }
-                })
-                .collect(),
-            _ => Vec::new(),
-        }
+        Ok(Overview { dir: dir.to_path_buf(), thumbs, arrows })
     }
 
     /// The line of the description in `dir`.
@@ -2125,89 +1759,14 @@ impl Gallery {
         }
     }
 
-    /// Where the flow's top-left corner is in the window, in points.
-    fn flow_origin(&self) -> (f64, f64) {
-        (self.tree + MARGIN, MARGIN - self.scroll)
-    }
-
-    /// `at`, a point in the window, in the flow's points.
-    fn in_flow(&self, at: (f64, f64)) -> (f64, f64) {
-        let ((left, top), zoom) = (self.flow_origin(), self.zoom(self.pane()));
-        ((at.0 - left) / zoom, (at.1 - top) / zoom)
-    }
-
-    /// Where each picture's top-left corner is in the window, in points.
-    fn origins(&self) -> Vec<(f64, f64)> {
-        let Picture::Pages(pages) = &self.picture else {
-            return Vec::new();
-        };
-        let zoom = self.zoom(self.pane());
-        let mut x = self.tree + MARGIN - self.across;
-        let top = MARGIN - self.scroll + CAPTION;
-        pages
-            .iter()
-            .map(|page| {
-                let at = (x, top);
-                x += page.width * zoom + MARGIN;
-                at
-            })
-            .collect()
-    }
-
-    /// The node under `at`, a point in the window, and the picture it is
-    /// in, with its place among them; none off the pictures or where no
-    /// node is.
-    fn hit(&self, at: (f64, f64)) -> Option<(usize, &Page, &Placed)> {
-        let (index, page, at) = self.on_picture(at)?;
-        page.node_at(at).map(|node| (index, page, node))
-    }
-
-    /// The picture under `at`, a point in the window, with its place among
-    /// them and `at` in its points; none off the pictures.
-    fn on_picture(&self, at: (f64, f64)) -> Option<(usize, &Page, (f64, f64))> {
-        let Picture::Pages(pages) = &self.picture else {
-            return None;
-        };
-        let zoom = self.zoom(self.pane());
-        pages.iter().zip(self.origins()).enumerate().find_map(|(index, (page, (left, top)))| {
-            let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
-            ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y)).then_some((
-                index,
-                page,
-                (x, y),
-            ))
-        })
-    }
-
     /// What ⌘C copies: the region picked, its box and the nodes it covers;
     /// or the node picked, as the description writes it, and the instance
     /// of it pointed at (in the picture it was picked in, or the first that
     /// has it); or, with neither picked, the state shown; or the arrow
     /// picked in an overview or a flow. None where nothing is.
     fn reference(&self) -> Option<Reference> {
-        if let Picture::Overview(_) | Picture::Flow(_) = self.picture {
-            return self.arrow_references().into_iter().nth(self.arrow()?);
-        }
-        let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
-            return None;
-        };
-        let state = self.state_shown()?;
-        let pointed = |id: &String, pointed: usize| {
-            let has = |page: &&Page| page.has(id);
-            let page = pages.get(pointed).filter(has).or_else(|| pages.iter().find(has))?;
-            let placed = page.nodes.iter().find(|node| &node.id == id)?;
-            let origin = page.origins.get(id)?.clone();
-            Some(Pointed { origin, label: placed.label, width: page.width as u32 })
-        };
-        let on = match self.thing() {
-            Picked::Region { region, .. } => On::Region { state, region },
-            Picked::Node { id, pointed: at } => match pointed(&id, at) {
-                Some(node) => On::Node { state, node },
-                None => On::State { state },
-            },
-            Picked::Nothing | Picked::Arrow(_) | Picked::Note { .. } => On::State { state },
-        };
-        Some(Reference { description: wanted.dir.clone(), on })
+        let picked = self.thing().target().unwrap_or(Target::Caption);
+        self.picture.shows().reference(&picked)
     }
 
     /// The reference to what is picked put on the clipboard, and the panel
@@ -2259,75 +1818,6 @@ impl Gallery {
         let laid =
             sidebar::lay_out(&cards, (self.pane_right(), self.side), -self.side_scroll, &mut self.typesetter);
         laid.at(at).cloned()
-    }
-
-    /// The labels the nodes of each picture are tagged with, and the "?" of
-    /// each guess, in window points: where the picture puts them, scaled
-    /// with it, but each at its own size, so that it reads as well at
-    /// [`SMALLEST`] as at full size.
-    fn labels(&self) -> Vec<Draw> {
-        let Picture::Pages(pages) = &self.picture else {
-            return Vec::new();
-        };
-        let zoom = self.zoom(self.pane());
-        let mut labels = Vec::new();
-        for (page, (left, top)) in pages.iter().zip(self.origins()) {
-            for tag in &page.tags {
-                let Draw::Tag { rect: r, text, ink } = tag else { continue };
-                let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
-                let (x, y) = (left + middle.0 * zoom, top + middle.1 * zoom);
-                let (w, h) = (f64::from(r.width), f64::from(r.height));
-                labels.push(Draw::Tag {
-                    rect: rect(x - w / 2.0, y - h / 2.0, w, h),
-                    text: text.clone(),
-                    ink: *ink,
-                });
-            }
-        }
-        labels
-    }
-
-    /// The outline around the node picked, in window points, in each
-    /// picture that has it.
-    fn outlines(&self) -> Vec<Rect> {
-        let (Some((id, _)), Picture::Pages(pages)) = (self.node(), &self.picture) else {
-            return Vec::new();
-        };
-        let zoom = self.zoom(self.pane());
-        pages
-            .iter()
-            .zip(self.origins())
-            .filter_map(|(page, (left, top))| {
-                let r = page.nodes.iter().find(|n| n.id == id)?.rect;
-                let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
-                let (w, h) = (f64::from(r.width) * zoom, f64::from(r.height) * zoom);
-                Some(rect(x - 2.0, y - 2.0, w + 4.0, h + 4.0))
-            })
-            .collect()
-    }
-
-    /// The dashed boxes over the pictures, in window points: the region
-    /// picked, where it is now drawn, and the one being dragged, from where
-    /// the button went down to the pointer.
-    fn regions(&self) -> Vec<Rect> {
-        let mut boxes = Vec::new();
-        if let (Some(region), Picture::Pages(pages)) = (self.region(), &self.picture) {
-            let zoom = self.zoom(self.pane());
-            for (page, (left, top)) in pages.iter().zip(self.origins()) {
-                if let Some(r) = page.region(&region) {
-                    let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
-                    boxes.push(rect(x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom));
-                }
-            }
-        }
-        if let Some(from) = self.held {
-            let to = self.cursor;
-            if (to.0 - from.0).hypot(to.1 - from.1) >= DRAG {
-                let (x, y) = (from.0.min(to.0), from.1.min(to.1));
-                boxes.push(rect(x, y, (to.0 - from.0).abs(), (to.1 - from.1).abs()));
-            }
-        }
-        boxes
     }
 
     /// What the sidebar's cards say, one string each: a card's title, then
@@ -2586,7 +2076,7 @@ impl Gallery {
                 };
                 self.pick(index);
                 let pointed = match &self.picture {
-                    Picture::Pages(pages) => pages.iter().position(|page| page.has(&id)),
+                    Picture::Pages(pages) => pages.pages.iter().position(|page| page.has(&id)),
                     _ => None,
                 };
                 self.pick_thing(pointed.map_or(Picked::Nothing, |pointed| Picked::Node { id, pointed }));
@@ -2632,7 +2122,7 @@ impl Gallery {
                 let wanted = Reference { description: dir.clone(), on: on.clone() };
                 for index in shown_in {
                     self.pick(index);
-                    if self.arrow_references().contains(&wanted) {
+                    if self.picture.arrow_references().contains(&wanted) {
                         break;
                     }
                 }
@@ -2711,7 +2201,7 @@ impl Gallery {
             return None;
         };
         let assumed =
-            pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)?.assumed.clone())?;
+            pages.pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)?.assumed.clone())?;
         let on = self.reference().filter(|on| matches!(on.on, On::Node { .. }))?;
         Some((on, assumed))
     }
@@ -2729,8 +2219,11 @@ impl Gallery {
         };
         let screen = crate::read(&on.description).map(|(screen, _)| screen).unwrap_or(Value::Null);
         let id = self.node().map(|(id, _)| id).unwrap_or_default();
-        let component =
-            pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)).map(|n| n.component.clone());
+        let component = pages
+            .pages
+            .iter()
+            .find_map(|page| page.nodes.iter().find(|n| n.id == id))
+            .map(|n| n.component.clone());
         let guess = Guess::of(
             &screen,
             &node.origin.written,
@@ -2863,53 +2356,25 @@ impl Gallery {
     /// is, the panel says so. Whether that changed what is shown.
     fn note_where_pressed(&mut self) -> bool {
         self.mode = Mode::Browsing;
-        let on = match &self.picture {
-            Picture::Pages(_) => {
-                match self.hit(self.cursor).map(|(pointed, _, node)| (pointed, node.id.clone())) {
-                    Some((pointed, id)) => {
-                        self.pick_thing(Picked::Node { id, pointed });
-                        self.reference()
-                    }
-                    None if self.caption_at(self.cursor) => {
-                        self.pick_thing(Picked::Nothing);
-                        self.reference()
-                    }
-                    None => None,
-                }
+        let target = self.target_at(self.cursor);
+        match &target {
+            Some(Target::Node { id, pointed }) => {
+                self.pick_thing(Picked::Node { id: id.clone(), pointed: *pointed });
             }
-            Picture::Overview(_) => match self.arrow_at(self.cursor) {
-                Some(arrow) => {
-                    self.pick_thing(Picked::Arrow(arrow));
-                    self.reference()
-                }
-                None => self.state_at(self.cursor).and_then(|line| {
-                    let line = &self.lines[line];
-                    let state = line.state.clone()?;
-                    Some(Reference { description: line.row.dir.clone(), on: On::State { state } })
-                }),
-            },
-            Picture::Flow(_) => self.arrow_at(self.cursor).and_then(|arrow| {
-                self.pick_thing(Picked::Arrow(arrow));
-                self.reference()
-            }),
-            Picture::Faults(_) => None,
-        };
+            Some(Target::Arrow(arrow)) => {
+                self.pick_thing(Picked::Arrow(*arrow));
+            }
+            Some(Target::Caption) => {
+                self.pick_thing(Picked::Nothing);
+            }
+            _ => {}
+        }
+        let on = target.and_then(|target| self.picture.shows().reference(&target));
         match on {
             Some(on) => self.draft_on(on),
             None => self.say(say!(self.lang, nothing_to_note)),
         }
         true
-    }
-
-    /// Whether `at`, a point in the window, is on a picture's caption.
-    fn caption_at(&self, at: (f64, f64)) -> bool {
-        let Picture::Pages(pages) = &self.picture else {
-            return false;
-        };
-        let zoom = self.zoom(self.pane());
-        pages.iter().zip(self.origins()).any(|(page, (left, top))| {
-            (left..=left + page.width * zoom).contains(&at.0) && (top - CAPTION..top).contains(&at.1)
-        })
     }
 
     /// A note started on the node or arrow picked, at the instance pointed
@@ -3137,122 +2602,16 @@ impl Gallery {
     /// beside its arrow's label; in the flow, each on a navigate one under
     /// its arrow, where it leaves its box.
     fn pins(&self) -> Vec<Pin> {
-        let mut pins = match &self.picture {
-            Picture::Pages(_) => self.page_pins(),
-            Picture::Overview(_) => self.state_pins(),
-            Picture::Flow(_) | Picture::Faults(_) => Vec::new(),
-        };
-        for (reference, (_, (x, y))) in self.arrow_references().into_iter().zip(self.arrow_spots()) {
-            let Some(notes) = self.notes.get(&reference.description) else { continue };
-            let on = notes.iter().filter(|note| note.on == reference.on);
-            for (before, note) in on.enumerate() {
-                let x = x + before as f64 * (PIN + 2.0);
-                pins.push(self.pin(
-                    &reference.description,
-                    note,
-                    rect(x - PIN / 2.0, y - PIN / 2.0, PIN, PIN),
-                    false,
-                ));
-            }
-        }
-        pins
-    }
-
-    /// Note `note`, of the description in `dir`, drawn in `rect`: faint, or
-    /// its pin.
-    fn pin(&self, dir: &Path, note: &Note, rect: Rect, faint: bool) -> Pin {
-        let ink = if note.waits() { Ink::Note } else { Ink::Answered };
-        Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint, region: None }
-    }
-
-    /// The pins of the notes on the state shown, on its pictures: on its
-    /// nodes, and on the whole of it.
-    fn page_pins(&self) -> Vec<Pin> {
-        let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
-            return Vec::new();
-        };
-        let Some(state) = self.state_shown() else {
-            return Vec::new();
-        };
-        let Some(notes) = self.notes.get(&wanted.dir) else {
-            return Vec::new();
-        };
-        let zoom = self.zoom(self.pane());
-        let mut pins: Vec<Pin> = Vec::new();
-        for (index, (page, (left, top))) in pages.iter().zip(self.origins()).enumerate() {
-            // How many pins and dots each node has had so far, to set the
-            // next one beside them; and the whole state.
-            let mut on: BTreeMap<String, usize> = BTreeMap::new();
-            let mut whole = 0;
-            for note in notes {
-                let (written, r, key, width) = match &note.on {
-                    On::Node { state: written, node } => {
-                        let Some(placed) = page.placed(&node.origin) else { continue };
-                        (written, placed.rect, placed.id.clone(), node.width)
-                    }
-                    On::Region { state: written, region } => {
-                        let Some(r) = page.region(region) else { continue };
-                        (written, r, format!("{} {}", r.x + r.width, r.y), region.width)
-                    }
-                    On::State { state: written } if *written == state && index == 0 => {
-                        let right = left + page.width * zoom - PIN / 2.0 - whole as f64 * (PIN + 2.0);
-                        whole += 1;
-                        let at = rect(right - PIN / 2.0, top - CAPTION / 2.0 - PIN / 2.0 - 2.0, PIN, PIN);
-                        pins.push(self.pin(&wanted.dir, note, at, false));
-                        continue;
-                    }
-                    _ => continue,
-                };
-                let corner = (left + f64::from(r.x + r.width) * zoom, top + f64::from(r.y) * zoom);
-                let before = on.entry(key).or_default();
-                let faint = *written != state || page.width as u32 != width;
-                let region = (matches!(note.on, On::Region { .. }) && !faint).then(|| {
-                    let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
-                    rect(x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom)
-                });
-                let side = if faint { DOT } else { PIN };
-                let x = corner.0 - side / 2.0 - *before as f64 * (side + 2.0);
-                *before += 1;
-                let at = rect(x, corner.1 - side / 2.0, side, side);
-                pins.push(Pin { region, ..self.pin(&wanted.dir, note, at, faint) });
-            }
-        }
-        pins
-    }
-
-    /// The pins of the notes on the whole of each state of the overview, at
-    /// the right of its caption.
-    fn state_pins(&self) -> Vec<Pin> {
-        let (Picture::Overview(overview), Some(wanted)) = (&self.picture, &self.wanted) else {
-            return Vec::new();
-        };
-        let Some(notes) = self.notes.get(&wanted.dir) else {
-            return Vec::new();
-        };
-        let mut pins = Vec::new();
-        for (thumb, (x, y, w, _)) in overview.thumbs.iter().zip(self.cells()) {
-            let state = self.lines[thumb.line].state.as_ref();
-            let on =
-                notes.iter().filter(|note| matches!(&note.on, On::State { state: s } if Some(s) == state));
-            for (before, note) in on.enumerate() {
-                let right = x + w - PIN / 2.0 - before as f64 * (PIN + 2.0);
-                let at = rect(right - PIN / 2.0, y - CAPTION / 2.0 - PIN / 2.0 - 2.0, PIN, PIN);
-                pins.push(self.pin(&wanted.dir, note, at, false));
-            }
-        }
-        pins
+        self.picture.shows().pins(&self.notes, &self.pane_at())
     }
 
     /// The note whose pin, not a faint dot, is under `at`, a point in the
     /// window: its description's directory, and its id.
     fn pin_at(&self, at: (f64, f64)) -> Option<(PathBuf, String)> {
-        self.pins().into_iter().rev().find_map(|pin| {
-            let r = pin.rect;
-            let (x, y) = (f64::from(r.x), f64::from(r.y));
-            let over =
-                (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1);
-            (over && !pin.faint).then_some((pin.dir, pin.id))
-        })
+        self.pins()
+            .into_iter()
+            .rev()
+            .find_map(|pin| (over(pin.rect, at) && !pin.faint).then_some((pin.dir, pin.id)))
     }
 
     /// The card of the region picked: its box and width, then each node it
@@ -3278,7 +2637,7 @@ impl Gallery {
     /// out its details: its id, and its label and box at each width. None
     /// when none is.
     fn node_card(&self) -> Option<Card<Do>> {
-        let (Some((id, _)), Picture::Pages(pages)) = (self.node(), &self.picture) else {
+        let (Some((id, _)), Picture::Pages(Pages { pages, .. })) = (self.node(), &self.picture) else {
             return None;
         };
         let id = &id;
@@ -3414,81 +2773,12 @@ impl Gallery {
         ]
     }
 
-    /// How much the pictures are scaled down to fit side by side in a pane
-    /// `pane` points wide; never up, and a state's never below
-    /// [`SMALLEST`]: past that they scroll across.
-    fn zoom(&self, pane: f64) -> f64 {
-        match &self.picture {
-            Picture::Pages(pages) => {
-                let wide: f64 = pages.iter().map(|p| p.width).sum();
-                let gaps = MARGIN * (pages.len() + 1) as f64;
-                ((pane - gaps) / wide).clamp(SMALLEST, 1.0)
-            }
-            Picture::Overview(_) | Picture::Faults(_) => 1.0,
-            Picture::Flow(flow) => ((pane - 2.0 * MARGIN) / flow.map.width.max(1.0)).clamp(0.1, 1.0),
-        }
-    }
-
-    /// How tall the pictures' pane is, all of it, in a pane `pane` wide.
-    fn pictures_height(&mut self, pane: f64) -> f64 {
-        match &self.picture {
-            Picture::Pages(pages) => {
-                let tallest = pages.iter().map(|p| p.height).fold(0.0, f64::max);
-                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN
-            }
-            Picture::Overview(overview) => {
-                let rows = overview.thumbs.len().div_ceil(Self::columns(pane)) as f64;
-                MARGIN + rows * (CAPTION + THUMB_TALL + SPACE) - SPACE + MARGIN
-            }
-            Picture::Faults(_) => self.faults(pane).1 + MARGIN,
-            Picture::Flow(flow) => MARGIN + flow.map.height * self.zoom(pane) + MARGIN,
-        }
-    }
-
-    /// How wide a state's pictures are, side by side, in a pane `pane`
-    /// wide, the space around them included: wider than the pane only at
-    /// [`SMALLEST`]. Nothing else is shown wider than its pane.
-    fn pictures_width(&self, pane: f64) -> f64 {
-        let Picture::Pages(pages) = &self.picture else {
-            return 0.0;
-        };
-        let zoom = self.zoom(pane);
-        pages.iter().map(|page| page.width * zoom + MARGIN).sum::<f64>() + MARGIN
-    }
-
-    /// The picked description's faults listed in a pane `pane` wide, from
-    /// its top, unscrolled: a heading, then each finding as `check` names
-    /// it, where it is over what is wrong. How far down the list ends.
-    fn faults(&mut self, pane: f64) -> (Vec<Draw>, f64) {
-        let Picture::Faults(faults) = &self.picture else {
-            return (Vec::new(), 0.0);
-        };
-        let wide = pane - 2.0 * MARGIN;
-        let path = self.line.and_then(|i| Some(self.lines.get(i)?.row.dir.clone())).unwrap_or_default();
-        let within = path.strip_prefix(&self.root).unwrap_or(&path).display().to_string();
-        let journey = self.line.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
-        let lang = self.lang;
-        let heading = match (journey, faults.len()) {
-            (true, 1) => say!(lang, faults_not_played_one, within),
-            (true, n) => say!(lang, faults_not_played_many, within, n),
-            (false, 1) => say!(lang, faults_not_drawn_one, within),
-            (false, n) => say!(lang, faults_not_drawn_many, within, n),
-        };
-        let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, chrome::HEADING)];
-        let mut y = MARGIN + CAPTION + GAP;
-        for fault in faults {
-            list.push(words(rect(0.0, y, wide, 16.0), fault.at.clone(), Ink::Muted, chrome::HEADING));
-            y += 18.0;
-            let font = chrome::BODY;
-            let tall = f64::from(self.typesetter.text(&fault.problem, font, Some(wide as f32)).height);
-            let mut problem = words(rect(0.0, y, wide, tall), fault.problem.clone(), Ink::Text, 400);
-            if let Draw::Text { max_lines, .. } = &mut problem {
-                *max_lines = None;
-            }
-            list.push(problem);
-            y += tall + GAP;
-        }
-        (list, y)
+    /// How wide and tall what the pictures' pane shows is, all of it, the
+    /// space around it included: wider than the pane only for a state's
+    /// pages at [`SMALLEST`].
+    fn pictures_size(&mut self) -> (f64, f64) {
+        let pane = self.pane_at();
+        self.picture.shows().size(&pane, &mut self.typesetter)
     }
 
     /// The tree's width, then the sidebar's, kept within their bounds: a
@@ -3504,9 +2794,10 @@ impl Gallery {
             draft.text.fit(sidebar::field_width(self.side));
         }
         let height = self.size.1;
-        let below = (self.pictures_height(self.pane()) - height).max(0.0);
+        let (wide, tall) = self.pictures_size();
+        let below = (tall - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
-        let beyond = (self.pictures_width(self.pane()) - self.pane()).max(0.0);
+        let beyond = (wide - self.pane()).max(0.0);
         self.across = self.across.clamp(0.0, beyond);
         let below = (self.sidebar_height() - height).max(0.0);
         self.side_scroll = self.side_scroll.clamp(0.0, below);
@@ -3527,11 +2818,11 @@ impl Gallery {
         let (width, height) = self.size;
         let (tree, right) = (self.tree, self.pane_right());
         let pictures = Area::new(tree, 0.0, right, height);
-        let content = self.pictures_height(self.pane());
+        let (wide, content) = self.pictures_size();
         let down = Bar { pane: pictures, axis: Axis::Down, content, scrolled: self.scroll, corner: 0.0 };
         let corner =
             if down.thumb().is_some() { chrome::SCROLLBAR_WIDE + chrome::SCROLLBAR_INSET } else { 0.0 };
-        let content = self.pictures_width(self.pane());
+        let content = wide;
         let across = Bar { pane: pictures, axis: Axis::Across, content, scrolled: self.across, corner };
         let lines = Area::new(0.0, 0.0, tree, height);
         let content = self.tree_height();
@@ -3559,6 +2850,24 @@ impl Gallery {
     /// there; none off every scrollbar.
     fn bar_at(&mut self, at: (f64, f64)) -> Option<(Scrolls, Bar, Part)> {
         self.bars().into_iter().find_map(|(scrolls, bar)| Some((scrolls, bar, bar.at(at)?)))
+    }
+
+    /// The box being dragged over a page, in window points, from where the
+    /// button went down to the pointer, once it has moved far enough.
+    fn dragged(&self) -> Option<Rect> {
+        let (from, to) = (self.held?, self.cursor);
+        ((to.0 - from.0).hypot(to.1 - from.1) >= DRAG)
+            .then(|| rect(from.0.min(to.0), from.1.min(to.1), (to.0 - from.0).abs(), (to.1 - from.1).abs()))
+    }
+
+    /// What the window marks on the picture shown.
+    fn seen(&self) -> Seen {
+        Seen {
+            picked: self.thing().target(),
+            dragged: self.dragged(),
+            marked: self.written_marked().map(str::to_string),
+            lang: self.lang,
+        }
     }
 
     /// The whole window, in points.
@@ -3609,106 +2918,8 @@ impl Gallery {
             let top = y + (ROW - f64::from(chrome::BODY.line_height)) / 2.0;
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
-        let left = tree + MARGIN;
-        let (faults, _) = self.faults(self.pane());
-        let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
-        let zoom = self.zoom(self.pane());
-        let mut pages = Vec::new();
-        let labels = self.labels();
-        let mut thumbs = Vec::new();
-        // What the pictures are drawn on, each a sheet on the desk.
-        let mut sheets = Vec::new();
-        let (origins, outlines) = (self.origins(), self.outlines());
-        let marks = self.marks();
-        let regions = self.regions();
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
-        let (cells, arrows) = (self.cells(), self.arrows());
-        match &self.picture {
-            Picture::Pages(shots) => {
-                for (shot, at) in shots.iter().zip(origins) {
-                    pane.push(caption(
-                        rect(at.0, at.1 - CAPTION, shot.width * zoom, 16.0),
-                        shot.caption.clone(),
-                    ));
-                    sheets.push(rect(at.0, at.1, shot.width * zoom, shot.height * zoom));
-                    pages.push((at, &shot.scene));
-                }
-                // The node a journey acts on next, ringed twice in the
-                // notes' ink: no wireframe draws in it.
-                for around in marks {
-                    for inset in [0.0, 1.5] {
-                        pane.push(Draw::Box {
-                            rect: rect(
-                                f64::from(around.x) + inset,
-                                f64::from(around.y) + inset,
-                                f64::from(around.width) - 2.0 * inset,
-                                f64::from(around.height) - 2.0 * inset,
-                            ),
-                            radius: chrome::PICKED_RADIUS - inset as f32,
-                            fill: None,
-                            stroke: Some(Ink::Note),
-                            dashed: false,
-                        });
-                    }
-                }
-                for around in outlines {
-                    pane.push(Draw::Box {
-                        rect: around,
-                        radius: chrome::PICKED_RADIUS / 2.0,
-                        fill: None,
-                        stroke: Some(Ink::Strong),
-                        dashed: false,
-                    });
-                }
-                for around in regions {
-                    pane.push(Draw::Box {
-                        rect: around,
-                        radius: 0.0,
-                        fill: None,
-                        stroke: Some(Ink::Strong),
-                        dashed: true,
-                    });
-                }
-            }
-            Picture::Overview(overview) => {
-                for (thumb, (x, y, w, h)) in overview.thumbs.iter().zip(cells) {
-                    let ink = if thumb.phase { Ink::Muted } else { Ink::Text };
-                    pane.push(words(rect(x, y - CAPTION, w, 16.0), thumb.name.clone(), ink, chrome::HEADING));
-                    sheets.push(rect(x, y, w, h));
-                    thumbs.push(((x, y, w, h), w / thumb.width, &thumb.scene));
-                }
-                pane.extend(arrows);
-                // Over the pictures, in the notes' ink, as the node a
-                // journey acts on is marked when it plays.
-                for (at, pass) in self.passes() {
-                    pane.push(Draw::Box {
-                        rect: at,
-                        radius: chrome::MARK_RADIUS,
-                        fill: Some(Ink::Note),
-                        stroke: None,
-                        dashed: false,
-                    });
-                    pane.push(Draw::Text {
-                        rect: rect(
-                            f64::from(at.x) + 5.0,
-                            f64::from(at.y) + 2.0,
-                            f64::from(at.width) - 10.0,
-                            14.0,
-                        ),
-                        text: pass.label.clone(),
-                        font: MARK,
-                        ink: Ink::Paper,
-                        max_lines: Some(1),
-                        align: Align::Start,
-                        underline: false,
-                        strike: false,
-                    });
-                }
-            }
-            Picture::Faults(_) | Picture::Flow(_) => {}
-        }
-        pane.extend(pins);
-        pane.extend(reply);
+        let seen = self.seen();
         let right = self.pane_right();
         let side = if self.sidebar {
             let cards = self.sidebar_cards();
@@ -3732,60 +2943,15 @@ impl Gallery {
         scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(tree, 0.0, right, height));
         scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(right, 0.0, width, height));
         scene.push_clip_layer(Fill::NonZero, at, &Area::new(tree, 0.0, right, height));
-        if let Picture::Flow(flow) = &self.picture {
-            let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
-            for (place, tile) in flow.map.places.iter().zip(&flow.tiles) {
-                if !matches!(tile, Tile::Undrawn) {
-                    sheet(
-                        &mut scene,
-                        at,
-                        rect(place.x, place.y, flow::WIDE, flow::TALL),
-                        chrome::SHEET_RADIUS,
-                    );
-                }
-            }
-        }
-        for around in sheets {
-            sheet(&mut scene, at, around, 0.0);
-        }
-        for ((x, y), page) in pages {
-            scene.append(page, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
-        }
-        // A tall state is cut at the foot of its picture.
-        for ((x, y, w, h), zoom, thumb) in thumbs {
-            scene.push_clip_layer(Fill::NonZero, at, &Area::new(x, y, x + w, y + h));
-            scene.append(thumb, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
-            scene.pop_layer();
-        }
-        if let Picture::Flow(flow) = &self.picture {
-            let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
-            for (place, card) in flow.map.places.iter().zip(&flow.tiles) {
-                let Tile::Picture { scene: picture, width } = card else { continue };
-                let (x, y) = (place.x, place.y + flow::TITLE);
-                scene.push_clip_layer(
-                    Fill::NonZero,
-                    at,
-                    &Area::new(x, y, x + flow::WIDE, place.y + flow::TALL),
-                );
-                let small = Affine::translate((x, y)) * Affine::scale(flow::WIDE / width);
-                scene.append(picture, Some(at * small));
-                scene.pop_layer();
-            }
-            paint::draws(
-                &mut scene,
-                at,
-                &flow_draws(flow, self.arrow(), self.lang),
-                chrome::colour,
-                &mut self.typesetter,
-            );
-        }
+        let pane = self.pane_at();
+        let mut over = self.picture.shows().draw(&mut scene, &pane, &seen, &mut self.typesetter);
+        over.extend(pins);
+        over.extend(reply);
         // The labels under what the window draws over the pictures: the
         // outline, the pins.
         for (scrolls, bar) in pictures_bars {
             thumb(&mut scene, bar, hot == Some(scrolls));
         }
-        let mut over = labels;
-        over.extend(pane);
         paint::draws(&mut scene, at, &over, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
         paint::draws(&mut scene, at, &side, chrome::colour, &mut self.typesetter);
@@ -3807,114 +2973,6 @@ impl Gallery {
         self.clamp();
         self.frame()
     }
-}
-
-/// The flow's arrows, in its own points: each as the stretches it is drawn
-/// with, and where it is named, where it leaves its box, so that the arrows
-/// from one box, each leaving at its own height, are named apart.
-fn flow_arrows(flow: &Flow) -> Vec<(Vec<(f64, f64)>, Rect)> {
-    let (places, arrows) = (&flow.map.places, &flow.map.arrows);
-    let mut list = Vec::new();
-    for (index, arrow) in arrows.iter().enumerate() {
-        let (from, to) = (&places[arrow.from], &places[arrow.to]);
-        let leaving = arrows[..index].iter().filter(|a| a.from == arrow.from).count() as f64;
-        let reaching = arrows[..index].iter().filter(|a| a.to == arrow.to).count() as f64;
-        let out = from.y + flow::TITLE + ARROWS + leaving * ARROWS;
-        let into = to.y + flow::TITLE + ARROWS + reaching * ARROWS;
-        let path = if arrow.from == arrow.to {
-            let (side, low) = (from.x + flow::WIDE, out + ARROWS / 2.0);
-            vec![(side, out), (side + 30.0, out), (side + 30.0, low), (side, low)]
-        } else if to.x > from.x {
-            vec![(from.x + flow::WIDE, out), (to.x, into)]
-        } else if to.x < from.x {
-            vec![(from.x, out), (to.x + flow::WIDE, into)]
-        } else if to.y > from.y {
-            vec![(from.x + flow::WIDE / 2.0, from.y + flow::TALL), (to.x + flow::WIDE / 2.0, to.y)]
-        } else {
-            vec![(from.x + flow::WIDE / 2.0, from.y), (to.x + flow::WIDE / 2.0, to.y + flow::TALL)]
-        };
-        let start = path[0];
-        let x = if path[1].0 < start.0 { start.0 - 134.0 } else { start.0 + 6.0 };
-        list.push((path, rect(x, start.1 - 17.0, 128.0, 16.0)));
-    }
-    list
-}
-
-/// The flow drawn, in its own points, but for the pictures in its boxes:
-/// each box with its name over it, and each navigate an arrow labelled with
-/// its node, in orange to a screen not drawn yet; the one at `picked` in the
-/// strong ink.
-fn flow_draws(flow: &Flow, picked: Option<usize>, lang: Lang) -> Vec<Draw> {
-    let mut list = Vec::new();
-    let (places, arrows) = (&flow.map.places, &flow.map.arrows);
-    for (index, (arrow, (path, at))) in arrows.iter().zip(flow_arrows(flow)).enumerate() {
-        let ink = if picked == Some(index) {
-            Ink::Strong
-        } else if matches!(places[arrow.to].screen, Screen::Undrawn(_)) {
-            Ink::Assumed
-        } else {
-            Ink::Muted
-        };
-        for pair in path.windows(2) {
-            list.push(line(pair[0], pair[1], ink));
-        }
-        list.extend(head(path[path.len() - 2], path[path.len() - 1], ink));
-        let mut label = words(at, arrow.link.node.clone(), ink, 400);
-        if let Draw::Text { align, font, .. } = &mut label {
-            *font = Font { weight: 500, ..MARK };
-            if path[1].0 < path[0].0 {
-                *align = Align::End;
-            }
-        }
-        list.push(label);
-    }
-    for (place, card) in places.iter().zip(&flow.tiles) {
-        let (x, y) = (place.x, place.y);
-        let (name, ink) = match &place.screen {
-            Screen::Drawn(dir) => {
-                let name =
-                    dir.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
-                (name, Ink::Text)
-            }
-            Screen::Undrawn(screen) => (screen.clone(), Ink::Assumed),
-        };
-        let undrawn = matches!(card, Tile::Undrawn);
-        list.push(Draw::Box {
-            rect: rect(x, y, flow::WIDE, flow::TALL),
-            radius: chrome::SHEET_RADIUS,
-            fill: None,
-            stroke: undrawn.then_some(Ink::Assumed),
-            dashed: undrawn,
-        });
-        list.push(words(rect(x + 8.0, y + 4.0, flow::WIDE - 16.0, 16.0), name, ink, chrome::HEADING));
-        list.push(line((x, y + flow::TITLE), (x + flow::WIDE, y + flow::TITLE), Ink::Line));
-        let middle = (x + flow::WIDE / 2.0, y + (flow::TITLE + flow::TALL) / 2.0);
-        match card {
-            Tile::Picture { .. } => {}
-            Tile::Faulty(faults) => {
-                let mark = match faults {
-                    1 => say!(lang, faulty_one),
-                    n => say!(lang, faulty_many, n),
-                };
-                let mut said = words(
-                    rect(x + 8.0, middle.1 - 8.0, flow::WIDE - 16.0, 16.0),
-                    mark,
-                    Ink::Strong,
-                    chrome::HEADING,
-                );
-                if let Draw::Text { align, .. } = &mut said {
-                    *align = Align::Center;
-                }
-                list.push(said);
-            }
-            Tile::Undrawn => list.push(Draw::Tag {
-                rect: rect(middle.0 - 14.0, middle.1 - 14.0, 28.0, 28.0),
-                text: "?".to_string(),
-                ink: Ink::Assumed,
-            }),
-        }
-    }
-    list
 }
 
 /// A line from `from` to `to`.
@@ -3961,10 +3019,6 @@ fn head(before: (f64, f64), tip: (f64, f64), ink: Ink) -> [Draw; 2] {
         let wing = (tip.0 - 8.0 * ux - side * 4.0 * uy, tip.1 - 8.0 * uy + side * 4.0 * ux);
         line(wing, tip, ink)
     })
-}
-
-fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
-    Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
 }
 
 /// Where a way from `from`, inside `cell` (left, top, width, height), going
@@ -4265,6 +3319,7 @@ fn within(inner: Rect, outer: Rect) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome::CAPTION;
 
     /// The drafts as git has them committed at `HEAD`, not as they stand in
     /// the working tree: a draft added, edited or noted on and not committed
@@ -4424,6 +3479,64 @@ mod tests {
         gallery
     }
 
+    /// The pages of the state shown.
+    fn pages_of(gallery: &Gallery) -> &Pages {
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no state's pages are shown") };
+        pages
+    }
+
+    /// Where each page of the state shown is, in the window.
+    fn origins(gallery: &Gallery) -> Vec<(f64, f64)> {
+        pages_of(gallery).origins(&gallery.pane_at())
+    }
+
+    /// How much the pages or the flow shown are scaled down.
+    fn zoom(gallery: &Gallery) -> f64 {
+        match &gallery.picture {
+            Picture::Pages(pages) => pages.zoom(gallery.pane()),
+            Picture::Flow(flow) => flow.zoom(gallery.pane()),
+            Picture::Overview(_) | Picture::Faults(_) => 1.0,
+        }
+    }
+
+    /// What the picture shown draws over itself, in window points.
+    fn overlays(gallery: &mut Gallery) -> Vec<Draw> {
+        let (pane, seen) = (gallery.pane_at(), gallery.seen());
+        gallery.picture.shows().draw(&mut Scene::new(), &pane, &seen, &mut gallery.typesetter)
+    }
+
+    /// The boxes drawn over the picture shown in the strong ink: the node
+    /// picked outlined (`dashed` false), or a region (true).
+    fn strong(gallery: &mut Gallery, dashed: bool) -> usize {
+        let strong = |draw: &Draw| matches!(draw, Draw::Box { stroke: Some(Ink::Strong), dashed: d, .. } if *d == dashed);
+        overlays(gallery).iter().filter(|draw| strong(draw)).count()
+    }
+
+    /// Where each arrow of the overview or flow shown is labelled, in the
+    /// window.
+    fn arrow_labels(gallery: &Gallery) -> Vec<Rect> {
+        let pane = gallery.pane_at();
+        match &gallery.picture {
+            Picture::Overview(overview) => {
+                overview.paths(&pane).into_iter().map(|(_, label)| label).collect()
+            }
+            Picture::Flow(flow) => flow.spots(&pane).into_iter().map(|(label, _)| label).collect(),
+            Picture::Pages(_) | Picture::Faults(_) => Vec::new(),
+        }
+    }
+
+    /// Where each state of the overview shown is, in the window.
+    fn cells(gallery: &Gallery) -> Vec<(f64, f64, f64, f64)> {
+        let Picture::Overview(overview) = &gallery.picture else { panic!("no overview is shown") };
+        overview.cells(&gallery.pane_at())
+    }
+
+    /// The faults shown, listed from the pane's top.
+    fn faults_listed(gallery: &mut Gallery) -> Vec<Draw> {
+        let Picture::Faults(faults) = &gallery.picture else { panic!("no faults are shown") };
+        faults.list(gallery.pane(), gallery.lang, &mut gallery.typesetter).0
+    }
+
     /// The gallery over the drafts, in a window of 1440 × 900 points.
     fn gallery() -> Gallery {
         opened(drafts(), (1440.0, 900.0))
@@ -4447,8 +3560,10 @@ mod tests {
     /// The names of the pictures drawn, each with its width.
     fn captions(gallery: &Gallery) -> Vec<&str> {
         match &gallery.picture {
-            Picture::Pages(pages) => pages.iter().map(|page| page.caption.as_str()).collect(),
-            Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+            Picture::Pages(Pages { pages, .. }) => pages.iter().map(|page| page.caption.as_str()).collect(),
+            Picture::Faults(Faults { findings: faults, .. }) => {
+                panic!("no picture: it has faults: {faults:?}")
+            }
             Picture::Overview(_) => panic!("the overview, not a state"),
             Picture::Flow(_) => panic!("no picture: a flow is shown"),
         }
@@ -4489,7 +3604,7 @@ mod tests {
         over_row(&mut gallery, docs + 1);
         assert!(gallery.press_here(), "the state is picked");
         assert_eq!(gallery.line, Some(docs + 1));
-        let Picture::Pages(pages) = &gallery.picture else { panic!("docs has no faults") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("docs has no faults") };
         let widths: Vec<f64> = pages.iter().map(|page| page.width).collect();
         assert_eq!(widths, vec![390.0, 1120.0]);
         assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
@@ -4502,12 +3617,12 @@ mod tests {
     /// label).
     fn overview(gallery: &Gallery) -> (Vec<&str>, Vec<(&str, &str, &str)>) {
         let Picture::Overview(overview) = &gallery.picture else { panic!("not an overview") };
-        let names = overview.thumbs.iter().map(|thumb| thumb.name.as_str()).collect();
+        let names = overview.thumbs.iter().map(|thumb| thumb.state.name()).collect();
         let arrows = overview
             .arrows
             .iter()
             .map(|arrow| {
-                let name = |index: usize| overview.thumbs[index].name.as_str();
+                let name = |index: usize| overview.thumbs[index].state.name();
                 (name(arrow.from), name(arrow.to), arrow.label.as_str())
             })
             .collect();
@@ -4548,7 +3663,8 @@ mod tests {
 
         // Each label is the one the node is tagged with in its from state.
         let Picture::Overview(shown) = &gallery.picture else { unreachable!() };
-        let retry = shown.arrows.iter().find(|arrow| shown.thumbs[arrow.from].name == "error").unwrap();
+        let retry =
+            shown.arrows.iter().find(|arrow| shown.thumbs[arrow.from].state.name() == "error").unwrap();
         let error = orders + 1 + names.iter().position(|name| *name == "error").unwrap();
         let drawing = draw::lay_out(
             &drafts().join("orders"),
@@ -4560,7 +3676,7 @@ mod tests {
         let label = drawing.page.nodes.iter().find(|node| node.id == "retry").unwrap().label.unwrap();
         assert_eq!(retry.label, format!("{label} · ok"));
 
-        let cells = gallery.cells();
+        let cells = cells(&gallery);
         assert_eq!(cells.len(), names.len(), "each state has its picture");
         let error_cell = cells[error - orders - 1];
         assert!(
@@ -4577,7 +3693,7 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         over_row(&mut gallery, listing + 1);
         gallery.press_here();
-        let end = gallery.pictures_height(gallery.pane()) - 900.0;
+        let end = gallery.pictures_size().1 - 900.0;
         assert!(end > 0.0, "the listing is taller than the window");
         gallery.move_to((gallery.tree + 100.0, 400.0));
         gallery.wheel_by(0.0, 120.0);
@@ -4621,7 +3737,7 @@ mod tests {
         assert!(across.x1 < top.x0, "the bar across stops short of the one down");
         assert_eq!(across.x0, gallery.tree + chrome::SCROLLBAR_INSET, "unscrolled across, at its start");
         assert_eq!(top.y0, chrome::SCROLLBAR_INSET, "unscrolled, at the very top");
-        let share = 900.0 / gallery.pictures_height(gallery.pane());
+        let share = 900.0 / gallery.pictures_size().1;
         assert!((top.height() - (900.0 - 2.0 * chrome::SCROLLBAR_INSET) * share).abs() < 1e-9);
         gallery.move_to((gallery.tree + 100.0, 400.0));
         gallery.wheel_by(0.0, 1e6);
@@ -4665,7 +3781,7 @@ mod tests {
         let moved = bar_of(&mut gallery, Scrolls::Down).thumb().unwrap();
         assert!((moved.y0 - (thumb.y0 + 30.0)).abs() < 1e-9, "the thumb under the pointer still: {moved:?}");
         gallery.move_by((0.0, 1e5));
-        let below = gallery.pictures_height(gallery.pane()) - 900.0;
+        let below = gallery.pictures_size().1 - 900.0;
         assert_eq!(gallery.scroll, below, "no further than the end");
         gallery.move_to((gallery.cursor.0, -1e5));
         assert_eq!(gallery.scroll, 0.0, "no further than the start");
@@ -4705,7 +3821,7 @@ mod tests {
             gallery.press_here();
             gallery.let_go();
         }
-        let below = gallery.pictures_height(gallery.pane()) - 300.0;
+        let below = gallery.pictures_size().1 - 300.0;
         assert_eq!(gallery.scroll, below, "never past the end");
     }
 
@@ -4770,10 +3886,12 @@ mod tests {
     }
 
     fn on_node(gallery: &Gallery, page: usize, id: &str) -> (f64, f64) {
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else {
+            panic!("no picture: it has faults")
+        };
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
-        let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.pane());
+        let (left, top) = origins(gallery)[page];
+        let zoom = zoom(gallery);
         let r = node.rect;
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         (left + middle.0 * zoom, top + middle.1 * zoom)
@@ -4805,7 +3923,7 @@ mod tests {
             "what it is and what it calls; its id, label and boxes folded away"
         );
         assert!(!gallery.press_here(), "picking it again changes nothing");
-        assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
+        assert_eq!(strong(&mut gallery, false), 2, "it is outlined at both widths");
         assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded");
         let panel = gallery.panel();
         assert_eq!(
@@ -4828,7 +3946,7 @@ mod tests {
         let mut gallery = gallery();
         let orders = line_of(&gallery, "orders");
         showing(&mut gallery, orders + 1);
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
         assert!(
             gallery.press_at(on_node(&gallery, 1, &id)),
@@ -4842,7 +3960,7 @@ mod tests {
         assert_eq!(node.origin.instance.len(), 1, "one each around it");
         assert_eq!(id, format!("order-{}-cancel", node.origin.instance[0]), "the row pointed at");
         assert_eq!(node.width, 1120, "the width it was picked at");
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         assert_eq!(node.label, pages[1].nodes.iter().find(|n| n.id == id).unwrap().label);
         let screen: Value = serde_json::from_str(
             &std::fs::read_to_string(reference.description.join("screen.json")).unwrap(),
@@ -4874,7 +3992,7 @@ mod tests {
         showing(&mut gallery, loading);
         let Picture::Pages(_) = &gallery.picture else { panic!("no picture") };
         // A click on a picture's caption picks no node: the state itself.
-        let (left, top) = gallery.origins()[0];
+        let (left, top) = origins(&gallery)[0];
         gallery.press_at((left + 4.0, top - CAPTION / 2.0));
         let reference = gallery.reference().unwrap();
         assert_eq!(reference.on, On::State { state: State::Phase("loading".into()) });
@@ -4888,7 +4006,7 @@ mod tests {
         let states = gallery.lines[checkout + 1..].iter().take_while(|line| line.state.is_some()).count();
         let shown = (1..=states).find(|offset| {
             showing(&mut gallery, checkout + offset);
-            let Picture::Pages(pages) = &gallery.picture else { return false };
+            let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { return false };
             pages[0].has("card-number")
         });
         assert!(shown.is_some(), "a state of checkout shows the card form");
@@ -4927,7 +4045,7 @@ mod tests {
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
         gallery.press_at(on_node(&gallery, 0, "nav-save"));
-        let (left, top) = gallery.origins()[1];
+        let (left, top) = origins(&gallery)[1];
         assert!(gallery.press_at((left - MARGIN / 2.0, top + 10.0)), "between the pictures");
         assert_eq!(picked_node(&gallery), None);
         assert!(gallery.panel().is_empty(), "the panel is gone");
@@ -4946,8 +4064,8 @@ mod tests {
             "with nothing picked, it says what can be done, under the inbox"
         );
         gallery.press_at(on_node(&gallery, 0, "nav-save"));
-        let narrow = gallery.zoom(gallery.pane());
-        let (left, _) = gallery.origins()[1];
+        let narrow = zoom(&gallery);
+        let (left, _) = origins(&gallery)[1];
         assert!(left + 1120.0 * narrow <= gallery.pane_right(), "the pictures end before the sidebar");
         assert!(
             !gallery.press_at((1440.0 - SIDEBAR / 2.0, 890.0)),
@@ -4957,7 +4075,7 @@ mod tests {
 
         gallery.chord("\\");
         assert_eq!(gallery.pane_right(), 1440.0, "hidden: the pictures take the width");
-        assert!(gallery.zoom(gallery.pane()) > narrow, "and are drawn larger");
+        assert!(zoom(&gallery) > narrow, "and are drawn larger");
         assert!(
             gallery.press_at(on_node(&gallery, 1, "nav-save")),
             "a node near the window's right edge is picked, no sidebar there"
@@ -4973,8 +4091,8 @@ mod tests {
         gallery.feed([Input::Resized((1000.0, 900.0))]);
         let listing = line_of(&gallery, "airbnb-listing");
         showing(&mut gallery, listing + 1);
-        assert_eq!(gallery.zoom(gallery.pane()), SMALLEST, "no smaller than half");
-        let beyond = gallery.pictures_width(gallery.pane()) - gallery.pane();
+        assert_eq!(zoom(&gallery), SMALLEST, "no smaller than half");
+        let beyond = gallery.pictures_size().0 - gallery.pane();
         assert!(beyond > 0.0, "wider than the pane");
         gallery.move_to((gallery.tree + 100.0, 400.0));
         gallery.wheel_by(1e6, 0.0);
@@ -4992,10 +4110,10 @@ mod tests {
             Draw::Tag { rect, text, .. } => Some((rect.width, text.clone())),
             _ => None,
         };
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         let tagged: Vec<(f32, String)> = pages.iter().flat_map(|page| &page.tags).filter_map(tag).collect();
         assert!(!tagged.is_empty(), "the labels are kept apart from the scene");
-        let drawn: Vec<(f32, String)> = gallery.labels().iter().filter_map(tag).collect();
+        let drawn: Vec<(f32, String)> = overlays(&mut gallery).iter().filter_map(tag).collect();
         assert_eq!(drawn, tagged, "each drawn at its own size, at half size too");
     }
 
@@ -5007,15 +4125,15 @@ mod tests {
         assert_eq!(gallery.tree, TREE, "the window opens with the tree at 260pt");
         // The sidebar hidden, the pictures are above half size, to shrink.
         gallery.chord("\\");
-        let (picked, wide) = (gallery.line, gallery.zoom(gallery.pane()));
+        let (picked, wide) = (gallery.line, zoom(&gallery));
 
         assert!(!gallery.press_at((TREE + 2.0, 300.0)), "a press on the line changes nothing shown");
         assert_eq!(gallery.line, picked, "and picks no line of the tree");
         assert!(gallery.held.is_none(), "nor starts a region");
         assert!(gallery.move_to((400.0, 320.0)), "the drag moves the line");
         assert_eq!(gallery.tree, 400.0, "to where the pointer is");
-        assert_eq!(gallery.origins()[0].0, 400.0 + MARGIN, "the pictures start after it");
-        assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
+        assert_eq!(origins(&gallery)[0].0, 400.0 + MARGIN, "the pictures start after it");
+        assert!(zoom(&gallery) < wide, "and fit the width left");
         assert!(!gallery.let_go(), "letting go picks nothing");
         assert_eq!(gallery.line, picked);
         assert!(!matches!(gallery.picked, Picked::Region { .. }));
@@ -5051,7 +4169,7 @@ mod tests {
         let width = 2400.0;
         gallery.feed([Input::Resized((width, 900.0))]);
         gallery.clamp();
-        let wide = gallery.zoom(gallery.pane());
+        let wide = zoom(&gallery);
         let line = width - SIDEBAR;
 
         gallery.move_to((line - 3.0, 300.0));
@@ -5063,7 +4181,7 @@ mod tests {
         assert!(gallery.move_to((line - 400.0, 320.0)), "the drag moves the line");
         assert_eq!(gallery.side, SIDEBAR + 400.0, "to where the pointer is");
         assert_eq!(gallery.tree, TREE, "the tree keeps its width");
-        assert!(gallery.zoom(gallery.pane()) < wide, "the pictures fit the width left");
+        assert!(zoom(&gallery) < wide, "the pictures fit the width left");
         assert!(!gallery.let_go(), "letting go picks nothing");
         assert_eq!(picked_node(&gallery), Some("nav-save"));
         assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded, wide");
@@ -5180,11 +4298,11 @@ mod tests {
         assert!(!broken.faults.is_empty(), "the tree marks it");
         let found = broken.faults.clone();
         gallery.pick(1);
-        let Picture::Faults(shown) = &gallery.picture else {
+        let Picture::Faults(Faults { findings: shown, .. }) = &gallery.picture else {
             panic!("a description with faults is not drawn")
         };
         assert_eq!(shown, &found, "each finding as `check` names it");
-        let (list, _) = gallery.faults(gallery.pane());
+        let list = faults_listed(&mut gallery);
         let texts: Vec<&str> = list
             .iter()
             .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text.as_str()) } else { None })
@@ -5223,8 +4341,10 @@ mod tests {
     /// How tall each picture is.
     fn heights(gallery: &Gallery) -> Vec<f64> {
         match &gallery.picture {
-            Picture::Pages(pages) => pages.iter().map(|page| page.height).collect(),
-            Picture::Faults(faults) => panic!("no picture: it has faults: {faults:?}"),
+            Picture::Pages(Pages { pages, .. }) => pages.iter().map(|page| page.height).collect(),
+            Picture::Faults(Faults { findings: faults, .. }) => {
+                panic!("no picture: it has faults: {faults:?}")
+            }
             Picture::Overview(_) => panic!("the overview, not a state"),
             Picture::Flow(_) => panic!("no picture: a flow is shown"),
         }
@@ -5335,11 +4455,15 @@ mod tests {
         gallery.reload();
         assert!(!gallery.lines[1].row.faults.is_empty(), "the tree marks it");
         assert_eq!(gallery.line, Some(typing), "the same state");
-        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[1].row.faults));
+        assert!(
+            matches!(&gallery.picture, Picture::Faults(Faults { findings: shown, .. }) if shown == &gallery.lines[1].row.faults)
+        );
 
         std::fs::write(root.join("todo").join(crate::KINDS), "{}").unwrap();
         gallery.reload();
-        let Picture::Faults(shown) = &gallery.picture else { panic!("a kinds.json left behind is a fault") };
+        let Picture::Faults(Faults { findings: shown, .. }) = &gallery.picture else {
+            panic!("a kinds.json left behind is a fault")
+        };
         assert!(shown.iter().any(|f| f.problem.contains("kinds.json is no longer read")), "{shown:?}");
 
         std::fs::remove_file(root.join("todo").join(crate::KINDS)).unwrap();
@@ -5363,7 +4487,9 @@ mod tests {
         assert!(!gallery.lines[2].row.faults.is_empty(), "the stray field is a fault");
         assert!(gallery.lines[2].state.is_some(), "its states are still listed");
         gallery.pick(2);
-        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[2].row.faults));
+        assert!(
+            matches!(&gallery.picture, Picture::Faults(Faults { findings: shown, .. }) if shown == &gallery.lines[2].row.faults)
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5570,7 +4696,7 @@ mod tests {
 
     /// The texts drawn in the flow.
     fn flow_texts(flow: &Flow) -> Vec<String> {
-        flow_draws(flow, None, Lang::En)
+        flow.draws(None, Lang::En)
             .into_iter()
             .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text) } else { None })
             .collect()
@@ -5636,7 +4762,7 @@ mod tests {
         for name in ["checkout", "listing", "PhotoGallery", "reserve-button", "photos-show-all"] {
             assert!(texts.iter().any(|text| text == name), "{name} in {texts:?}");
         }
-        let draws = flow_draws(flow, None, Lang::En);
+        let draws = flow.draws(None, Lang::En);
         let dashed = draws
             .iter()
             .filter(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(Ink::Assumed), .. }))
@@ -5655,7 +4781,7 @@ mod tests {
         let flow = flow_shown(&gallery);
         let place =
             flow.map.places.iter().find(|p| p.screen == Screen::Drawn(root.join("shop/listing"))).unwrap();
-        let ((left, top), zoom) = (gallery.flow_origin(), gallery.zoom(gallery.pane()));
+        let ((left, top), zoom) = (Flow::origin(&gallery.pane_at()), zoom(&gallery));
         let undrawn = flow.map.places.iter().find(|p| matches!(p.screen, Screen::Undrawn(_))).unwrap();
         let on = |p: &flow::Place| (left + (p.x + 20.0) * zoom, top + (p.y + 40.0) * zoom);
         let (on_listing, on_undrawn) = (on(place), on(undrawn));
@@ -5744,7 +4870,7 @@ mod tests {
     /// The pins drawn, as (id, picture, ink, faint), the picture by its
     /// place among the pictures.
     fn pins_shown(gallery: &Gallery) -> Vec<(String, usize, Ink, bool)> {
-        let origins = gallery.origins();
+        let origins = origins(gallery);
         gallery
             .pins()
             .into_iter()
@@ -5792,7 +4918,7 @@ mod tests {
                 "Esc cancels"
             ]
         );
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
         gallery.press_at(on_node(&gallery, 1, &id));
         assert!(gallery.let_go(), "the node clicked is the one the note is on");
@@ -5946,11 +5072,13 @@ mod tests {
 
     /// The middle of the orange "?" of node `id`, in picture `page`.
     fn on_guess(gallery: &Gallery, page: usize, id: &str) -> (f64, f64) {
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else {
+            panic!("no picture: it has faults")
+        };
         let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
         let r = node.guess_tag().expect("it is guessed");
-        let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.pane());
+        let (left, top) = origins(gallery)[page];
+        let zoom = zoom(gallery);
         let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         (left + middle.0 * zoom, top + middle.1 * zoom)
     }
@@ -5963,7 +5091,7 @@ mod tests {
         let states = gallery.lines[checkout + 1..].iter().take_while(|line| line.state.is_some()).count();
         let shown = (1..=states).find(|offset| {
             showing(&mut gallery, checkout + offset);
-            let Picture::Pages(pages) = &gallery.picture else { return false };
+            let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { return false };
             pages[0].has("card-number")
         });
         assert!(shown.is_some(), "a state of checkout shows the card form");
@@ -6177,7 +5305,7 @@ mod tests {
     /// The middle of the label of arrow `index`, of the overview or flow
     /// shown, in the window.
     fn on_arrow(gallery: &Gallery, index: usize) -> (f64, f64) {
-        let (r, _) = gallery.arrow_spots()[index];
+        let r = arrow_labels(gallery)[index];
         (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0))
     }
 
@@ -6195,7 +5323,7 @@ mod tests {
         let mut gallery = opened(&root, (1440.0, 900.0));
         show(&mut gallery, "orders", "default");
         press_keys(&mut gallery, &["n"]);
-        let (left, top) = gallery.origins()[1];
+        let (left, top) = origins(&gallery)[1];
         assert!(gallery.press_at((left + 4.0, top - CAPTION / 2.0)));
         assert_eq!(
             gallery.panel()[..3],
@@ -6235,7 +5363,7 @@ mod tests {
         let note = |id: &str| Picked::Note { dir: dir.clone(), id: id.into() };
         let orders = line_of(&gallery, "orders");
         showing(&mut gallery, orders);
-        let last = gallery.arrow_spots().len() - 1;
+        let last = arrow_labels(&gallery).len() - 1;
         let at = on_arrow(&gallery, last);
         note_at(&mut gallery, at, "should it say why?");
         assert_eq!(gallery.picked, note("N1"), "the note sent picked");
@@ -6253,9 +5381,7 @@ mod tests {
             .flat_map(|x| (0..40).map(move |y| (x, y)))
             .map(|(x, y)| (gallery.tree + 20.0 + f64::from(x) * 20.0, 10.0 + f64::from(y) * 20.0))
             .find(|&at| {
-                gallery.state_at(at).is_none()
-                    && gallery.arrow_at(at).is_none()
-                    && gallery.pass_at(at).is_none()
+                gallery.target_at(at).is_none()
                     && gallery.pin_at(at).is_none()
                     && at.0 < gallery.pane_right() - 20.0
             })
@@ -6374,8 +5500,8 @@ mod tests {
 
     /// `at`, a point in picture `page`'s points, in the window.
     fn on_page(gallery: &Gallery, page: usize, at: (f64, f64)) -> (f64, f64) {
-        let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.pane());
+        let (left, top) = origins(gallery)[page];
+        let zoom = zoom(gallery);
         (left + at.0 * zoom, top + at.1 * zoom)
     }
 
@@ -6400,7 +5526,7 @@ mod tests {
         press_keys(&mut gallery, &["n"]);
         assert!(drag(&mut gallery, 0, (10.0, 145.0), (380.0, 175.0)), "a drag picks a region");
         assert!(
-            !gallery.regions().is_empty() && picked_node(&gallery).is_none(),
+            strong(&mut gallery, true) > 0 && picked_node(&gallery).is_none(),
             "drawn dashed, and no node picked"
         );
         assert!(
@@ -6468,7 +5594,9 @@ mod tests {
         screen.pointer_mut("/root/children/1/children").unwrap().as_array_mut().unwrap().remove(0);
         std::fs::write(&file, screen.to_string()).unwrap();
         gallery.reload();
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: {:?}", gallery.panel()) };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else {
+            panic!("no picture: {:?}", gallery.panel())
+        };
         let count = pages[0].nodes.iter().find(|node| node.id == "match-count").unwrap().rect;
         let after = corner(&gallery, "N1");
         assert!(after.1 < before.1, "the region moved up with its node: {before:?} → {after:?}");
@@ -6504,7 +5632,7 @@ mod tests {
         assert!(gallery.panel()[0].starts_with("note on region 0, 0 · 390 × 56 covering 1 node"));
         press_keys(&mut gallery, &["Esc", "Esc"]);
         assert!(
-            !matches!(gallery.picked, Picked::Region { .. }) && gallery.regions().is_empty(),
+            !matches!(gallery.picked, Picked::Region { .. }) && strong(&mut gallery, true) == 0,
             "Esc lets it go"
         );
         std::fs::remove_dir_all(root).unwrap();
@@ -6519,7 +5647,7 @@ mod tests {
     /// node marked in each picture.
     fn played(gallery: &Gallery) -> (usize, Vec<Option<String>>) {
         let at = gallery.playing.as_ref().expect("a journey is played").at;
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no pictures") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no pictures") };
         let marked = gallery
             .marked()
             .into_iter()
@@ -6601,7 +5729,7 @@ mod tests {
         let Picture::Overview(overview) = &gallery.picture else { panic!("not an overview") };
         let marked = overview.thumbs.iter().filter(|thumb| !thumb.journeys.is_empty());
         marked
-            .map(|thumb| (thumb.name.as_str(), thumb.journeys.iter().map(|p| p.label.as_str()).collect()))
+            .map(|thumb| (thumb.state.name(), thumb.journeys.iter().map(|p| p.label.as_str()).collect()))
             .collect()
     }
 
@@ -6622,10 +5750,11 @@ mod tests {
         assert!(passes_shown(&gallery).is_empty(), "no journey passes through the other orders");
 
         showing(&mut gallery, order);
-        let passes = gallery.passes();
+        let Picture::Overview(overview) = &gallery.picture else { panic!("no overview is shown") };
+        let passes = overview.passes(&gallery.pane_at());
         let (open, cell) = (
             passes[0].0,
-            gallery.cells()[gallery.lines[order + 1..].iter().position(|l| l.row.name == "open").unwrap()],
+            cells(&gallery)[gallery.lines[order + 1..].iter().position(|l| l.row.name == "open").unwrap()],
         );
         assert!(open.x as f64 > cell.0 && (open.y as f64) > cell.1, "over the state's picture");
         assert!(
@@ -6685,7 +5814,7 @@ mod tests {
         );
         show(&mut gallery, "OrderRow", "shipped");
         assert_eq!(captions(&gallery), ["shipped · 390", "shipped · 1120"]);
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let Picture::Pages(Pages { pages, .. }) = &gallery.picture else { panic!("no picture") };
         assert!(pages[0].has("order-row-status") && !pages[0].has("order-row-cancel"), "shipped: no cancel");
         show(&mut gallery, "OrderStatus", "cancelled");
         assert_eq!(captions(&gallery), ["cancelled · 390", "cancelled · 1120"]);
@@ -6747,11 +5876,13 @@ mod tests {
         over_row(&mut gallery, journey);
         assert!(gallery.press_here());
         assert!(gallery.playing.is_none(), "not played");
-        let Picture::Faults(faults) = &gallery.picture else { panic!("its faults are shown") };
+        let Picture::Faults(Faults { findings: faults, .. }) = &gallery.picture else {
+            panic!("its faults are shown")
+        };
         assert_eq!(faults.len(), 1, "{faults:?}");
         assert_eq!(faults[0].at, "steps.1.on");
         assert!(faults[0].problem.contains("does not reach the next step"), "{faults:?}");
-        let (list, _) = gallery.faults(gallery.pane());
+        let list = faults_listed(&mut gallery);
         let Draw::Text { text, .. } = &list[0] else { panic!("a heading") };
         assert!(text.contains("has a fault, so it is not played"), "{text}");
 
