@@ -95,9 +95,11 @@ DOES
   them, for every node picked after. A node that navigates to a screen no description under
   <root> declares is drawn with the orange "?", a screen not drawn yet, as
   `underdraw check <root>` reports it. Every word the window says itself
-  is said in --lang, en or zh, en by default: the sidebar, the tree's
+  is said in --lang, en, zh or ja, en by default: the sidebar, the tree's
   marks, a description's faults heading, the flow's and the overview's
-  marks, the window's title, and what underdraw assumes itself. Only what
+  marks, the window's title, and what underdraw assumes itself. With ja
+  those words are set in Japanese fonts, whose Han characters take the
+  Japanese forms. Only what
   the files say stays as written: ids, names, states, notes and findings.
   Picking another state keeps that id picked while the state has it;
   clicking where no node is closes its card. A description with

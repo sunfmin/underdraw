@@ -89,7 +89,9 @@ pub fn run(root: &Path, lang: Lang) {
         Err(e) => return report(&json!({ "error": e })),
     };
     let mut gallery = Gallery::new(root, typesetter);
-    gallery.lang = lang;
+    if let Err(e) = gallery.speak(lang) {
+        return report(&json!({ "error": e }));
+    }
     gallery.proxy = Some(event_loop.create_proxy());
     if let Err(e) = event_loop.run_app(&mut gallery)
         && !gallery.reported
@@ -608,6 +610,19 @@ impl Page {
 }
 
 impl Gallery {
+    /// Says its own words in `lang`, set in the fonts of its writing: the
+    /// same Han character is drawn one way in Japanese, another in Chinese.
+    fn speak(&mut self, lang: Lang) -> Result<(), String> {
+        self.typesetter = text::Typesetter::new(lang.locale())?;
+        self.lang = lang;
+        Ok(())
+    }
+
+    /// The window's title, naming its root.
+    fn title(&self) -> String {
+        say!(self.lang, window_title, root = self.root.display())
+    }
+
     /// The tree of `root`, nothing picked and no window open yet.
     fn new(root: &Path, typesetter: text::Typesetter) -> Gallery {
         let lines = lines(root);
@@ -3852,7 +3867,7 @@ impl ApplicationHandler<Told> for Gallery {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title(say!(self.lang, window_title, root = self.root.display()))
+            .with_title(self.title())
             .with_inner_size(LogicalSize::new(1440.0, 900.0));
         let opened = event_loop.create_window(attributes).map_err(anyhow::Error::from).and_then(|window| {
             let window = Arc::new(window);
@@ -4679,6 +4694,44 @@ mod tests {
         let said: Vec<String> =
             gallery.panel().into_iter().filter(|line| !line.starts_with("已复制")).collect();
         assert!(!said.iter().any(english), "{said:?}");
+    }
+
+    #[test]
+    fn with_lang_ja_the_sidebar_and_the_title_say_it_in_japanese_set_in_japanese_fonts() {
+        let mut gallery = gallery();
+        gallery.speak(Lang::Ja).unwrap();
+        assert!(gallery.title().starts_with("underdraw ギャラリー — "), "{}", gallery.title());
+        assert_eq!(
+            gallery.typesetter.families(),
+            "system-ui, Hiragino Sans, Yu Gothic, Noto Sans CJK JP, sans-serif"
+        );
+        assert_eq!(gallery.sidebar_cards()[0].title, "何も選ばれていません");
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        gallery.press();
+        assert_eq!(
+            gallery.panel(),
+            ["IconButton", "呼び出し  toggleSaved", "▸ 詳細", "ここにメモを書く  (N)"]
+        );
+        assert!(click_panel_line(&mut gallery, "▸ 詳細"));
+        assert_eq!(gallery.panel()[3..5], ["ID  nav-save", "幅 390  番号 3 · 枠 334, 8 · 40 × 40"]);
+        press_keys(&mut gallery, &["n"]);
+        assert_eq!(gallery.panel()[0], "メモを書く");
+        press_keys(&mut gallery, &["Esc"]);
+        gallery.copy();
+        assert!(gallery.panel()[0].starts_with("コピーしました  "), "{:?}", gallery.panel());
+    }
+
+    #[test]
+    fn every_language_sets_its_words_in_fonts_of_its_own() {
+        let mut gallery = gallery();
+        for lang in Lang::all() {
+            gallery.speak(lang).unwrap();
+            assert_eq!(gallery.lang, lang);
+        }
+        gallery.speak(Lang::Zh).unwrap();
+        assert!(gallery.typesetter.families().contains("Noto Sans CJK SC"), "Chinese stays Simplified");
     }
 
     #[test]

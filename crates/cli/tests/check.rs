@@ -216,6 +216,11 @@ fn a_screen_not_drawn_yet_is_assumed_in_a_sentence_in_the_language_asked() {
     let (en, zh) = (assumed("en"), assumed("zh"));
     assert!(en.starts_with("This navigates to OrderDetail") && en.ends_with('.'), "{en}");
     assert!(zh.contains("OrderDetail") && zh.contains("还没画"), "{zh}");
+    let ja = assumed("ja");
+    assert!(
+        ja.starts_with("ここは OrderDetail に遷移します") && ja.contains("まだ描かれていない画面"),
+        "{ja}"
+    );
     let (answer, code) = underdraw(&["check", DRAFTS, "--lang", "fr"]);
     assert_eq!(code, 2, "{answer}");
 }

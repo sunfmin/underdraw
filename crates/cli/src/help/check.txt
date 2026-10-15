@@ -79,8 +79,8 @@ ANSWERS
                         declares it; false: an assumption, a screen not
                         drawn yet,
                       "assumed": when not resolved, that assumption said
-                        in a whole sentence, in --lang (en or zh; en by
-                        default), or null}, …]
+                        in a whole sentence, in --lang (en, zh or ja; en
+                        by default), or null}, …]
     "journeys":     [{"journey": its file, relative to root,
                       "name": its file's name without .json,
                       "ok": true when it walks,

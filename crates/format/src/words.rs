@@ -10,10 +10,11 @@
 //! which [`fill`] fills.
 
 mod en;
+mod ja;
 mod zh;
 
 /// Every language `--lang` takes, the first the default.
-const LANGUAGES: [&Words; 2] = [&en::WORDS, &zh::WORDS];
+const LANGUAGES: [&Words; 3] = [&en::WORDS, &zh::WORDS, &ja::WORDS];
 
 /// The language underdraw says its own words in, as the commands that
 /// report them are asked (`--lang`).
@@ -24,6 +25,7 @@ pub struct Lang(&'static Words);
 impl Lang {
     pub const En: Lang = Lang(&en::WORDS);
     pub const Zh: Lang = Lang(&zh::WORDS);
+    pub const Ja: Lang = Lang(&ja::WORDS);
 
     /// Every language, in the order `--lang` lists them.
     pub fn all() -> impl Iterator<Item = Lang> {
@@ -38,6 +40,13 @@ impl Lang {
     /// The language `name` names, as `--lang` takes it.
     pub fn parse(name: &str) -> Option<Lang> {
         Lang::all().find(|lang| lang.name() == name)
+    }
+
+    /// The BCP 47 tag its words are set in, which picks the Han glyphs
+    /// (Japanese or Simplified) and the fonts that hold them; none leaves
+    /// the choice to the system.
+    pub fn locale(self) -> Option<&'static str> {
+        self.0.locale
     }
 
     /// Its sentences.
@@ -75,6 +84,8 @@ macro_rules! sentences {
         pub struct Words {
             /// The language's name, as `--lang` takes it.
             pub name: &'static str,
+            /// The BCP 47 tag its sentences are set in, if any: see [`Lang::locale`].
+            pub locale: Option<&'static str>,
             $(pub $sentence: &'static str,)*
         }
 
@@ -319,7 +330,7 @@ mod tests {
     #[test]
     fn every_language_is_parsed_by_its_name() {
         let names: Vec<&str> = Lang::all().map(Lang::name).collect();
-        assert_eq!(names, ["en", "zh"]);
+        assert_eq!(names, ["en", "zh", "ja"]);
         for lang in Lang::all() {
             assert_eq!(Lang::parse(lang.name()), Some(lang));
         }
