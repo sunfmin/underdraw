@@ -9,7 +9,8 @@ WHO
 
 READS
   <path>/screen.json: its "operations", "types", "conditions", "fixtures" and
-  each query's "from". Writes nothing. Refuses a description `check` finds
+  each query's "from", with those its project's domain.json declares, as
+  if the screen declared them (`underdraw --help`). Writes nothing. Refuses a description `check` finds
   faults in.
 
 HOW EACH OPERATION BECOMES A COMMAND
@@ -148,7 +149,10 @@ WHAT TRIPS YOU UP
     a query whose result fills a field of "data" ("from").
   - A precondition is a condition over the view model: the CLI must answer
     the same question the screen asks (does the person own the document?)
-    before it calls the command.
+    before it calls the command. One declared on a type ("requires
+    Order.cancellable") is asked of the value the command names, the order
+    of the id it is given: its golden output is refused where that order's
+    condition does not hold.
   - A destructive command checks its precondition first, then --yes: a
     dry run says only what would be done, never what would be refused.
   - A bulk form never stops at the first item that is not done: it tries

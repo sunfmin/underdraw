@@ -97,6 +97,33 @@ Types are strict, the same on every platform:
   `booking.total`) is declared in `data` as derived and supplied by fixtures —
   the screen does not compute business values.
 
+### Conditions on a type
+
+A condition named `<Type>.<name>` is declared on a type ([ADR
+0020](../adr/0020-a-project-shares-one-domain.md)): its `when` reads that
+type's fields, and a value of the type reads it as a Bool field.
+
+```json
+"conditions": {
+  "Order.cancellable": { "when": "status == \"pending\"", "label": "Not shipped yet" }
+}
+```
+
+- It is used through a value of its type: `"if": "item.cancellable"`,
+  `{item.cancellable}`, `order != null && order.cancellable`. Used on a value
+  of another type, or named whole (`Order.cancellable`) anywhere but
+  `requires`, it is a finding.
+- Inside one on a type, another of that type is named short (`cancellable`);
+  a condition over the screen's data cannot be named there.
+- The type has no field of its name, and fixtures never give it: each value
+  of the type in a fixture is given it, worked out from its own fields.
+- It must be true of one value of the type and false of another, wherever
+  the fixtures hold one.
+- An operation may `require` one; a node calling it is gated through the value
+  it acts on (`"disabled": "!item.cancellable"`).
+- The domain shares conditions this way, since it has no screen's data to
+  start a path from. A condition over a screen's data stays that screen's.
+
 ## Use sites
 
 Where a node needs a yes/no (`if`, `disabled`, a `cases` branch), it names one:

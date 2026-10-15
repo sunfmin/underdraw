@@ -7,9 +7,14 @@ platforms/*.json and, for components of the project's own, kinds.json. How to
 write each file, every component and every rule: `underdraw check --help`, FORMAT.
 
 A screen is in a project: one app's screens under one directory, sharing
-one design language. Every command finds it the same way:
+one design language and one domain. Every command finds it the same way:
   project root  the nearest directory at or above the screen holding
                 domain.json; with none, the screen's own directory
+  domain        domain.json at the project root: the types, conditions and
+                operations every screen of the project uses by name, read
+                by every command as if each screen declared them; a screen
+                may add its own, never one of a name the domain declares
+                (`underdraw check --help`, DOMAIN.JSON)
   tokens        tokens.json in the nearest directory at or above the
                 screen that has one, so a screen's own tokens.json wins
                 over one above it, and screens with none beside them share
@@ -26,11 +31,12 @@ START HERE
   underdraw check <root>     every description under <root>, and where each
                              navigate goes: one to a screen none of them
                              declares is an assumption, a screen not drawn
-                             yet, not a fault
+                             yet, not a fault; and every journey under it
+                             (<dir>/journeys/<name>.json) walked
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
   underdraw notes <root>     what the person said there: each open note, pinned
-                             to a node; act on it, then answer it with
+                             to a node, a state or an arrow; act on it, then answer it with
                              `underdraw notes <dir> --answer N1 --reply "…"`;
                              `underdraw notes <root> --wait` in the background
                              answers when the person writes the next one
@@ -56,7 +62,8 @@ COMMANDS
                              and each navigate resolved to the screen it names
     underdraw gallery <root> a window for the person: every description under
                              <root>, each drawn at a phone and a desktop width,
-                             where they write notes on its nodes
+                             where they write notes on its nodes, states and arrows,
+                             and play each journey under it step by step
     underdraw notes <root>   the person's open notes, each with where it is pinned;
                              with --answer <id> --reply "…", one answered;
                              with --wait, once one is open
@@ -84,4 +91,7 @@ RULES TO KNOW FIRST
   - No truthiness: a date or a number is not a condition; write != null, > 0.
   - Every condition must be true in one fixture and false in another, so every
     state can be shown. `check` reports one that is not.
+  - A condition shared by the domain is declared on a type
+    ("Order.cancellable") and used through a value of it
+    ("if": "item.cancellable"); one over a screen's data stays the screen's.
   - Loading and error are "phases", trees that read no data.

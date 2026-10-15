@@ -5,6 +5,9 @@
 
 use underdraw_format::{Atom, Base, Definition, Expr, Field, Model, Op, Schema, Shape};
 
+/// Names a path may start from, with their types, as the format reads them.
+type Scope = Vec<(String, Field)>;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Language {
     TypeScript,
@@ -261,25 +264,66 @@ fn enumeration(language: Language, name: &str, members: &[String]) -> String {
 }
 
 /// Each condition as a computed property of the root model (a function of
-/// it in TypeScript), with its label as the comment.
+/// it in TypeScript), with its label as the comment; one declared on a type
+/// as a property of that type (`orderCancellable(m: Order)` in TypeScript).
 fn conditions(model: &Model, language: Language, root: &str) -> String {
-    let mut out = String::new();
-    if language == Language::Swift {
-        out.push_str(&format!("extension {root} {{\n"));
-    }
-    let writer = Writer { language, schema: &model.schema, model };
-    let mut first = true;
+    // The root's first, then each type's, in the order declared.
+    let mut owners: Vec<Option<&str>> = Vec::new();
     for definition in model.conditions() {
+        let owner = definition.on.as_deref();
+        if !owners.contains(&owner) {
+            owners.push(owner);
+        }
+    }
+    owners.sort_by_key(|owner| owner.is_some());
+    let mut out = String::new();
+    let mut first = true;
+    for owner in owners {
+        let (of, scope) = match owner {
+            Some(on) => (on, model.schema.fields_of(on).unwrap_or_default()),
+            None => (root, model.schema.roots()),
+        };
         if !first {
             out.push('\n');
         }
         first = false;
-        out.push_str(&writer.condition(definition, root));
-    }
-    if language == Language::Swift {
-        out.push_str("}\n");
+        if language == Language::Swift {
+            out.push_str(&format!("extension {of} {{\n"));
+        }
+        let writer = Writer { language, schema: &model.schema, model, scope };
+        let mut first_here = true;
+        for definition in model.conditions() {
+            if definition.on.as_deref() != owner {
+                continue;
+            }
+            if !first_here {
+                out.push('\n');
+            }
+            first_here = false;
+            out.push_str(&writer.condition(definition, of));
+        }
+        if language == Language::Swift {
+            out.push_str("}\n");
+        }
     }
     out
+}
+
+/// What a condition is called in code: its name, or for one on a type its
+/// short name, which TypeScript, with no extensions, gives the type's name
+/// as a prefix (`orderCancellable`).
+fn condition_name(language: Language, name: &str) -> String {
+    match (language, name.split_once('.')) {
+        (_, None) => name.to_string(),
+        (Language::TypeScript, Some((on, short))) => {
+            let mut chars = short.chars();
+            let first = chars.next().map(|c| c.to_ascii_uppercase().to_string()).unwrap_or_default();
+            let mut owner = on.chars();
+            let lead = owner.next().map(|c| c.to_ascii_lowercase().to_string()).unwrap_or_default();
+            format!("{lead}{}{first}{}", owner.as_str(), chars.as_str())
+        }
+        (_, Some((_, short))) => short.to_string(),
+    }
 }
 
 /// Writes expressions in one language.
@@ -287,6 +331,9 @@ struct Writer<'a> {
     language: Language,
     schema: &'a Schema,
     model: &'a Model,
+    /// Where its paths start: the root model's fields, or the type's for a
+    /// condition declared on one.
+    scope: Scope,
 }
 
 /// An expression as code, and whether its value may be null.
@@ -297,7 +344,7 @@ struct Code {
 
 impl Writer<'_> {
     fn condition(&self, definition: &Definition, root: &str) -> String {
-        let name = &definition.name;
+        let name = &condition_name(self.language, &definition.name);
         let body = self.expr(&definition.when);
         let label = &definition.label;
         match self.language {
@@ -389,7 +436,7 @@ impl Writer<'_> {
     fn field_of(&self, atom: &Atom) -> Option<Field> {
         match atom {
             Atom::Name(path) if !self.is_condition(path) => {
-                self.schema.resolve(&self.schema.roots(), path).map(|resolved| resolved.field)
+                self.schema.resolve(&self.scope, path).map(|resolved| resolved.field)
             }
             _ => None,
         }
@@ -424,8 +471,8 @@ impl Writer<'_> {
             },
             Atom::Group(inner) => format!("({})", self.expr(inner)),
             Atom::Name(name) if self.is_condition(name) => match self.language {
-                Language::TypeScript => format!("{name}(m)"),
-                _ => name.clone(),
+                Language::TypeScript => format!("{}(m)", condition_name(self.language, name)),
+                _ => condition_name(self.language, name),
             },
             Atom::Name(path) => return self.path(path),
         };
@@ -435,13 +482,24 @@ impl Writer<'_> {
     /// A path from the root model, with `?.` after each part that may be
     /// null; the result may be null if any part may.
     fn path(&self, path: &str) -> Code {
+        // TypeScript calls a condition on a type with the value it is read
+        // through; Swift and Kotlin read it as a property of the value.
+        if self.language == Language::TypeScript
+            && let Some(condition) = self.schema.type_condition(&self.scope, path)
+            && let Some((value, _)) = path.rsplit_once('.')
+        {
+            let value = self.path(value);
+            let call = format!("{}({})", condition_name(self.language, &condition), value.text);
+            let text = if value.nullable { format!("({} != null && {call})", value.text) } else { call };
+            return Code { text, nullable: false };
+        }
         let mut text = match self.language {
             Language::TypeScript => "m".to_string(),
             _ => String::new(),
         };
         let mut walked = String::new();
         let mut nullable = false;
-        let roots = self.schema.roots();
+        let roots = &self.scope;
         for segment in path.split('.') {
             if !text.is_empty() {
                 text.push_str(if nullable { "?." } else { "." });
@@ -451,7 +509,7 @@ impl Writer<'_> {
                 walked.push('.');
             }
             walked.push_str(segment);
-            if let Some(resolved) = self.schema.resolve(&roots, &walked) {
+            if let Some(resolved) = self.schema.resolve(roots, &walked) {
                 nullable = nullable || resolved.field.nullable;
             }
         }

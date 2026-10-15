@@ -2,7 +2,7 @@
 //! overlay a picture would cut, which only laying each state out can show.
 
 use serde_json::Value;
-use underdraw_format::{Breakpoint, Checked, Finding, Lang, Model, State};
+use underdraw_format::{Breakpoint, Checked, Finding, Lang, Model, ScreenParams, State};
 
 use crate::{Measure, layout};
 
@@ -13,14 +13,16 @@ pub const CHECKED_WIDTHS: [u32; 2] = [390, 1120];
 /// Every fault in `screen`: what underdraw_format finds, then, when there
 /// is none, every overlay that runs off the page in some state at one of
 /// `CHECKED_WIDTHS`, with text measured by `measure`. `tokens` and `kinds`
-/// are the files beside it, as `layout` takes them.
+/// are the files beside it, as `layout` takes them; `others` the params of
+/// the screens under its root, as `underdraw_format::check_among` takes them.
 pub fn check(
     screen: &Value,
     tokens: &Value,
     kinds: Option<&Value>,
+    others: &ScreenParams,
     measure: &mut dyn Measure,
 ) -> Result<Checked, String> {
-    let model = match Model::read(screen, underdraw_format::check(screen, kinds)) {
+    let model = match Model::read(screen, underdraw_format::check_among(screen, kinds, others)) {
         Ok(model) => model,
         Err(checked) => return Ok(*checked),
     };

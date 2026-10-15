@@ -3,8 +3,11 @@
 //! drawn.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
-use parley::fontique::Blob;
+use std::sync::{Mutex, OnceLock};
+
+use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontFamily, FontWeight, Language, Layout, LayoutContext,
     LineHeight, StyleProperty,
@@ -36,6 +39,11 @@ fn is_icons(text: &str) -> bool {
     !text.is_empty() && text.chars().all(|c| matches!(c, '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}'))
 }
 
+/// The system's fonts and the icon fonts, found once per process: finding
+/// them takes longer than laying out a page, and every [`Typesetter`] takes
+/// a clone, which shares what was found.
+static FONTS: OnceLock<Mutex<FontContext>> = OnceLock::new();
+
 /// Material Symbols, outlined and solid, made by scripts/material-symbols.py.
 const ICON_FONTS: [&[u8]; 2] =
     [include_bytes!("../fonts/material-symbols.ttf"), include_bytes!("../fonts/material-symbols-fill.ttf")];
@@ -47,6 +55,10 @@ pub struct Typesetter {
     /// or Japanese Han) and where lines may break.
     locale: Option<Language>,
     families: &'static str,
+    /// What [`Measure::text`] has answered, by its text, font and width:
+    /// the overview and `check` lay out every state at two widths, and
+    /// shape the same words again and again.
+    measured: HashMap<(String, [u32; 3], Option<u32>), Size>,
 }
 
 impl Typesetter {
@@ -62,11 +74,19 @@ impl Typesetter {
             })?),
             None => None,
         };
-        let mut fonts = FontContext::new();
-        for font in ICON_FONTS {
-            fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(font)), None);
-        }
-        Ok(Typesetter { fonts, layouts: LayoutContext::new(), locale, families })
+        let fonts = FONTS
+            .get_or_init(|| {
+                let collection = Collection::new(CollectionOptions { shared: true, system_fonts: true });
+                let mut fonts = FontContext { collection, source_cache: SourceCache::new_shared() };
+                for font in ICON_FONTS {
+                    fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(font)), None);
+                }
+                Mutex::new(fonts)
+            })
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        Ok(Typesetter { fonts, layouts: LayoutContext::new(), locale, families, measured: HashMap::new() })
     }
 
     /// `text` in `font`, broken into lines no wider than `max_width`.
@@ -92,9 +112,19 @@ impl Typesetter {
 
 impl Measure for Typesetter {
     fn text(&mut self, text: &str, font: Font, max_width: Option<f32>) -> Size {
+        let key = (
+            text.to_string(),
+            [font.size.to_bits(), u32::from(font.weight), font.line_height.to_bits()],
+            max_width.map(f32::to_bits),
+        );
+        if let Some(size) = self.measured.get(&key) {
+            return *size;
+        }
         let layout = self.set(text, font, max_width, Align::Start);
         // Rounded up, so that set again in the box it was given, the text
         // breaks where it broke here.
-        Size { width: layout.width().ceil(), height: layout.height().ceil() }
+        let size = Size { width: layout.width().ceil(), height: layout.height().ceil() };
+        self.measured.insert(key, size);
+        size
     }
 }

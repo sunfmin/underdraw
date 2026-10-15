@@ -14,9 +14,11 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
-use underdraw_format::{Checked, Finding, Lang};
+use underdraw_format::{Checked, Finding, Lang, ScreenParams};
 
+use crate::draw::Shown;
 use crate::notes::NOTES;
+use crate::project::DOMAIN;
 use crate::{KINDS, SCREEN, TOKENS, check_at};
 
 /// Directories a description keeps beside it that hold no description.
@@ -32,8 +34,9 @@ const ANSWERING: Duration = Duration::from_secs(2);
 const WATCHING: Duration = Duration::from_millis(250);
 
 /// The files of a description the window draws from: the person's notes
-/// among them, which the agent answers.
-const DRAWN_FROM: [&str; 4] = [SCREEN, TOKENS, KINDS, NOTES];
+/// among them, which the agent answers, and the domain of a project whose
+/// root is at or under the window's.
+const DRAWN_FROM: [&str; 5] = [SCREEN, TOKENS, KINDS, NOTES, DOMAIN];
 
 /// One row of the tree: a directory, or a description.
 #[derive(Debug, PartialEq)]
@@ -49,6 +52,11 @@ pub struct Row {
     /// What `check` finds wrong with the description: none when it can be
     /// drawn.
     pub faults: Vec<Finding>,
+    /// The states the description can be shown in, as `check` finds them:
+    /// its fixtures, then its phases, each in the order written, found
+    /// even while it has faults. None for a directory, or one that cannot
+    /// be read.
+    pub states: Vec<Shown>,
 }
 
 impl Row {
@@ -58,16 +66,11 @@ impl Row {
     }
 }
 
-/// What `check` finds wrong with the description in `dir`; where it cannot
-/// even be read, why, as one finding at its screen.json.
-pub fn faults(dir: &Path) -> Vec<Finding> {
-    checked(dir).findings
-}
-
-/// What `check` makes of the description in `dir`; where it cannot even be
-/// read, why, as its one finding, at its screen.json.
-pub fn checked(dir: &Path) -> Checked {
-    check_at(dir).unwrap_or_else(|e| Checked {
+/// What `check` makes of the description in `dir`, among the screens whose
+/// params `others` holds; where it cannot even be read, why, as its one
+/// finding, at its screen.json.
+pub fn checked(dir: &Path, others: &ScreenParams) -> Checked {
+    check_at(dir, others).unwrap_or_else(|e| Checked {
         screen: String::new(),
         ok: false,
         fixtures: Vec::new(),
@@ -81,13 +84,21 @@ pub fn checked(dir: &Path) -> Checked {
 /// arranged, each directory before what it holds and in order of name:
 /// renders/, platforms/, hidden directories and directories leading to no
 /// description left out. `root` is a row of its own only when it is itself
-/// a description. Each description is checked, all at once.
+/// a description. Each description is checked once, all at once, among
+/// the others: a navigate to one is held to its params.
 pub fn tree(root: &Path) -> Vec<Row> {
     let mut rows = descriptions(root);
+    let others = crate::links::params(root);
+    let others = &others;
     std::thread::scope(|scope| {
-        for Row { dir, described, faults: found, .. } in &mut rows {
+        for Row { dir, described, faults, states, .. } in &mut rows {
             if *described {
-                scope.spawn(move || *found = faults(dir));
+                scope.spawn(move || {
+                    let found = checked(dir, others);
+                    let fixtures = found.fixtures.into_iter().map(Shown::Fixture);
+                    *states = fixtures.chain(found.phases.into_iter().map(Shown::Phase)).collect();
+                    *faults = found.findings;
+                });
             }
         }
     });
@@ -100,7 +111,14 @@ pub fn descriptions(root: &Path) -> Vec<Row> {
     let mut rows = Vec::new();
     if root.join(SCREEN).is_file() {
         let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
-        rows.push(Row { depth: 0, name, dir: root.to_path_buf(), described: true, faults: Vec::new() });
+        rows.push(Row {
+            depth: 0,
+            name,
+            dir: root.to_path_buf(),
+            described: true,
+            faults: Vec::new(),
+            states: Vec::new(),
+        });
         walk(root, 1, &mut rows);
     } else {
         walk(root, 0, &mut rows);
@@ -122,7 +140,7 @@ fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
     for (name, path) in children(dir) {
         let at = rows.len();
         let described = path.join(SCREEN).is_file();
-        rows.push(Row { depth, name, dir: path.clone(), described, faults: Vec::new() });
+        rows.push(Row { depth, name, dir: path.clone(), described, faults: Vec::new(), states: Vec::new() });
         walk(&path, depth + 1, rows);
         if !described && rows.len() == at + 1 {
             rows.pop();
@@ -132,7 +150,7 @@ fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
 
 /// The directories in `dir` the tree may list, with their names, in order
 /// of name: renders/, platforms/ and hidden directories left out.
-fn children(dir: &Path) -> Vec<(String, PathBuf)> {
+pub(crate) fn children(dir: &Path) -> Vec<(String, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -163,11 +181,12 @@ impl Stamp {
     }
 }
 
-/// `dir`, its files drawn from, and every directory in it, added to `stamp`.
+/// `dir`, its files drawn from and the journeys listed under it, and every
+/// directory in it, added to `stamp`.
 fn stamp_dir(dir: &Path, stamp: &mut Vec<(PathBuf, Option<(SystemTime, u64)>)>) {
     stamp.push((dir.to_path_buf(), None));
-    for file in DRAWN_FROM {
-        let path = dir.join(file);
+    let files = DRAWN_FROM.iter().map(|file| dir.join(file));
+    for path in files.chain(crate::journeys::listed(dir)) {
         if let Ok(meta) = std::fs::metadata(&path) {
             stamp.push((path, Some((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()))));
         }
@@ -438,7 +457,7 @@ mod tests {
         let rows = tree(&root);
         let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
         assert_eq!(names, ["empty", "not-json"], "both are listed");
-        let checked = check_at(&root.join("empty")).unwrap();
+        let checked = check_at(&root.join("empty"), &ScreenParams::new()).unwrap();
         assert!(!checked.findings.is_empty());
         let found =
             |faults: &[Finding]| faults.iter().map(|f| (f.at.clone(), f.problem.clone())).collect::<Vec<_>>();
@@ -494,6 +513,16 @@ mod tests {
         step("a note written or answered", &|| std::fs::write(dir.join(NOTES), "{}").unwrap(), true);
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
         step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);
+        step("the domain written", &|| std::fs::write(root.join(DOMAIN), "{}").unwrap(), true);
+        step(
+            "a journey written",
+            &|| {
+                std::fs::create_dir_all(root.join("journeys")).unwrap();
+                std::fs::write(root.join("journeys").join("go.json"), "{}").unwrap();
+            },
+            true,
+        );
+        step("a journey edited", &|| std::fs::write(root.join("journeys/go.json"), "{ }").unwrap(), true);
         step("a directory added", &|| std::fs::create_dir_all(root.join("a/b")).unwrap(), true);
         step("a directory removed", &|| std::fs::remove_dir_all(root.join("a")).unwrap(), true);
         step(

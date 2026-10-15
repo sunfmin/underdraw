@@ -9,6 +9,7 @@ mod draw;
 mod flow;
 mod gallery;
 mod gpu;
+mod journeys;
 mod links;
 mod notes;
 mod paint;
@@ -28,6 +29,7 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
 use draw::{Shown, Wanted};
 use serde_json::{Value, json};
+use underdraw_format::ScreenParams;
 use underdraw_format::{Lang, State};
 
 use crate::project::{Project, TOKENS};
@@ -116,6 +118,9 @@ enum Command {
         /// Block until a note is open, then answer as without it: at once when one is open already
         #[arg(long)]
         wait: bool,
+        /// List the closed notes instead of the open, each closed by the person or, saying why, by itself
+        #[arg(long)]
+        closed: bool,
         /// Refused: the person writes notes, in the gallery
         #[arg(long, hide = true, alias = "add", num_args = 0..=1, default_missing_value = "")]
         create: Option<String>,
@@ -200,8 +205,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         Command::Notes { create: Some(_), .. }
         | Command::Notes { close: Some(_), .. }
         | Command::Notes { reopen: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
-        Command::Notes { path, answer, reply, wait, .. } => {
-            notes::notes(&path, answer.as_deref(), reply.as_deref(), wait)
+        Command::Notes { path, answer, reply, wait, closed, .. } => {
+            notes::notes(&path, answer.as_deref(), reply.as_deref(), wait, closed)
         }
         Command::Check { path, lang } => check(&path, lang),
         Command::Render { path, fixture, phase, width, scale, out, root, lang } => {
@@ -235,30 +240,43 @@ fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
     if path.is_dir() && !path.join(SCREEN).is_file() {
         return links::check_root(path, lang);
     }
-    let mut answer = serde_json::to_value(check_at(path)?)?;
+    let mut answer = serde_json::to_value(check_at(path, &ScreenParams::new())?)?;
     let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
-    answer["notes"] = notes::counted(dir);
+    answer["notes"] = notes::counted(dir, dir);
     Ok(answer)
 }
 
 /// What `check` says of the description at `path` (a directory or its
-/// screen.json).
-fn check_at(path: &Path) -> anyhow::Result<underdraw_format::Checked> {
+/// screen.json), among the screens under its root whose params `others`
+/// holds.
+fn check_at(path: &Path, others: &ScreenParams) -> anyhow::Result<underdraw_format::Checked> {
     let (screen, dir) = read(path)?;
     let kinds = read_kinds(&dir)?;
-    checked(&screen, &dir, kinds.as_ref())
+    checked_among(&screen, &dir, kinds.as_ref(), others)
 }
 
 /// Every fault in the description, overlays the picture would cut among
 /// them: laid out in the system's fonts, as `render` does.
 fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<underdraw_format::Checked> {
+    checked_among(screen, dir, kinds, &ScreenParams::new())
+}
+
+/// What [`checked`] finds, and each navigate to a screen in `others` that
+/// does not give its params.
+fn checked_among(
+    screen: &Value,
+    dir: &Path,
+    kinds: Option<&Value>,
+    others: &ScreenParams,
+) -> anyhow::Result<underdraw_format::Checked> {
     let tokens = Project::of(dir)?.tokens;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    underdraw_layout::check(screen, &tokens, kinds, &mut typesetter).map_err(anyhow::Error::msg)
+    underdraw_layout::check(screen, &tokens, kinds, others, &mut typesetter).map_err(anyhow::Error::msg)
 }
 
-/// The screen at `path` (a directory or its screen.json), and the directory.
+/// The screen at `path` (a directory or its screen.json), with the domain
+/// its project shares, and the directory.
 fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
     let file = if path.is_dir() { path.join(SCREEN) } else { path.to_path_buf() };
     let text = std::fs::read_to_string(&file).with_context(|| {
@@ -271,7 +289,7 @@ fn read(path: &Path) -> anyhow::Result<(Value, PathBuf)> {
         format!("{} is not JSON: fix the line and column named here, then check again", file.display())
     })?;
     let dir = file.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    Ok((screen, dir))
+    Ok((Project::of(&dir)?.describe(screen), dir))
 }
 
 fn schema(path: &Path) -> anyhow::Result<Value> {

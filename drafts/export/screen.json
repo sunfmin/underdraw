@@ -1,5 +1,6 @@
 {
   "screen": "ExportDocuments",
+  "params": [],
   "title": "导出文档",
   "locale": "zh-CN",
   "tokens": "tokens.json",

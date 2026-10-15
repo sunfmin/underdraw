@@ -74,7 +74,9 @@ _Avoid_: guess, TODO
 What the person says to the agent about a design, pinned where they said it:
 a node, a region, a whole state, or an arrow. The agent answers it; the
 person closes it, or it closes itself, saying why, once what it is pinned to
-is gone. Confirming or rejecting an **Assumption** is a note on it.
+is gone; reopened, it is pinned to the whole state. Confirming or rejecting an **Assumption** is a note on its
+node: ✓ (the guess was right) closes itself once the agent has taken the
+guess out; ✗ (it was wrong) says what is right, and runs as any note.
 _Avoid_: comment, feedback
 
 ### Data and decisions
@@ -118,7 +120,9 @@ _Avoid_: flow, navigation, edge
 
 **Condition**:
 A named yes/no decision the screen makes, such as `hasDates`, declared once and
-used by name.
+used by name; or one declared on a type (`Order.cancellable`) over its own
+fields, used through a value of it (`item.cancellable`), as the domain shares
+one.
 _Avoid_: flag, predicate
 
 **Domain**:
@@ -197,13 +201,16 @@ are, where a person picks one, to see its **overview**, and then one of its
 states, to see its wireframe drawn from the description as it now stands,
 and can act on its nodes to click through its transitions and navigates as
 a prototype; or picks a directory, to see the **flow** between the screens
-under it.
+under it; or picks a **journey**, to play it step by step, the node acted
+on in each step marked.
 _Avoid_: mockup viewer, preview
 
 **Overview**:
 Every state of one description, small, in the order the tree lists them,
 and each transition it declares an arrow from its `from` state to its `to`,
-labelled with the label of the node acted on and, for a call, the outcome.
+labelled with the label of the node acted on and, for a call, the outcome;
+each state marked with the journeys that pass through it, a mark that
+plays its journey from that step.
 _Avoid_: state machine, storyboard
 
 **Flow**:

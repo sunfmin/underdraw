@@ -8,9 +8,9 @@ use serde_json::Value;
 use crate::breakpoint::Breakpoint;
 use crate::check::{Checked, Findings, check};
 use crate::conditions::{Condition, Conditions};
+use crate::domain;
 use crate::fixture;
 use crate::instance::{Node, State, build};
-use crate::jobs;
 use crate::operations::Operations;
 use crate::schema::Schema;
 use crate::transitions::{self, Transition};
@@ -38,10 +38,11 @@ impl Model {
             return Err(Box::new(checked));
         }
         let mut findings = Findings::default();
-        let screen = &jobs::expand(screen, &mut findings);
+        let screen = &domain::expand(screen, &mut findings);
         let schema = Schema::read(screen, &mut findings);
-        let fixtures = fixture::read(screen, &schema, &mut findings);
+        let mut fixtures = fixture::read(screen, &schema, &mut findings);
         let conditions = Conditions::read(screen, &schema, &mut findings);
+        conditions.fill(&schema, &mut fixtures);
         let operations = Operations::read(screen, &schema, &conditions, &mut findings);
         let transitions = transitions::read(screen);
         Ok(Model {

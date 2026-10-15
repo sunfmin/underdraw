@@ -220,11 +220,16 @@ fn command(model: &Model, operation: &Operation, name: &str) -> CommandSpec {
             }
         }
         let error = format!("requires {condition}");
+        // One declared on a type is asked of the value the call names.
+        let of = match condition.split_once('.') {
+            Some((type_name, _)) => format!(" of the {type_name} it names"),
+            None => String::new(),
+        };
         fails.push(match bulk {
             None => Failure {
                 stdout: object([("error", Value::from(error.as_str()))]),
                 error,
-                when: format!("refused before it is tried: \"{label}\" does not hold"),
+                when: format!("refused before it is tried: \"{label}\" does not hold{of}"),
                 exit: REFUSED,
             },
             Some(of) => Failure {
@@ -660,7 +665,10 @@ fn called(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
                 // A bulk form's precondition is each item's: the fixture's
                 // selection is of items it holds for.
                 let refused = operation.bulk_of.is_none()
-                    && operation.requires.as_ref().is_some_and(|condition| !holds(model, condition, fixture));
+                    && operation
+                        .requires
+                        .as_ref()
+                        .is_some_and(|condition| !holds(model, condition, fixture, &given));
                 // A destructive command is run both ways: without --yes and
                 // with it; a long one, waiting and with --no-wait. Any other
                 // is run as it is.
@@ -848,7 +856,29 @@ fn polled(model: &Model, commands: &[CommandSpec], golden: &mut Vec<Golden>) {
     }
 }
 
-fn holds(model: &Model, condition: &str, fixture: &str) -> bool {
+/// Whether `condition` holds in `fixture` for a call given `given`. One
+/// declared on a type is asked of the value the call names: the one of
+/// that type in the fixture whose fields match each value given by name
+/// (`id`), or of some value of it when none does.
+fn holds(model: &Model, condition: &str, fixture: &str, given: &Value) -> bool {
+    if let Some((type_name, short)) = condition.split_once('.')
+        && let Some((_, data)) = model.fixtures.iter().find(|(name, _)| name == fixture)
+    {
+        let mut values = Vec::new();
+        for (root, field) in model.schema.roots() {
+            if let Some(value) = data.get(&root) {
+                model.schema.values_of(type_name, &field, value, &mut values);
+            }
+        }
+        let named = values.iter().find(|value| {
+            given.as_object().is_some_and(|given| {
+                given.iter().any(|(param, arg)| value.get(param).is_some_and(|field| field == arg))
+            })
+        });
+        if let Some(value) = named {
+            return value.get(short) == Some(&Value::Bool(true));
+        }
+    }
     for defined in &model.checked.conditions {
         if defined.name == condition {
             return defined.holds_in.iter().any(|name| name == fixture);

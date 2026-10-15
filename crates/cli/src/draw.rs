@@ -143,55 +143,89 @@ pub fn lay_out(
     drawn: Option<&BTreeSet<String>>,
     lang: Lang,
 ) -> anyhow::Result<Laid> {
-    let (screen, dir) = read(path)?;
-    let tokens = crate::project::Project::of(&dir)?.tokens;
-    let kinds = read_kinds(&dir)?;
-    let checked = checked(&screen, &dir, kinds.as_ref())?;
-    if !checked.ok {
-        bail!(
-            "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
-            checked.findings.len(),
-            path.display()
-        );
-    }
-    let (state, name) = pick(&checked, &wanted.fixture, &wanted.phase)?;
-    let shown = match state {
-        State::Fixture(_) => Shown::Fixture(name),
-        State::Phase(_) => Shown::Phase(name),
-    };
-    let breakpoint = Breakpoint::for_width(&tokens, wanted.width);
-    let marked = drawn.map(|drawn| underdraw_format::assume_undrawn(&screen, drawn, lang));
-    let shows = marked.as_ref().unwrap_or(&screen);
-    let root = underdraw_format::instantiate(shows, state, breakpoint).map_err(anyhow::Error::msg)?;
-    let locale = screen.get("locale").and_then(Value::as_str);
-    let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    let page =
-        underdraw_layout::layout(&root, &tokens, kinds.as_ref(), wanted.width as f32, lang, &mut typesetter)
-            .map_err(anyhow::Error::msg)?;
-    let mut calls = BTreeMap::new();
-    called(&root, &mut calls);
-    let mut handlers = BTreeMap::new();
-    handled(&root, &mut handlers);
-    let mut written = BTreeMap::new();
-    ids(&root, &mut written);
-    let mut origins = BTreeMap::new();
-    originated(&root, &mut origins);
-    Ok(Laid { dir, shown, breakpoint, page, calls, handlers, written, origins, typesetter })
+    Description::read(path)?.lay_out(wanted, drawn, lang)
 }
 
-/// The transitions the description at `path` declares, in the order
-/// written; refused when the description has findings.
-pub fn transitions(path: &Path) -> anyhow::Result<Vec<Transition>> {
-    let (screen, dir) = read(path)?;
-    let kinds = read_kinds(&dir)?;
-    let checked = checked(&screen, &dir, kinds.as_ref())?;
-    match Model::read(&screen, checked) {
-        Ok(model) => Ok(model.transitions),
-        Err(checked) => bail!(
-            "the description has {} finding(s): run `underdraw check {}` and fix them first",
-            checked.findings.len(),
-            path.display()
-        ),
+/// A description read and checked once, as its files stood then, to lay
+/// out any of its states from without checking it again: checking lays out
+/// every state at two widths, so the gallery keeps one per description
+/// until its files change.
+pub struct Description {
+    path: PathBuf,
+    screen: Value,
+    dir: PathBuf,
+    tokens: Value,
+    kinds: Option<Value>,
+    checked: underdraw_format::Checked,
+}
+
+impl Description {
+    /// The description at `path` (a directory or its screen.json), read
+    /// and checked; an error only when it cannot be read.
+    pub fn read(path: &Path) -> anyhow::Result<Description> {
+        let (screen, dir) = read(path)?;
+        let tokens = crate::project::Project::of(&dir)?.tokens;
+        let kinds = read_kinds(&dir)?;
+        let checked = checked(&screen, &dir, kinds.as_ref())?;
+        Ok(Description { path: path.to_path_buf(), screen, dir, tokens, kinds, checked })
+    }
+
+    /// The state `wanted` names laid out, as [`lay_out`] says.
+    pub fn lay_out(
+        &self,
+        wanted: &Wanted,
+        drawn: Option<&BTreeSet<String>>,
+        lang: Lang,
+    ) -> anyhow::Result<Laid> {
+        let Description { screen, dir, tokens, kinds, checked, .. } = self;
+        if !checked.ok {
+            bail!(
+                "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
+                checked.findings.len(),
+                self.path.display()
+            );
+        }
+        let (state, name) = pick(checked, &wanted.fixture, &wanted.phase)?;
+        let shown = match state {
+            State::Fixture(_) => Shown::Fixture(name),
+            State::Phase(_) => Shown::Phase(name),
+        };
+        let breakpoint = Breakpoint::for_width(tokens, wanted.width);
+        let marked = drawn.map(|drawn| underdraw_format::assume_undrawn(screen, drawn, lang));
+        let shows = marked.as_ref().unwrap_or(screen);
+        let root = underdraw_format::instantiate(shows, state, breakpoint).map_err(anyhow::Error::msg)?;
+        let locale = screen.get("locale").and_then(Value::as_str);
+        let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
+        let page = underdraw_layout::layout(
+            &root,
+            tokens,
+            kinds.as_ref(),
+            wanted.width as f32,
+            lang,
+            &mut typesetter,
+        )
+        .map_err(anyhow::Error::msg)?;
+        let mut calls = BTreeMap::new();
+        called(&root, &mut calls);
+        let mut handlers = BTreeMap::new();
+        handled(&root, &mut handlers);
+        let mut written = BTreeMap::new();
+        ids(&root, &mut written);
+        let mut origins = BTreeMap::new();
+        originated(&root, &mut origins);
+        Ok(Laid { dir: dir.clone(), shown, breakpoint, page, calls, handlers, written, origins, typesetter })
+    }
+
+    /// The transitions it declares, as [`transitions`] says.
+    pub fn transitions(&self) -> anyhow::Result<Vec<Transition>> {
+        match Model::read(&self.screen, self.checked.clone()) {
+            Ok(model) => Ok(model.transitions),
+            Err(checked) => bail!(
+                "the description has {} finding(s): run `underdraw check {}` and fix them first",
+                checked.findings.len(),
+                self.path.display()
+            ),
+        }
     }
 }
 
