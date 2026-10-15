@@ -106,9 +106,9 @@ DOES
   at each of the widths its tokens.json names ("widths", in the order
   named; with none named, 390, a phone, and 1120, a desktop) side by side,
   labelled as `render`
-  labels them: a red circle with a white number at the top left of each
+  labels them: a red circle with a white number by the top left of each
   node a person can act on, a red no wireframe draws with, so it stands
-  out from the grays it sits on. A label only names its node, for "number
+  out from the grays it sits on, and never on another node's text. A label only names its node, for "number
   3" to mean one node in the conversation. The pictures scale down together to fit the width left
   between the tree and the sidebar, down to half size; in a window too
   narrow for that they stay at half size and scroll sideways (a trackpad's

@@ -72,6 +72,11 @@ WHAT YOU SEE
   know, drawn as a box with its name. The "?" sits at the node's top-right
   corner, always wholly on the page; on a node as big as the page (a
   full-screen overlay) it sits at the top right of what the node shows.
+  A number sits left of its node's top. Neither covers another node's
+  text: where the node beside it has words there, as in a tight row of
+  buttons, the tag moves elsewhere by its node (off the corner, above,
+  below, or to the right), so a word cut short in the picture is cut short
+  in the layout too.
   What a dialog (an opaque box pinned over the page) or its backdrop covers
   gets no number and no "?": its "label" is null, and its "assumed" still
   says why it was guessed. Icons are Material Symbols, drawn outlined, or
