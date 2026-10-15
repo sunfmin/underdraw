@@ -14,7 +14,9 @@ READS
 
 DOES
   Opens a window in a process of its own and exits at once; only the window
-  keeps running, until the person closes it. On the left, a tree of the
+  keeps running, until the person closes it. There is one window per root:
+  while it is open, running this again brings it forward instead of opening
+  a second, so run it after every round of edits. On the left, a tree of the
   directories and descriptions as they are arranged on disk, each
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
@@ -33,7 +35,8 @@ ANSWERS
     "faults":       those of them `underdraw check` finds faults in, in the
                     same order; [] when every one can be drawn. Run
                     `underdraw check <root>/<each>` to read and fix them
-    "opened":       true: the window is open
+    "opened":       true: a window was opened; false: the window over this
+                    root was already open, and is brought forward
     "pid":          the window's process
   }
   Exits 2 with {"error"} when there is no description under <root>, or no
@@ -42,4 +45,5 @@ ANSWERS
 
 WHAT TRIPS YOU UP
   - Needs a display and a GPU; checked on macOS only, so far.
-  - Each run opens another window; close the old one.
+  - The window is the root's once the path is resolved: `drafts` and
+    `./drafts/` are one root; `drafts` and `drafts/todo` are two windows.
