@@ -1,0 +1,143 @@
+WHEN
+  After writing or changing a screen description, and before rendering it or
+  handing it off. Run it until it answers "ok": true.
+
+WHO
+  The agent that writes the description.
+
+READS
+  <path>/screen.json, or <path> when it is a file, with the domain.json of
+  its project when there is one (DOMAIN.JSON below), and kinds.json beside it
+  when there is one: every node's component must be defined there or by
+  underdraw, and its looks are checked too (LOOKS below). Once the
+  description has no other fault, its tokens.json too (the nearest at or
+  above the screen, as `underdraw --help` says): every fixture and phase
+  is laid out at widths 390 and 1120, in the system's fonts as `render`
+  does, and an overlay that runs off the page is a finding. Writes nothing.
+
+  <path> may instead be a directory holding no screen.json, a root: then
+  every description under it, at any depth, as the gallery finds them, is
+  checked, and also the links between them. Each "navigate" names a screen,
+  and resolves to the description under the root whose "screen" is that
+  name. A navigate to a screen no description declares is not a fault: it
+  is an assumption, a screen not drawn yet, for the person to confirm;
+  `render --root` and the gallery draw its node with the orange "?". A
+  navigate to a screen that is drawn and declares "params" gives each of
+  them, of its type, in "with", and nothing else: a finding on the node
+  that navigates, at "<node>.on.<event>.with" or ".with.<param>"
+  (PARAMS below). One description checked alone cannot see the others, so
+  it says nothing of where it navigates, nor of what it gives.
+  Every journey under the root, <any dir>/journeys/<name>.json, is walked
+  too: each step's screen and state are there, each act's node is shown
+  in its step's state, and the act leads to the next step, by a transition
+  or a navigate (JOURNEYS below), and a navigate's "with", computed in
+  its step's state, gives exactly the params the next step's fixture
+  holds. A journey that does not walk is a
+  finding on the journey, at the step that breaks.
+
+ANSWERS
+  {
+    "screen":     the screen's name, from "screen"
+    "ok":         true when there is no finding
+    "fixtures":   the fixtures' names, in the order written
+    "phases":     the phases' names (trees rendered before data arrives)
+    "conditions": [{"name", "label", "holds_in": [fixture, …]}, …]
+                  empty while any finding stands, except a condition that
+                  never varies: then the table shows which fixtures to add
+    "findings":   [{"at": where — a dotted path or a node id,
+                    "problem": what is wrong, and what is allowed instead}, …]
+    "notes":      {"open", "answered"}: how many of the person's notes on
+                  it (notes.json, written in the gallery) are open, for the
+                  agent to act on and answer, and how many answered, for
+                  the person to close; with "error" when notes.json cannot
+                  be read. A note whose target is gone from a description
+                  that checks clean is closed first, saying why, and not
+                  counted. Never a finding: `underdraw notes <dir>` reads them
+  }
+  Given a root:
+  {
+    "root":         the directory checked
+    "ok":           true when no description and no journey has a
+                    finding; an unresolved navigate does not count
+    "descriptions": [{"description": its directory, relative to root,
+                      then everything above: "screen", "ok", "fixtures",
+                      "phases", "conditions", "findings", "notes"}, …]
+                    one that cannot be read has its one finding at screen.json
+    "links":        [{"description": the directory it is in,
+                      "from": the screen it is on, "node": the node's id,
+                      "to": the screen it names,
+                      "resolved": true when a description under root
+                        declares it; false: an assumption, a screen not
+                        drawn yet,
+                      "assumed": when not resolved, that assumption said
+                        in a whole sentence, in --lang (en or zh; en by
+                        default), or null}, …]
+    "journeys":     [{"journey": its file, relative to root,
+                      "name": its file's name without .json,
+                      "ok": true when it walks,
+                      "findings": [{"at": "steps.<n>.<key>", "problem"}, …]
+                      }, …]
+    "notes":        {"open", "answered"}, over every description
+  }
+
+EXIT
+  0 when "ok" is true, 1 when there are findings (the answer above is still
+  printed in full), 2 when the description could not be read or parsed, or
+  a root holds no description. Unresolved navigates alone exit 0, and so do
+  notes, open or answered.
+
+WHAT TRIPS YOU UP
+  - "assumed" says what was guessed and what else it could be, in a
+    sentence in the language you speak with the person: a word or two is
+    refused (ASSUMED below).
+  - A text property (text, title, subtitle, label, detail) always shows text:
+    "{booking.total}" there needs |money. Elsewhere a lone placeholder passes
+    the value itself.
+  - A nullable value may be shown only under a condition that tests it
+    != null in its top-level && chain. A negated condition guarantees nothing.
+  - A fixture may leave out only fields with a default; T? defaults to null.
+  - "$patch" starts a fixture from one written above it.
+  - An operation's result holds no view state: a type with a "view" field
+    (or one reaching such a type) cannot be returned. Wrap the domain type.
+    Nor can one reaching a field "derived": {"app": …}: the app adds those
+    in the wrapper, beside view state.
+  - "derived" says who: {"app": how} or {"server": how}; a bare string is
+    refused.
+  - A field with "from" is of its query's result type, or wraps it in a
+    type whose one other-than-view, other-than-app-derived field is it.
+  - A parameter whose type is an enum takes only its members: its default,
+    and every "with" for it, a path of that enum or a member literal.
+  - An action that changes domain data is a "call": set and toggle write
+    only view state (a field marked "view": true, or inside one), and
+    every other action is UI-only (navigate, back, open, close, scrollTo,
+    share, copy). submit, reload, remove and the like are operations.
+  - A "call" to an operation with "requires" needs the node gated by that
+    condition: "disabled": "!<condition>", or "if": "<condition>".
+  - A "call" gives each parameter a value whose range lies inside the
+    parameter's: "{code}" of "string ..20" passes "string 1..20" only
+    under a condition testing code != "" ("disabled": "!hasCode").
+  - A query with "pages": "cursor" answers with a page type holding one
+    list (with its most, "Doc[] ..50") and "next": "string?". Every call to
+    it gives "cursor": null for the first page, or "{next}" — the field
+    filled "from": "<query>.next" — under a condition that tests it != null.
+    Do not write cursor or limit in its params: paging adds them.
+  - A "call" to a "destructive" operation is made only inside its
+    confirmation: an overlay whose component has a backdrop and that a node
+    opens with {"open": "<its id>"}. The menu item or button a person first
+    acts on opens it instead (OPERATIONS below).
+  - A "call" to a bulk form (an operation's "bulk": its name) gives its
+    list, "ids", the selection: one path to a list in view state at least
+    one long ("string[] 1..") inside a nullable field, and the node is
+    gated by a condition testing that field != null ("disabled":
+    "!hasSelection"; or an "if" around it). Not its operation's "requires".
+  - A "long" command's job type (ExportDocsJob) and the query that reads
+    it (exportDocsJob) are derived: write neither. A field of "data" holds
+    the job, and fixtures hold it with each "status": running, done, failed.
+  - A component of the screen's ("components", FORMAT's COMPONENTS) reads
+    only its params: a path past them, or a condition of the screen's, is
+    refused; pass it in a param ("{hasDates}" for a bool one). Its "with"
+    gives each param of its type, and nothing else; it declares no view
+    state; its nodes are named by the instance's id joined to theirs
+    (order-{index}-cancel), and a transition names them so. "ref" is gone.
+  - An icon is a Material Symbols name (arrow_back, favorite; .fill for the
+    solid form), in a node, a fixture or a look: fonts.google.com/icons.

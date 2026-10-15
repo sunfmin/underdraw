@@ -1,0 +1,895 @@
+{
+  "screen": "RestaurantMenu",
+  "title": "店铺菜单",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "$comment": "A delivery app's restaurant menu: dishes grouped by category, a cart bar, and a bottom sheet to choose a dish's size, add-ons and quantity before adding it.",
+  "data": {
+    "restaurant": { "type": "Restaurant", "from": "getMenu" },
+    "categories": "Category[] 1..12",
+    "sections": "MenuSection[] 1..12",
+    "cart": "Cart",
+    "customizing": {
+      "type": "Customizing?",
+      "view": true,
+      "doc": "The dish whose sheet is open; null while no sheet shows"
+    }
+  },
+  "types": {
+    "Restaurant": {
+      "name": "string 1..30",
+      "rating": "number",
+      "eta": {
+        "type": "string 1..12",
+        "doc": "Delivery time as shown, e.g. 25–35 分钟"
+      },
+      "deliveryFee": "money"
+    },
+    "Category": {
+      "id": "string",
+      "label": "string 1..8",
+      "selected": "bool = false"
+    },
+    "MenuSection": {
+      "id": "string",
+      "title": "string 1..12",
+      "dishes": "Dish[] 1..30"
+    },
+    "Dish": {
+      "id": "string",
+      "name": "string 1..30",
+      "description": "string ..80",
+      "price": {
+        "type": "money",
+        "doc": "Price of the smallest size"
+      },
+      "soldOut": "bool = false",
+      "inCart": {
+        "type": "int 0.. = 0",
+        "derived": { "app": "how many of this dish are in the cart" }
+      },
+      "inCartLabel": {
+        "type": "string = \"\"",
+        "derived": { "app": "\"×2\" when inCart > 0, else empty" }
+      }
+    },
+    "Cart": {
+      "count": {
+        "type": "int 0..",
+        "derived": { "app": "items in the cart" }
+      },
+      "total": "money",
+      "minimum": {
+        "type": "money",
+        "doc": "The order minimum for delivery"
+      },
+      "belowMinimum": {
+        "type": "bool = false",
+        "derived": { "app": "total < minimum" }
+      },
+      "shortBy": {
+        "type": "money",
+        "derived": { "app": "minimum − total, when below it" }
+      }
+    },
+    "Customizing": {
+      "dishId": "string",
+      "name": "string 1..30",
+      "description": "string ..80",
+      "sizes": "Choice[] 1..5",
+      "addOns": "Choice[] ..8",
+      "addOnCount": {
+        "type": "int 0..",
+        "derived": { "app": "addOns' length" }
+      },
+      "note": "string ..40",
+      "quantity": "int 1..20",
+      "sizeChosen": {
+        "type": "bool = false",
+        "derived": { "app": "one size is selected" }
+      },
+      "total": {
+        "type": "money",
+        "derived": { "app": "(size + add-ons) × quantity" }
+      },
+      "adding": "bool = false"
+    },
+    "Choice": {
+      "id": "string",
+      "label": "string 1..16",
+      "extra": "money",
+      "free": {
+        "type": "bool = false",
+        "derived": { "app": "extra is zero" }
+      },
+      "selected": "bool = false"
+    }
+  },
+  "conditions": {
+    "hasCart": {
+      "when": "cart.count > 0",
+      "label": "Cart has items"
+    },
+    "belowMinimum": {
+      "when": "hasCart && cart.belowMinimum",
+      "label": "Below order minimum"
+    },
+    "canCheckout": {
+      "when": "hasCart && !cart.belowMinimum",
+      "label": "Can check out"
+    },
+    "sheetOpen": {
+      "when": "customizing != null",
+      "label": "Dish sheet open"
+    },
+    "hasAddOns": {
+      "when": "sheetOpen && customizing.addOnCount > 0",
+      "label": "Dish has add-ons"
+    },
+    "canAdd": {
+      "when": "sheetOpen && customizing.sizeChosen && !customizing.adding",
+      "label": "Size chosen"
+    },
+    "adding": {
+      "when": "sheetOpen && customizing.adding",
+      "label": "Adding to cart"
+    }
+  },
+  "operations": {
+    "getMenu": {
+      "query": "The restaurant the screen was opened for, with its menu",
+      "result": "Restaurant",
+      "fails": {
+        "offline": "the server cannot be reached"
+      }
+    },
+    "addToCart": {
+      "command": "Puts the dish in the cart, in the size and with the add-ons chosen",
+      "params": {
+        "dishId": "string",
+        "quantity": "int 1..20",
+        "note": "string ..40"
+      },
+      "requires": "canAdd",
+      "fails": {
+        "soldOut": "the dish sold out meanwhile"
+      }
+    }
+  },
+  "fixtures": {
+    "default": {
+      "restaurant": {
+        "name": "一兰拉面 涩谷店",
+        "rating": 4.7,
+        "eta": "25–35 分钟",
+        "deliveryFee": {
+          "amount": 300,
+          "currency": "JPY"
+        }
+      },
+      "categories": [
+        {
+          "id": "ramen",
+          "label": "拉面",
+          "selected": true
+        },
+        {
+          "id": "rice",
+          "label": "饭类"
+        },
+        {
+          "id": "sides",
+          "label": "小食"
+        },
+        {
+          "id": "drinks",
+          "label": "饮品"
+        }
+      ],
+      "sections": [
+        {
+          "id": "ramen",
+          "title": "拉面",
+          "dishes": [
+            {
+              "id": "d1",
+              "name": "招牌豚骨拉面",
+              "description": "十二小时熬制豚骨汤，细面，叉烧两片，溏心蛋半个",
+              "price": {
+                "amount": 980,
+                "currency": "JPY"
+              },
+              "inCart": 2,
+              "inCartLabel": "×2"
+            },
+            {
+              "id": "d2",
+              "name": "辛辣味噌拉面",
+              "description": "北海道味噌，辣度可选",
+              "price": {
+                "amount": 1080,
+                "currency": "JPY"
+              }
+            },
+            {
+              "id": "d3",
+              "name": "黑蒜油酱油拉面",
+              "description": "限量供应",
+              "price": {
+                "amount": 1150,
+                "currency": "JPY"
+              },
+              "soldOut": true
+            }
+          ]
+        },
+        {
+          "id": "sides",
+          "title": "小食",
+          "dishes": [
+            {
+              "id": "d4",
+              "name": "煎饺（6 个）",
+              "description": "猪肉白菜馅，配醋酱油",
+              "price": {
+                "amount": 450,
+                "currency": "JPY"
+              }
+            },
+            {
+              "id": "d5",
+              "name": "炸鸡块",
+              "description": "",
+              "price": {
+                "amount": 520,
+                "currency": "JPY"
+              }
+            }
+          ]
+        }
+      ],
+      "cart": {
+        "count": 2,
+        "total": {
+          "amount": 1960,
+          "currency": "JPY"
+        },
+        "minimum": {
+          "amount": 1500,
+          "currency": "JPY"
+        },
+        "shortBy": {
+          "amount": 0,
+          "currency": "JPY"
+        }
+      },
+      "customizing": null
+    },
+    "sheet": {
+      "$patch": "default",
+      "customizing": {
+        "dishId": "d2",
+        "name": "辛辣味噌拉面",
+        "description": "北海道味噌，辣度可选",
+        "sizes": [
+          {
+            "id": "regular",
+            "label": "普通",
+            "extra": {
+              "amount": 0,
+              "currency": "JPY"
+            },
+            "free": true
+          },
+          {
+            "id": "large",
+            "label": "大碗",
+            "extra": {
+              "amount": 150,
+              "currency": "JPY"
+            }
+          }
+        ],
+        "addOns": [
+          {
+            "id": "egg",
+            "label": "溏心蛋",
+            "extra": {
+              "amount": 120,
+              "currency": "JPY"
+            }
+          },
+          {
+            "id": "chashu",
+            "label": "加叉烧",
+            "extra": {
+              "amount": 250,
+              "currency": "JPY"
+            }
+          },
+          {
+            "id": "noodles",
+            "label": "加面",
+            "extra": {
+              "amount": 0,
+              "currency": "JPY"
+            },
+            "free": true
+          }
+        ],
+        "note": "",
+        "quantity": 1,
+        "total": {
+          "amount": 1080,
+          "currency": "JPY"
+        },
+        "addOnCount": 3
+      }
+    },
+    "sheet-ready": {
+      "$patch": "sheet",
+      "customizing": {
+        "sizes": [
+          {
+            "id": "regular",
+            "label": "普通",
+            "extra": {
+              "amount": 0,
+              "currency": "JPY"
+            },
+            "free": true
+          },
+          {
+            "id": "large",
+            "label": "大碗",
+            "extra": {
+              "amount": 150,
+              "currency": "JPY"
+            },
+            "selected": true
+          }
+        ],
+        "addOns": [
+          {
+            "id": "egg",
+            "label": "溏心蛋",
+            "extra": {
+              "amount": 120,
+              "currency": "JPY"
+            },
+            "selected": true
+          },
+          {
+            "id": "chashu",
+            "label": "加叉烧",
+            "extra": {
+              "amount": 250,
+              "currency": "JPY"
+            }
+          },
+          {
+            "id": "noodles",
+            "label": "加面",
+            "extra": {
+              "amount": 0,
+              "currency": "JPY"
+            },
+            "free": true
+          }
+        ],
+        "note": "少辣，不要葱",
+        "quantity": 2,
+        "sizeChosen": true,
+        "total": {
+          "amount": 2700,
+          "currency": "JPY"
+        }
+      }
+    },
+    "sheet-adding": {
+      "$patch": "sheet-ready",
+      "cart": {
+        "count": 0,
+        "total": {
+          "amount": 0,
+          "currency": "JPY"
+        },
+        "minimum": {
+          "amount": 1500,
+          "currency": "JPY"
+        },
+        "belowMinimum": true,
+        "shortBy": {
+          "amount": 1500,
+          "currency": "JPY"
+        }
+      },
+      "customizing": {
+        "dishId": "d4",
+        "name": "煎饺（6 个）",
+        "description": "猪肉白菜馅，配醋酱油",
+        "sizes": [
+          {
+            "id": "six",
+            "label": "6 个",
+            "extra": {
+              "amount": 0,
+              "currency": "JPY"
+            },
+            "free": true,
+            "selected": true
+          }
+        ],
+        "addOns": [],
+        "adding": true,
+        "total": {
+          "amount": 450,
+          "currency": "JPY"
+        },
+        "addOnCount": 0,
+        "note": "",
+        "quantity": 1
+      }
+    },
+    "below-minimum": {
+      "$patch": "default",
+      "cart": {
+        "count": 1,
+        "total": {
+          "amount": 450,
+          "currency": "JPY"
+        },
+        "minimum": {
+          "amount": 1500,
+          "currency": "JPY"
+        },
+        "belowMinimum": true,
+        "shortBy": {
+          "amount": 1050,
+          "currency": "JPY"
+        }
+      }
+    },
+    "empty-cart": {
+      "$patch": "default",
+      "cart": {
+        "count": 0,
+        "total": {
+          "amount": 0,
+          "currency": "JPY"
+        },
+        "minimum": {
+          "amount": 1500,
+          "currency": "JPY"
+        },
+        "belowMinimum": true,
+        "shortBy": {
+          "amount": 1500,
+          "currency": "JPY"
+        }
+      }
+    }
+  },
+  "components": {
+    "Nav": {
+      "nodes": {
+        "component": "NavBar",
+        "leading": {
+          "id": "back",
+          "component": "IconButton",
+          "icon": "arrow_back",
+          "on": {
+            "tap": {
+              "back": true
+            }
+          }
+        },
+        "trailing": [
+          {
+            "id": "search",
+            "component": "IconButton",
+            "icon": "search",
+            "on": {
+              "tap": {
+                "navigate": "MenuSearch"
+              }
+            }
+          },
+          {
+            "id": "share",
+            "component": "IconButton",
+            "icon": "ios_share",
+            "on": {
+              "tap": {
+                "share": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "root": {
+    "id": "menu",
+    "component": "Screen",
+    "children": [
+      { "id": "nav", "component": "Nav" },
+      {
+        "id": "header",
+        "component": "Stack",
+        "gap": "space.2",
+        "padding": [
+          0,
+          16,
+          8,
+          16
+        ],
+        "children": [
+          {
+            "id": "shop-name",
+            "component": "Text",
+            "font": "font.heading",
+            "text": "{restaurant.name}"
+          },
+          {
+            "id": "shop-meta",
+            "component": "Text",
+            "font": "font.caption",
+            "color": "color.textSecondary",
+            "text": "★ {restaurant.rating|number:1} · {restaurant.eta} · 配送费 {restaurant.deliveryFee|money}"
+          },
+          {
+            "id": "categories",
+            "component": "ChipRow",
+            "each": "categories",
+            "item": {
+              "id": "cat-{index}",
+              "component": "Chip",
+              "text": "{item.label}",
+              "selected": "{item.selected}",
+              "on": {
+                "tap": {
+                  "scrollTo": "section-{item.id}"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "sections",
+        "component": "Stack",
+        "each": "sections",
+        "item": {
+          "id": "section-{index}",
+          "component": "Stack",
+          "children": [
+            {
+              "id": "section-{index}-head",
+              "component": "Stack",
+              "padding": [
+                16,
+                16,
+                8,
+                16
+              ],
+              "children": {
+                "id": "section-{index}-title",
+                "component": "Text",
+                "font": "font.subhead",
+                "color": "color.textSecondary",
+                "text": "{item.title}"
+              }
+            },
+            {
+              "id": "section-{index}-dishes",
+              "component": "Stack",
+              "each": "item.dishes",
+              "item": {
+                "id": "dish-{item.id}",
+                "component": "DishRow",
+                "title": "{item.name}",
+                "detail": "{item.description}",
+                "price": "{item.price|money}",
+                "soldOut": "{item.soldOut}",
+                "inCart": "{item.inCartLabel}",
+                "disabled": "item.soldOut",
+                "on": {
+                  "tap": {
+                    "open": "dish-sheet",
+                    "with": {
+                      "id": "{item.id}"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "cart-bar",
+        "component": "StickyBar",
+        "if": "hasCart",
+        "padding": [
+          12,
+          16
+        ],
+        "sticky": "bottom",
+        "children": [
+          {
+            "id": "cart-summary",
+            "component": "Stack",
+            "gap": "space.1",
+            "children": [
+              {
+                "id": "cart-total",
+                "component": "Text",
+                "font": "font.price",
+                "text": "{cart.total|money}"
+              },
+              {
+                "id": "cart-count",
+                "component": "Text",
+                "font": "font.caption",
+                "color": "color.textSecondary",
+                "text": {
+                  "cases": [
+                    {
+                      "if": "belowMinimum",
+                      "then": "还差 {cart.shortBy|money} 起送"
+                    },
+                    {
+                      "else": "共 {cart.count} 件"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "checkout",
+            "component": "Button",
+            "variant": "primary",
+            "text": "去结算",
+            "disabled": "!canCheckout",
+            "on": {
+              "tap": {
+                "navigate": "Checkout"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "overlay": {
+      "id": "dish-sheet",
+      "component": "Sheet",
+      "if": "sheetOpen",
+      "anchor": {
+        "compact": "bottom",
+        "regular": "center"
+      },
+      "dismiss": "swipe down or tap the backdrop",
+      "children": [
+        {
+          "id": "ds-head",
+          "component": "Stack",
+          "gap": "space.1",
+          "children": [
+            {
+              "id": "ds-name",
+              "component": "Text",
+              "font": "font.heading",
+              "text": "{customizing.name}"
+            },
+            {
+              "id": "ds-desc",
+              "component": "Text",
+              "font": "font.caption",
+              "color": "color.textSecondary",
+              "text": "{customizing.description}"
+            }
+          ]
+        },
+        {
+          "id": "ds-sizes",
+          "component": "Section",
+          "title": "规格",
+          "subtitle": "必选 · 选 1 项",
+          "gap": "space.1",
+          "children": {
+            "id": "ds-size-list",
+            "component": "Stack",
+            "each": "customizing.sizes",
+            "item": {
+              "id": "size-{item.id}",
+              "component": "ChoiceRow",
+              "text": "{item.label}",
+              "icon": {
+                "cases": [
+                  {
+                    "if": "item.selected",
+                    "then": "radio_button_checked"
+                  },
+                  {
+                    "else": "radio_button_unchecked"
+                  }
+                ]
+              },
+              "detail": {
+                "cases": [
+                  {
+                    "if": "item.free",
+                    "then": ""
+                  },
+                  {
+                    "else": "+{item.extra|money}"
+                  }
+                ]
+              },
+              "on": {
+                "tap": {
+                  "set": "item.selected",
+                  "to": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "ds-addons",
+          "component": "Section",
+          "if": "hasAddOns",
+          "title": "加料",
+          "subtitle": "可多选",
+          "gap": "space.1",
+          "children": {
+            "id": "ds-addon-list",
+            "component": "Stack",
+            "each": "customizing.addOns",
+            "item": {
+              "id": "addon-{item.id}",
+              "component": "ChoiceRow",
+              "text": "{item.label}",
+              "icon": {
+                "cases": [
+                  {
+                    "if": "item.selected",
+                    "then": "check_box"
+                  },
+                  {
+                    "else": "check_box_outline_blank"
+                  }
+                ]
+              },
+              "detail": {
+                "cases": [
+                  {
+                    "if": "item.free",
+                    "then": "免费"
+                  },
+                  {
+                    "else": "+{item.extra|money}"
+                  }
+                ]
+              },
+              "on": {
+                "tap": {
+                  "toggle": "item.selected"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "ds-note",
+          "component": "NoteField",
+          "bind": "customizing.note",
+          "placeholder": "给厨房留言（选填）"
+        },
+        {
+          "id": "ds-actions",
+          "component": "Row",
+          "gap": "space.3",
+          "children": [
+            {
+              "id": "ds-quantity",
+              "component": "Stepper",
+              "bind": "customizing.quantity",
+              "min": 1,
+              "max": 20
+            },
+            {
+              "id": "ds-add",
+              "component": "Button",
+              "variant": "primary",
+              "disabled": "!canAdd",
+              "text": {
+                "cases": [
+                  {
+                    "if": "adding",
+                    "then": "正在加入…"
+                  },
+                  {
+                    "else": "加入购物车 {customizing.total|money}"
+                  }
+                ]
+              },
+              "on": {
+                "tap": {
+                  "call": "addToCart",
+                  "with": {
+                    "dishId": "{customizing.dishId}",
+                    "quantity": "{customizing.quantity}",
+                    "note": "{customizing.note}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "width": {
+        "compact": "100%",
+        "regular": 520
+      },
+      "handle": {
+        "compact": true,
+        "regular": false
+      }
+    }
+  },
+  "phases": {
+    "loading": {
+      "id": "loading",
+      "component": "Screen",
+      "children": [
+        { "id": "nav", "component": "Nav" },
+        {
+          "id": "sk",
+          "component": "Stack",
+          "padding": 16,
+          "children": [
+            {
+              "id": "sk-lines",
+              "component": "Skeleton",
+              "shape": [
+                "line 60%",
+                "line 40%",
+                "line 100%",
+                "image 4:3",
+                "line 90%",
+                "line 70%"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "error": {
+      "id": "error",
+      "component": "Screen",
+      "children": [
+        { "id": "nav", "component": "Nav" },
+        {
+          "id": "err",
+          "component": "EmptyState",
+          "icon": "cloud_off",
+          "title": "菜单加载失败",
+          "detail": "检查网络后重试",
+          "action": {
+            "id": "retry",
+            "component": "Button",
+            "text": "重试",
+            "on": {
+              "tap": {
+                "call": "getMenu"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
