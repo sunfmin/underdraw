@@ -114,3 +114,6 @@ pub const BIG: Font = Font { size: 20.0, weight: 600, line_height: 26.0 };
 pub const INSET: f64 = 8.0;
 pub const BUBBLE: f64 = 0.82;
 pub const BUBBLE_RADIUS: f32 = 10.0;
+/// How wide the name of a fact on a card is (what a node calls, its id,
+/// where it is at a width), its value set beside it.
+pub const FACT: f64 = 64.0;

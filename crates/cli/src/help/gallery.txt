@@ -221,7 +221,7 @@ DOES
   reply. Click a pin to read its note in the sidebar, as a conversation:
   its status in its title (open, answered, or closed and why), then what
   you wrote, in blue bubbles on the right, and each reply of the agent, in
-  gray on the left, in order. Under them, [close] closes it; on an
+  bubbles outlined green on the left, in order. Under them, [close] closes it; on an
   answered note, [not yet…] opens a field in place for what is still to
   do, and Enter sends that line: it is open again, for the agent. It is
   not sent empty. A closed note is drawn no more.
@@ -259,14 +259,16 @@ DOES
 
   The inbox: with a description, one of its states, or a directory (the
   root's line too) picked, and no node, region or arrow, the sidebar lists
-  what waits on you there, in a card "waits on you · <how many>": each
-  assumption no note answers yet ("? <node id as written> in <state>: what
-  was guessed"), then each note the agent has answered ("N2 · on … · agent:
-  <its reply>"), for you to close or reopen. A directory's lists every
-  description under it, each under its directory's name, in the order the
-  tree lists them. The notes still open, waiting on the agent, are folded
-  to how many there are ("▸ waiting on the agent · 2"); click it to list
-  them, and again to fold them. Click an item to show its state with what
+  what waits on you there, in a card "waits on you · <how many>", one box
+  an item: each assumption no note answers yet, marked with an orange "?"
+  ("<node id as written> in <state>", what was guessed under it), then each
+  note the agent has answered, marked with its blue id ("N2", what it is
+  on, and "agent: <its reply>" under it in green), for you to close or
+  reopen. A directory's lists every description under it, each under its
+  directory's name, in the order the tree lists them. The notes still
+  open, waiting on the agent, are folded to how many there are
+  ("▸ waiting on the agent · 2"); click it to list them, each a box marked
+  with its id, and again to fold them. Click an item to show its state with what
   it is on picked, the node, region or arrow (a transition's in the
   overview, a navigate's in the flow of the directory above it), and its
   card: the node's, to answer the assumption with ✓ or ✗, or the note's,

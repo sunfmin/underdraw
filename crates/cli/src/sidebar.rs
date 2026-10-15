@@ -1,13 +1,16 @@
 //! The gallery's sidebar: what the person reads about what is picked, and
 //! what they can do with it, on the right of the window. It is made of
-//! cards, each a title over blocks of text and buttons; a button is clicked
-//! by its own box, never by the line it is on. The sidebar knows nothing of
+//! cards, each a title over blocks of text and buttons, outlined in its
+//! title's ink: who it is from (the person's cobalt, the agent's green, the
+//! orange of what was assumed, dashed as a guess is in a picture). A button,
+//! an item of the inbox or a fold is clicked by its own box, never by the
+//! line it is on. The sidebar knows nothing of
 //! what a button does: each carries the window's own `A`, handed back when
 //! it is clicked. Drawn by hand, as the rest of the window is (ADR 0017).
 
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
-use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, INSET};
+use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, FACT, INSET, MARK, MARK_INSET, MARK_RADIUS, MARK_TALL};
 use crate::chrome::{
     BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
     CARD_TEXT as BODY, CARD_TITLE as TITLE, GUTTER,
@@ -35,8 +38,10 @@ impl<A> Card<A> {
 pub enum Block<A> {
     /// Text, wrapped to the card's width.
     Text(String),
-    /// Secondary text, in gray: a field's name and its value, a hint.
+    /// Secondary text, in gray: a hint, a group's name.
     Muted(String),
+    /// A fact: its name in gray, and its value beside it.
+    Fact(String, String),
     /// Text in large type: what an assumption guessed.
     Big(String),
     /// One line of a conversation, in a bubble: the person's on the right,
@@ -44,6 +49,13 @@ pub enum Block<A> {
     Bubble(By, String),
     /// A button: what it says, and what a click on it does.
     Button(String, A),
+    /// A fold: a line in the notes' blue, without a box, that a click opens
+    /// or closes, saying which with its ▸ or ▾.
+    Fold(String, A),
+    /// An item of a list, clicked to show it: a mark of what it is (an
+    /// assumption's "?", a note's id) on the mark's ink, what it is on, and
+    /// what it says, in its own ink; it says nothing when that is empty.
+    Item(Item<A>),
     /// Buttons side by side, sharing the card's width.
     Row(Vec<(String, A)>),
     /// The field being written in, with its caret: what it holds, and what
@@ -51,15 +63,37 @@ pub enum Block<A> {
     Field(Shown, String),
 }
 
+/// An item of a list, as [`Block::Item`] holds it.
+pub struct Item<A> {
+    pub mark: String,
+    pub mark_ink: Ink,
+    pub on: String,
+    pub says: String,
+    pub ink: Ink,
+    pub does: A,
+}
+
 impl<A> Block<A> {
-    /// What it says: a line for each button of a row.
+    /// What it says: a line for each button of a row; a fact's name and
+    /// value two spaces apart; an item's mark and what it is on, then what
+    /// it says.
     #[cfg(test)]
-    pub fn says(&self) -> Vec<&str> {
+    pub fn says(&self) -> Vec<String> {
         match self {
-            Block::Text(text) | Block::Muted(text) | Block::Big(text) | Block::Button(text, _) => vec![text],
-            Block::Bubble(_, text) => vec![text],
-            Block::Row(buttons) => buttons.iter().map(|(text, _)| text.as_str()).collect(),
-            Block::Field(shown, empty) => vec![if shown.text.is_empty() { empty } else { &shown.text }],
+            Block::Text(text)
+            | Block::Muted(text)
+            | Block::Big(text)
+            | Block::Button(text, _)
+            | Block::Fold(text, _)
+            | Block::Bubble(_, text) => vec![text.clone()],
+            Block::Fact(name, value) => vec![format!("{name}  {value}")],
+            Block::Item(item) => std::iter::once(format!("{} {}", item.mark, item.on))
+                .chain((!item.says.is_empty()).then(|| item.says.clone()))
+                .collect(),
+            Block::Row(buttons) => buttons.iter().map(|(text, _)| text.clone()).collect(),
+            Block::Field(shown, empty) => {
+                vec![if shown.text.is_empty() { empty.clone() } else { shown.text.clone() }]
+            }
         }
     }
 }
@@ -130,6 +164,19 @@ pub fn lay_out<'a, A>(
                 Block::Big(said) => {
                     words(&mut inside, typesetter, rect(x, y, inner, 0.0), said, BIG, Ink::Text)
                 }
+                Block::Fact(name, value) => {
+                    let wide = FACT.min(inner);
+                    let named = words(&mut inside, typesetter, rect(x, y, wide, 0.0), name, BODY, Ink::Muted);
+                    let at = rect(x + wide, y, inner - wide, 0.0);
+                    named.max(words(&mut inside, typesetter, at, value, BODY, Ink::Text))
+                }
+                Block::Fold(said, does) => {
+                    let tall = set(typesetter, said, BUTTON, inner);
+                    inside.push(text(rect(x, y, inner, tall), said.clone(), BUTTON, Ink::Note));
+                    laid.buttons.push((rect(x, y, inner, tall), said, does));
+                    tall
+                }
+                Block::Item(item) => self::item(&mut inside, &mut laid, typesetter, (x, y, inner), item),
                 Block::Bubble(by, said) => bubble(&mut inside, typesetter, (x, y, inner), *by, said),
                 Block::Button(said, does) => {
                     button(&mut inside, &mut laid, typesetter, rect(x, y, inner, 0.0), said, does)
@@ -162,8 +209,11 @@ pub fn lay_out<'a, A>(
             rect: rect(left + GUTTER, card_top, width - 2.0 * GUTTER, y - card_top),
             radius: CARD_RADIUS,
             fill: Some(Ink::Paper),
-            stroke: Some(Ink::Line),
-            dashed: false,
+            stroke: Some(match card.ink {
+                Ink::Assumed | Ink::Note | Ink::Answered => card.ink,
+                _ => Ink::Line,
+            }),
+            dashed: card.ink == Ink::Assumed,
         });
         laid.draws.extend(inside);
         y += GUTTER;
@@ -214,8 +264,70 @@ fn button<'a, A>(
     tall
 }
 
+/// An item of a list at the top of `(x, y, wide)`, in a box clicked to do
+/// what it does: its mark on the left, what it is on beside it, and what it
+/// says under that; how tall.
+fn item<'a, A>(
+    draws: &mut Vec<Draw>,
+    laid: &mut Laid<'a, A>,
+    measure: &mut dyn Measure,
+    (x, y, wide): (f64, f64, f64),
+    item: &'a Item<A>,
+) -> f64 {
+    let mark_wide = (f64::from(measure.text(&item.mark, MARK, None).width) + 2.0 * MARK_INSET).max(MARK_TALL);
+    let left = x + INSET + mark_wide + INSET;
+    let words_wide = x + wide - INSET - left;
+    let mut tall = set(measure, &item.on, TITLE, words_wide);
+    let mut inside = vec![text(rect(left, y + INSET, words_wide, tall), item.on.clone(), TITLE, Ink::Text)];
+    if !item.says.is_empty() {
+        tall += words(
+            &mut inside,
+            measure,
+            rect(left, y + INSET + tall, words_wide, 0.0),
+            &item.says,
+            BODY,
+            item.ink,
+        );
+    }
+    let around = rect(x, y, wide, tall + 2.0 * INSET);
+    draws.push(Draw::Box {
+        rect: around,
+        radius: BUTTON_RADIUS,
+        fill: Some(Ink::Paper),
+        stroke: Some(Ink::Line),
+        dashed: false,
+    });
+    let top = y + INSET + (f64::from(TITLE.line_height) - MARK_TALL) / 2.0;
+    draws.push(Draw::Box {
+        rect: rect(x + INSET, top, mark_wide, MARK_TALL),
+        radius: MARK_RADIUS,
+        fill: Some(item.mark_ink),
+        stroke: None,
+        dashed: false,
+    });
+    draws.push(Draw::Text {
+        rect: rect(
+            x + INSET,
+            top + (MARK_TALL - f64::from(MARK.line_height)) / 2.0,
+            mark_wide,
+            f64::from(MARK.line_height),
+        ),
+        text: item.mark.clone(),
+        font: MARK,
+        ink: Ink::Paper,
+        max_lines: Some(1),
+        align: Align::Center,
+        underline: false,
+        strike: false,
+    });
+    draws.extend(inside);
+    laid.buttons.push((around, &item.on, &item.does));
+    tall + 2.0 * INSET
+}
+
 /// One line of a conversation in a bubble at the top of `(x, y, wide)`:
-/// the person's on the right, the agent's on the left; how tall.
+/// the person's on the right, filled with the notes' blue; the agent's on
+/// the left, outlined in its green; how tall.
 fn bubble(
     draws: &mut Vec<Draw>,
     measure: &mut dyn Measure,
@@ -228,15 +340,15 @@ fn bubble(
     let (words_wide, tall) =
         (f64::from(set_in.width).min(most), f64::from(set_in.height).max(f64::from(BODY.line_height)));
     let (box_wide, box_tall) = (words_wide + 2.0 * INSET, tall + 2.0 * INSET);
-    let (left, fill, ink) = match by {
-        By::Person => (x + wide - box_wide, Ink::Note, Ink::Paper),
-        By::Agent => (x, Ink::Line, Ink::Text),
+    let (left, fill, stroke, ink) = match by {
+        By::Person => (x + wide - box_wide, Ink::Note, None, Ink::Paper),
+        By::Agent => (x, Ink::Paper, Some(Ink::Answered), Ink::Text),
     };
     draws.push(Draw::Box {
         rect: rect(left, y, box_wide, box_tall),
         radius: BUBBLE_RADIUS,
         fill: Some(fill),
-        stroke: None,
+        stroke,
         dashed: false,
     });
     draws.push(text(rect(left + INSET, y + INSET, words_wide, tall), said.to_string(), BODY, ink));
