@@ -50,6 +50,12 @@ _Avoid_: popup layer, modal
 Where an overlay floats over its node: a corner, the center, or flush
 along the bottom (a sheet).
 
+**Foot**:
+A node's slot for what stays at its bottom edge while the rest of it
+scrolls, out of its siblings' order: a chat's box to write in at a
+sidebar's foot. StickyBar is the same for a whole screen.
+_Avoid_: sticky footer, bottom slot
+
 **Token**:
 A named design value (`color.primary`, `space.4`) that nodes use instead of raw
 values.

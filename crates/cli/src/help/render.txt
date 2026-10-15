@@ -80,4 +80,5 @@ WHAT YOU SEE
 WHAT TRIPS YOU UP
   - Needs a GPU (Metal on macOS); `underdraw doctor` says whether there is one.
   - The page shows everything at once: a sticky bar is drawn at the end of
-    the page, not over the content.
+    the page, not over the content, and a node's "foot" on the bottom edge
+    of its column, after all it holds.

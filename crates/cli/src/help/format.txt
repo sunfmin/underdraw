@@ -241,6 +241,14 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
+    foot       stays at the foot of the node while what is above it scrolls,
+               out of its siblings' order: a chat's box to write in, a side
+               panel's buttons. Drawn after everything else, on the bottom
+               edge of a column (Stack, Card): a pane in a Columns is as
+               tall as its row. `compare` treats it as pinned. StickyBar
+               does this for a whole screen:
+               { "id": "side", "component": "Stack", "children": [ …cards ],
+                 "foot": { "id": "composer", "component": "Row", … } }
   A component draws its slots only if its look places "$children"; check
   refuses a node in a slot of one whose look does not (IconButton, Badge).
   "each" with no "item" passes the elements to the component as "items" (photos):
@@ -567,7 +575,7 @@ COMPONENTS
     id, component, with, if, only, assumed and the slots it fills; any
     other key reaches inside, and is refused. { "slot": "children" } in
     its nodes stands for what an instance gives in that slot (children,
-    leading, trailing, action or overlay): the screen's own nodes, read
+    leading, trailing, action, overlay or foot): the screen's own nodes, read
     where the instance is, under their own ids. check refuses a slot the
     component places nowhere.
   - A component may use another; check refuses one that uses itself, at
@@ -860,7 +868,7 @@ LOOKS
     {"repeat": 3 | "{list}" | ["50%", "35%"], "each": look}
                        repeated; inside: n (from 1), index (from 0), item
     {"cases": [{"if": …, "then": look}, {"else": look}]}
-    "$children"        the node's slots: leading, body, trailing, overlays
+    "$children"        the node's slots: leading, body, trailing, foot, overlays
     [look, …]          each in turn
   Any look may carry "if"; it is left out when that does not hold.
   Box keys:
