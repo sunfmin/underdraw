@@ -1078,7 +1078,12 @@ impl<'a> Walk<'a> {
                             Some(Field { lo: Some(0.0), ..Field::of(Base::Int) })
                         } else {
                             path = Some(placeholder.path.clone());
-                            self.schema.resolve(scope, &placeholder.path).map(|resolved| resolved.field)
+                            // Not null where a condition gating the node tests it.
+                            self.schema.resolve(scope, &placeholder.path).map(|resolved| Field {
+                                nullable: resolved.field.nullable
+                                    && !known.not_null.contains(&placeholder.path),
+                                ..resolved.field
+                            })
                         }
                     }
                     None if let Some(members) = self.schema.members(param) => {
