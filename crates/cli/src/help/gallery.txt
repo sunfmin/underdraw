@@ -23,12 +23,28 @@ DOES
   Opens a window in a process of its own and exits at once; only the window
   keeps running, until the person closes it. There is one window per root:
   while it is open, running this again brings it forward instead of opening
-  a second, so run it after every round of edits. On the left, a tree of the
-  directories and descriptions as they are arranged on disk, each
+  a second, so run it after every round of edits.
+
+  The window has three parts. On the left, the tree. In the middle, what
+  is picked is drawn. On the right, the sidebar (360pt wide): a card for
+  each thing about what is picked (the node, region, arrow or note picked,
+  the journey played, what an act came to, the note being written), each
+  with buttons, clicked by their own box, for what can be done with it;
+  with nothing picked, it says what a click, a ⌘-click, a drag, N and ⌘C
+  do. ⌘\ (Ctrl+\ on Linux and Windows) hides the sidebar and shows it
+  again; it is shown when the window opens, and while it is hidden the
+  pictures take its width. Scroll the sidebar with the wheel over it.
+
+  The tree holds the directories and descriptions as they are arranged on disk, each
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
   at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
-  labels them. Picking a description shows its overview: every state, small
+  labels them. The two pictures scale down together to fit the width left
+  between the tree and the sidebar, down to half size; in a window too
+  narrow for that they stay at half size and scroll sideways (a trackpad's
+  sideways swipe, or Shift and the wheel). Their labels, and the orange
+  "?", stay at full size, readable at half size, and a click picks the
+  node under it at any size. Picking a description shows its overview: every state, small
   and captioned with its name, in a grid in the order the tree lists them,
   tall ones cut at the foot, and each transition the description declares
   (`transitions` in screen.json) as an arrow from its `from` state to its
@@ -49,14 +65,20 @@ DOES
   box picks that description in the tree, showing its overview. Scroll a tall
   page with the mouse wheel or trackpad. Clicking a node in the picture
   picks the innermost there, an overlay (a badge, a dialog, a sheet) before
-  what it floats over, outlines it at both widths, and opens a panel with
-  its id, component, the operation it calls when acted on, what was assumed
-  there (`assumed`), and its label and box at each width, as `render`
-  reports them. A node that navigates to a screen no description under
+  what it floats over, outlines it at both widths, and shows its card in
+  the sidebar: what it is (its component, as the title), the operation it
+  calls when acted on ("calls"), and what was assumed there (`assumed`).
+  Its id, and its label and box at each width, as `render` reports them,
+  are folded into "▸ details": click it to unfold them, and again to fold
+  them, for every node picked after. A node that navigates to a screen no description under
   <root> declares is drawn with the orange "?", a screen not drawn yet, as
-  `underdraw check <root>` reports it. What underdraw assumes itself, there and
-  in the panel, is said in --lang: en or zh, en by default. Picking another state keeps that id picked while the state
-  has it; clicking where no node is closes the panel. A description with
+  `underdraw check <root>` reports it. Every word the window says itself
+  is said in --lang, en or zh, en by default: the sidebar, the tree's
+  marks, a description's faults heading, the flow's and the overview's
+  marks, the window's title, and what underdraw assumes itself. Only what
+  the files say stays as written: ids, names, states, notes and findings.
+  Picking another state keeps that id picked while the state has it;
+  clicking where no node is closes its card. A description with
   faults stays in the tree, marked with how many it has; picking it, or any
   of its states, lists each finding as `underdraw check` names it (where,
   then what is wrong) instead of a picture. Fix them and check it again.
@@ -67,10 +89,10 @@ DOES
   Picking one plays it from its first step: the step's state drawn at
   both widths, as a state picked is, and the node the person acts on next
   ringed twice in blue at each width that shows it (a repeat's first
-  instance). The panel says which step of how many, the step's
+  instance). The sidebar says which step of how many, the step's
   description and state, and the act ("acts on order-{index} (label 3) ·
   tap, answered ok"; "the journey ends here" on the last). Step forward
-  with → (or "→ next step" in the panel) and back with ← (or "← previous
+  with → (or "→ next step" in the sidebar) and back with ← (or "← previous
   step"). The journey stays picked as it plays, and the step shown stays
   as the files change. ⌘-click acts on a node from the step's state, as
   the prototype does, leaving the journey; picking another line in the
@@ -91,14 +113,14 @@ DOES
   follows what the description says happens there:
   - a transition declared from the state shown on that event shows its
     `to` state. Where the event calls an operation and the transitions
-    name more than one outcome, the panel lists them (`ok → default`,
+    name more than one outcome, the sidebar lists them (`ok → default`,
     `shipped → cancel-ready`): click the one it answered with.
   - a `navigate` shows the first state of the description under <root>
     that declares that screen; to a screen no description declares, the
-    panel says it is not drawn yet.
+    sidebar says it is not drawn yet.
   - `back` returns along the path taken by acting, across screens, one
     step each time. Picking a state in the tree starts a new path.
-  - nothing declared: the screen stays, and the panel says so ("no
+  - nothing declared: the screen stays, and the sidebar says so ("no
     transition from <state> on <node id as written>.tap · should go to:"),
     then lists the description's states and, as "navigate to <screen>",
     the screens the other descriptions under <root> declare. Click one to
@@ -106,21 +128,21 @@ DOES
     (`underdraw notes --help`), and the agent declares it, in the
     description's `transitions` (`underdraw check --help`, FORMAT) or as
     a `navigate`. The window still never writes the description.
-  The panel says what each act came to, above what it says of the node.
+  The sidebar says what each act came to, in a card above the node's.
 
   Drag over a picture to pick a region of it, in place of a node: a dashed
-  box, and a panel with its box, its width and the outermost nodes wholly
+  box, and a card in the sidebar with its box, its width and the outermost nodes wholly
   inside it ("covers"); a node inside another is in it already.
 
   Pick an arrow by clicking its label: a transition's in an overview, a
   navigate's (the node's id) in a flow. It is drawn in the strong ink, and
-  the panel says what it is. Click where no arrow is to drop it.
+  the sidebar says what it is. Click where no arrow is to drop it.
 
   Copy a reference to say where, in the conversation: ⌘C (Ctrl+C on Linux
   and Windows) puts one line on the clipboard naming the region picked,
   or the node picked as the description writes it, or, with neither
   picked (click a picture's caption, or where no node is), the state
-  shown, or the arrow picked; the panel says "copied" and the line. For a
+  shown, or the arrow picked; the sidebar says "copied" and the line. For a
   node:
     <description dir> · fixture <name> · <id as written> at <JSON Pointer> in screen.json · pointed at [<i>], label <n>, width <w>
   e.g. /work/drafts/orders · fixture default · order-{index}-cancel at
@@ -153,7 +175,7 @@ DOES
   - a transition: click its arrow's label in an overview;
   - a navigate: click its arrow's label in a flow.
   Or pick the node, region or arrow and click "write a note on it" in the
-  panel. Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V
+  sidebar. Enter saves it, Shift+Enter breaks a line, Esc drops it; ⌘V
   pastes. It is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references it:
   the node as written, the state, and the instance pointed at; the region's
@@ -171,13 +193,13 @@ DOES
   its description.
   The agent reads them with `underdraw notes <root>` and answers one with a
   line of reply: its pin turns green, and the pointer over it shows the
-  reply. Click a pin to read its note in the panel, then close it, or
+  reply. Click a pin to read its note in the sidebar, then close it, or
   reopen it, saying what is still to do (Enter saves that line): it is open
   again, for the agent. A closed note is drawn no more.
   A note closes itself, saying why, once what it is on is gone from the
   description: its node removed or renamed (a region: every node it
   covered), its state, its transition or its navigate. Once that
-  description checks clean again, the panel says so, once ("N3 closed:
+  description checks clean again, the sidebar says so, once ("N3 closed:
   order-{index} is gone (removed or renamed)"). A description's overview
   lists its closed notes, each with why it closed; click one to read it,
   and reopen it, saying what is still to do: one whose target went is
@@ -185,7 +207,7 @@ DOES
   while there is one; else the first).
 
   Answer an assumption: click its orange "?" (or the node it is on). The
-  panel shows what was guessed ("assumed"), what else it could be ("or
+  sidebar shows what was guessed ("assumed"), what else it could be ("or
   else", what the assumption says after its first ";"), and what each
   answer means:
   - ✓ right, keep it: writes a note on the node at once, saying so; the
@@ -195,7 +217,7 @@ DOES
   - ✗ wrong, tell the agent what is right: type it, as a note's line; it
     is not saved without one. The agent changes the description and
     answers it, and you close it or reopen it, as any note.
-  The panel lists the notes that answer it already ("N3 answers it ✗
+  The sidebar lists the notes that answer it already ("N3 answers it ✗
   wrong · answered"). The window writes
   notes.json, and only the person's acts; it never writes a description:
   the agent makes every change. Commit notes.json with the description.

@@ -215,6 +215,12 @@ under it; or picks a **journey**, to play it step by step, the node acted
 on in each step marked.
 _Avoid_: mockup viewer, preview
 
+**Sidebar**:
+The gallery's right-hand column, for the person: a card for each thing
+about what they picked, each with buttons for what they can do with it,
+in the language the gallery was opened in. Hidden and shown with ⌘\.
+_Avoid_: panel, inspector, debug view
+
 **Overview**:
 Every state of one description, small, in the order the tree lists them,
 and each transition it declares an arrow from its `from` state to its `to`,
