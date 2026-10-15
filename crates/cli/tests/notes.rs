@@ -62,8 +62,12 @@ fn notes_lists_the_waiting_ones_under_a_root_and_answer_adds_the_agents_message_
     let (answered, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "made it gray"]);
     assert_eq!(code, 0, "{answered}");
-    assert_eq!((&answered["changed"], &answered["note"]["stands"]), (&json!(true), &json!("answered")));
-    assert_eq!(answered["note"]["messages"][1], json!({ "by": "agent", "says": "made it gray" }));
+    assert_eq!((&answered["changed"], &answered["note"]["stands"]), (&json!(true), &json!("unread")));
+    assert_eq!(
+        answered["note"]["messages"][1],
+        json!({ "by": "agent", "says": "made it gray", "unread": true }),
+        "unread until the person has seen it"
+    );
     let file = std::fs::read_to_string(dir.join("notes.json")).unwrap();
     let (again, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N1", "--reply", "made it gray"]);
@@ -93,7 +97,11 @@ fn answer_keeps_a_reply_of_many_lines_intact() {
     assert_eq!(answered["note"]["messages"][1]["says"], reply);
     let file: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
-    assert_eq!(file["notes"][0]["messages"][1], json!({ "by": "agent", "says": reply }), "stored as given");
+    assert_eq!(
+        file["notes"][0]["messages"][1],
+        json!({ "by": "agent", "says": reply, "unread": true }),
+        "stored as given"
+    );
     for key in ["status", "thread", "closed_because"] {
         assert!(file["notes"][0].get(key).is_none(), "{key} is not stored: {file}");
     }
@@ -233,6 +241,18 @@ fn wait_answers_as_soon_as_the_person_spoke_last_in_a_note() {
     assert_eq!((ids, &answer["waiting"], &answer["answered"]), (vec![&json!("N2")], &json!(1), &json!(1)));
     let messages = answer["notes"][0]["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 3, "the whole conversation: {answer}");
+    assert_eq!(answer["notes"][0]["stands"], "taken", "handed to the agent: {answer}");
+    let taken = &messages[2]["taken"];
+    assert!(
+        taken.as_u64().is_some_and(|taken| taken > 1_700_000_000),
+        "when, in seconds since 1970: {answer}"
+    );
+    let file: Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("orders/notes.json")).unwrap()).unwrap();
+    assert_eq!(
+        &file["notes"][1]["messages"][2]["taken"], taken,
+        "kept in notes.json, for the gallery to read"
+    );
 
     let (now, code) = answered(waiting(&root));
     assert_eq!((code, &now), (0, &answer), "a note waiting already: it answers at once, as `notes` does");
@@ -298,7 +318,7 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
     );
     let (answered, code) =
         underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "it goes there"]);
-    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("answered")), "{answered}");
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("unread")), "{answered}");
     let file: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
     assert_eq!(file["notes"][2]["navigate"], notes["notes"][2]["navigate"], "kept as written");

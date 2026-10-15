@@ -307,6 +307,9 @@ struct Gallery {
     /// Whether the inbox lists the notes waiting on the agent, or only how
     /// many there are.
     waiting: bool,
+    /// The time the window counts how long ago a message was taken from,
+    /// in seconds since 1970: the system's, unless a test holds it still.
+    time: Option<u64>,
 }
 
 /// What the person picked in what is shown, to read what it is, copy it
@@ -712,6 +715,7 @@ impl Gallery {
             descriptions: RefCell::new(HashMap::new()),
             guessed: RefCell::new(HashMap::new()),
             waiting: false,
+            time: None,
         }
     }
 
@@ -757,8 +761,42 @@ impl Gallery {
                 effects.exit = true;
             }
         }
+        effects.redraw |= self.see();
         (effects.ime, effects.caret) = self.composing();
         effects
+    }
+
+    /// The conversation shown in the sidebar seen by the person: each
+    /// answer in it not read yet marked read in notes.json, and the notes
+    /// read again. Whether any was.
+    fn see(&mut self) -> bool {
+        if !self.sidebar {
+            return false;
+        }
+        let Some((on, notes)) = self.conversation() else {
+            return false;
+        };
+        let unread: Vec<String> =
+            notes.iter().filter(|note| note.stands() == Stands::Unread).map(|note| note.id.clone()).collect();
+        if unread.is_empty() || !notes::seen(&on.description, &unread).unwrap_or(false) {
+            return false;
+        }
+        self.notes = notes_of(&self.lines);
+        true
+    }
+
+    /// The time now, in seconds since 1970, as the window counts from it.
+    fn now(&self) -> u64 {
+        self.time.unwrap_or_else(notes::now)
+    }
+
+    /// Whether the conversation shown counts how long ago the agent took
+    /// what the person said, so the window is drawn again each second.
+    fn counting(&self) -> bool {
+        self.sidebar
+            && self
+                .conversation()
+                .is_some_and(|(_, notes)| notes.last().is_some_and(|note| note.taken().is_some()))
     }
 
     /// Whether an input method may compose, only into a field keys type
@@ -1127,6 +1165,7 @@ impl Gallery {
             self.play(index, at);
             self.scroll = scroll;
             self.clamp();
+            self.see();
             return;
         }
         let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
@@ -1150,6 +1189,8 @@ impl Gallery {
             self.wanted = wanted;
         }
         self.clamp();
+        // An answer come in to the conversation shown is seen as it comes.
+        self.see();
     }
 
     /// The line of the state `named` names, or of its directory when it
@@ -2277,7 +2318,7 @@ impl Gallery {
                             )),
                         }
                     }
-                    Item::Answered(note) => {
+                    Item::Unread(note) => {
                         let reply = note.reply().unwrap_or_default();
                         Listed {
                             mark: note.id.clone(),
@@ -2589,9 +2630,10 @@ impl Gallery {
 
     /// The card of the conversation on what is picked: its note's id and
     /// where it stands, then what the person and the agent said, each in a
-    /// bubble, in the order said, newest at the bottom; or, where nothing
-    /// is said yet, how to say it in the box below. None where nothing is
-    /// picked to talk about.
+    /// bubble, in the order said, newest at the bottom, and under the
+    /// person's last message, while it waits, whether the agent has taken
+    /// it and how long ago; or, where nothing is said yet, how to say it in
+    /// the box below. None where nothing is picked to talk about.
     fn conversation_card(&self) -> Option<Card<Do>> {
         let (_, notes) = self.conversation()?;
         let lang = self.lang;
@@ -2604,6 +2646,14 @@ impl Gallery {
         let mut blocks = Vec::new();
         for note in &notes {
             blocks.extend(note.messages.iter().map(|said| Block::Bubble(said.by, said.says.clone())));
+        }
+        match last.taken() {
+            Some(taken) => {
+                let since = since(self.now().saturating_sub(taken));
+                blocks.push(Block::Muted(say!(lang, agent_changing, since)));
+            }
+            None if last.waits() => blocks.push(Block::Muted(say!(lang, waiting_for_agent))),
+            None => {}
         }
         let ink = if last.waits() { Ink::Note } else { Ink::Answered };
         Some(Card { ink, ..Card::new(title, blocks) })
@@ -2894,9 +2944,15 @@ impl Gallery {
     }
 
     /// Note `note`, of the description in `dir`, drawn in `rect`: faint, or
-    /// its pin.
+    /// its pin, in the ink of where it stands: one that waits on the agent
+    /// in the note's, one with an answer unread in the answer's, and one
+    /// answered and read quiet.
     fn pin(&self, dir: &Path, note: &Note, rect: Rect, faint: bool) -> Pin {
-        let ink = if note.waits() { Ink::Note } else { Ink::Answered };
+        let ink = match note.stands() {
+            Stands::Waiting | Stands::Taken => Ink::Note,
+            Stands::Unread => Ink::Answered,
+            Stands::Read => Ink::Line,
+        };
         Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint }
     }
 
@@ -3648,9 +3704,16 @@ fn answered(answer: Answer, lang: Lang) -> &'static str {
 
 /// Where `note` stands, as the sidebar says it in `lang`.
 fn note_status(note: &Note, lang: Lang) -> String {
-    match note.stands() {
-        Stands::Waiting => say!(lang, status_waiting),
-        Stands::Answered => say!(lang, status_answered),
+    if note.waits() { say!(lang, status_waiting) } else { say!(lang, status_answered) }
+}
+
+/// How long ago, `seconds`, as the sidebar counts it: `23s`, `4m 05s`,
+/// `2h 03m`.
+fn since(seconds: u64) -> String {
+    match seconds {
+        ..60 => format!("{seconds}s"),
+        60..3600 => format!("{}m {:02}s", seconds / 60, seconds % 60),
+        _ => format!("{}h {:02}m", seconds / 3600, seconds % 3600 / 60),
     }
 }
 
@@ -3870,15 +3933,19 @@ impl ApplicationHandler<Told> for App {
     }
 
     /// While a ✓ waits to be written: written once its time comes, the
-    /// window woken each second until then to count down.
+    /// window woken each second until then to count down. While the
+    /// conversation shown counts how long ago the agent took it, woken
+    /// each second too.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let written = self.gallery.confirm(now);
-        let wake = self.gallery.confirming.as_ref().map(|confirming| {
+        let confirming = self.gallery.confirming.as_ref().map(|confirming| {
             let left = confirming.at.saturating_duration_since(now);
             let tick = Duration::from_nanos((left.as_nanos() % 1_000_000_000) as u64);
             now + if tick.is_zero() { Duration::from_secs(1).min(left) } else { tick }
         });
+        let counting = self.gallery.counting().then(|| now + Duration::from_secs(1));
+        let wake = confirming.into_iter().chain(counting).min();
         if let Some(shown) = &self.shown
             && (written || wake.is_some())
         {
@@ -5560,7 +5627,7 @@ mod tests {
         assert!(gallery.talk.is_blank(), "Enter sends, and empties the box");
         assert_eq!(
             talk_shown(&gallery),
-            ["note N1 · waiting on the agent", "价格太长\na b"],
+            ["note N1 · waiting on the agent", "价格太长\na b", "waiting for the agent"],
             "shown at once"
         );
 
@@ -5581,7 +5648,11 @@ mod tests {
         assert_eq!(written.len(), 1, "the node has one note, said more in");
         let said: Vec<&str> = written[0].messages.iter().map(|said| said.says.as_str()).collect();
         assert_eq!(said, ["价格太长\na b", "and the date"]);
-        assert_eq!(talk_shown(&gallery)[1..], ["价格太长\na b", "and the date"], "newest at the bottom");
+        assert_eq!(
+            talk_shown(&gallery)[1..],
+            ["价格太长\na b", "and the date", "waiting for the agent"],
+            "newest at the bottom"
+        );
 
         assert_eq!(
             pins_shown(&gallery),
@@ -5673,8 +5744,61 @@ mod tests {
         }
         gallery.cursor = on_pin(&gallery, "N2");
         gallery.press();
-        assert_eq!(talk_shown(&gallery), ["note N2 · waiting on the agent", "too red"]);
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N2 · waiting on the agent", "too red", "waiting for the agent"]
+        );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_conversation_is_waiting_then_taken_then_answered_unread_then_read() {
+        let root = root_of("notes-stands", &[("orders", "orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        gallery.time = Some(1_000_023);
+        show(&mut gallery, "orders", "default");
+        say_on(&mut gallery, 0, "nav-export", "rename it");
+        let dir = root.join("orders");
+        let ink = |gallery: &Gallery| {
+            gallery.pins().into_iter().find(|pin| pin.id == "N1" && !pin.faint).map(|pin| pin.ink)
+        };
+        assert_eq!(talk_shown(&gallery)[2], "waiting for the agent", "under the person's last message");
+        assert_eq!(ink(&gallery), Some(Ink::Note), "waiting on the agent: its mark");
+        assert!(!gallery.counting(), "nothing to count yet");
+
+        assert!(notes::hand_over(&dir, 1_000_000).unwrap(), "`--wait` hands it to the agent");
+        gallery.reload();
+        assert_eq!(talk_shown(&gallery)[2], "the agent is changing it (23s)");
+        assert!(gallery.counting(), "the window is drawn again each second");
+        gallery.time = Some(1_000_125);
+        assert_eq!(talk_shown(&gallery)[2], "the agent is changing it (2m 05s)", "counting up");
+        assert_eq!(ink(&gallery), Some(Ink::Note), "taken, it still waits on the agent: the same mark");
+
+        // Its conversation not shown, the answer comes in unread.
+        press_keys(&mut gallery, &["Esc"]);
+        notes::answer(&dir, "N1", "renamed it Export").unwrap();
+        gallery.reload();
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Unread);
+        assert_eq!(ink(&gallery), Some(Ink::Answered), "unread: a mark of its own");
+        assert!(!gallery.counting(), "answered: nothing counts");
+
+        assert!(gallery.press_at(on_pin(&gallery, "N1")), "its conversation shown");
+        assert_eq!(talk_shown(&gallery), ["note N1 · answered", "rename it", "renamed it Export"]);
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Read, "seen, it is read");
+        assert_eq!(ink(&gallery), Some(Ink::Line), "answered and read: quiet");
+
+        let mut again = opened(&root, (1440.0, 900.0));
+        show(&mut again, "orders", "default");
+        assert_eq!(ink(&again), Some(Ink::Line), "still read in a window opened again");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn how_long_ago_is_counted_in_seconds_then_minutes_then_hours() {
+        assert_eq!(
+            [0, 23, 59, 60, 125, 3599, 3600, 7380].map(since),
+            ["0s", "23s", "59s", "1m 00s", "2m 05s", "59m 59s", "1h 00m", "2h 03m"]
+        );
     }
 
     #[test]
@@ -5695,7 +5819,11 @@ mod tests {
         assert_ne!(std::fs::read_to_string(dir.join(notes::NOTES)).unwrap(), before, "it joined");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.on, On::State { state: State::Fixture("default".into()) });
-        assert_eq!((note.stands(), note.messages.len()), (Stands::Answered, 3), "never closed: {note:?}");
+        assert_eq!(
+            (note.stands(), note.messages.len()),
+            (Stands::Read, 3),
+            "never closed, and read, its state shown: {note:?}"
+        );
         assert_eq!(note.messages[0].says, "on `nav-export`, now gone");
         gallery.press_at(on_pin(&gallery, "N1"));
         assert_eq!(picked_node(&gallery), None, "its pin picks the whole state");
@@ -5792,7 +5920,7 @@ mod tests {
             Stands::Waiting,
             "the ✓ is never closed: it waits on the agent's answer"
         );
-        assert_eq!(notes[0].stands(), Stands::Answered, "the agent spoke last in the ✗");
+        assert_eq!(notes[0].stands(), Stands::Read, "the agent spoke last in the ✗, shown: read");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5958,7 +6086,11 @@ mod tests {
         let dir = root.join("orders");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.on, On::State { state: State::Fixture("default".into()) });
-        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "too busy"], "shown at once");
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "too busy", "waiting for the agent"],
+            "shown at once"
+        );
         let pins = pins_shown(&gallery);
         assert_eq!(pins, [("N1".to_string(), 0, Ink::Note, false)], "one pin, by the first caption");
         gallery.cursor = on_node(&gallery, 0, "nav-export");
@@ -6008,7 +6140,10 @@ mod tests {
         let note = notes::read(&dir).unwrap().remove(0);
         let On::Transition { transition } = &note.on else { panic!("not a transition: {note:?}") };
         assert_eq!(serde_json::to_value(transition).unwrap(), declared[last]);
-        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "should it say why?"]);
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "should it say why?", "waiting for the agent"]
+        );
         assert_eq!(gallery.pins().len(), 1, "a pin beside its arrow");
         press_keys(&mut gallery, &["Esc"]);
         assert_eq!(gallery.arrow(), None);
@@ -6046,7 +6181,10 @@ mod tests {
             json!({ "from": link.from, "node": link.node, "to": link.to }),
             "kept by the description it is written in"
         );
-        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "is this the right screen?"]);
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "is this the right screen?", "waiting for the agent"]
+        );
         assert_eq!(gallery.pins().len(), 1, "a pin under its arrow");
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(!gallery.press() || gallery.arrow() == Some(0), "its pin keeps its arrow picked");
@@ -6340,6 +6478,9 @@ mod tests {
 
         let dir = root.join("orders");
         let on_export = gallery.reference().unwrap();
+        // Its conversation not shown while the agent answers, the answer
+        // comes in unread.
+        gallery.pick(orders);
         notes::say(&on_export, "say Export").unwrap();
         notes::answer(&dir, "N1", "it says Export now").unwrap();
         let whole =
@@ -6360,6 +6501,18 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(picked_node(&gallery), Some("nav-export"), "the note's node picked");
         assert_eq!(talk_shown(&gallery)[0], "note N1 · answered", "with its conversation");
+        assert_eq!(notes::read(&dir).unwrap()[0].stands(), Stands::Read, "shown, it is read");
+        gallery.pick(orders);
+        assert_eq!(
+            inbox(&gallery)[..],
+            [
+                &["waits on you · 2"][..],
+                &guesses,
+                &["▾ waiting on the agent · 1", "N2 on the whole of default"]
+            ]
+            .concat(),
+            "read, it leaves the inbox"
+        );
 
         let top = gallery.lines.iter().position(|line| line.row.dir == root).unwrap();
         assert_eq!(top, 0, "the root is the tree's first line");
@@ -6370,11 +6523,7 @@ mod tests {
             everything.iter().position(|line| line == "orders").unwrap(),
             everything.iter().position(|line| line == "pay/checkout").unwrap(),
         );
-        assert_eq!(
-            everything[at_orders + 1..at_orders + 7],
-            [&guesses[..], &answered].concat(),
-            "{everything:?}"
-        );
+        assert_eq!(everything[at_orders + 1..at_orders + 5], guesses, "{everything:?}");
         assert!(at_orders < at_checkout, "grouped by description, in the tree's order");
         assert!(
             everything[at_checkout + 1..].iter().any(|line| line.starts_with("? card-number in ")),
@@ -6392,11 +6541,9 @@ mod tests {
         assert_eq!(
             inbox(&gallery),
             [
-                "waits on you · 2",
+                "waits on you · 1",
                 guesses[2],
                 guesses[3],
-                answered[0],
-                answered[1],
                 "▾ waiting on the agent · 2",
                 "N2 on the whole of default",
                 "N3 on nav-export in default at 390",

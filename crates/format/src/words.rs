@@ -189,6 +189,8 @@ sentences! {
     faulty_many,
     status_waiting,
     status_answered,
+    waiting_for_agent,
+    agent_changing,
     window_title,
     details,
     node_label,

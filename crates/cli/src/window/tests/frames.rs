@@ -278,6 +278,47 @@ fn note_pins_open_and_answered_with_its_reply() {
 }
 
 #[test]
+fn where_each_note_stands_marked_on_the_pictures_and_counted_in_the_sidebar() {
+    let root = root_of("frame-stands", &[("orders", "orders")]);
+    let dir = root.join("orders");
+    let mut gallery = held("stands", &root, WINDOW, |gallery| {
+        gallery.time = Some(1_000_023);
+        show(gallery, "orders", "default");
+        for (id, says) in [("nav-export", "rename it"), ("search", "wider"), ("load-more", "say how many")] {
+            say_on(gallery, 0, id, says);
+        }
+        // N1 and N2 are answered, N3 taken; then the person reads N2's
+        // answer, and says more in N4, which waits on the agent.
+        notes::hand_over(&dir, 1_000_000).unwrap();
+        notes::answer(&dir, "N1", "renamed it Export").unwrap();
+        notes::answer(&dir, "N2", "made it wider").unwrap();
+        notes::seen(&dir, &["N2".to_string()]).unwrap();
+        gallery.reload();
+        say_on(gallery, 0, "order-0-cancel", "too red");
+        gallery.press_at(on_pin(gallery, "N3"));
+        gallery.move_to((0.0, 0.0));
+    });
+    fits(&mut gallery);
+    let inks: Vec<(String, Ink)> =
+        gallery.pins().into_iter().filter(|pin| !pin.faint).map(|pin| (pin.id, pin.ink)).collect();
+    assert_eq!(
+        inks,
+        [
+            ("N1".to_string(), Ink::Answered),
+            ("N2".to_string(), Ink::Line),
+            ("N3".to_string(), Ink::Note),
+            ("N4".to_string(), Ink::Note),
+        ],
+        "unread, read, taken and waiting"
+    );
+    assert_eq!(
+        talk_shown(&gallery),
+        ["note N3 · waiting on the agent", "say how many", "the agent is changing it (23s)"]
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn an_assumption_picked_by_its_question_mark() {
     let root = root_of("frame-assumption", &[("checkout", "checkout")]);
     let mut gallery = held("assumption", &root, WINDOW, |gallery| {

@@ -209,7 +209,14 @@ DOES
   spoke last, answered once the agent did), then what you wrote, in blue
   bubbles on the right, and what the agent said, in bubbles outlined green
   on the left, in the order said ("note · nothing said yet" before
-  anything is). A node's note runs on whichever instance of it is picked,
+  anything is). Under your last message, while it waits on the agent,
+  a gray line says whether the agent has it: "waiting for the agent"
+  until `underdraw notes --wait` hands it over, then "the agent is
+  changing it (23s)", counting up each second while the window is open,
+  until the agent answers. A count that keeps growing says the agent may
+  have stopped: start it again. An answer is unread until its
+  conversation is shown in the sidebar; shown, it is read, and stays read
+  when the window is opened again. A node's note runs on whichever instance of it is picked,
   and holds the notes that answer its assumption or propose where acting
   on it goes. At the sidebar's foot, fixed there while the cards scroll, a
   box to write in and a Send button under it: Enter or Send sends what the
@@ -238,8 +245,10 @@ DOES
   A note is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references
   it: the node as written, the state, and the instance pointed at; the
-  state; the transition; or the navigate. A blue pin numbered N1, N2… is
-  drawn on it: at a node's top-right corner, in the state and at the width
+  state; the transition; or the navigate. A pin numbered N1, N2… is
+  drawn on it, in where the note stands: blue while it waits on the
+  agent, green while the agent's answer is unread, a faint gray once it
+  is answered and read: at a node's top-right corner, in the state and at the width
   it was written in, every other state and width that holds that node
   showing a faint dot there; at the right of a state's caption, in its
   pictures and in the overview; beside a transition's label; under a
@@ -250,7 +259,8 @@ DOES
   counts on its description.
   A note is a conversation, never closed. The agent reads them with
   `underdraw notes <root>` and answers one, at any length: its pin turns
-  green, and the pointer over it shows what the agent said last. A note
+  green until you read it, and the pointer over it shows what the agent
+  said last. A note
   whose node or arrow is gone (removed or renamed) joins the note
   on its whole state, after a gray line saying where it was ("on `price`,
   now gone"): carry on there. A note written on a region, before regions
@@ -280,9 +290,9 @@ DOES
   what waits on you there, in a card "waits on you · <how many>", one box
   an item: each assumption no note answers yet, marked with an orange "?"
   ("<node id as written> in <state>", what was guessed under it), then each
-  note the agent has answered, marked with its blue id ("N2", what it is
-  on, and "agent: <what it said last>" under it in green), for you to
-  read. A directory's lists every description under it, each under its
+  note the agent has answered that you have not read, marked with its
+  blue id ("N2", what it is on, and "agent: <what it said last>" under it
+  in green), for you to read; once read, it leaves. A directory's lists every description under it, each under its
   directory's name, in the order the tree lists them. The notes you spoke
   last in, waiting on the agent, are folded to how many there are
   ("▸ waiting on the agent · 2"); click it to list them, each a box marked
