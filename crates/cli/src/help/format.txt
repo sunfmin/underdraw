@@ -5,8 +5,9 @@ FORMAT — how to write a description
 
 FILES
   <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
-  domain.json         optional: the types, conditions and operations every
-                      screen of the project shares; its directory is the
+  domain.json         optional: the types, conditions, operations and
+                      samples every screen of the project shares; its
+                      directory is the
                       project root (DOMAIN.JSON below)
   components/<Name>.json
                       optional: a component every screen of the project
@@ -93,9 +94,20 @@ FIXTURES
       "empty":   { "$patch": "default", "todos": [], "summary": {"remaining": 0} }
     }
   "$patch": "<fixture written above>" starts from it and deep-merges the rest
-  over it: objects merge key by key; lists and scalars replace. A fixture
-  may leave out only fields with a default; no unknown fields; types and
-  ranges hold. Use real sample values. The first fixture is the default
+  over it: objects merge key by key; lists and scalars replace.
+  {"$sample": "<name>"}, in place of any value in a fixture (the fixture
+  itself, a field, an item), starts it from that sample in domain.json's
+  "samples" (DOMAIN.JSON), so screens showing the same data (a tree's lines,
+  two journeys) write it once; any other key beside "$sample" merges over
+  it as "$patch" does (only over an object sample):
+      "journeys": { "$sample": "twoJourneys" },
+      "first":    { "$sample": "buy", "name": "Buy again" }
+  It reads, checks and renders exactly as the value written out. A sample
+  is checked where a fixture uses it, as that field's type: one of the
+  wrong type is a finding at the field naming the sample ("… : the fixture
+  starts it from sample buy"); a name no sample has is a finding too.
+  A fixture may leave out only fields with a default; no unknown fields;
+  types and ranges hold. Use real sample values. The first fixture is the default
   for `render`.
 
 PARAMS
@@ -777,8 +789,11 @@ DOMAIN.JSON
     "operations": { "cancelOrder": { "command": "Cancels an order",
                                      "params": { "id": "string" },
                                      "requires": "Order.cancellable",
-                                     "fails": { "notFound": "…" } } }
+                                     "fails": { "notFound": "…" } } },
+    "samples":    { "twoJourneys": [ { "name": "Buy", … }, { "name": "Cancel", … } ] }
   }
+  "samples" names values fixtures start from with "$sample" (FIXTURES);
+  each is any JSON value, untyped here, checked as the field it fills.
   Each key is written as in screen.json (DATA AND TYPES, CONDITIONS,
   OPERATIONS), and nothing else goes there. Every command reads each screen
   of the project as if it declared the domain's itself: a screen uses

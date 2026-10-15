@@ -117,6 +117,12 @@ One sample value of the view model; each fixture puts the screen in one state.
 A component the project shares has its own, each a value of its params.
 _Avoid_: mock data, example
 
+**Sample**:
+A value written once in the domain (a tree's lines, two journeys) that a
+fixture of any screen starts from by name, its own fields merged over it,
+checked as the field it fills.
+_Avoid_: shared fixture, seed
+
 **View state**:
 A view-model field only the screen holds, such as an open menu or the row a
 popup is about, marked `"view": true`; never part of an operation's result.
@@ -144,7 +150,8 @@ _Avoid_: flag, predicate
 
 **Domain**:
 The types, conditions and operations a project's screens and components
-share, each declared once and used by name; a screen may add its own, but
+share, and the samples their fixtures start from, each declared once and
+used by name; a screen may add its own, but
 never one of the same name.
 _Avoid_: model, schema
 
