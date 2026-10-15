@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use underdraw_format::{Breakpoint, Node, State};
 use underdraw_layout::Page;
 use vello::Scene;
@@ -51,6 +51,15 @@ impl Shown {
     }
 }
 
+/// What a node does when acted on: its id as the description writes it,
+/// which a transition names it by, and its handlers by event, their cases
+/// decided in the state shown.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Handlers {
+    pub written: String,
+    pub events: Map<String, Value>,
+}
+
 /// One state laid out, the scene not built yet: everything that can be
 /// wrong with the description is found by here, before a GPU is needed.
 pub struct Laid {
@@ -62,6 +71,8 @@ pub struct Laid {
     pub page: Page,
     /// The operations each node calls when acted on, by id.
     pub calls: BTreeMap<String, Vec<String>>,
+    /// What each node does when acted on, by id.
+    pub handlers: BTreeMap<String, Handlers>,
     typesetter: text::Typesetter,
 }
 
@@ -74,6 +85,8 @@ pub struct Drawing {
     pub page: Page,
     /// The operations each node calls when acted on, by id.
     pub calls: BTreeMap<String, Vec<String>>,
+    /// What each node does when acted on, by id.
+    pub handlers: BTreeMap<String, Handlers>,
     pub scene: Scene,
     /// Pixels per point: the one asked for, or less when the page would be
     /// taller than the GPU draws.
@@ -125,7 +138,9 @@ pub fn lay_out(path: &Path, wanted: &Wanted, drawn: Option<&BTreeSet<String>>) -
         .map_err(anyhow::Error::msg)?;
     let mut calls = BTreeMap::new();
     called(&root, &mut calls);
-    Ok(Laid { dir, shown, breakpoint, page, calls, typesetter })
+    let mut handlers = BTreeMap::new();
+    handled(&root, &mut handlers);
+    Ok(Laid { dir, shown, breakpoint, page, calls, handlers, typesetter })
 }
 
 /// The operations `node` and each node in it call, added to `calls` by id.
@@ -136,6 +151,19 @@ fn called(node: &Node, calls: &mut BTreeMap<String, Vec<String>>) {
     }
     for child in &node.children {
         called(child, calls);
+    }
+}
+
+/// What `node` and each node in it do when acted on, added to `handlers`
+/// by id.
+fn handled(node: &Node, handlers: &mut BTreeMap<String, Handlers>) {
+    let events = match node.props.get("on") {
+        Some(Value::Object(events)) => events.clone(),
+        _ => Map::new(),
+    };
+    handlers.insert(node.id.clone(), Handlers { written: node.written_id.clone(), events });
+    for child in &node.children {
+        handled(child, handlers);
     }
 }
 
@@ -156,6 +184,7 @@ impl Laid {
             breakpoint: self.breakpoint,
             page: self.page,
             calls: self.calls,
+            handlers: self.handlers,
             scene,
             scale,
             pixels: [pixels_wide, pixels_high],

@@ -3,7 +3,7 @@
 //! names. A screen none declares is not drawn yet: an assumption, for the
 //! person to confirm, not a fault.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
@@ -16,8 +16,20 @@ use crate::{SCREEN, read};
 /// "screen", read without checking it. One that cannot be read declares
 /// none.
 pub fn drawn(root: &Path) -> BTreeSet<String> {
+    declared(root).into_keys().collect()
+}
+
+/// The description under `root` that declares each screen, by the screen's
+/// name; where two declare one, the first the tree lists.
+pub fn declared(root: &Path) -> BTreeMap<String, PathBuf> {
     let dirs = description_dirs(root);
-    screens(&dirs).iter().flatten().filter_map(declares).collect()
+    let mut declared = BTreeMap::new();
+    for (dir, screen) in dirs.iter().zip(screens(&dirs)) {
+        if let Some(name) = screen.as_ref().and_then(declares) {
+            declared.entry(name).or_insert_with(|| dir.clone());
+        }
+    }
+    declared
 }
 
 /// `underdraw check <root>`, for a directory holding no screen.json: every

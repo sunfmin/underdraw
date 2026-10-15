@@ -4,6 +4,7 @@
 //! capture differs (`underdraw-compare`), draws on the GPU, and prints the
 //! answer as one JSON object.
 
+mod act;
 mod draw;
 mod gallery;
 mod gpu;
