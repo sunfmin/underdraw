@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use underdraw_format::{Finding, Lang};
+use underdraw_format::{Finding, Lang, say};
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
@@ -50,23 +50,6 @@ use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
-
-/// The window's own words in the language it was opened in (`--lang`):
-/// the same format string in English and in Chinese.
-macro_rules! chrome {
-    ($lang:expr, $en:literal, $zh:literal $(,)?) => {
-        match $lang {
-            Lang::En => format!($en),
-            Lang::Zh => format!($zh),
-        }
-    };
-    ($lang:expr, $en:literal, $zh:literal, $($arg:expr),+ $(,)?) => {
-        match $lang {
-            Lang::En => format!($en, $($arg),+),
-            Lang::Zh => format!($zh, $($arg),+),
-        }
-    };
-}
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
@@ -359,7 +342,7 @@ fn closed_itself(
                 .is_none_or(|was| was.status == Status::Closed);
             if !was_closed {
                 let id = &note.id;
-                said.push(chrome!(lang, "{id} closed: {why}", "{id} 已关闭：{why}"));
+                said.push(say!(lang, note_closed_because, id, why));
             }
         }
     }
@@ -1013,11 +996,7 @@ impl Gallery {
     /// What the sidebar says of the notes that `closed` themselves.
     fn reopen_from(&self, closed: &[String]) -> String {
         let closed = closed.join(" · ");
-        chrome!(
-            self.lang,
-            "{closed} · its description's overview lists it, to reopen",
-            "{closed} · 可在它的描述的总览里重开"
-        )
+        say!(self.lang, closed_note_reopens_in_overview, closed)
     }
 
     /// The line of the state `named` names, or of its directory when it
@@ -1057,16 +1036,12 @@ impl Gallery {
         let screen = crate::read(&here.dir).map(|(screen, _)| screen).unwrap_or(Value::Null);
         match act::act(&screen, &state, &handlers.written, &handlers.events) {
             Act::Go { to } => {
-                let says = chrome!(lang, "{on} in {state} → {to}", "{on}（{state}）→ {to}");
+                let says = say!(lang, acted_to_state, on, state, to);
                 self.go(Picked { dir: here.dir, state: Some(to) }, says);
             }
             Act::Choose(choices) => {
                 let calls = calls.join(", ");
-                let says = chrome!(
-                    lang,
-                    "{on} in {state} calls {calls}: click how it answered",
-                    "{on}（{state}）调用 {calls}：点它的回答"
-                );
+                let says = say!(lang, acted_calls, on, state, calls);
                 let choices = choices
                     .into_iter()
                     .map(|(outcome, to)| (format!("{outcome} → {to}"), Do::Choose { outcome, to }))
@@ -1075,7 +1050,7 @@ impl Gallery {
             }
             Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
                 Some(description) => {
-                    let says = chrome!(lang, "{on} navigates to {screen}", "{on} 跳转到 {screen}");
+                    let says = say!(lang, acted_navigates, on, screen);
                     self.go(Picked { dir: description, state: None }, says);
                 }
                 None => {
@@ -1088,27 +1063,15 @@ impl Gallery {
                     match self.line_named(&back) {
                         Some(index) => {
                             self.pick(index);
-                            self.say(chrome!(lang, "{on} goes back to {to}", "{on} 返回到 {to}"));
+                            self.say(say!(lang, acted_goes_back, on, to));
                         }
-                        None => self.say(chrome!(
-                            lang,
-                            "{on} goes back to {to}, which is gone",
-                            "{on} 返回到 {to}，但它已不在"
-                        )),
+                        None => self.say(say!(lang, acted_goes_back_gone, on, to)),
                     }
                 }
-                None => self.say(chrome!(
-                    lang,
-                    "{on} goes back, but no act led here: back returns along the path taken by acting",
-                    "{on} 要返回，但没有操作通到这里：返回沿着操作走过的路退回"
-                )),
+                None => self.say(say!(lang, acted_goes_back_nowhere, on)),
             },
             Act::Nothing => {
-                let says = chrome!(
-                    lang,
-                    "no transition from {state} on {on} · should go to:",
-                    "{state} 上的 {on} 没有过渡 · 应该去："
-                );
+                let says = say!(lang, no_transition, state, on);
                 let choices = self.proposals(&here.dir, &on);
                 self.acted = Some(Acted { says, choices });
             }
@@ -1130,7 +1093,7 @@ impl Gallery {
             .map(|state| (state.name().to_string(), propose(Goes::To(state.name().to_string()))));
         let screens = links::declared(&self.root).into_iter().filter(|(_, declared)| declared != dir).map(
             |(screen, _)| {
-                let said = chrome!(self.lang, "navigate to {screen}", "跳转到 {screen}");
+                let said = say!(self.lang, propose_navigate, screen);
                 (said, propose(Goes::Navigate(screen)))
             },
         );
@@ -1169,7 +1132,7 @@ impl Gallery {
             }
             Do::Undo => {
                 self.confirming = None;
-                self.say(chrome!(self.lang, "✓ undone: nothing was written", "已撤销 ✓：什么都没写"));
+                self.say(say!(self.lang, undone));
                 true
             }
             Do::Step(at) => self.step(at),
@@ -1192,7 +1155,7 @@ impl Gallery {
             return false;
         };
         let state = here.state.clone().unwrap_or_default();
-        let says = chrome!(self.lang, "{outcome} in {state} → {to}", "{outcome}（{state}）→ {to}");
+        let says = say!(self.lang, acted_outcome, outcome, state, to);
         self.go(Picked { dir: here.dir, state: Some(to.clone()) }, says);
         true
     }
@@ -1203,23 +1166,15 @@ impl Gallery {
     /// description.
     fn propose(&mut self, proposal: Proposal) {
         let Some(on) = self.reference().filter(|on| matches!(on.on, On::Node { .. })) else {
-            return self.say(chrome!(
-                self.lang,
-                "a proposal is a note on a node: act on one first",
-                "提议是节点上的便签：先操作一个节点"
-            ));
+            return self.say(say!(self.lang, proposal_needs_node));
         };
         match notes::propose(&on, proposal) {
             Ok(id) => {
                 self.notes = notes_of(&self.root, &self.lines);
-                self.say(chrome!(
-                    self.lang,
-                    "{id} saved, proposing it for the agent: `underdraw notes` lists it",
-                    "{id} 已保存，作为提议交给代理：`underdraw notes` 会列出它"
-                ));
+                self.say(say!(self.lang, proposal_saved, id));
                 self.note = Some((on.description, id));
             }
-            Err(e) => self.say(chrome!(self.lang, "not saved: {e:#}", "没有保存：{e:#}")),
+            Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
         }
     }
 
@@ -1228,11 +1183,7 @@ impl Gallery {
     /// the person was is kept for `back`, and the panel says `says`.
     fn go(&mut self, to: Picked, says: String) {
         let Some(mut index) = self.line_named(&to) else {
-            return self.say(chrome!(
-                self.lang,
-                "{says}, which the tree does not list",
-                "{says}，但目录树里没有它"
-            ));
+            return self.say(say!(self.lang, gone_from_tree, says));
         };
         // A description named alone: its first state, the line under it.
         if to.state.is_none()
@@ -1411,7 +1362,7 @@ impl Gallery {
             .and_then(|states| states.into_iter().find(|state| state.name() == step.state));
         let Some(state) = state else {
             let (within, state) = (gallery::within(&self.root, &step.dir), &step.state);
-            let problem = chrome!(self.lang, "{within} has no state {state}", "{within} 没有状态 {state}");
+            let problem = say!(self.lang, no_such_state, within, state);
             self.picture = Picture::Faults(vec![Finding { at: format!("steps.{at}"), problem }]);
             return;
         };
@@ -1480,35 +1431,22 @@ impl Gallery {
         let (at, step) = (playing.at, &playing.steps[playing.at]);
         let (name, number, steps) = (&self.lines[index].row.name, at + 1, playing.steps.len());
         let (within, state) = (gallery::within(&self.root, &step.dir), &step.state);
-        let title = chrome!(
-            lang,
-            "journey {name} · step {number} of {steps} · {within} · {state}",
-            "旅程 {name} · 第 {number} 步，共 {steps} 步 · {within} · {state}"
-        );
+        let title = say!(lang, journey_title, name, number, steps, within, state);
         let mut blocks = vec![Block::Text(match &step.on {
             Some((node, event)) => {
                 let label = self.marked().into_iter().flatten().next().and_then(|node| node.label);
-                let label = label
-                    .map(|label| chrome!(lang, " (label {label})", "（编号 {label}）"))
-                    .unwrap_or_default();
-                let outcome = step
-                    .outcome
-                    .as_ref()
-                    .map(|o| chrome!(lang, ", answered {o}", "，结果 {o}"))
-                    .unwrap_or_default();
-                chrome!(
-                    lang,
-                    "acts on {node}{label} · {event}{outcome} (marked)",
-                    "作用于 {node}{label} · {event}{outcome}（已标出）"
-                )
+                let label = label.map(|label| say!(lang, journey_label, label)).unwrap_or_default();
+                let outcome =
+                    step.outcome.as_ref().map(|o| say!(lang, journey_answered, o)).unwrap_or_default();
+                say!(lang, journey_acts_on, node, label, event, outcome)
             }
-            None => chrome!(lang, "the journey ends here", "旅程到此结束"),
+            None => say!(lang, journey_ends),
         })];
         if at > 0 {
-            blocks.push(Block::Button(chrome!(lang, "← previous step", "← 上一步"), Do::Step(at - 1)));
+            blocks.push(Block::Button(say!(lang, previous_step), Do::Step(at - 1)));
         }
         if at + 1 < playing.steps.len() {
-            blocks.push(Block::Button(chrome!(lang, "→ next step", "→ 下一步"), Do::Step(at + 1)));
+            blocks.push(Block::Button(say!(lang, next_step), Do::Step(at + 1)));
         }
         Some(Card { ink: Ink::Note, ..Card::new(title, blocks) })
     }
@@ -1577,7 +1515,7 @@ impl Gallery {
                 let thumb = thumbs.iter().position(|thumb| thumb.name == on.state);
                 let Some(thumb) = thumb.filter(|_| on.dir == dir) else { continue };
                 let (name, number) = (&journey.row.name, step + 1);
-                let label = chrome!(lang, "→ {name} · step {number}", "→ {name} · 第 {number} 步");
+                let label = say!(lang, journey_mark, name, number);
                 let wide = f64::from(self.typesetter.text(&label, MARK, None).width) + 10.0;
                 thumbs[thumb].journeys.push(Pass { line, step, label, wide });
             }
@@ -1963,20 +1901,16 @@ impl Gallery {
     /// says so; or says why nothing was.
     fn copy(&mut self) {
         let Some(reference) = self.reference() else {
-            return self.say(chrome!(
-                self.lang,
-                "nothing to copy: pick a state, a node or region in it, or an arrow, first",
-                "没有可复制的：先选中一个状态、其中的节点或区域，或一个箭头"
-            ));
+            return self.say(say!(self.lang, nothing_to_copy));
         };
         let (line, lang) = (reference.line(), self.lang);
         let copied = match self.clipboard() {
             Some(clipboard) => clipboard.set_text(line.clone()).map_err(|e| e.to_string()),
-            None => Err(chrome!(lang, "there is no clipboard to copy to", "没有剪贴板可复制到")),
+            None => Err(say!(lang, no_clipboard)),
         };
         match copied {
-            Ok(()) => self.say(chrome!(lang, "copied  {line}", "已复制  {line}")),
-            Err(e) => self.say(chrome!(lang, "could not copy ({e}): {line}", "无法复制（{e}）：{line}")),
+            Ok(()) => self.say(say!(lang, copied, line)),
+            Err(e) => self.say(say!(lang, could_not_copy, e, line)),
         }
     }
 
@@ -2124,26 +2058,17 @@ impl Gallery {
         }
         cards.extend(self.confirming_card(Instant::now()));
         if let Some(Draft { on: Writing::On(on), .. }) = &self.draft {
-            let title = chrome!(lang, "note {}", "便签：{}", on.on.said(lang));
+            let title = say!(lang, note_title, on = on.on.said(lang));
             cards.push(Card { ink: Ink::Note, ..Card::new(title, self.field_blocks()) });
         } else if self.noting {
-            let click = match (&self.picture, lang) {
-                (Picture::Overview(_), Lang::En) => "click a transition's arrow, or a state, it is on",
-                (Picture::Overview(_), Lang::Zh) => "点它所在的过渡箭头，或某个状态",
-                (Picture::Flow(_), Lang::En) => "click the navigate's arrow it is on",
-                (Picture::Flow(_), Lang::Zh) => "点它所在的跳转箭头",
-                (Picture::Pages(_) | Picture::Faults(_), Lang::En) => {
-                    "click the node it is on or a picture's caption, or drag over the region"
-                }
-                (Picture::Pages(_) | Picture::Faults(_), Lang::Zh) => {
-                    "点它所在的节点或画面的标题，或拖出一块区域"
-                }
+            let words = lang.words();
+            let click = match &self.picture {
+                Picture::Overview(_) => words.click_overview,
+                Picture::Flow(_) => words.click_flow,
+                Picture::Pages(_) | Picture::Faults(_) => words.click_pages,
             };
-            let blocks =
-                vec![Block::Text(click.to_string()), Block::Muted(chrome!(lang, "Esc cancels", "Esc 放弃"))];
-            cards.push(Card {
-                ink: Ink::Note, ..Card::new(chrome!(lang, "write a note", "写便签"), blocks)
-            });
+            let blocks = vec![Block::Text(click.to_string()), Block::Muted(say!(lang, esc_cancels))];
+            cards.push(Card { ink: Ink::Note, ..Card::new(say!(lang, write_note), blocks) });
         }
         cards.extend(self.note_card());
         let writing = self.noting || matches!(&self.draft, Some(Draft { on: Writing::On(_), .. }));
@@ -2153,10 +2078,7 @@ impl Gallery {
         let picked = self.node_card().or_else(|| self.region_card()).or_else(|| self.arrow_card());
         if let Some(mut card) = picked {
             if self.draft.is_none() && !self.noting {
-                card.blocks.push(Block::Button(
-                    chrome!(lang, "write a note on it  (N)", "在这里写便签  (N)"),
-                    Do::Write,
-                ));
+                card.blocks.push(Block::Button(say!(lang, write_note_on_it), Do::Write));
             }
             cards.push(card);
         }
@@ -2177,26 +2099,11 @@ impl Gallery {
         }
         let lang = self.lang;
         let blocks = vec![
-            Block::Muted(chrome!(
-                lang,
-                "Click a node to see what it is; drag over a picture to pick a region.",
-                "点一个节点看它是什么；在画面上拖动可选中一块区域。"
-            )),
-            Block::Muted(chrome!(
-                lang,
-                "⌘-click a node to act on it, as a prototype.",
-                "按住 ⌘ 点节点，像原型一样操作它。"
-            )),
-            Block::Muted(chrome!(
-                lang,
-                "N writes a note · ⌘C copies a reference · ⌘\\ hides this sidebar",
-                "N 写便签 · ⌘C 复制引用 · ⌘\\ 隐藏侧栏"
-            )),
+            Block::Muted(say!(lang, hint_click)),
+            Block::Muted(say!(lang, hint_act)),
+            Block::Muted(say!(lang, hint_keys)),
         ];
-        cards.push(Card {
-            ink: Ink::Muted,
-            ..Card::new(chrome!(lang, "Nothing picked", "未选中任何东西"), blocks)
-        });
+        cards.push(Card { ink: Ink::Muted, ..Card::new(say!(lang, nothing_picked), blocks) });
         cards
     }
 
@@ -2304,7 +2211,7 @@ impl Gallery {
                         Listed {
                             mark: "?".to_string(),
                             mark_ink: Ink::Assumed,
-                            on: chrome!(lang, "{written} in {state}", "{written}（{state}）"),
+                            on: say!(lang, guess_on, written, state),
                             says: guessed.to_string(),
                             ink: Ink::Muted,
                             does: Do::Visit(Visit::Guess(
@@ -2320,7 +2227,7 @@ impl Gallery {
                             mark: note.id.clone(),
                             mark_ink: Ink::Note,
                             on: note.on.said(lang),
-                            says: chrome!(lang, "agent: {reply}", "代理：{reply}"),
+                            says: say!(lang, agent_reply, reply),
                             ink: Ink::Answered,
                             does: Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
                         }
@@ -2330,15 +2237,12 @@ impl Gallery {
         }
         let yours: usize = inboxes.iter().map(|(_, inbox)| inbox.yours.len()).sum();
         if yours == 0 {
-            blocks.push(Block::Muted(chrome!(lang, "nothing waits on you", "没有等你处理的")));
+            blocks.push(Block::Muted(say!(lang, nothing_waits)));
         }
         let agents: usize = inboxes.iter().map(|(_, inbox)| inbox.agents.len()).sum();
         if agents > 0 {
             let fold = if self.waiting { "▾" } else { "▸" };
-            blocks.push(Block::Fold(
-                chrome!(lang, "{fold} waiting on the agent · {agents}", "{fold} 等代理处理 · {agents}"),
-                Do::Waiting,
-            ));
+            blocks.push(Block::Fold(say!(lang, waiting_on_agent, fold, agents), Do::Waiting));
         }
         if self.waiting {
             for (dir, inbox) in &inboxes {
@@ -2357,10 +2261,7 @@ impl Gallery {
                 }
             }
         }
-        Some(Card {
-            ink: Ink::Note,
-            ..Card::new(chrome!(lang, "waits on you · {yours}", "等你处理 · {yours}"), blocks)
-        })
+        Some(Card { ink: Ink::Note, ..Card::new(say!(lang, waits_on_you, yours), blocks) })
     }
 
     /// What an item of the inbox is on shown: an assumption's state, its
@@ -2495,10 +2396,10 @@ impl Gallery {
         let mut blocks = vec![
             Block::Big(guessed.to_string()),
             Block::Fact(
-                chrome!(lang, "or else", "也可能"),
+                say!(lang, or_else),
                 match other {
                     Some(other) => other.to_string(),
-                    None => chrome!(lang, "not said: ✗ says what it is", "没说：用 ✗ 说明是什么"),
+                    None => say!(lang, or_else_not_said),
                 },
             ),
         ];
@@ -2508,11 +2409,7 @@ impl Gallery {
                 if on.origin.written == node.origin.written {
                     let (id, mark, status) =
                         (&note.id, answered(answers.answer, lang), note_status(note, lang));
-                    blocks.push(Block::Muted(chrome!(
-                        lang,
-                        "{id} answers it {mark} · {status}",
-                        "{id} 已回答 {mark} · {status}"
-                    )));
+                    blocks.push(Block::Muted(say!(lang, answers_it, id, mark, status)));
                 }
             }
         }
@@ -2522,16 +2419,12 @@ impl Gallery {
             // Its ✓ waits, to be undone, in the card above.
         } else {
             blocks.push(Block::Row(vec![
-                (chrome!(lang, "✓ right, keep it", "✓ 对，保留"), Do::Judge(Answer::Right)),
-                (chrome!(lang, "✗ wrong…", "✗ 不对…"), Do::Judge(Answer::Wrong)),
+                (say!(lang, keep_it), Do::Judge(Answer::Right)),
+                (say!(lang, wrong_it), Do::Judge(Answer::Wrong)),
             ]));
-            blocks.push(Block::Muted(chrome!(
-                lang,
-                "✓: the agent takes the guess out, and the note closes itself · ✗: say what is right",
-                "✓：代理去掉这个猜测，便签自动关闭 · ✗：说明什么是对的"
-            )));
+            blocks.push(Block::Muted(say!(lang, judge_hint)));
         }
-        let title = chrome!(lang, "assumed, for you to answer", "假定，等你回答");
+        let title = say!(lang, assumed_title);
         Some(Card { ink: Ink::Assumed, ..Card::new(title, blocks) })
     }
 
@@ -2553,11 +2446,7 @@ impl Gallery {
     /// only, never the description.
     fn judge(&mut self, answer: Answer, now: Instant) {
         let Some((on, assumed)) = self.assumption() else {
-            return self.say(chrome!(
-                self.lang,
-                "nothing is assumed there: pick a node with an orange \"?\" first",
-                "那里没有假定：先选中一个带橙色「?」的节点"
-            ));
+            return self.say(say!(self.lang, nothing_assumed));
         };
         let (On::Node { node, .. }, Picture::Pages(pages)) = (&on.on, &self.picture) else {
             return;
@@ -2601,13 +2490,9 @@ impl Gallery {
         match notes::judge(&on, answers, "") {
             Ok(id) => {
                 self.notes = notes_of(&self.root, &self.lines);
-                self.say(chrome!(
-                    self.lang,
-                    "{id} saved ✓, for the agent to take the guess out: the note then closes itself",
-                    "{id} 已保存 ✓，由代理去掉这个猜测：之后便签自动关闭"
-                ));
+                self.say(say!(self.lang, judged_right_saved, id));
             }
-            Err(e) => self.say(chrome!(self.lang, "not saved: {e:#}", "没有保存：{e:#}")),
+            Err(e) => self.say(say!(self.lang, not_saved, e = format!("{e:#}"))),
         }
         true
     }
@@ -2627,17 +2512,9 @@ impl Gallery {
         let lang = self.lang;
         let left = confirming.at.saturating_duration_since(now).as_secs_f64().ceil();
         let on = confirming.on.on.said(lang);
-        let blocks = vec![
-            Block::Muted(chrome!(
-                lang,
-                "written to notes.json in {left}s, for the agent",
-                "{left} 秒后写入 notes.json，交给代理"
-            )),
-            Block::Button(chrome!(lang, "undo", "撤销"), Do::Undo),
-        ];
-        Some(Card {
-            ink: Ink::Answered, ..Card::new(chrome!(lang, "✓ right {on}", "✓ 对 {on}"), blocks)
-        })
+        let blocks =
+            vec![Block::Muted(say!(lang, confirming_in, left)), Block::Button(say!(lang, undo), Do::Undo)];
+        Some(Card { ink: Ink::Answered, ..Card::new(say!(lang, confirming_title, on), blocks) })
     }
 
     /// The card of the closed notes of the description whose overview is
@@ -2656,18 +2533,14 @@ impl Gallery {
         let blocks = closed
             .into_iter()
             .map(|note| {
-                let why =
-                    note.closed_because.clone().unwrap_or_else(|| chrome!(lang, "closed by you", "你关闭的"));
+                let why = note.closed_because.clone().unwrap_or_else(|| say!(lang, closed_by_you));
                 Block::Button(
                     format!("{} · {why} · {}", note.id, note.on.said(lang)),
                     Do::Show(wanted.dir.clone(), note.id.clone()),
                 )
             })
             .collect();
-        Some(Card::new(
-            chrome!(lang, "closed notes · click one to read or reopen it", "已关闭的便签 · 点一条查看或重开"),
-            blocks,
-        ))
+        Some(Card::new(say!(lang, closed_notes), blocks))
     }
 
     /// The note picked, if the description it names has it.
@@ -2690,7 +2563,7 @@ impl Gallery {
         let answers = match &note.answers {
             Some(answers) => {
                 let mark = answered(answers.answer, lang);
-                chrome!(lang, " · answers the assumption {mark}", " · 回答假定 {mark}")
+                say!(lang, answers_assumption, mark)
             }
             None => String::new(),
         };
@@ -2702,15 +2575,15 @@ impl Gallery {
         if reopening {
             blocks.extend(self.field_blocks());
         } else {
-            let close = (chrome!(lang, "close", "关闭"), Do::Close(dir.clone(), id.clone()));
+            let close = (say!(lang, close), Do::Close(dir.clone(), id.clone()));
             let reopen = Do::Reopen(dir, id);
             blocks.push(Block::Row(match note.status {
                 Status::Open => vec![close],
-                Status::Answered => vec![close, (chrome!(lang, "not yet…", "还没好…"), reopen)],
+                Status::Answered => vec![close, (say!(lang, not_yet), reopen)],
                 Status::Closed if note.closed_because.is_some() => {
-                    vec![(chrome!(lang, "reopen on the whole state…", "在整个状态上重开…"), reopen)]
+                    vec![(say!(lang, reopen_whole_state), reopen)]
                 }
-                Status::Closed => vec![(chrome!(lang, "reopen…", "重开…"), reopen)],
+                Status::Closed => vec![(say!(lang, reopen), reopen)],
             }));
         }
         let ink = if note.status == Status::Answered { Ink::Answered } else { Ink::Note };
@@ -2725,22 +2598,14 @@ impl Gallery {
         };
         let lang = self.lang;
         let empty = match &draft.on {
-            Writing::On(_) => chrome!(lang, "what should change here?", "这里要改什么？"),
-            Writing::Reopening(..) => chrome!(lang, "what is still to do?", "还有什么要做？"),
-            Writing::Rejecting(..) => chrome!(lang, "what is right?", "什么是对的？"),
+            Writing::On(_) => say!(lang, ask_change),
+            Writing::Reopening(..) => say!(lang, ask_still_to_do),
+            Writing::Rejecting(..) => say!(lang, ask_right),
         };
         let keys = if draft.text.is_blank() && !matches!(draft.on, Writing::On(_)) {
-            chrome!(
-                lang,
-                "not sent empty: write it first · Esc drops it",
-                "不能空着发送：先写下来 · Esc 放弃"
-            )
+            say!(lang, not_sent_empty)
         } else {
-            chrome!(
-                lang,
-                "Enter sends · Shift+Enter new line · Esc drops it",
-                "回车发送 · Shift+回车换行 · Esc 放弃"
-            )
+            say!(lang, enter_sends)
         };
         vec![Block::Field(draft.text.shown(), empty), Block::Muted(keys)]
     }
@@ -2750,11 +2615,7 @@ impl Gallery {
     /// shown. Whether that changed what is shown.
     fn start_noting(&mut self) -> bool {
         if matches!(self.picture, Picture::Faults(_)) {
-            self.say(chrome!(
-                self.lang,
-                "a note is written on a state, an overview or a flow: pick one in the tree, then press N",
-                "便签写在状态、总览或流程上：先在目录树里选中一个，再按 N"
-            ));
+            self.say(say!(self.lang, note_needs_picture));
             return true;
         }
         self.noting = true;
@@ -2804,11 +2665,7 @@ impl Gallery {
         };
         match on {
             Some(on) => self.draft_on(on),
-            None => self.say(chrome!(
-                self.lang,
-                "nothing a note can be on there: press N, then click a node, a picture's caption or an arrow",
-                "那里没有可以写便签的东西：按 N，再点一个节点、画面的标题或一个箭头"
-            )),
+            None => self.say(say!(self.lang, nothing_to_note)),
         }
         true
     }
@@ -2829,11 +2686,7 @@ impl Gallery {
     fn write(&mut self) {
         match self.reference() {
             Some(on) => self.draft_on(on),
-            None => self.say(chrome!(
-                self.lang,
-                "a note is on a node, a state or an arrow: click one first",
-                "便签写在节点、状态或箭头上：先点一个"
-            )),
+            None => self.say(say!(self.lang, note_needs_target)),
         }
     }
 
@@ -2858,24 +2711,20 @@ impl Gallery {
         let lang = self.lang;
         let saved = match &draft.on {
             Writing::On(on) => notes::add(on, &draft.text.text())
-                .map(|id| (on.description.clone(), id, chrome!(lang, "saved", "已保存"))),
+                .map(|id| (on.description.clone(), id, say!(lang, done_saved))),
             Writing::Reopening(dir, id) => notes::reopen(dir, id, &draft.text.text())
-                .map(|()| (dir.clone(), id.clone(), chrome!(lang, "reopened", "已重开"))),
+                .map(|()| (dir.clone(), id.clone(), say!(lang, done_reopened))),
             Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text.text())
-                .map(|id| (on.description.clone(), id, chrome!(lang, "saved ✗", "已保存 ✗"))),
+                .map(|id| (on.description.clone(), id, say!(lang, done_rejected))),
         };
         match saved {
             Ok((dir, id, done)) => {
                 self.notes = notes_of(&self.root, &self.lines);
-                self.say(chrome!(
-                    lang,
-                    "{id} {done}, for the agent: `underdraw notes` lists it",
-                    "{id} {done}，交给代理：`underdraw notes` 会列出它"
-                ));
+                self.say(say!(lang, note_sent, id, done));
                 self.note = Some((dir, id));
             }
             Err(e) => {
-                self.say(chrome!(lang, "not saved: {e:#}", "没有保存：{e:#}"));
+                self.say(say!(lang, not_saved, e = format!("{e:#}")));
                 self.draft = Some(draft);
             }
         }
@@ -2887,9 +2736,9 @@ impl Gallery {
             Ok(()) => {
                 self.notes = notes_of(&self.root, &self.lines);
                 self.note = None;
-                self.say(chrome!(self.lang, "{id} closed", "{id} 已关闭"));
+                self.say(say!(self.lang, note_closed, id));
             }
-            Err(e) => self.say(chrome!(self.lang, "not closed: {e:#}", "没有关闭：{e:#}")),
+            Err(e) => self.say(say!(self.lang, not_closed, e = format!("{e:#}"))),
         }
     }
 
@@ -3190,18 +3039,14 @@ impl Gallery {
         let region = self.region.as_ref()?;
         let lang = self.lang;
         let (Frame { x, y, width, height }, at) = (region.area, region.width);
-        let title = chrome!(
-            lang,
-            "region  {x}, {y} · {width} × {height} at {at}",
-            "区域  {x}, {y} · {width} × {height}，宽 {at}"
-        );
+        let title = say!(lang, region_title, x, y, width, height, at);
         let mut blocks = Vec::new();
         if region.nodes.is_empty() {
-            blocks.push(Block::Fact(chrome!(lang, "covers", "覆盖"), chrome!(lang, "no node", "没有节点")));
+            blocks.push(Block::Fact(say!(lang, covers), say!(lang, covers_nothing)));
         }
         for origin in &region.nodes {
             let node = format!("{}{}", origin.written, reference::instance(&origin.instance));
-            blocks.push(Block::Fact(chrome!(lang, "covers", "覆盖"), node));
+            blocks.push(Block::Fact(say!(lang, covers), node));
         }
         Some(Card::new(title, blocks))
     }
@@ -3219,38 +3064,29 @@ impl Gallery {
             pages.iter().find_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?)))?;
         let calls = match page.calls.get(id) {
             Some(operations) => operations.join(", "),
-            None => chrome!(lang, "nothing", "无"),
+            None => say!(lang, calls_nothing),
         };
-        let mut blocks = vec![Block::Fact(chrome!(lang, "calls", "调用"), calls)];
-        let (fold, details) = match lang {
-            Lang::En => (if self.details { "▾" } else { "▸" }, "details"),
-            Lang::Zh => (if self.details { "▾" } else { "▸" }, "详情"),
-        };
+        let mut blocks = vec![Block::Fact(say!(lang, calls), calls)];
+        let (fold, details) = (if self.details { "▾" } else { "▸" }, lang.words().details);
         blocks.push(Block::Fold(format!("{fold} {details}"), Do::Details));
         if self.details {
-            blocks.push(Block::Fact(chrome!(lang, "id", "标识"), id.clone()));
+            blocks.push(Block::Fact(say!(lang, id), id.clone()));
             for page in pages {
                 let width = page.width;
-                let at = chrome!(lang, "at {width}", "宽 {width}");
+                let at = say!(lang, at_width, width);
                 blocks.push(Block::Fact(
                     at,
                     match page.nodes.iter().find(|n| &n.id == id) {
                         Some(node) => {
                             let r = node.rect;
-                            let label = match (node.label, lang) {
-                                (Some(n), Lang::En) => format!("label {n}"),
-                                (Some(n), Lang::Zh) => format!("编号 {n}"),
-                                (None, Lang::En) => "no label".to_string(),
-                                (None, Lang::Zh) => "无编号".to_string(),
+                            let label = match node.label {
+                                Some(n) => say!(lang, node_label, n),
+                                None => say!(lang, node_no_label),
                             };
                             let (x, y, w, h) = (r.x, r.y, r.width, r.height);
-                            chrome!(
-                                lang,
-                                "{label} · box {x}, {y} · {w} × {h}",
-                                "{label} · 框 {x}, {y} · {w} × {h}"
-                            )
+                            say!(lang, node_box, label, x, y, w, h)
                         }
-                        None => chrome!(lang, "not in this state", "这个状态里没有"),
+                        None => say!(lang, not_in_state),
                     },
                 ));
             }
@@ -3328,7 +3164,7 @@ impl Gallery {
             .notes
             .get(&dir)
             .and_then(|notes| notes.iter().find(|note| note.id == id)?.reply())
-            .map(|reply| chrome!(self.lang, "{id} answered: {reply}", "{id} 已回答：{reply}"));
+            .map(|reply| say!(self.lang, note_answered, id, reply));
         let Some(said) = reply else {
             return Vec::new();
         };
@@ -3407,26 +3243,10 @@ impl Gallery {
         let journey = self.picked.and_then(|i| self.lines.get(i)).is_some_and(|line| line.journey);
         let lang = self.lang;
         let heading = match (journey, faults.len()) {
-            (true, 1) => chrome!(
-                lang,
-                "{within} has a fault, so it is not played: `underdraw check` its root",
-                "{within} 有 1 个错误，所以不能播放：对它的根目录运行 `underdraw check`"
-            ),
-            (true, n) => chrome!(
-                lang,
-                "{within} has {n} faults, so it is not played: `underdraw check` its root",
-                "{within} 有 {n} 个错误，所以不能播放：对它的根目录运行 `underdraw check`"
-            ),
-            (false, 1) => chrome!(
-                lang,
-                "{within} has a fault, so it is not drawn: `underdraw check` it",
-                "{within} 有 1 个错误，所以画不出来：对它运行 `underdraw check`"
-            ),
-            (false, n) => chrome!(
-                lang,
-                "{within} has {n} faults, so it is not drawn: `underdraw check` it",
-                "{within} 有 {n} 个错误，所以画不出来：对它运行 `underdraw check`"
-            ),
+            (true, 1) => say!(lang, faults_not_played_one, within),
+            (true, n) => say!(lang, faults_not_played_many, within, n),
+            (false, 1) => say!(lang, faults_not_drawn_one, within),
+            (false, n) => say!(lang, faults_not_drawn_many, within, n),
         };
         let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, chrome::HEADING)];
         let mut y = MARGIN + CAPTION + GAP;
@@ -3497,15 +3317,15 @@ impl Gallery {
             let open = self.open_notes(row, state.as_ref());
             if open > 0 {
                 let said = match open {
-                    1 => chrome!(self.lang, "1 note", "1 条便签"),
-                    n => chrome!(self.lang, "{n} notes", "{n} 条便签"),
+                    1 => say!(self.lang, notes_one),
+                    n => say!(self.lang, notes_many, n),
                 };
                 right = mark(&mut list, &mut self.typesetter, (right, y), said, Ink::Note);
             }
             if state.is_none() && !row.faults.is_empty() {
                 let said = match row.faults.len() {
-                    1 => chrome!(self.lang, "1 fault", "1 个错误"),
-                    n => chrome!(self.lang, "{n} faults", "{n} 个错误"),
+                    1 => say!(self.lang, faults_one),
+                    n => say!(self.lang, faults_many, n),
                 };
                 right = mark(&mut list, &mut self.typesetter, (right, y), said, Ink::Strong);
             }
@@ -3800,8 +3620,8 @@ fn flow_draws(flow: &Flow, picked: Option<usize>, lang: Lang) -> Vec<Draw> {
             Tile::Picture { .. } => {}
             Tile::Faulty(faults) => {
                 let mark = match faults {
-                    1 => chrome!(lang, "faulty: 1 fault, not drawn", "有错：1 个错误，没有画"),
-                    n => chrome!(lang, "faulty: {n} faults, not drawn", "有错：{n} 个错误，没有画"),
+                    1 => say!(lang, faulty_one),
+                    n => say!(lang, faulty_many, n),
                 };
                 let mut said = words(
                     rect(x + 8.0, middle.1 - 8.0, flow::WIDE - 16.0, 16.0),
@@ -3841,21 +3661,19 @@ fn parts(assumed: &str) -> (&str, Option<&str>) {
 
 /// An answer to an assumption, as the sidebar marks it in `lang`.
 fn answered(answer: Answer, lang: Lang) -> &'static str {
-    match (answer, lang) {
-        (Answer::Right, Lang::En) => "✓ right",
-        (Answer::Right, Lang::Zh) => "✓ 对",
-        (Answer::Wrong, Lang::En) => "✗ wrong",
-        (Answer::Wrong, Lang::Zh) => "✗ 不对",
+    match answer {
+        Answer::Right => lang.words().answer_right,
+        Answer::Wrong => lang.words().answer_wrong,
     }
 }
 
 /// Where `note` is in its life, as the sidebar says it in `lang`.
 fn note_status(note: &Note, lang: Lang) -> String {
     match (&note.status, &note.closed_because) {
-        (Status::Open, _) => chrome!(lang, "open, for the agent to answer", "待代理回答"),
-        (Status::Answered, _) => chrome!(lang, "answered", "已回答"),
-        (Status::Closed, Some(why)) => chrome!(lang, "closed: {why}", "已关闭：{why}"),
-        (Status::Closed, None) => chrome!(lang, "closed", "已关闭"),
+        (Status::Open, _) => say!(lang, status_open),
+        (Status::Answered, _) => say!(lang, status_answered),
+        (Status::Closed, Some(why)) => say!(lang, status_closed_because, why),
+        (Status::Closed, None) => say!(lang, status_closed),
     }
 }
 
@@ -3989,12 +3807,7 @@ impl ApplicationHandler<Told> for Gallery {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title(chrome!(
-                self.lang,
-                "underdraw gallery — {}",
-                "underdraw 画廊 — {}",
-                self.root.display()
-            ))
+            .with_title(say!(self.lang, window_title, root = self.root.display()))
             .with_inner_size(LogicalSize::new(1440.0, 900.0));
         let opened = event_loop.create_window(attributes).map_err(anyhow::Error::from).and_then(|window| {
             let window = Arc::new(window);

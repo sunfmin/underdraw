@@ -530,5 +530,6 @@ pub fn commands() -> Vec<String> {
 
 /// The language `--lang` names.
 fn lang(name: &str) -> Result<Lang, String> {
-    Lang::parse(name).ok_or_else(|| format!("write one of {}", Lang::NAMES.join(", ")))
+    Lang::parse(name)
+        .ok_or_else(|| format!("write one of {}", Lang::all().map(Lang::name).collect::<Vec<_>>().join(", ")))
 }
