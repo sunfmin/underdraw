@@ -270,8 +270,10 @@ impl Note {
     /// is in, where it stands, and its reference as one line; each message
     /// with its mark.
     pub fn answer(&self, root: &Path, dir: &Path) -> Value {
+        let description = crate::gallery::within(root, dir);
         let mut answer = json!({
-            "description": crate::gallery::within(root, dir),
+            "note": named(&description, &self.id),
+            "description": description,
             "id": self.id,
             "stands": self.stands(),
             "messages": self.messages,
@@ -535,16 +537,44 @@ fn find<'a>(notes: &'a mut [Note], dir: &Path, id: &str) -> anyhow::Result<&'a m
     }
 }
 
+/// What `notes <root>` names note `id` of the directory `description`
+/// under the root by, and `--answer` takes from that root:
+/// `<description>/<id>`, or `<id>` alone for the root's own.
+fn named(description: &str, id: &str) -> String {
+    match description {
+        "." => id.to_string(),
+        description => format!("{description}/{id}"),
+    }
+}
+
+/// The directory under `path` that note `name` ([`named`]) is in, and its
+/// id: `play/N1` is note N1 of `path/play`; `N1` alone, of `path` itself.
+fn naming(path: &Path, name: &str) -> anyhow::Result<(PathBuf, String)> {
+    let Some((description, id)) = name.rsplit_once('/') else {
+        return Ok((path.to_path_buf(), name.to_string()));
+    };
+    let dir = path.join(description);
+    match dir.canonicalize() {
+        Ok(dir) if dir.starts_with(path) => Ok((dir, id.to_string())),
+        _ => bail!(
+            "{} is not a directory under {}: --answer takes the note as `underdraw notes {}` names it (\"note\"), such as play/N1",
+            dir.display(),
+            path.display(),
+            path.display()
+        ),
+    }
+}
+
 /// Why the agent may not start a note.
-pub const THE_PERSONS: &str = "the agent cannot start a note: the person does that in the gallery (`underdraw gallery <root>`). Answer one with `underdraw notes <dir> --answer <id> --reply \"…\"`; to ask the person something unprompted, write an assumption (`assumed`) in the description";
+pub const THE_PERSONS: &str = "the agent cannot start a note: the person does that in the gallery (`underdraw gallery <root>`). Answer one with `underdraw notes <root> --answer <note> --reply \"…\"`; to ask the person something unprompted, write an assumption (`assumed`) in the description";
 
 /// How long `--wait` lets pass between two readings of the notes.
 const WAIT_BETWEEN: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// `underdraw notes <path>`: the notes waiting on the agent of the
 /// description at `path`, or of every description under it, each with its
-/// reference; or, given `answer`, that note of the description at `path`
-/// answered with `reply`. With `wait`, the waiting notes once there is
+/// reference; or, given `answer`, that note, as the listing of `path`
+/// names it ([`naming`]), answered with `reply`. With `wait`, the waiting notes once there is
 /// any: at once when some wait already, else as soon as the person says
 /// something; each message handed over is marked taken, so the window
 /// tells the person the agent is changing it. Nothing is kept between
@@ -554,27 +584,27 @@ pub fn notes(path: &Path, answer: Option<&str>, reply: Option<&str>, wait: bool)
         bail!("{} is not a directory: pass a description's directory, or a root of them", path.display());
     }
     let path = path.canonicalize().with_context(|| format!("cannot read {}", path.display()))?;
-    if let Some(id) = answer {
+    if let Some(name) = answer {
         if wait {
             bail!(
                 "--answer answers one note: run it without --wait, which lists notes, then answer what it lists"
             );
         }
-        if !crate::describes(&path) && !path.join(NOTES).is_file() {
+        let (dir, id) = naming(&path, name)?;
+        if !crate::describes(&dir) && !dir.join(NOTES).is_file() {
             bail!(
-                "{} holds no {SCREEN}, shows no shared component and keeps no {NOTES}: --answer takes the directory the note is in, as \"description\" names it under the root",
-                path.display()
+                "{} holds no {SCREEN}, shows no shared component and keeps no {NOTES}: --answer takes the note as `underdraw notes <root>` names it (\"note\"), such as play/N1, with that same <root>",
+                dir.display()
             );
         }
         let Some(reply) = reply else {
             bail!("--answer needs --reply \"…\": what was done, or why not, or what you ask back");
         };
-        let (note, changed) = self::answer(&path, id, reply)?;
-        let root = path.parent().unwrap_or(&path).to_path_buf();
-        return Ok(json!({ "note": note.answer(&root, &path), "changed": changed }));
+        let (note, changed) = self::answer(&dir, &id, reply)?;
+        return Ok(json!({ "note": note.answer(&path, &dir), "changed": changed }));
     }
     if reply.is_some() {
-        bail!("--reply answers a note: give the note with --answer <id>");
+        bail!("--reply answers a note: give the note with --answer <note>, as the listing names it");
     }
     loop {
         let (waiting, counts) = listed(&path, wait)?;

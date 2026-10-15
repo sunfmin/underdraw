@@ -46,7 +46,8 @@ START HERE
   underdraw notes <root>     what the person said there: each note waiting on
                              you, a conversation pinned to a node, a state or an
                              arrow; act on it, then answer it with
-                             `underdraw notes <dir> --answer N1 --reply "…"`;
+                             `underdraw notes <root> --answer play/N1 --reply "…"`,
+                             the note as the listing names it ("note");
                              `underdraw notes <root> --wait` in the background
                              answers when the person next says something
   underdraw handoff <dir> --platform ios
@@ -75,7 +76,8 @@ COMMANDS
                              and play each journey under it step by step
     underdraw notes <root>   the person's notes waiting on the agent, each a
                              conversation with where it is pinned;
-                             with --answer <id> --reply "…", one answered;
+                             with --answer <note> --reply "…", one answered,
+                             <note> as the listing names it (play/N1);
                              with --wait, once one waits
     underdraw render <dir>   a wireframe PNG of one state, and where each node went,
                              for the agent to read the node boxes; with --all,
