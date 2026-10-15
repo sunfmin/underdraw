@@ -1,0 +1,43 @@
+{
+  "width": 390,
+  "elements": [
+    {"id":"docs"},
+    {"id":"nav"},
+    {"id":"nav-title","text":"团队文档"},
+    {"id":"nav-new"},
+    {"id":"toolbar"},
+    {"id":"doc-count","text":"共 6 个文档"},
+    {"id":"selected-count","text":"已选 2 个"},
+    {"id":"delete-selected","text":"删除所选","enabled":true},
+    {"id":"sort-button","text":"排序：最近修改"},
+    {"id":"list"},
+    {"id":"doc-a"},
+    {"id":"doc-a-select"},
+    {"id":"doc-a-more"},
+    {"id":"doc-b"},
+    {"id":"doc-b-select"},
+    {"id":"doc-b-more"},
+    {"id":"doc-c"},
+    {"id":"doc-c-select"},
+    {"id":"doc-c-more"},
+    {"id":"doc-d"},
+    {"id":"doc-d-select"},
+    {"id":"doc-d-more"},
+    {"id":"doc-e"},
+    {"id":"doc-e-select"},
+    {"id":"doc-e-more"},
+    {"id":"doc-f"},
+    {"id":"doc-f-select"},
+    {"id":"doc-f-more"},
+    {"id":"confirm-delete-selected"},
+    {"id":"confirm-delete-selected-title","text":"删除所选的 2 个文档？"},
+    {"id":"confirm-delete-selected-detail","text":"团队里的所有人都将无法再打开它们，删除后无法恢复。"},
+    {"id":"confirm-delete-selected-actions"},
+    {"id":"confirm-delete-selected-cancel","text":"取消"},
+    {"id":"confirm-delete-selected-confirm","text":"删除"}
+  ],
+  "acted": [
+    {"id":"confirm-delete-selected-confirm","on":"tap","calls":[{"operation":"deleteDoc","with":{"id":"c"}},{"operation":"deleteDoc","with":{"id":"e"}}]},
+    {"id":"confirm-delete-selected-cancel","on":"tap","calls":[]}
+  ]
+}
