@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
+use underdraw_format::Finding;
 
-use crate::SCREEN;
+use crate::{SCREEN, check_at};
 
 /// Directories a description keeps beside it that hold no description.
 const LEFT_OUT: [&str; 2] = ["renders", "platforms"];
@@ -29,22 +30,41 @@ pub struct Row {
     pub name: String,
     /// The description's directory, when this directory holds one.
     pub description: Option<PathBuf>,
+    /// What `check` finds wrong with the description: none when it can be
+    /// drawn.
+    pub faults: Vec<Finding>,
+}
+
+/// What `check` finds wrong with the description in `dir`; where it cannot
+/// even be read, why, as one finding at its screen.json.
+pub fn faults(dir: &Path) -> Vec<Finding> {
+    match check_at(dir) {
+        Ok(checked) => checked.findings,
+        Err(e) => vec![Finding { at: SCREEN.to_string(), problem: format!("{e:#}") }],
+    }
 }
 
 /// The tree of every description under `root`, as the directories are
 /// arranged, each directory before what it holds and in order of name:
 /// renders/, platforms/, hidden directories and directories leading to no
 /// description left out. `root` is a row of its own only when it is itself
-/// a description.
+/// a description. Each description is checked, all at once.
 pub fn tree(root: &Path) -> Vec<Row> {
     let mut rows = Vec::new();
     if root.join(SCREEN).is_file() {
         let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
-        rows.push(Row { depth: 0, name, description: Some(root.to_path_buf()) });
+        rows.push(Row { depth: 0, name, description: Some(root.to_path_buf()), faults: Vec::new() });
         walk(root, 1, &mut rows);
     } else {
         walk(root, 0, &mut rows);
     }
+    std::thread::scope(|scope| {
+        for Row { description, faults: found, .. } in &mut rows {
+            if let Some(dir) = description {
+                scope.spawn(move || *found = faults(dir));
+            }
+        }
+    });
     rows
 }
 
@@ -65,7 +85,7 @@ fn walk(dir: &Path, depth: usize, rows: &mut Vec<Row>) {
         let at = rows.len();
         let description = path.join(SCREEN).is_file().then(|| path.clone());
         let holds_one = description.is_some();
-        rows.push(Row { depth, name, description });
+        rows.push(Row { depth, name, description, faults: Vec::new() });
         walk(&path, depth + 1, rows);
         if !holds_one && rows.len() == at + 1 {
             rows.pop();
@@ -80,15 +100,19 @@ pub fn gallery(root: &Path) -> anyhow::Result<Value> {
         bail!("{} is not a directory: pass the directory the screen descriptions are under", root.display());
     }
     let root = root.canonicalize().with_context(|| format!("cannot read {}", root.display()))?;
-    let descriptions: Vec<String> = tree(&root)
-        .into_iter()
-        .filter_map(|row| row.description)
-        .map(|dir| match dir.strip_prefix(&root) {
-            Ok(within) if within.as_os_str().is_empty() => ".".to_string(),
-            Ok(within) => within.to_string_lossy().to_string(),
-            Err(_) => dir.to_string_lossy().to_string(),
-        })
-        .collect();
+    let within = |dir: &Path| match dir.strip_prefix(&root) {
+        Ok(within) if within.as_os_str().is_empty() => ".".to_string(),
+        Ok(within) => within.to_string_lossy().to_string(),
+        Err(_) => dir.to_string_lossy().to_string(),
+    };
+    let (mut descriptions, mut faulty) = (Vec::new(), Vec::new());
+    for row in tree(&root) {
+        let Some(dir) = row.description else { continue };
+        if !row.faults.is_empty() {
+            faulty.push(within(&dir));
+        }
+        descriptions.push(within(&dir));
+    }
     if descriptions.is_empty() {
         bail!(
             "there is no screen description under {}: a description is a directory holding {SCREEN}",
@@ -97,7 +121,7 @@ pub fn gallery(root: &Path) -> anyhow::Result<Value> {
     }
     display()?;
     let pid = open(&root)?;
-    Ok(json!({ "root": root, "descriptions": descriptions, "opened": true, "pid": pid }))
+    Ok(json!({ "root": root, "descriptions": descriptions, "faults": faulty, "opened": true, "pid": pid }))
 }
 
 /// What to do where no window can be opened.
@@ -160,8 +184,16 @@ fn open(root: &Path) -> anyhow::Result<u32> {
 mod tests {
     use super::*;
 
-    fn row(depth: usize, name: &str, description: Option<&Path>) -> Row {
-        Row { depth, name: name.to_string(), description: description.map(Path::to_path_buf) }
+    /// The rows as (depth, name, description, whether it has faults).
+    fn rows(root: &Path) -> Vec<(usize, String, Option<PathBuf>, bool)> {
+        tree(root)
+            .into_iter()
+            .map(|row| (row.depth, row.name, row.description, !row.faults.is_empty()))
+            .collect()
+    }
+
+    fn row(depth: usize, name: &str, description: Option<&Path>) -> (usize, String, Option<PathBuf>, bool) {
+        (depth, name.to_string(), description.map(Path::to_path_buf), description.is_some())
     }
 
     #[test]
@@ -182,7 +214,7 @@ mod tests {
             std::fs::write(root.join(dir).join(SCREEN), "{}").unwrap();
         }
         assert_eq!(
-            tree(&root),
+            rows(&root),
             vec![
                 row(0, "a-flow", None),
                 row(1, "sign-in", Some(&root.join("a-flow/sign-in"))),
@@ -192,7 +224,36 @@ mod tests {
             ]
         );
         let screen = root.join("b-screen");
-        assert_eq!(tree(&screen), vec![row(0, "b-screen", Some(&screen))], "a root that is a description");
+        assert_eq!(rows(&screen), vec![row(0, "b-screen", Some(&screen))], "a root that is a description");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_description_with_faults_is_listed_with_what_check_finds() {
+        let root = std::env::temp_dir().join(format!("underdraw-gallery-faults-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for dir in ["empty", "not-json"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        std::fs::write(root.join("empty").join(SCREEN), "{}").unwrap();
+        std::fs::write(root.join("not-json").join(SCREEN), "{").unwrap();
+        let rows = tree(&root);
+        let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, ["empty", "not-json"], "both are listed");
+        let checked = check_at(&root.join("empty")).unwrap();
+        assert!(!checked.findings.is_empty());
+        let found =
+            |faults: &[Finding]| faults.iter().map(|f| (f.at.clone(), f.problem.clone())).collect::<Vec<_>>();
+        assert_eq!(found(&rows[0].faults), found(&checked.findings), "as `check` names them");
+        assert_eq!(rows[1].faults.len(), 1);
+        assert_eq!(rows[1].faults[0].at, SCREEN);
+        assert!(rows[1].faults[0].problem.contains("is not JSON"), "{}", rows[1].faults[0].problem);
+        assert!(
+            tree(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts")))
+                .iter()
+                .all(|row| row.faults.is_empty()),
+            "the drafts have none"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

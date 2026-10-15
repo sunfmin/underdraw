@@ -19,13 +19,18 @@ DOES
   description draws its first fixture as a wireframe at 390 (a phone) and
   1120 (a desktop) side by side, labelled as `render` labels them; scroll a
   tall page with the mouse wheel or trackpad. A description with faults
-  shows them instead of a picture: `underdraw check` it.
+  stays in the tree, marked with how many it has; picking it lists each
+  finding as `underdraw check` names it (where, then what is wrong) instead
+  of a picture. Fix them and check it again.
 
 ANSWERS
   {
     "root":         the directory searched
     "descriptions": the directories holding a screen.json, relative to root,
                     in the order the tree lists them
+    "faults":       those of them `underdraw check` finds faults in, in the
+                    same order; [] when every one can be drawn. Run
+                    `underdraw check <root>/<each>` to read and fix them
     "opened":       true: the window is open
     "pid":          the window's process
   }
