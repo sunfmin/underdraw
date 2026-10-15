@@ -264,7 +264,7 @@ fn hold(name: &str, width: u32, height: u32, pixels: &[u8]) {
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
     let (left, width) = (gallery.panes.pictures().x1, gallery.panes.side_width());
-    let (cards, foot) = gallery.placed().expect("the sidebar is shown").draws();
+    let (cards, foot) = gallery.placed().expect("the sidebar is shown").draws(true);
     let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
     for draw in cards.iter().chain(&foot) {
         let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
