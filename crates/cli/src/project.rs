@@ -29,12 +29,13 @@ impl Project {
     /// The project of the screen whose directory is `dir`; refused when
     /// the tokens it takes are not JSON.
     pub fn of(dir: &Path) -> anyhow::Result<Project> {
-        let root = nearest(dir, DOMAIN).unwrap_or_else(|| dir.to_path_buf());
-        let tokens_file = nearest(dir, TOKENS);
+        let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+        let root = nearest(&dir, DOMAIN).unwrap_or_else(|| dir.clone());
+        let tokens_file = nearest(&dir, TOKENS).map(|at| at.join(TOKENS));
         let tokens = match &tokens_file {
             Some(file) => {
-                let text =
-                    std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
+                let text = std::fs::read_to_string(file)
+                    .with_context(|| format!("cannot read {}", file.display()))?;
                 serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))?
             }
             None => json!({}),
@@ -43,10 +44,9 @@ impl Project {
     }
 }
 
-/// `name` in the nearest directory at or above `dir` that holds it.
+/// The nearest directory at or above `dir` that holds the file `name`.
 fn nearest(dir: &Path, name: &str) -> Option<PathBuf> {
-    let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
-    dir.ancestors().map(|at| at.join(name)).find(|file| file.is_file())
+    dir.ancestors().find(|at| at.join(name).is_file()).map(Path::to_path_buf)
 }
 
 #[cfg(test)]

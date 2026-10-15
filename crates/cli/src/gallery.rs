@@ -454,6 +454,24 @@ mod tests {
     }
 
     #[test]
+    fn screens_sharing_tokens_one_directory_above_have_no_faults() {
+        let draft = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/todo"));
+        let root = std::env::temp_dir().join(format!("underdraw-gallery-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for dir in ["one", "two"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+            for file in [SCREEN, KINDS] {
+                std::fs::copy(draft.join(file), root.join(dir).join(file)).unwrap();
+            }
+        }
+        std::fs::copy(draft.join(TOKENS), root.join(TOKENS)).unwrap();
+        let rows = tree(&root);
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| row.faults.is_empty()), "{:?}", rows);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn the_stamp_changes_with_what_the_window_is_drawn_from_and_nothing_else() {
         let root = std::env::temp_dir().join(format!("underdraw-gallery-stamp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -472,6 +490,7 @@ mod tests {
         step("its tokens written", &|| std::fs::write(dir.join(TOKENS), "{}").unwrap(), true);
         step("its kinds written", &|| std::fs::write(dir.join(KINDS), "{}").unwrap(), true);
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
+        step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);
         step("a directory added", &|| std::fs::create_dir_all(root.join("a/b")).unwrap(), true);
         step("a directory removed", &|| std::fs::remove_dir_all(root.join("a")).unwrap(), true);
         step(

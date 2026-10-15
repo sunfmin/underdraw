@@ -98,7 +98,8 @@ DOES
   description that gains faults shows them, and its picture again once
   they are fixed. A description directory added under <root> comes into
   the tree, and one removed leaves it. When the state shown goes, its
-  description's overview is shown instead. The window opens on the first description's overview.
+  description's overview is shown instead. The window opens on the first
+  description's overview.
 
 ANSWERS
   {
