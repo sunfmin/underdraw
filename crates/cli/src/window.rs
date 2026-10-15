@@ -1591,10 +1591,8 @@ impl Gallery {
                 "    reopen it on the whole state, saying what is still to do".to_string(),
                 Some(Do::Reopen(dir, id)),
             )),
-            Status::Closed => rows.push((
-                "    reopen it, saying what is still to do".to_string(),
-                Some(Do::Reopen(dir, id)),
-            )),
+            Status::Closed => rows
+                .push(("    reopen it, saying what is still to do".to_string(), Some(Do::Reopen(dir, id)))),
         }
         rows
     }
@@ -3737,6 +3735,69 @@ mod tests {
         assert_eq!(notes::read(&dir).unwrap()[1].status, Status::Closed);
         let left: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
         assert!(left.iter().all(|id| id == "N1"), "a closed note is drawn no more: {left:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_note_whose_node_is_renamed_closes_itself_says_so_once_and_reopens_on_the_whole_state() {
+        let root = root_of("notes-gone", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        press_keys(&mut gallery, &["n"]);
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        gallery.press();
+        gallery.release();
+        type_text(&mut gallery, "say export what");
+        press_keys(&mut gallery, &["Enter"]);
+        let dir = root.join("orders");
+        notes::answer(&dir, "N1", "it says Export").unwrap();
+
+        let file = dir.join(crate::SCREEN);
+        let screen = std::fs::read_to_string(&file).unwrap().replace("\"nav-export\"", "\"nav-download\"");
+        std::fs::write(&file, screen).unwrap();
+        gallery.reload();
+        assert_eq!(
+            gallery.panel()[0],
+            "N1 closed: nav-export is gone (removed or renamed) · its description's overview lists it, to reopen"
+        );
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!(note.status, Status::Closed, "an answered note closes itself too");
+        assert!(gallery.pins().is_empty(), "and is drawn no more");
+        assert_eq!(
+            gallery.panel()[1],
+            "N1 · closed: nav-export is gone (removed or renamed) · on nav-export in default at 390",
+            "the note picked says why"
+        );
+        (gallery.acted, gallery.note) = (None, None);
+        gallery.reload();
+        assert!(gallery.panel().is_empty(), "said once: {:?}", gallery.panel());
+
+        let orders = line_of(&gallery, "orders");
+        gallery.pick(orders);
+        assert_eq!(
+            gallery.panel(),
+            [
+                "closed notes · click one to read or reopen it",
+                "    N1 · nav-export is gone (removed or renamed) · on nav-export in default at 390",
+            ]
+        );
+        assert!(click_panel_line(
+            &mut gallery,
+            "N1 · nav-export is gone (removed or renamed) · on nav-export in default at 390"
+        ));
+        assert_eq!(
+            gallery.panel()[0],
+            "N1 · closed: nav-export is gone (removed or renamed) · on nav-export in default at 390"
+        );
+        assert!(click_panel_line(&mut gallery, "reopen it on the whole state, saying what is still to do"));
+        type_text(&mut gallery, "the download link then");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!(note.status, Status::Open);
+        assert_eq!(note.on, On::State { state: State::Fixture("default".into()) }, "on the whole state");
+        assert_eq!(note.closed_because, None);
+        assert_eq!(note.thread.len(), 3, "its thread kept, the new line added");
         std::fs::remove_dir_all(root).unwrap();
     }
 

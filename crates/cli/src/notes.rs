@@ -325,7 +325,8 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
             Shown::Fixture(_) => ("fixtures", "fixture"),
             Shown::Phase(_) => ("phases", "phase"),
         };
-        let there = screen.get(key).and_then(Value::as_object).is_some_and(|all| all.contains_key(state.name()));
+        let there =
+            screen.get(key).and_then(Value::as_object).is_some_and(|all| all.contains_key(state.name()));
         if !there {
             return removed(&format!("{kind} {}", state.name()));
         }
@@ -692,5 +693,73 @@ mod tests {
         std::fs::write(dir.join(NOTES), "{").unwrap();
         assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn what_a_note_is_on_is_gone_once_the_description_no_longer_writes_it() {
+        let screen = json!({
+            "screen": "OrderList",
+            "fixtures": { "default": {} },
+            "phases": { "loading": { "id": "spinner" } },
+            "root": { "id": "list", "children": [
+                { "id": "nav-export", "on": { "tap": { "navigate": "ExportDocuments" } } },
+                { "id": "order-{index}" },
+            ] },
+            "transitions": [{ "from": "default", "on": "nav-export.tap", "to": "loading" }],
+        });
+        let node = |written: &str| Origin { written: written.into(), at: String::new(), instance: vec![] };
+        let default = Shown::Fixture("default".into());
+        let on_node = |state: Shown, written: &str| On::Node {
+            state,
+            node: Pointed { origin: node(written), label: None, width: 390 },
+        };
+        let region = |nodes: Vec<Origin>| On::Region {
+            state: default.clone(),
+            region: Region { area: Frame { x: 0, y: 0, width: 1, height: 1 }, width: 390, nodes },
+        };
+        let transition = |to: &str| On::Transition {
+            transition: Transition {
+                from: "default".into(),
+                on: "nav-export.tap".into(),
+                outcome: None,
+                to: to.into(),
+            },
+        };
+        let navigate = |from: &str| On::Navigate {
+            navigate: Navigate { from: from.into(), node: "nav-export".into(), to: "ExportDocuments".into() },
+        };
+        for there in [
+            on_node(default.clone(), "order-{index}"),
+            on_node(Shown::Phase("loading".into()), "spinner"),
+            On::State { state: default.clone() },
+            region(vec![]),
+            region(vec![node("gone"), node("list")]),
+            transition("loading"),
+            navigate("OrderList"),
+        ] {
+            assert_eq!(gone(&screen, &there), None, "{there:?}");
+        }
+        let said = |on: On| gone(&screen, &on).unwrap();
+        assert_eq!(said(on_node(default.clone(), "order-{id}")), "order-{id} is gone (removed or renamed)");
+        assert_eq!(
+            said(on_node(Shown::Fixture("empty".into()), "list")),
+            "fixture empty is gone (removed or renamed)"
+        );
+        assert_eq!(
+            said(On::State { state: Shown::Phase("error".into()) }),
+            "phase error is gone (removed or renamed)"
+        );
+        assert_eq!(
+            said(region(vec![node("a"), node("b")])),
+            "the nodes it covered, a, b, are gone (removed or renamed)"
+        );
+        assert_eq!(
+            said(transition("default")),
+            "transition from default on nav-export.tap to default is gone (removed or changed)"
+        );
+        assert_eq!(
+            said(navigate("Orders")),
+            "navigate from Orders on nav-export to ExportDocuments is gone (removed or changed)"
+        );
     }
 }
