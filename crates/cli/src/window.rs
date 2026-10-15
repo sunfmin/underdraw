@@ -32,12 +32,12 @@ use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::chrome::{
     ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SPACE,
-    THUMB, THUMB_TALL, TREE,
+    THUMB, THUMB_TALL, TREE, TREE_LEAST,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::field::{Edit, Field, Motion};
@@ -156,6 +156,13 @@ struct Gallery {
     /// Whether the card of the node picked is unfolded to its details: its
     /// id, and its label and box at each width.
     details: bool,
+    /// The tree's width, in points: where the line between it and the
+    /// pictures is, and the pictures' pane starts. Dragging the line moves
+    /// it, held to [`Gallery::tree_bounds`].
+    tree: f64,
+    /// Whether the line between the tree and the pictures is held, being
+    /// dragged.
+    resizing: bool,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
@@ -623,6 +630,8 @@ impl Gallery {
             across: 0.0,
             sidebar: true,
             details: false,
+            tree: TREE,
+            resizing: false,
             cursor: (0.0, 0.0),
             acting: false,
             history: Vec::new(),
@@ -664,7 +673,7 @@ impl Gallery {
     /// Scrolled `right` and `down` points, the pane under the pointer: the
     /// tree, the sidebar, or the pictures, which alone scroll across.
     fn wheel(&mut self, right: f64, down: f64) {
-        if self.cursor.0 < TREE {
+        if self.cursor.0 < self.tree {
             self.tree_scroll += down;
         } else if self.cursor.0 >= self.pane_right() {
             self.side_scroll += down;
@@ -683,7 +692,34 @@ impl Gallery {
 
     /// How wide the pictures' pane is, between the tree and the sidebar.
     fn pane(&self) -> f64 {
-        self.pane_right() - TREE
+        self.pane_right() - self.tree
+    }
+
+    /// The least and the most the tree's width can be: [`TREE_LEAST`], and
+    /// what leaves the pictures' pane room for the phone's picture at
+    /// [`SMALLEST`], with the space around it. In a window too narrow for
+    /// both, the least.
+    fn tree_bounds(&self) -> (f64, f64) {
+        let picture = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
+        (TREE_LEAST, (self.pane_right() - picture).max(TREE_LEAST))
+    }
+
+    /// Whether the pointer is on the line between the tree and the
+    /// pictures, near enough to take hold of it.
+    fn on_tree_line(&self) -> bool {
+        (self.cursor.0 - self.tree).abs() <= chrome::GRIP
+    }
+
+    /// The pointer moved, the line held: the tree as wide as where the
+    /// pointer is, within its bounds, and the pictures fitted to what is
+    /// left. Whether the line is held.
+    fn resize_tree(&mut self) -> bool {
+        if !self.resizing {
+            return false;
+        }
+        self.tree = self.cursor.0;
+        self.clamp();
+        true
     }
 
     /// The sidebar shown, or hidden, its width given to the pictures.
@@ -701,6 +737,12 @@ impl Gallery {
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
+        // On the line between the tree and the pictures, only taking hold
+        // of it: no line of the tree, nor region, is picked.
+        if self.on_tree_line() {
+            self.resizing = true;
+            return false;
+        }
         if self.cursor.0 >= self.pane_right() {
             if self.press_field() {
                 return true;
@@ -710,7 +752,7 @@ impl Gallery {
                 None => false,
             };
         }
-        if self.cursor.0 >= TREE {
+        if self.cursor.0 >= self.tree {
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
             }
@@ -814,6 +856,7 @@ impl Gallery {
     /// Whether that changed what is shown.
     fn release(&mut self) -> bool {
         self.selecting = None;
+        self.resizing = false;
         let Some(from) = self.held.take() else {
             return false;
         };
@@ -1536,7 +1579,7 @@ impl Gallery {
             .enumerate()
             .map(|(index, thumb)| {
                 let (column, row) = ((index % columns) as f64, (index / columns) as f64);
-                let x = TREE + MARGIN + column * (THUMB + SPACE);
+                let x = self.tree + MARGIN + column * (THUMB + SPACE);
                 let y = MARGIN - self.scroll + CAPTION + row * (CAPTION + THUMB_TALL + SPACE);
                 (x, y, THUMB, (thumb.height * THUMB / thumb.width).min(THUMB_TALL))
             })
@@ -1790,7 +1833,7 @@ impl Gallery {
 
     /// Where the flow's top-left corner is in the window, in points.
     fn flow_origin(&self) -> (f64, f64) {
-        (TREE + MARGIN, MARGIN - self.scroll)
+        (self.tree + MARGIN, MARGIN - self.scroll)
     }
 
     /// `at`, a point in the window, in the flow's points.
@@ -1805,7 +1848,7 @@ impl Gallery {
             return Vec::new();
         };
         let zoom = self.zoom(self.pane());
-        let mut x = TREE + MARGIN - self.across;
+        let mut x = self.tree + MARGIN - self.across;
         let top = MARGIN - self.scroll + CAPTION;
         pages
             .iter()
@@ -3338,8 +3381,11 @@ impl Gallery {
         (list, y)
     }
 
-    /// The scrolls kept inside what there is to scroll.
+    /// The tree's width kept within its bounds, and the scrolls inside
+    /// what there is to scroll.
     fn clamp(&mut self) {
+        let (least, most) = self.tree_bounds();
+        self.tree = self.tree.clamp(least, most);
         let height = self.size.1;
         let below = (self.pictures_height(self.pane()) - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
@@ -3354,14 +3400,14 @@ impl Gallery {
     /// The whole window, in points.
     fn frame(&mut self) -> Scene {
         let (width, height) = self.size;
-        let mut list =
-            vec![Draw::Line { from: [TREE as f32, 0.0], to: [TREE as f32, height as f32], ink: Ink::Line }];
+        let tree = self.tree;
+        let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
             let Line { row, state, .. } = line;
             let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
             if self.picked == Some(index) {
                 list.push(Draw::Box {
-                    rect: rect(6.0, y + 1.0, TREE - 12.0, ROW - 2.0),
+                    rect: rect(6.0, y + 1.0, tree - 12.0, ROW - 2.0),
                     radius: chrome::PICKED_RADIUS,
                     fill: Some(Ink::Fill),
                     stroke: None,
@@ -3376,7 +3422,7 @@ impl Gallery {
                 (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
                 (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
-            let mut right = TREE - 14.0;
+            let mut right = tree - 14.0;
             let open = self.open_notes(row, state.as_ref());
             if open > 0 {
                 let said = match open {
@@ -3395,7 +3441,7 @@ impl Gallery {
             let top = y + (ROW - f64::from(chrome::BODY.line_height)) / 2.0;
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
-        let left = TREE + MARGIN;
+        let left = tree + MARGIN;
         let (faults, _) = self.faults(self.pane());
         let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
         let zoom = self.zoom(self.pane());
@@ -3514,10 +3560,10 @@ impl Gallery {
 
         let mut scene = Scene::new();
         let at = Affine::IDENTITY;
-        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, TREE, height));
-        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(TREE, 0.0, right, height));
+        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, tree, height));
+        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(tree, 0.0, right, height));
         scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(right, 0.0, width, height));
-        scene.push_clip_layer(Fill::NonZero, at, &Area::new(TREE, 0.0, right, height));
+        scene.push_clip_layer(Fill::NonZero, at, &Area::new(tree, 0.0, right, height));
         if let Picture::Flow(flow) = &self.picture {
             let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
             for (place, tile) in flow.map.places.iter().zip(&flow.tiles) {
@@ -3572,7 +3618,13 @@ impl Gallery {
         paint::draws(&mut scene, at, &over, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
         paint::draws(&mut scene, at, &side, chrome::colour, &mut self.typesetter);
+        // The tree's names cut at its edge, however narrow it is dragged.
+        scene.push_clip_layer(Fill::NonZero, at, &Area::new(0.0, 0.0, tree, height));
         paint::draws(&mut scene, at, &list, chrome::colour, &mut self.typesetter);
+        scene.pop_layer();
+        let edge =
+            [Draw::Line { from: [tree as f32, 0.0], to: [tree as f32, height as f32], ink: Ink::Line }];
+        paint::draws(&mut scene, at, &edge, chrome::colour, &mut self.typesetter);
         scene
     }
 
@@ -3967,7 +4019,14 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
                 let window = shown.window.clone();
-                if self.hover() || self.held.is_some() || self.drag_field() {
+                let grip = if self.resizing || self.on_tree_line() {
+                    CursorIcon::EwResize
+                } else {
+                    CursorIcon::Default
+                };
+                window.set_cursor(grip);
+                let resized = self.resize_tree();
+                if resized || self.hover() || self.held.is_some() || self.drag_field() {
                     window.request_redraw();
                 }
             }
@@ -4170,7 +4229,7 @@ mod tests {
         assert_eq!(widths, vec![390.0, 1120.0]);
         assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
         assert!(!gallery.press(), "picking it again changes nothing");
-        gallery.cursor = (TREE + 100.0, 100.0);
+        gallery.cursor = (gallery.tree + 100.0, 100.0);
         gallery.press();
         assert_eq!(gallery.picked, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
@@ -4255,7 +4314,7 @@ mod tests {
         gallery.press();
         let end = gallery.pictures_height(gallery.pane()) - 900.0;
         assert!(end > 0.0, "the listing is taller than the window");
-        gallery.cursor = (TREE + 100.0, 400.0);
+        gallery.cursor = (gallery.tree + 100.0, 400.0);
         gallery.wheel(0.0, 120.0);
         assert_eq!(gallery.scroll, 120.0);
         gallery.wheel(0.0, 1e6);
@@ -4484,7 +4543,7 @@ mod tests {
         assert_eq!(gallery.zoom(gallery.pane()), SMALLEST, "no smaller than half");
         let beyond = gallery.pictures_width(gallery.pane()) - gallery.pane();
         assert!(beyond > 0.0, "wider than the pane");
-        gallery.cursor = (TREE + 100.0, 400.0);
+        gallery.cursor = (gallery.tree + 100.0, 400.0);
         gallery.wheel(1e6, 0.0);
         assert_eq!(gallery.across, beyond, "scrolled across as far as the last picture's end");
         gallery.cursor = on_node(&gallery, 1, "nav-save");
@@ -4505,6 +4564,52 @@ mod tests {
         assert!(!tagged.is_empty(), "the labels are kept apart from the scene");
         let drawn: Vec<(f32, String)> = gallery.labels().iter().filter_map(tag).collect();
         assert_eq!(drawn, tagged, "each drawn at its own size, at half size too");
+    }
+
+    #[test]
+    fn dragging_the_line_between_the_tree_and_the_pictures_resizes_the_tree_within_its_bounds() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        assert_eq!(gallery.tree, TREE, "the window opens with the tree at 260pt");
+        // The sidebar hidden, the pictures are above half size, to shrink.
+        gallery.toggle_sidebar();
+        let (picked, wide) = (gallery.picked, gallery.zoom(gallery.pane()));
+
+        gallery.cursor = (TREE + 2.0, 300.0);
+        assert!(!gallery.press(), "a press on the line changes nothing shown");
+        assert_eq!(gallery.picked, picked, "and picks no line of the tree");
+        assert!(gallery.held.is_none(), "nor starts a region");
+        gallery.cursor = (400.0, 320.0);
+        assert!(gallery.resize_tree(), "the drag moves the line");
+        assert_eq!(gallery.tree, 400.0, "to where the pointer is");
+        assert_eq!(gallery.origins()[0].0, 400.0 + MARGIN, "the pictures start after it");
+        assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
+        assert!(!gallery.release(), "letting go picks nothing");
+        assert_eq!(gallery.picked, picked);
+        assert!(gallery.region.is_none());
+        gallery.cursor = (500.0, 320.0);
+        assert!(!gallery.resize_tree(), "let go, the line stays");
+        assert_eq!(gallery.tree, 400.0);
+        gallery.toggle_sidebar();
+
+        gallery.cursor = (402.0, 300.0);
+        gallery.press();
+        gallery.cursor = (20.0, 300.0);
+        gallery.resize_tree();
+        assert_eq!(gallery.tree, TREE_LEAST, "no narrower than 160pt");
+        gallery.cursor = (1400.0, 300.0);
+        gallery.resize_tree();
+        let room = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
+        assert_eq!(gallery.tree, gallery.pane_right() - room, "the pictures keep room for a half-size phone");
+        gallery.release();
+
+        gallery.size = (900.0, 900.0);
+        gallery.clamp();
+        assert_eq!(gallery.tree, 900.0 - sidebar::WIDTH - room, "a narrower window narrows the tree too");
+        gallery.size = (500.0, 900.0);
+        gallery.clamp();
+        assert_eq!(gallery.tree, TREE_LEAST, "never below its least");
     }
 
     #[test]
@@ -4605,7 +4710,7 @@ mod tests {
         let typing = state_of(&gallery, "typing");
         gallery.pick(typing);
         let before = heights(&gallery);
-        gallery.cursor = (TREE + 100.0, 100.0);
+        gallery.cursor = (gallery.tree + 100.0, 100.0);
         gallery.wheel(0.0, 40.0);
         assert_eq!(gallery.scroll, 40.0);
 

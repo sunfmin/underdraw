@@ -249,7 +249,7 @@ fn an_assumption_picked_by_its_question_mark() {
             offset += 1;
         }
         // Scrolled to it, as a person scrolls before clicking.
-        gallery.cursor = (TREE + MARGIN, MARGIN);
+        gallery.cursor = (gallery.tree + MARGIN, MARGIN);
         gallery.wheel(0.0, on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
         gallery.cursor = on_guess(gallery, 0, "card-number");
         gallery.press();
@@ -333,13 +333,26 @@ fn the_sidebar_hidden_the_pictures_take_its_width() {
 fn a_narrow_window_at_half_size_scrolled_across() {
     let gallery = held("narrow", Path::new(DRAFTS), (1000.0, 900.0), |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.cursor = (TREE + MARGIN, MARGIN);
+        gallery.cursor = (gallery.tree + MARGIN, MARGIN);
         gallery.wheel(1e6, 0.0);
         gallery.cursor = on_node(gallery, 1, "nav-save");
         gallery.press();
     });
     assert_eq!(gallery.zoom(gallery.pane()), SMALLEST);
     assert_eq!(gallery.node.as_deref(), Some("nav-save"), "picked, scaled and scrolled");
+}
+
+#[test]
+fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
+    let gallery = held("tree-narrow", Path::new(DRAFTS), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.cursor = (gallery.tree, MARGIN);
+        gallery.press();
+        gallery.cursor = (0.0, MARGIN);
+        gallery.resize_tree();
+        gallery.release();
+    });
+    assert_eq!(gallery.tree, TREE_LEAST);
 }
 
 #[test]
