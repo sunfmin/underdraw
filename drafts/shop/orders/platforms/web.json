@@ -9,6 +9,8 @@
     "Button": "<button>",
     "List": "<ul>",
     "Card": "<li>",
+    "Stack": "<div>",
+    "OrderStatus": "<span class=\"status\">, the order's status as its text",
     "Skeleton": "a shimmering placeholder"
   },
   "actions": { "call": "the shop client's method of the operation's name",

@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
 use crate::check::Findings;
+use crate::components;
 use crate::conditions::{Conditions, UseSite};
 use crate::domain;
 use crate::fixture;
@@ -273,7 +274,11 @@ impl Fill<'_> {
                 outer: inside,
             };
             let at = Written {
-                at: format!("/{}/{}/nodes", subtrees::KEY, escaped(component.name)),
+                at: format!(
+                    "/{}/{}/nodes",
+                    if component.shared { components::SHARED } else { subtrees::KEY },
+                    escaped(component.name)
+                ),
                 instance: at.instance.clone(),
             };
             let mut node = self.build(

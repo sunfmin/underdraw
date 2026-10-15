@@ -1,7 +1,8 @@
 //! The components a description may use and what each looks like:
-//! underdraw's own, with the screen's own `"components"` over them by name.
-//! The look itself is drawn by underdraw-layout; here it is read and
-//! checked. Why: [ADR 0021](../../../docs/adr/0021-kinds-become-components-one-screens-or-the-projects.md),
+//! underdraw's own, with the project's shared ones and the screen's own
+//! `"components"` over them by name. The look itself is drawn by
+//! underdraw-layout; here it is read and checked. Why:
+//! [ADR 0021](../../../docs/adr/0021-kinds-become-components-one-screens-or-the-projects.md),
 //! and [ADR 0007](../../../docs/adr/0007-kinds-are-data.md) for the look
 //! vocabulary.
 
@@ -10,9 +11,49 @@ use serde_json::{Map, Value};
 use crate::check::Findings;
 use crate::icons;
 use crate::overlay::Edge;
+use crate::schema::object;
 
 /// The components underdraw ships, in the form a screen's own take.
 const BUILTINS: &str = include_str!("../components.json");
+
+/// Where the caller puts the components the project shares: each
+/// `components/<Name>.json` under the project's root, its contents by its
+/// name.
+pub const SHARED: &str = "$components";
+
+/// One component a screen may use besides underdraw's: one the project
+/// shares, or the screen's own.
+pub(crate) struct Declared<'a> {
+    pub name: &'a str,
+    pub body: &'a Value,
+    /// Whether the project shares it, in its `components/<Name>.json`.
+    pub shared: bool,
+    /// Where findings in it are named: `components/OrderRow.json` for the
+    /// project's, `components.OrderRow` for the screen's own.
+    pub at: String,
+}
+
+/// Every component `screen` declares, the one list each reader takes: the
+/// project's first, then the screen's own. One of the screen's own of a
+/// name the project shares is left out and the project's is used;
+/// [`Components::check`] names it.
+pub(crate) fn declared(screen: &Value) -> Vec<Declared<'_>> {
+    let mut all = Vec::new();
+    for (name, body) in object(screen, SHARED) {
+        all.push(Declared { name, body, shared: true, at: format!("components/{name}.json") });
+    }
+    for (name, body) in object(screen, "components") {
+        if !shares(screen, name) {
+            all.push(Declared { name, body, shared: false, at: format!("components.{name}") });
+        }
+    }
+    all
+}
+
+/// Whether the project `screen` is in shares a component named `name`.
+fn shares(screen: &Value, name: &str) -> bool {
+    screen.get(SHARED).and_then(|shared| shared.get(name)).is_some()
+}
 
 /// What a look key takes, as far as `check` can tell before the look is
 /// drawn. A placeholder, `cases` or null is filled in later and passes.
@@ -203,33 +244,34 @@ const REPEATED: [&str; 3] = ["item", "index", "n"];
 /// The props a `frame` takes from its node, as its component's params.
 const FRAMED: [&str; 5] = ["padding", "gap", "radius", "border", "elevation"];
 
-/// Every component a screen may use: underdraw's own, with the screen's
-/// own look components (its `"components"` that have a `"look"`) over them
-/// by name. A component whose body is nodes is not here: a `ref` inlines it.
+/// Every component a screen may use: underdraw's own, with the look
+/// components the screen [`declared`] (the project's and its own that have
+/// a `"look"`) over them by name. A component whose body is nodes is not
+/// here: `Subtrees` has those.
 pub struct Components {
     components: Map<String, Value>,
 }
 
 impl Components {
-    /// underdraw's components, with `screen`'s own look components over
-    /// them by name.
+    /// underdraw's components, with the look components `screen` declares
+    /// over them by name.
     pub fn read(screen: &Value) -> Components {
         let mut components = Components { components: Map::new() };
         if let Ok(builtins) = serde_json::from_str::<Value>(BUILTINS) {
-            components.add(&builtins);
+            for (name, component) in object(&builtins, "components") {
+                components.add(name, component);
+            }
         }
-        components.add(screen);
+        for Declared { name, body, .. } in declared(screen) {
+            components.add(name, body);
+        }
         components
     }
 
-    /// Each entry of `file`'s `"components"` that has a look.
-    fn add(&mut self, file: &Value) {
-        if let Some(Value::Object(components)) = file.get("components") {
-            for (name, component) in components {
-                if component.get("look").is_some() {
-                    self.components.insert(name.clone(), component.clone());
-                }
-            }
+    /// `component`, named `name`, when it has a look.
+    fn add(&mut self, name: &str, component: &Value) {
+        if component.get("look").is_some() {
+            self.components.insert(name.to_string(), component.clone());
         }
     }
 
@@ -264,10 +306,11 @@ impl Components {
         self.look(component).and_then(Value::as_object).is_some_and(backdrop_without_pin)
     }
 
-    /// Every fault in `screen`'s own components, at `components.<Name>…`:
-    /// one with both a look and nodes or neither; in a look, a key no look
-    /// reads, a filter or component that does not exist, and a name it
-    /// reads that is not one of its declared params.
+    /// Every fault in the components `screen` declares, each at where
+    /// [`declared`] says: one of the screen's own of a name the project
+    /// shares; one with both a look and nodes or neither; in a look, a key
+    /// no look reads, a filter or component that does not exist, and a
+    /// name it reads that is not one of its declared params.
     pub(crate) fn check(&self, screen: &Value, findings: &mut Findings) {
         if screen.get("icons").is_some() {
             findings.add(
@@ -275,17 +318,23 @@ impl Components {
                 "icons are Material Symbols names (fonts.google.com/icons) and need no entry; take this out",
             );
         }
-        let Some(Value::Object(components)) = screen.get("components") else {
-            if screen.get("components").is_some() {
+        if screen.get("components").is_some_and(|own| !own.is_object()) {
+            findings.add(
+                "components",
+                "\"components\" maps each component's name to {\"params\": […], \"look\": …} or {\"nodes\": …}",
+            );
+        }
+        for (name, _) in object(screen, "components") {
+            if shares(screen, name) {
                 findings.add(
-                    "components",
-                    "\"components\" maps each component's name to {\"params\": […], \"look\": …} or {\"nodes\": …}",
+                    &format!("components.{name}"),
+                    &format!(
+                        "shadows the project's {name}, shared in components/{name}.json: use the project's by name, or give the screen's own another name"
+                    ),
                 );
             }
-            return;
-        };
-        for (name, component) in components {
-            let at = format!("components.{name}");
+        }
+        for Declared { body: component, at, .. } in declared(screen) {
             match (component.get("look"), component.get("nodes")) {
                 (Some(_), Some(_)) => findings.add(
                     &at,
@@ -299,6 +348,42 @@ impl Components {
                 (None, Some(_)) => {}
             }
         }
+        for Declared { name, body, at, .. } in declared(screen) {
+            if body.get("nodes").is_none()
+                && let Some(cycle) = self.cycle(name, &mut vec![name.to_string()])
+            {
+                findings.add(
+                    &format!("{at}.look"),
+                    &format!("component {name} uses itself: {}", cycle.join(" → ")),
+                );
+            }
+        }
+    }
+
+    /// The components `through` ends with, when its last one's look nests
+    /// its first, at any depth: that path, back to the first; or none.
+    fn cycle(&self, first: &str, through: &mut Vec<String>) -> Option<Vec<String>> {
+        let mut nested = Vec::new();
+        if let Some(look) = through.last().and_then(|last| self.look(last)) {
+            nests(look, &mut nested);
+        }
+        for name in nested {
+            if name == first {
+                let mut cycle = through.clone();
+                cycle.push(name);
+                return Some(cycle);
+            }
+            if through.contains(&name) {
+                continue;
+            }
+            through.push(name);
+            let found = self.cycle(first, through);
+            through.pop();
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
     }
 
     /// Every fault in the look component `component`, whose look is `look`.
@@ -375,7 +460,7 @@ impl Components {
                     findings.add(
                         at,
                         &format!(
-                            "component {name} is not defined in the screen's components or underdraw's own"
+                            "component {name} is not defined in the screen's components, the project's components/ or underdraw's own"
                         ),
                     );
                 }
@@ -444,6 +529,27 @@ impl Components {
             }
             rest = next;
         }
+    }
+}
+
+/// Each component `look` nests (`{"component": "Chip", …}`), at any depth
+/// of it, added to `nested`.
+fn nests(look: &Value, nested: &mut Vec<String>) {
+    match look {
+        Value::Array(looks) => {
+            for look in looks {
+                nests(look, nested);
+            }
+        }
+        Value::Object(object) => {
+            if let Some(Value::String(name)) = object.get("component") {
+                nested.push(name.clone());
+            }
+            for value in object.values() {
+                nests(value, nested);
+            }
+        }
+        _ => {}
     }
 }
 

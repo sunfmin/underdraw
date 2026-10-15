@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
-use crate::components::{Components, track_faults};
+use crate::components::{self, Components, Declared, track_faults};
 use crate::conditions::{Conditions, UseSite};
 use crate::domain;
 use crate::field::{Base, Field};
@@ -103,10 +103,10 @@ pub fn check_among(screen: &Value, others: &ScreenParams) -> Checked {
     jobs::check(&operations, &schema, &fixtures, &mut findings);
     subtrees::check(screen, &schema, &mut findings);
     let components = Subtrees::read(screen);
-    for (name, declared) in object(screen, subtrees::KEY) {
-        if declared.get("nodes").is_some() && known.has(name) {
+    for Declared { name, body, at, .. } in components::declared(screen) {
+        if body.get("nodes").is_some() && known.has(name) {
             findings.add(
-                &format!("{}.{name}", subtrees::KEY),
+                &at,
                 &format!(
                     "{name} is underdraw's own component: give the screen's whose body is nodes its own name"
                 ),
@@ -371,7 +371,7 @@ impl Walk<'_> {
         {
             self.findings.add(
                 at,
-                &format!("component {kind} is not defined: define it in the screen's \"components\", with its params and look (`underdraw check --help`, COMPONENTS)"),
+                &format!("component {kind} is not defined: define it in the screen's \"components\", or share it in the project's components/{kind}.json, with its params and its look or nodes (`underdraw check --help`, COMPONENTS)"),
             );
         }
         match object.get("assumed") {

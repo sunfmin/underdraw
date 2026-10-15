@@ -18,7 +18,7 @@ use underdraw_format::{Checked, Finding, Lang, ScreenParams};
 
 use crate::draw::Shown;
 use crate::notes::NOTES;
-use crate::project::DOMAIN;
+use crate::project::{COMPONENTS, DOMAIN};
 use crate::{KINDS, SCREEN, TOKENS, check_at};
 
 /// Directories a description keeps beside it that hold no description.
@@ -187,7 +187,7 @@ impl Stamp {
 fn stamp_dir(dir: &Path, stamp: &mut Vec<(PathBuf, Option<(SystemTime, u64)>)>) {
     stamp.push((dir.to_path_buf(), None));
     let files = DRAWN_FROM.iter().map(|file| dir.join(file));
-    for path in files.chain(crate::journeys::listed(dir)) {
+    for path in files.chain(crate::journeys::listed(dir)).chain(shared(dir)) {
         if let Ok(meta) = std::fs::metadata(&path) {
             stamp.push((path, Some((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()))));
         }
@@ -195,6 +195,17 @@ fn stamp_dir(dir: &Path, stamp: &mut Vec<(PathBuf, Option<(SystemTime, u64)>)>) 
     for (_, path) in children(dir) {
         stamp_dir(&path, stamp);
     }
+}
+
+/// Each file in `dir`'s components/, which a project shares when `dir` is
+/// its root: what every screen of it draws from.
+fn shared(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir.join(COMPONENTS)) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+    files.sort();
+    files
 }
 
 /// Looks at `root` every [`WATCHING`], on a thread of its own, and calls
@@ -513,6 +524,19 @@ mod tests {
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
         step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);
         step("the domain written", &|| std::fs::write(root.join(DOMAIN), "{}").unwrap(), true);
+        step(
+            "a shared component written",
+            &|| {
+                std::fs::create_dir_all(root.join(COMPONENTS)).unwrap();
+                std::fs::write(root.join(COMPONENTS).join("OrderRow.json"), "{}").unwrap();
+            },
+            true,
+        );
+        step(
+            "a shared component edited",
+            &|| std::fs::write(root.join(COMPONENTS).join("OrderRow.json"), "{ }").unwrap(),
+            true,
+        );
         step(
             "a journey written",
             &|| {

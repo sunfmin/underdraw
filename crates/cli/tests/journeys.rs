@@ -27,6 +27,8 @@ fn shop(name: &str) -> std::path::PathBuf {
         "orders/screen.json",
         "order/screen.json",
         "journeys/cancel-an-order.json",
+        "components/OrderRow.json",
+        "components/OrderStatus.json",
     ] {
         let to = copy.join(file);
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
@@ -74,7 +76,7 @@ fn a_screen_changed_so_the_journey_breaks_names_it() {
     edit(&root.join("journeys/cancel-an-order.json"), r#""state": "open""#, r#""state": "shipped""#);
     let (answer, _) = check(&root);
     let problem = answer["journeys"][0]["findings"][0]["problem"].as_str().unwrap().to_string();
-    assert!(problem.starts_with("cancel is not shown in order shipped"), "{problem}");
+    assert!(problem.starts_with("summary-cancel is not shown in order shipped"), "{problem}");
 
     let root = shop("params");
     edit(&root.join("order/screen.json"), r#""orderId": "A12""#, r#""orderId": "A13""#);

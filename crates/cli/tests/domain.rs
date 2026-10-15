@@ -23,6 +23,18 @@ fn read(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
+/// Each component the shop shares, by its name, as its file writes it.
+fn shared_components() -> Vec<(String, Value)> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(Path::new(SHOP).join("components")).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_stem().unwrap().to_str().unwrap().to_string();
+        found.push((name, read(&path)));
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found
+}
+
 /// A fresh, empty directory of the test's own, named `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("underdraw-domain-{name}-{}", std::process::id()));
@@ -32,11 +44,17 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 /// A copy of the shop at `to`, each screen's screen.json given by `screen`
-/// from the one written; with its domain.json when `domain` holds.
+/// from the one written; with its domain.json and the components it
+/// shares when `domain` holds.
 fn copy_shop(to: &Path, domain: bool, screen: &dyn Fn(Value) -> Value) {
     std::fs::copy(Path::new(SHOP).join("tokens.json"), to.join("tokens.json")).unwrap();
     if domain {
         std::fs::copy(Path::new(SHOP).join("domain.json"), to.join("domain.json")).unwrap();
+        std::fs::create_dir_all(to.join("components")).unwrap();
+        for (name, _) in shared_components() {
+            let file = format!("components/{name}.json");
+            std::fs::copy(Path::new(SHOP).join(&file), to.join(&file)).unwrap();
+        }
     }
     for name in SCREENS {
         let (from, dir) = (Path::new(SHOP).join(name), to.join(name));
@@ -97,6 +115,9 @@ fn what_is_derived_is_the_same_as_when_each_screen_declares_the_domain() {
                 merged.extend(own.clone());
             }
             screen[key] = Value::Object(merged);
+        }
+        for (name, component) in shared_components() {
+            screen["components"][name] = component;
         }
         screen
     });
@@ -188,14 +209,14 @@ fn a_condition_on_a_type_gates_each_call_that_requires_it() {
     assert_eq!(checked["conditions"][0]["name"], "Order.cancellable", "{checked}");
 
     let project = scratch("type-condition");
-    copy_shop(&project, true, &|screen| {
-        let text = screen.to_string();
-        let text = text
-            .replace(r#""if":"item.cancellable","#, "")
-            .replace(r#""if":"order.cancellable","#, r#""if":"order.number.cancellable","#);
-        serde_json::from_str(&text).unwrap()
-    });
-    let problems = |name: &str| {
+    copy_shop(&project, true, &|screen| screen);
+    // The cancel button is in the OrderRow both screens share.
+    let row = project.join("components/OrderRow.json");
+    let written = std::fs::read_to_string(&row).unwrap();
+    let gate = r#""if": "order.cancellable", "#;
+    assert!(written.contains(gate), "{written}");
+    let problems = |name: &str, gate: &str| {
+        std::fs::write(&row, written.replace(r#""if": "order.cancellable", "#, gate)).unwrap();
         let (checked, code) = underdraw(&["check", project.join(name).to_str().unwrap()]);
         assert_eq!(code, 1, "{checked}");
         checked["findings"]
@@ -205,13 +226,15 @@ fn a_condition_on_a_type_gates_each_call_that_requires_it() {
             .map(|f| f["problem"].as_str().unwrap().to_string())
             .collect::<Vec<_>>()
     };
-    let ungated = problems("orders");
-    assert!(
-        ungated.iter().any(|p| p.contains("calls cancelOrder, which requires Order.cancellable")
-            && p.contains("\"!item.cancellable\"")),
-        "{ungated:?}"
-    );
-    let misused = problems("order");
+    for name in SCREENS {
+        let ungated = problems(name, "");
+        assert!(
+            ungated.iter().any(|p| p.contains("calls cancelOrder, which requires Order.cancellable")
+                && p.contains("\"!order.cancellable\"")),
+            "{name}: {ungated:?}"
+        );
+    }
+    let misused = problems("order", r#""if": "order.number.cancellable", "#);
     assert!(
         misused.iter().any(|p| p.contains("cancellable is a condition on Order, and order.number is")),
         "{misused:?}"

@@ -2,7 +2,7 @@
   "screen": "ShopOrder",
   "title": "Order",
   "tokens": "tokens.json",
-  "$comment": "One order of the shop, read on its own page, where it can be cancelled until it ships.",
+  "$comment": "One order of the shop, read on its own page, where it can be cancelled until it ships: the same OrderRow as the list.",
   "params": ["orderId"],
   "data": {
     "orderId": "string",
@@ -34,14 +34,11 @@
     "id": "order", "component": "Screen", "padding": "space.4", "gap": "space.3",
     "children": [
       { "id": "number", "component": "Text", "text": "Order {order.number}", "font": "font.title" },
-      { "id": "customer", "component": "Text", "text": "{order.customer}" },
-      { "id": "total", "component": "Text", "text": "{order.total|money}", "color": "color.textSecondary" },
-      { "id": "cancel", "component": "Button", "if": "order.cancellable", "text": "Cancel order", "variant": "secondary",
-        "on": { "tap": { "call": "cancelOrder", "with": { "id": "{order.id}" } } } }
+      { "id": "summary", "component": "OrderRow", "with": { "order": "{order}" } }
     ]
   },
   "transitions": [
-    { "from": "open", "on": "cancel.tap", "outcome": "ok", "to": "cancelled" },
-    { "from": "open", "on": "cancel.tap", "outcome": "shipped", "to": "shipped" }
+    { "from": "open", "on": "summary-cancel.tap", "outcome": "ok", "to": "cancelled" },
+    { "from": "open", "on": "summary-cancel.tap", "outcome": "shipped", "to": "shipped" }
   ]
 }

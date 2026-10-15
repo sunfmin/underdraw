@@ -1,10 +1,11 @@
 //! Where a screen's project is: the one place every command finds a
-//! screen's project root, its domain (ADR 0020) and its tokens (ADR 0021).
+//! screen's project root, its domain (ADR 0020), the components it shares
+//! and its tokens (ADR 0021).
 
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 /// The file at a project's root holding the domain its screens share
 /// (ADR 0020); it marks where the project is.
@@ -12,6 +13,9 @@ pub const DOMAIN: &str = "domain.json";
 /// The design tokens: found in the nearest directory at or above a screen
 /// that has them.
 pub const TOKENS: &str = "tokens.json";
+/// The directory under a project's root holding the components its
+/// screens share, each in `<Name>.json`.
+pub const COMPONENTS: &str = "components";
 
 /// The project a screen is in, as every command takes it.
 pub struct Project {
@@ -26,6 +30,9 @@ pub struct Project {
     /// The domain its screens share: domain.json at the root, when there
     /// is one.
     pub domain: Option<Value>,
+    /// The components its screens share: each `components/<Name>.json` at
+    /// the root, by its name.
+    pub components: Map<String, Value>,
 }
 
 impl Project {
@@ -36,22 +43,53 @@ impl Project {
         let domain_root = nearest(&dir, DOMAIN);
         let domain = domain_root.as_ref().map(|root| read_json(&root.join(DOMAIN))).transpose()?;
         let root = domain_root.unwrap_or_else(|| dir.clone());
+        let components = shared(&root.join(COMPONENTS))?;
         let tokens_file = nearest(&dir, TOKENS).map(|at| at.join(TOKENS));
         let tokens = match &tokens_file {
             Some(file) => read_json(file)?,
             None => json!({}),
         };
-        Ok(Project { root, tokens_file, tokens, domain })
+        Ok(Project { root, tokens_file, tokens, domain, components })
     }
 
     /// `screen` as every command hands it to the pure crates: with the
-    /// domain it shares, when the project has one.
+    /// domain and the components it shares, when the project has them.
     pub fn describe(&self, mut screen: Value) -> Value {
-        if let (Some(domain), Some(fields)) = (&self.domain, screen.as_object_mut()) {
-            fields.insert(underdraw_format::DOMAIN.to_string(), domain.clone());
+        if let Some(fields) = screen.as_object_mut() {
+            if let Some(domain) = &self.domain {
+                fields.insert(underdraw_format::DOMAIN.to_string(), domain.clone());
+            }
+            if !self.components.is_empty() {
+                fields.insert(
+                    underdraw_format::SHARED_COMPONENTS.to_string(),
+                    Value::Object(self.components.clone()),
+                );
+            }
         }
         screen
     }
+}
+
+/// Each `<Name>.json` in `dir`, by its name, in name order; none when
+/// there is no `dir`. Refused when one is not JSON.
+fn shared(dir: &Path) -> anyhow::Result<Map<String, Value>> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json") && path.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let mut components = Map::new();
+    for file in files {
+        if let Some(name) = file.file_stem().and_then(|stem| stem.to_str()) {
+            components.insert(name.to_string(), read_json(&file)?);
+        }
+    }
+    Ok(components)
 }
 
 fn read_json(file: &Path) -> anyhow::Result<Value> {

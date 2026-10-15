@@ -2,7 +2,7 @@
   "screen": "ShopOrders",
   "title": "Orders",
   "tokens": "tokens.json",
-  "$comment": "The shop's latest orders; one not shipped yet can be cancelled from its card.",
+  "$comment": "The shop's latest orders; one not shipped yet can be cancelled from its card, the OrderRow the project shares (components/OrderRow.json).",
   "data": {
     "orders": { "type": "Order[] ..20", "from": "listOrders" }
   },
@@ -23,10 +23,7 @@
           "id": "order-{index}", "component": "Card", "border": "color.border", "radius": "radius.md", "padding": "space.4", "gap": "space.2",
           "on": { "tap": { "navigate": "ShopOrder", "with": { "orderId": "{item.id}" } } },
           "children": [
-            { "id": "order-{index}-number", "component": "Text", "text": "{item.number} · {item.customer}" },
-            { "id": "order-{index}-total", "component": "Text", "text": "{item.total|money}", "color": "color.textSecondary" },
-            { "id": "order-{index}-cancel", "component": "Button", "if": "item.cancellable", "text": "Cancel order", "variant": "secondary", "size": "small",
-              "on": { "tap": { "call": "cancelOrder", "with": { "id": "{item.id}" } } } }
+            { "id": "order-{index}-row", "component": "OrderRow", "with": { "order": "{item}" } }
           ]
         } }
     ]

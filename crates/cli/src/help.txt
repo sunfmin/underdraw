@@ -15,6 +15,11 @@ one design language and one domain. Every command finds it the same way:
                 by every command as if each screen declared them; a screen
                 may add its own, never one of a name the domain declares
                 (`underdraw check --help`, DOMAIN.JSON)
+  components    components/<Name>.json at the project root: each a
+                component every screen of the project uses by its name, as
+                if it declared it in its own "components"; a screen may add
+                its own, never one of a name the project shares
+                (`underdraw check --help`, COMPONENTS)
   tokens        tokens.json in the nearest directory at or above the
                 screen that has one, so a screen's own tokens.json wins
                 over one above it, and screens with none beside them share
