@@ -12,8 +12,12 @@ tree
 picture
   page default · 390
     picked nav-export: 334, 8 · 40 × 40
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
   page default · 1120
     picked nav-export: 1064, 8 · 40 × 40
+    ↗ nav-back, nav-export, order-0, order-1, order-2, order-3, order-4
+    → filter-0, filter-1, filter-2, filter-3, filter-4, order-0-cancel, order-1-cancel
 sidebar
   ✓ right on nav-export in default at 390
     written to notes.json in 5s, for the agent

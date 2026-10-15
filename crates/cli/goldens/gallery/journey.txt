@@ -1,6 +1,8 @@
 picture
   page open · 390
+    → summary-cancel
   page open · 1120
+    → summary-cancel
   journey step 2, marked [Some("summary-cancel"), Some("summary-cancel")]
 sidebar
   journey cancel-an-order · step 2 of 3 · shop/order · open

@@ -8,4 +8,5 @@ what it cannot finish to `ready-for-human` (both afkconvoy's defaults).
 base_branch: main
 gate_command: ./gate.sh
 gate_seconds: 3600
+concurrency: 8
 ```
