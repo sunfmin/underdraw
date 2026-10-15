@@ -25,13 +25,23 @@ pub struct Wanted {
     pub scale: u32,
 }
 
-/// The state that was drawn.
+/// A state of a description: one of its fixtures, or one of its phases.
+#[derive(Clone, Debug, PartialEq)]
 pub enum Shown {
     Fixture(String),
     Phase(String),
 }
 
 impl Shown {
+    /// What to draw to show this state at `width`, at `scale`.
+    pub fn wanted(&self, width: u32, scale: u32) -> Wanted {
+        let (fixture, phase) = match self {
+            Shown::Fixture(name) => (Some(name.clone()), None),
+            Shown::Phase(name) => (None, Some(name.clone())),
+        };
+        Wanted { fixture, phase, width, scale }
+    }
+
     /// The fixture's or phase's name.
     pub fn name(&self) -> &str {
         match self {
@@ -65,6 +75,18 @@ pub struct Drawing {
     pub scale: f64,
     /// The scene's width and height in pixels.
     pub pixels: [u32; 2],
+}
+
+/// Every state the description at `path` can be shown in, as `check` finds
+/// them: its fixtures, then its phases, each in the order written. Found
+/// even when the description has findings, though none of them can be drawn
+/// until they are fixed.
+pub fn states(path: &Path) -> anyhow::Result<Vec<Shown>> {
+    let (screen, dir) = read(path)?;
+    let kinds = read_kinds(&dir)?;
+    let checked = checked(&screen, &dir, kinds.as_ref())?;
+    let fixtures = checked.fixtures.into_iter().map(Shown::Fixture);
+    Ok(fixtures.chain(checked.phases.into_iter().map(Shown::Phase)).collect())
 }
 
 /// The state `wanted` names of the description at `path` (a directory or its
@@ -149,6 +171,14 @@ mod tests {
         let drawing = laid.draw(2, side as u32);
         assert_eq!(drawing.scale, 1.0, "one pixel per point fits");
         assert!(drawing.pixels[0].max(drawing.pixels[1]) <= side.ceil() as u32);
+    }
+
+    #[test]
+    fn states_are_the_fixtures_then_the_phases_in_the_order_written() {
+        let states = states(Path::new(DRAFT)).unwrap();
+        let names: Vec<&str> = states.iter().map(Shown::name).collect();
+        assert_eq!(names, ["default", "no-dates", "unavailable", "new-listing", "loading", "error"]);
+        assert!(matches!(states[4], Shown::Phase(_)), "loading is a phase");
     }
 
     #[test]
