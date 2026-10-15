@@ -284,6 +284,19 @@ impl Conditions {
         found
     }
 
+    /// The conditions on a type those over the screen's data read through
+    /// a value of it (`selected.here`).
+    pub fn read_through(&self, schema: &Schema) -> BTreeSet<String> {
+        let roots = schema.roots();
+        let mut read = BTreeSet::new();
+        for condition in self.0.iter().filter(|condition| condition.on.is_none()) {
+            let mut used = Vec::new();
+            uses(&condition.when, &mut used);
+            read.extend(used.iter().filter_map(|path| schema.type_condition(&roots, path)));
+        }
+        read
+    }
+
     /// Whether `name` is a condition declared on a type.
     pub fn is_on_type(&self, name: &str) -> bool {
         self.get(name).is_some_and(|condition| condition.on.is_some())

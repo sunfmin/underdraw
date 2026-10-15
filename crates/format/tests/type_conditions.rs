@@ -136,11 +136,6 @@ fn check_names_a_condition_on_a_type_that_is_written_wrong() {
             "hasOrders is a condition over the screen's data",
         ),
         ("Order.pending", json!({ "when": "status == \"pending\" && id != \"\"", "label": "x" }), ""),
-        (
-            "Order.always",
-            json!({ "when": "id != \"never\"", "label": "x" }),
-            "is true of every Order in the fixtures",
-        ),
     ];
     for (name, body, said) in cases {
         let mut checked = planted(name, body.clone());
@@ -173,6 +168,52 @@ fn check_names_a_condition_on_a_type_that_is_written_wrong() {
         ),
         "{:#?}",
         checked.findings
+    );
+}
+
+#[test]
+fn a_condition_on_a_type_must_vary_only_where_the_screen_reads_it() {
+    // Every order in the fixtures is pending, and none has a note: each
+    // row shows `shown`, and nothing else.
+    let pending = |shown: Vec<Value>| {
+        let mut screen = screen(json!(null));
+        let order = json!({ "id": "a", "status": "pending", "note": null, "customer": { "name": "Ana" } });
+        screen["fixtures"] = json!({ "default": { "orders": [order] } });
+        screen["root"]["children"][0]["item"]["children"] = Value::Array(shown);
+        screen
+    };
+    let id = json!({ "id": "order-{index}-id", "component": "Text", "text": "{item.id}" });
+    let cancel = button(json!({ "if": "item.cancellable" }));
+    let note = json!({ "id": "order-{index}-note", "component": "Text", "if": "item.hasNote", "text": "{item.note}" });
+
+    let unread = check(&pending(vec![id]));
+    assert!(unread.ok, "a screen that never reads a condition on Order is not held to it: {:#?}", unread.findings);
+
+    let read = check(&pending(vec![cancel.clone()]));
+    assert!(
+        found(&read, "conditions.Order.cancellable", "is true of every Order in the fixtures, so a state it marks cannot be rendered; add one it is not"),
+        "{:#?}",
+        read.findings
+    );
+    assert!(!read.findings.iter().any(|f| f.at == "conditions.Order.hasNote"), "{:#?}", read.findings);
+
+    let never = check(&pending(vec![cancel.clone(), note]));
+    assert!(
+        found(&never, "conditions.Order.hasNote", "is false of every Order in the fixtures, so a state it marks cannot be rendered; add one it is"),
+        "{:#?}",
+        never.findings
+    );
+
+    let mut through = pending(vec![cancel]);
+    through["data"]["picked"] = json!("Order");
+    through["fixtures"]["default"]["picked"] = through["fixtures"]["default"]["orders"][0].clone();
+    through["fixtures"]["other"] = through["fixtures"]["default"].clone();
+    through["conditions"] = json!({ "pickedHasNote": { "when": "picked.hasNote", "label": "x" } });
+    let through = check(&through);
+    assert!(
+        found(&through, "conditions.Order.hasNote", "is false of every Order"),
+        "a condition over the data reads it through a value: {:#?}",
+        through.findings
     );
 }
 

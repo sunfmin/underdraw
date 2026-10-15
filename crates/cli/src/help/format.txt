@@ -144,8 +144,9 @@ CONDITIONS
   named there at all, and one on a type is never named whole elsewhere.
   It is no field: fixtures never give it, the type has no field of its
   name, and it is used only through a value of its type (check names one
-  used on a value of another type). It must be true of one value of the
-  type and false of another, in any fixtures, wherever they hold one.
+  used on a value of another type). A screen that reads it must hold, in
+  its fixtures, one value of the type it is true of and one it is false
+  of; a screen that never reads it is not held to it.
   Declare one in domain.json (DOMAIN.JSON) to share it: the domain has no
   screen's data, so a condition every screen asks of an Order is one on
   Order. A condition over a screen's data stays that screen's.
