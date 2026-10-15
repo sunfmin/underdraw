@@ -37,6 +37,7 @@ use crate::act::{self, Act};
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
+use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, By, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
@@ -221,6 +222,12 @@ struct Gallery {
     /// directory, until the files change: checking one lays out every
     /// state, too slow to do on every pick.
     descriptions: RefCell<HashMap<PathBuf, Arc<draw::Description>>>,
+    /// Each description's assumptions, as its states lay them out, by its
+    /// directory, found once until the files change: for its inbox.
+    guessed: RefCell<HashMap<PathBuf, Arc<Vec<Guessed>>>>,
+    /// Whether the inbox lists the notes waiting on the agent, or only how
+    /// many there are.
+    waiting: bool,
 }
 
 /// A note being written: what it is for, and what has been typed.
@@ -264,6 +271,20 @@ enum Do {
     Step(usize),
     /// Folds or unfolds the details of the node picked.
     Details,
+    /// Shows what an item of the inbox is on, picked.
+    Visit(Visit),
+    /// Folds or unfolds the inbox's notes waiting on the agent.
+    Waiting,
+}
+
+/// An item of the inbox, as a click on it shows it.
+#[derive(Clone, Debug, PartialEq)]
+enum Visit {
+    /// The assumption on the node of this id, in this state of the
+    /// description in this directory.
+    Guess(PathBuf, State, String),
+    /// The note of this id, of the description in this directory.
+    Note(PathBuf, String),
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
@@ -335,17 +356,32 @@ struct Line {
     journey: bool,
 }
 
-/// The lines of the tree over `root`: each description followed by its
-/// states, as `check` finds them, and each directory by the journeys under
-/// it, after its states when it is a description. A description that
-/// cannot be read has no states.
+/// The lines of the tree over `root`: the root first, every other line in
+/// from it, then each description followed by its states, as `check` finds
+/// them, and each directory by the journeys under it, after its states
+/// when it is a description. A description that cannot be read has no
+/// states.
 fn lines(root: &Path) -> Vec<Line> {
     let mut lines = Vec::new();
     let rows = gallery::tree(root);
-    if rows.first().is_none_or(|row| row.dir != root) {
-        journey_lines(root, 0, &mut lines);
+    // A root that is no description is a line of its own, picked to show
+    // the flow of, and the inbox of, everything under it.
+    let within = usize::from(rows.first().is_some_and(|row| row.dir != root));
+    if within == 1 {
+        let name = root.file_name().map_or_else(|| ".".to_string(), |n| n.to_string_lossy().to_string());
+        let row = Row {
+            depth: 0,
+            name,
+            dir: root.to_path_buf(),
+            described: false,
+            faults: Vec::new(),
+            states: Vec::new(),
+        };
+        lines.push(Line { row, state: None, journey: false });
+        journey_lines(root, 1, &mut lines);
     }
-    for row in rows {
+    for mut row in rows {
+        row.depth += within;
         let states = row.states.clone();
         let (depth, dir, faults) = (row.depth + 1, row.dir.clone(), row.faults.clone());
         lines.push(Line { row, state: None, journey: false });
@@ -605,6 +641,8 @@ impl Gallery {
             shift: false,
             playing: None,
             descriptions: RefCell::new(HashMap::new()),
+            guessed: RefCell::new(HashMap::new()),
+            waiting: false,
         }
     }
 
@@ -834,6 +872,7 @@ impl Gallery {
         let journey = journey.map(|line| (line.row.dir.clone(), self.playing.as_ref().map_or(0, |p| p.at)));
         self.lines = lines(&self.root);
         self.descriptions.borrow_mut().clear();
+        self.guessed.borrow_mut().clear();
         let notes = notes_of(&self.root, &self.lines);
         let closed = closed_itself(&self.notes, &notes, self.lang);
         self.notes = notes;
@@ -1034,6 +1073,11 @@ impl Gallery {
             Do::Step(at) => self.step(at),
             Do::Details => {
                 self.details = !self.details;
+                true
+            }
+            Do::Visit(visit) => self.visit(visit),
+            Do::Waiting => {
+                self.waiting = !self.waiting;
                 true
             }
         }
@@ -1864,7 +1908,7 @@ impl Gallery {
         if !self.sidebar {
             return None;
         }
-        let cards = self.cards();
+        let cards = self.sidebar_cards();
         let laid = sidebar::lay_out(&cards, self.pane_right(), -self.side_scroll, &mut self.typesetter);
         laid.at(at).cloned()
     }
@@ -2025,11 +2069,13 @@ impl Gallery {
         cards
     }
 
-    /// What the sidebar shows: its cards, or, while nothing is picked, what
-    /// a person can do in the window.
+    /// What the sidebar shows: its cards, then the inbox; and, while nothing
+    /// is picked, what a person can do in the window.
     fn sidebar_cards(&self) -> Vec<Card<Do>> {
-        let cards = self.cards();
-        if !cards.is_empty() {
+        let mut cards = self.cards();
+        let picked = !cards.is_empty();
+        cards.extend(self.inbox_card());
+        if picked {
             return cards;
         }
         let lang = self.lang;
@@ -2050,9 +2096,266 @@ impl Gallery {
                 "N 写便签 · ⌘C 复制引用 · ⌘\\ 隐藏侧栏"
             )),
         ];
-        vec![Card {
-            ink: Ink::Muted, ..Card::new(chrome!(lang, "Nothing picked", "未选中任何东西"), blocks)
-        }]
+        cards.push(Card {
+            ink: Ink::Muted,
+            ..Card::new(chrome!(lang, "Nothing picked", "未选中任何东西"), blocks)
+        });
+        cards
+    }
+
+    /// The descriptions whose inbox the sidebar shows: the one picked, or
+    /// whose state is, or each under the directory picked, in the order the
+    /// tree lists them. None while a node, a region or an arrow is picked,
+    /// a note is written, or a journey played.
+    fn inboxed(&self) -> Vec<PathBuf> {
+        // The node picked is kept through an overview, for the next state:
+        // it is picked only while a state is drawn.
+        let drawn = matches!(self.picture, Picture::Pages(_));
+        let busy = drawn && (self.node.is_some() || self.region.is_some()) || self.arrow.is_some();
+        if busy || self.draft.is_some() || self.noting || self.playing.is_some() {
+            return Vec::new();
+        }
+        let Some(line) = self.picked.and_then(|index| self.lines.get(index)).filter(|line| !line.journey)
+        else {
+            return Vec::new();
+        };
+        if let Some(dir) = line.row.description() {
+            return vec![dir.to_path_buf()];
+        }
+        self.lines
+            .iter()
+            .filter(|line| line.state.is_none() && !line.journey)
+            .filter_map(|line| line.row.description())
+            .filter(|dir| dir.starts_with(&line.row.dir))
+            .map(Path::to_path_buf)
+            .collect()
+    }
+
+    /// The assumptions of the description in `dir`, each once, where it is
+    /// first seen: its states laid out at the overview's width, in the
+    /// order the tree lists them, among the screens `drawn` under the root
+    /// (found the first time they are needed). None where it has faults.
+    fn guessed(
+        &self,
+        dir: &Path,
+        drawn: &mut Option<std::collections::BTreeSet<String>>,
+    ) -> Arc<Vec<Guessed>> {
+        if let Some(guessed) = self.guessed.borrow().get(dir) {
+            return guessed.clone();
+        }
+        let drawn = drawn.get_or_insert_with(|| links::drawn(&self.root));
+        let mut guessed: Vec<Guessed> = Vec::new();
+        if let Ok(description) = self.description(dir) {
+            let states =
+                self.lines.iter().filter(|line| line.row.dir == dir).filter_map(|line| line.state.as_ref());
+            for state in states {
+                let wanted = state.wanted(OVERVIEW, 1);
+                let Ok(laid) = description.lay_out(&wanted, Some(drawn), self.lang) else { continue };
+                for node in &laid.page.nodes {
+                    let (Some(assumed), Some(origin)) = (&node.assumed, laid.origins.get(&node.id)) else {
+                        continue;
+                    };
+                    if !guessed.iter().any(|guess| guess.written == origin.written) {
+                        guessed.push(Guessed {
+                            state: state.clone(),
+                            id: node.id.clone(),
+                            written: origin.written.clone(),
+                            assumed: assumed.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        let guessed = Arc::new(guessed);
+        self.guessed.borrow_mut().insert(dir.to_path_buf(), guessed.clone());
+        guessed
+    }
+
+    /// The inbox's card: what waits on the person under what is picked, a
+    /// button each, grouped by description for a directory; then, folded
+    /// to how many there are, the notes still waiting on the agent. None
+    /// where nothing waits, or [`Gallery::inboxed`] lists no description.
+    fn inbox_card(&self) -> Option<Card<Do>> {
+        let dirs = self.inboxed();
+        let grouped = self
+            .picked
+            .and_then(|index| self.lines.get(index))
+            .is_some_and(|line| line.row.description().is_none());
+        let mut drawn = None;
+        let guessed: Vec<(PathBuf, Arc<Vec<Guessed>>)> =
+            dirs.into_iter().map(|dir| (dir.clone(), self.guessed(&dir, &mut drawn))).collect();
+        let none = Vec::new();
+        let inboxes: Vec<(&PathBuf, Inbox)> = guessed
+            .iter()
+            .map(|(dir, guessed)| (dir, Inbox::of(guessed, self.notes.get(dir).unwrap_or(&none))))
+            .filter(|(_, inbox)| !inbox.is_empty())
+            .collect();
+        if inboxes.is_empty() {
+            return None;
+        }
+        let lang = self.lang;
+        let mut blocks = Vec::new();
+        for (dir, inbox) in inboxes.iter().filter(|(_, inbox)| !inbox.yours.is_empty()) {
+            if grouped {
+                blocks.push(Block::Muted(gallery::within(&self.root, dir)));
+            }
+            for item in &inbox.yours {
+                blocks.push(match item {
+                    Item::Guess(guess) => {
+                        let (written, state, (guessed, _)) =
+                            (&guess.written, guess.state.name(), parts(&guess.assumed));
+                        Block::Button(
+                            chrome!(
+                                lang,
+                                "? {written} in {state}: {guessed}",
+                                "? {written}（{state}）：{guessed}"
+                            ),
+                            Do::Visit(Visit::Guess((*dir).clone(), guess.state.clone(), guess.id.clone())),
+                        )
+                    }
+                    Item::Answered(note) => {
+                        let (id, on, reply) =
+                            (&note.id, note.on.said(lang), note.reply().unwrap_or_default());
+                        Block::Button(
+                            chrome!(lang, "{id} · {on} · agent: {reply}", "{id} · {on} · 代理：{reply}"),
+                            Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
+                        )
+                    }
+                });
+            }
+        }
+        let yours: usize = inboxes.iter().map(|(_, inbox)| inbox.yours.len()).sum();
+        if yours == 0 {
+            blocks.push(Block::Muted(chrome!(lang, "nothing waits on you", "没有等你处理的")));
+        }
+        let agents: usize = inboxes.iter().map(|(_, inbox)| inbox.agents.len()).sum();
+        if agents > 0 {
+            let fold = if self.waiting { "▾" } else { "▸" };
+            blocks.push(Block::Button(
+                chrome!(lang, "{fold} waiting on the agent · {agents}", "{fold} 等代理处理 · {agents}"),
+                Do::Waiting,
+            ));
+        }
+        if self.waiting {
+            for (dir, inbox) in &inboxes {
+                for note in &inbox.agents {
+                    let (id, on) = (&note.id, note.on.said(lang));
+                    let said = if grouped {
+                        format!("{} · {id} · {on}", gallery::within(&self.root, dir))
+                    } else {
+                        format!("{id} · {on}")
+                    };
+                    blocks.push(Block::Button(said, Do::Visit(Visit::Note((*dir).clone(), note.id.clone()))));
+                }
+            }
+        }
+        Some(Card {
+            ink: Ink::Note,
+            ..Card::new(chrome!(lang, "waits on you · {yours}", "等你处理 · {yours}"), blocks)
+        })
+    }
+
+    /// What an item of the inbox is on shown: an assumption's state, its
+    /// node picked; a note's state with its node or region picked, its
+    /// description's overview with its transition picked, or the flow its
+    /// navigate is drawn in with that picked; and the note picked, with its
+    /// card. Whether there was anything to show.
+    fn visit(&mut self, visit: Visit) -> bool {
+        self.history.clear();
+        self.acted = None;
+        let (dir, on, note) = match visit {
+            Visit::Guess(dir, state, id) => {
+                let Some(index) = self.line_named(&Picked { dir, state: Some(state.name().to_string()) })
+                else {
+                    return false;
+                };
+                self.note = None;
+                self.pick(index);
+                (self.region, self.arrow) = (None, None);
+                self.pick_node(|page| page.has(&id).then(|| id.clone()), None);
+                return true;
+            }
+            Visit::Note(dir, id) => {
+                let Some(note) =
+                    self.notes.get(&dir).and_then(|notes| notes.iter().find(|note| note.id == id))
+                else {
+                    return false;
+                };
+                (dir, note.on.clone(), id)
+            }
+        };
+        match &on {
+            On::Node { state, .. } | On::Region { state, .. } | On::State { state } => {
+                let Some(index) =
+                    self.line_named(&Picked { dir: dir.clone(), state: Some(state.name().to_string()) })
+                else {
+                    return false;
+                };
+                self.pick(index);
+                (self.node, self.region, self.arrow) = (None, None, None);
+                match &on {
+                    On::Node { node, .. } => {
+                        let origin = node.origin.clone();
+                        self.pick_node(
+                            |page| page.placed(&origin).map(|placed| placed.id.clone()),
+                            Some(node.width),
+                        );
+                    }
+                    On::Region { region, .. } => {
+                        if let Picture::Pages(pages) = &self.picture {
+                            self.pointed =
+                                pages.iter().position(|page| page.width as u32 == region.width).unwrap_or(0);
+                        }
+                        self.region = Some(region.clone());
+                    }
+                    _ => {}
+                }
+            }
+            On::Transition { .. } | On::Navigate { .. } => {
+                // A transition's arrow is in its description's overview; a
+                // navigate's, in the flow of a directory above it.
+                let shown_in: Vec<usize> = match &on {
+                    On::Transition { .. } => self.description_line(&dir).into_iter().collect(),
+                    _ => dir
+                        .ancestors()
+                        .skip(1)
+                        .filter_map(|above| {
+                            self.lines.iter().position(|line| {
+                                line.state.is_none()
+                                    && !line.journey
+                                    && line.row.description().is_none()
+                                    && line.row.dir == above
+                            })
+                        })
+                        .chain(self.description_line(&dir))
+                        .collect(),
+                };
+                let wanted = Reference { description: dir.clone(), on: on.clone() };
+                for index in shown_in {
+                    self.pick(index);
+                    (self.node, self.region) = (None, None);
+                    self.arrow = self.arrow_references().iter().position(|arrow| *arrow == wanted);
+                    if self.arrow.is_some() {
+                        break;
+                    }
+                }
+            }
+        }
+        self.note = Some((dir, note));
+        true
+    }
+
+    /// The node `found` finds on a picture shown picked, in the picture of
+    /// `width` before the others: the instance pointed at.
+    fn pick_node(&mut self, found: impl Fn(&Page) -> Option<String>, width: Option<u32>) {
+        let Picture::Pages(pages) = &self.picture else {
+            return;
+        };
+        let mut order: Vec<usize> = (0..pages.len()).collect();
+        order.sort_by_key(|&at| Some(pages[at].width as u32) != width);
+        if let Some((pointed, id)) = order.into_iter().find_map(|at| Some((at, found(&pages[at])?))) {
+            (self.node, self.pointed) = (Some(id), pointed);
+        }
     }
 
     /// How tall the sidebar's cards are, unscrolled; nothing while it is
@@ -3948,10 +4251,10 @@ mod tests {
         std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
-        let broken = &gallery.lines[0].row;
+        let broken = &gallery.lines[1].row;
         assert!(!broken.faults.is_empty(), "the tree marks it");
         let found = broken.faults.clone();
-        gallery.pick(0);
+        gallery.pick(1);
         let Picture::Faults(shown) = &gallery.picture else {
             panic!("a description with faults is not drawn")
         };
@@ -4070,7 +4373,7 @@ mod tests {
             .filter(|line| line.state.is_none())
             .map(|line| line.row.name.as_str())
             .collect();
-        assert_eq!(names, ["a-flow", "sign-in", "todo"], "the new one, under its directory");
+        assert_eq!(names[1..], ["a-flow", "sign-in", "todo"], "the new one, under its directory");
         let typing = line_of(&gallery, "todo") + 2;
         assert_eq!(gallery.lines[typing].row.name, "typing");
         assert_eq!(gallery.picked, Some(typing), "still the state shown");
@@ -4084,8 +4387,8 @@ mod tests {
             .filter(|line| line.state.is_none())
             .map(|line| line.row.name.as_str())
             .collect();
-        assert_eq!(names, ["a-flow", "sign-in"], "the removed one has left");
-        assert_eq!(gallery.picked, Some(1), "its description gone: the first description's overview");
+        assert_eq!(names[1..], ["a-flow", "sign-in"], "the removed one has left");
+        assert_eq!(gallery.picked, Some(2), "its description gone: the first description's overview");
         assert_eq!(overview(&gallery).0[0], "default");
 
         std::fs::remove_dir_all(root.join("a-flow")).unwrap();
@@ -4108,9 +4411,9 @@ mod tests {
         broken["data"]["stray"] = json!("nonsense");
         write_todo_screen(&root, &broken);
         gallery.reload();
-        assert!(!gallery.lines[0].row.faults.is_empty(), "the tree marks it");
+        assert!(!gallery.lines[1].row.faults.is_empty(), "the tree marks it");
         assert_eq!(gallery.picked, Some(typing), "the same state");
-        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
+        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[1].row.faults));
 
         std::fs::write(root.join("todo").join(crate::KINDS), "{}").unwrap();
         gallery.reload();
@@ -4120,7 +4423,7 @@ mod tests {
         std::fs::remove_file(root.join("todo").join(crate::KINDS)).unwrap();
         write_todo_screen(&root, &fine);
         gallery.reload();
-        assert!(gallery.lines[0].row.faults.is_empty(), "fixed");
+        assert!(gallery.lines[1].row.faults.is_empty(), "fixed");
         assert_eq!(captions(&gallery), ["typing · 390", "typing · 1120"], "drawn again");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -4135,10 +4438,10 @@ mod tests {
         screen["data"]["stray"] = json!("nonsense");
         std::fs::write(root.join("todo").join(crate::SCREEN), screen.to_string()).unwrap();
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
-        assert!(!gallery.lines[0].row.faults.is_empty(), "the stray field is a fault");
-        assert!(gallery.lines[1].state.is_some(), "its states are still listed");
-        gallery.pick(1);
-        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
+        assert!(!gallery.lines[2].row.faults.is_empty(), "the stray field is a fault");
+        assert!(gallery.lines[2].state.is_some(), "its states are still listed");
+        gallery.pick(2);
+        assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[2].row.faults));
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -4473,7 +4776,7 @@ mod tests {
         let root = root_of("flow-reload", &[("orders", "app/orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
-        showing(&mut gallery, 0);
+        showing(&mut gallery, 1);
         let undrawn = |gallery: &Gallery| {
             flow_shown(gallery).tiles.iter().filter(|c| matches!(c, Tile::Undrawn)).count()
         };
@@ -4482,7 +4785,7 @@ mod tests {
         std::fs::rename(export.join("export"), root.join("app/export")).unwrap();
         std::fs::remove_dir_all(export).unwrap();
         gallery.reload();
-        assert_eq!(gallery.picked, Some(0), "the directory is still picked");
+        assert_eq!(gallery.picked, Some(1), "the directory is still picked");
         assert_eq!(undrawn(&gallery), 1, "ExportDocuments is drawn now");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -4541,7 +4844,7 @@ mod tests {
     /// The sidebar's button that reads `text`, clicked in the middle of
     /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
-        let cards = gallery.cards();
+        let cards = gallery.sidebar_cards();
         let buttons =
             cards.iter().flat_map(|card| &card.blocks).filter(|block| matches!(block, Block::Button(..)));
         let index = buttons
@@ -5392,7 +5695,7 @@ mod tests {
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         let journey = journey_of(&gallery, "cancel-an-order");
-        assert_eq!(gallery.lines[journey].row.depth, 0, "listed under the root");
+        assert_eq!(gallery.lines[journey].row.depth, 1, "listed under the root, one in from its line");
         over_row(&mut gallery, journey);
         assert!(gallery.press());
         assert!(gallery.playing.is_none(), "not played");
@@ -5411,6 +5714,108 @@ mod tests {
         press_keys(&mut gallery, &["→"]);
         gallery.reload();
         assert_eq!(played(&gallery).0, 2, "a change keeps the step shown");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// What the inbox's card says: its title, then each of its blocks;
+    /// nothing when it is not shown.
+    fn inbox(gallery: &Gallery) -> Vec<String> {
+        gallery
+            .inbox_card()
+            .into_iter()
+            .flat_map(|card| {
+                let blocks = card.blocks.iter().map(|block| block.says().to_string()).collect::<Vec<_>>();
+                std::iter::once(card.title).chain(blocks)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_inbox_lists_what_waits_on_the_person_and_shows_each_item_picked() {
+        let root = root_of("inbox", &[("orders", "orders"), ("checkout", "pay/checkout")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        let orders = line_of(&gallery, "orders");
+        gallery.pick(orders);
+        let guesses = [
+            "? nav-export in default: This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet",
+            "? order-{index} in default: This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet",
+        ];
+        assert_eq!(inbox(&gallery), ["waits on you · 2", guesses[0], guesses[1]]);
+
+        assert!(click_panel_line(&mut gallery, guesses[0]));
+        assert_eq!(shown(&gallery), "orders · default", "clicking an item shows its state");
+        assert_eq!(gallery.node.as_deref(), Some("nav-export"), "with its node picked");
+        assert_eq!(gallery.panel()[0], "IconButton", "and its card");
+        assert!(inbox(&gallery).is_empty(), "a node picked: the inbox gives way to its card");
+
+        let dir = root.join("orders");
+        let on_export = gallery.reference().unwrap();
+        notes::add(&on_export, "say Export").unwrap();
+        notes::answer(&dir, "N1", "it says Export now").unwrap();
+        let whole =
+            Reference { description: dir.clone(), on: On::State { state: State::Fixture("default".into()) } };
+        notes::add(&whole, "too dense").unwrap();
+        gallery.reload();
+        gallery.pick(orders);
+        let answered = "N1 · on nav-export in default at 390 · agent: it says Export now";
+        assert_eq!(
+            inbox(&gallery),
+            ["waits on you · 3", guesses[0], guesses[1], answered, "▸ waiting on the agent · 1"],
+            "two assumptions unanswered and one note answered; the open note folded to its count"
+        );
+        assert!(click_panel_line(&mut gallery, "▸ waiting on the agent · 1"));
+        assert_eq!(inbox(&gallery)[4..], ["▾ waiting on the agent · 1", "N2 · on the whole of default"]);
+
+        assert!(click_panel_line(&mut gallery, answered));
+        assert_eq!(shown(&gallery), "orders · default");
+        assert_eq!(gallery.node.as_deref(), Some("nav-export"), "the note's node picked");
+        assert_eq!(
+            gallery.panel()[0],
+            "N1 · answered · on nav-export in default at 390",
+            "with the note's card"
+        );
+
+        let top = gallery.lines.iter().position(|line| line.row.dir == root).unwrap();
+        assert_eq!(top, 0, "the root is the tree's first line");
+        gallery.pick(top);
+        assert!(matches!(gallery.picture, Picture::Flow(_)), "the flow of everything under it");
+        let everything = inbox(&gallery);
+        let (at_orders, at_checkout) = (
+            everything.iter().position(|line| line == "orders").unwrap(),
+            everything.iter().position(|line| line == "pay/checkout").unwrap(),
+        );
+        assert_eq!(
+            everything[at_orders + 1..at_orders + 4],
+            [guesses[0], guesses[1], answered],
+            "{everything:?}"
+        );
+        assert!(at_orders < at_checkout, "grouped by description, in the tree's order");
+        assert!(
+            everything[at_checkout + 1..].iter().any(|line| line.starts_with("? card-number in ")),
+            "{everything:?}"
+        );
+        let pay = gallery.lines.iter().position(|line| line.row.dir == root.join("pay")).unwrap();
+        gallery.pick(pay);
+        assert!(!inbox(&gallery).contains(&"orders".to_string()), "a directory's is what is under it");
+
+        notes::close(&dir, "N1").unwrap();
+        let assumed = guesses[0].split_once(": ").unwrap().1.to_string();
+        let guess = Guess::Undrawn(vec!["ExportDocuments".into()]);
+        notes::judge(&on_export, Answers { assumed, guess, answer: Answer::Right }, "").unwrap();
+        gallery.reload();
+        gallery.pick(orders);
+        assert_eq!(
+            inbox(&gallery),
+            [
+                "waits on you · 1",
+                guesses[1],
+                "▾ waiting on the agent · 2",
+                "N2 · on the whole of default",
+                "N3 · on nav-export in default at 390",
+            ],
+            "closed, and answered ✓, they leave as the files change"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

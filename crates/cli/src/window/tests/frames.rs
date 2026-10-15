@@ -134,6 +134,21 @@ fn an_overview_with_its_arrows_and_journey_marks() {
 }
 
 #[test]
+fn the_inbox_of_the_root_grouped_by_description() {
+    let root = root_of("frame-inbox", &[("orders", "orders"), ("checkout", "pay/checkout")]);
+    let dir = root.join("orders");
+    let whole =
+        Reference { description: dir.clone(), on: On::State { state: State::Fixture("default".into()) } };
+    notes::add(&whole, "too dense").unwrap();
+    notes::add(&whole, "a bigger title").unwrap();
+    notes::answer(&dir, "N2", "the title is a heading now").unwrap();
+    let gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
+    let card = gallery.inbox_card().expect("the inbox of everything under the root");
+    assert_eq!(card.title, "waits on you · 6");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_flow_with_a_screen_not_drawn_yet() {
     let root = root_of("frame-flow", &[("airbnb-listing", "shop/listing"), ("checkout", "shop/checkout")]);
     let gallery = held("flow", &root, WINDOW, |gallery| {
@@ -150,7 +165,7 @@ fn a_description_with_faults() {
     let root = root_of("frame-faults", &[]);
     std::fs::create_dir_all(root.join("broken")).unwrap();
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
-    let gallery = held("faults", &root, WINDOW, |gallery| gallery.pick(0));
+    let gallery = held("faults", &root, WINDOW, |gallery| gallery.pick(1));
     assert!(matches!(&gallery.picture, Picture::Faults(faults) if !faults.is_empty()));
     std::fs::remove_dir_all(root).unwrap();
 }
