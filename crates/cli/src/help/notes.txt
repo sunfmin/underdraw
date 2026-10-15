@@ -28,7 +28,9 @@ DOES
     closed    closed by the person; nothing more to do
   `underdraw notes <path>` lists the open ones. Edit the node where
   "node.at" points in that description's screen.json (the id written
-  there is "node.id", a template inside a repeat), then answer:
+  there is "node.id", a template inside a repeat), then answer. A note
+  with "proposes" asks for where acting on its node should go: declare the
+  transition, or the navigate, it names, then answer:
 
     underdraw notes <dir> --answer N3 --reply "made the price wrap"
 
@@ -84,6 +86,13 @@ ANSWERS
                   "thread":      [{"by": "person" or "agent", "says"}, …],
                                  what the person wrote, then each reply and
                                  each line added on reopening, in order
+                  "proposes":    null, or, where acting on the node found
+                                 nothing declared and the person chose
+                                 where it should go: {"on": "<node id as
+                                 written>.<event>", "to": <state>}, a
+                                 transition to add to "transitions" from
+                                 "state", or {"on", "navigate": <screen>},
+                                 a navigate to give the node's handler
                   "reference":   the same as one line, as ⌘C copies it}, …]
     "open":     how many notes are open
     "answered": how many are answered, waiting for the person
