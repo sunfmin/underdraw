@@ -2,7 +2,7 @@
 //! at a time: each is found where it was planted, and says what is wrong.
 
 use serde_json::Value;
-use underdraw_format::{Checked, Transition, check, model};
+use underdraw_format::{Checked, Screen, Shared, Transition};
 
 const DRAFT: &str = include_str!("../../../drafts/orders/screen.json");
 
@@ -23,7 +23,8 @@ const CONFIRM: &str =
 #[test]
 fn the_drafts_transitions_are_read_as_written() {
     let screen: Value = serde_json::from_str(DRAFT).unwrap();
-    let model = model(&screen).unwrap_or_else(|c| panic!("{c:#?}"));
+    let screen = read(&screen);
+    let model = underdraw_format::model(&screen).unwrap_or_else(|c| panic!("{c:#?}"));
     assert_eq!(
         model.transitions.first(),
         Some(&Transition {
@@ -153,4 +154,13 @@ fn a_node_from_a_component_is_found_and_shown_in_a_phase() {
     // It is found, and shown in loading: what is wrong is only that it leaves.
     assert_eq!(checked.findings.len(), 1, "{:#?}", checked.findings);
     assert!(checked.findings[0].problem.contains("leaves this screen"));
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

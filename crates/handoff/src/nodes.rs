@@ -70,7 +70,7 @@ pub struct Walk<'a> {
     pub mapping: &'a Value,
     /// The instances whose nodes are being walked: each node inside is
     /// named by the instance's id, as written, joined to its own.
-    pub instances: Instances<'a, 'a, ()>,
+    pub instances: Instances<'a, ()>,
     pub specs: Vec<Spec>,
     pub hidden: Vec<Hidden>,
     pub findings: Vec<Finding>,
@@ -107,7 +107,7 @@ impl Walk<'_> {
                 if let Err(problem) = self.instances.enter(component, object, id.clone(), id.clone(), ()) {
                     return self.findings.push(Finding { at: id, problem });
                 }
-                self.spec(component.nodes, Some(object), id, parent, slot);
+                self.spec(&component.nodes, Some(object), id, parent, slot);
                 self.instances.leave();
             }
             Met::Node => self.spec(object, None, id, parent, slot),

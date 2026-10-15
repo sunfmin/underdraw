@@ -12,24 +12,19 @@ use serde_json::Value;
 
 use crate::breakpoint::Breakpoint;
 use crate::check::{Finding, Findings};
-use crate::conditions::Conditions;
-use crate::domain;
-use crate::fixture;
-use crate::instance::{Node, State, build};
-use crate::params;
-use crate::schema::{Schema, object};
-use crate::transitions;
+use crate::instance::{Node, State};
+use crate::screen::Screen;
 
 /// The keys a step holds.
 const KEYS: [&str; 4] = ["screen", "state", "on", "outcome"];
 
 /// Every fault in walking `journey`, whose screens `screens` holds by their
-/// path from the project's root, each with the domain it shares: a step
+/// path from the project's root, each read with what its project shares: a step
 /// naming a screen not in `screens` or a state it does not have, an act
 /// whose node its step's state does not show or that has no such event,
 /// an act that does not lead to the next step, and a navigate that opens
 /// the next step's screen with values other than its fixture's params.
-pub fn walk(journey: &Value, screens: &BTreeMap<String, Value>) -> Vec<Finding> {
+pub fn walk(journey: &Value, screens: &BTreeMap<String, Screen>) -> Vec<Finding> {
     let mut findings = Findings::default();
     let Some(object) = journey.as_object() else {
         findings.add("", "a journey is {\"steps\": [{\"screen\", \"state\", \"on\"?, \"outcome\"?}, …]}");
@@ -72,7 +67,7 @@ pub fn walk(journey: &Value, screens: &BTreeMap<String, Value>) -> Vec<Finding> 
 /// One step as read: its screen and state, and the act on it, if any.
 struct Step<'a> {
     path: &'a str,
-    screen: &'a Value,
+    screen: &'a Screen,
     state: &'a str,
     /// The state built at each breakpoint it builds at.
     trees: Vec<Node>,
@@ -90,7 +85,7 @@ impl<'a> Step<'a> {
     fn read(
         step: &'a Value,
         index: usize,
-        screens: &'a BTreeMap<String, Value>,
+        screens: &'a BTreeMap<String, Screen>,
         findings: &mut Findings,
     ) -> Option<Step<'a>> {
         let at = format!("steps.{index}");
@@ -127,18 +122,8 @@ impl<'a> Step<'a> {
             );
             return None;
         };
-        let mut ignored = Findings::default();
-        let expanded = domain::expand(screen, &mut ignored);
-        let schema = Schema::read(&expanded, &mut ignored);
-        let conditions = Conditions::read(&expanded, &schema, &mut ignored);
-        let mut fixtures = fixture::read(&expanded, &schema, &mut ignored);
-        conditions.fill(&schema, &mut fixtures);
-        let mut states: Vec<String> = fixtures.iter().map(|(name, _)| name.clone()).collect();
-        for (name, _) in object(&expanded, "phases") {
-            if !name.starts_with('$') {
-                states.push(name.clone());
-            }
-        }
+        let mut states = screen.fixture_names();
+        states.extend(screen.phases());
         let Some(state) = text("state") else {
             findings
                 .add(&format!("{at}.state"), "a step names its state: a fixture or a phase of its screen");
@@ -154,24 +139,20 @@ impl<'a> Step<'a> {
             );
             return None;
         }
-        let built = if fixtures.iter().any(|(name, _)| name == state) {
-            State::Fixture(state)
-        } else {
-            State::Phase(state)
-        };
+        let built = screen.state(state);
         let mut trees = Vec::new();
         for breakpoint in Breakpoint::ALL {
-            if let Ok(tree) = build(&expanded, &conditions, &fixtures, built, breakpoint) {
+            if let Ok(tree) = screen.instantiate(built, breakpoint, None) {
                 trees.push(tree);
             }
         }
         let mut held = Vec::new();
         if let State::Fixture(name) = built
-            && let Some((_, data)) = fixtures.iter().find(|(fixture, _)| fixture == name)
+            && let Some((_, data)) = screen.fixtures.iter().find(|(fixture, _)| fixture == name)
         {
-            for (param, _) in params::params(&expanded).unwrap_or_default() {
-                let value = data.get(&param).cloned().unwrap_or(Value::Null);
-                held.push((param, value));
+            for (param, _) in screen.params.iter().flatten() {
+                let value = data.get(param).cloned().unwrap_or(Value::Null);
+                held.push((param.clone(), value));
             }
         }
         Some(Step { path, screen, state, trees, params: held, on, outcome })
@@ -195,7 +176,7 @@ impl<'a> Step<'a> {
             return findings.add(&at, &format!("{node} has no {event} event in {path} {state}"));
         };
         if next.path == self.path {
-            let reaches = transitions::read(self.screen).into_iter().any(|t| {
+            let reaches = self.screen.transitions.iter().any(|t| {
                 t.from == state
                     && t.node == node
                     && t.event == event
@@ -206,7 +187,7 @@ impl<'a> Step<'a> {
                 return;
             }
         }
-        let names = next.screen.get("screen").and_then(Value::as_str);
+        let names = Some(next.screen.name()).filter(|name| !name.is_empty());
         let navigates = handler.get("navigate").and_then(Value::as_str);
         if next.path != self.path && navigates.is_some() && navigates == names {
             let with = handler.get("with");
@@ -254,7 +235,7 @@ mod tests {
 
     use super::*;
 
-    fn screens() -> BTreeMap<String, Value> {
+    fn screens() -> BTreeMap<String, Screen> {
         let list = json!({
             "screen": "List",
             "data": { "items": "string[]" },
@@ -276,7 +257,8 @@ mod tests {
             ] },
             "transitions": [ { "from": "shut", "on": "toggle.tap", "to": "opened" } ]
         });
-        BTreeMap::from([("app/list".to_string(), list), ("app/detail".to_string(), detail)])
+        let read = |description: &Value| Screen::read(description, Default::default());
+        BTreeMap::from([("app/list".to_string(), read(&list)), ("app/detail".to_string(), read(&detail))])
     }
 
     fn walked(steps: Value) -> Vec<String> {

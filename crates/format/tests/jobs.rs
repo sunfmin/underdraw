@@ -3,7 +3,7 @@
 //! the job running, done and failed. Each fault is planted one at a time.
 
 use serde_json::Value;
-use underdraw_format::{Checked, Does, Shape, check, model};
+use underdraw_format::{Checked, Does, Screen, Shape, Shared};
 
 const DRAFT: &str = include_str!("../../../drafts/export/screen.json");
 
@@ -20,7 +20,8 @@ fn found(checked: &Checked, at: &str, said: &str) -> bool {
 #[test]
 fn a_long_command_derives_its_job_type_and_the_query_that_reads_it() {
     let screen: Value = serde_json::from_str(DRAFT).unwrap();
-    let model = model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
+    let screen = read(&screen);
+    let model = underdraw_format::model(&screen).unwrap_or_else(|c| panic!("{:#?}", c.findings));
     let export = model.operations.get("exportDocs").unwrap();
     assert!(export.long);
     assert_eq!(
@@ -126,4 +127,13 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         let checked = check(&planted(name, from, to));
         assert!(found(&checked, at, said), "{name}: wanted {at}: {said}; got {:#?}", checked.findings);
     }
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

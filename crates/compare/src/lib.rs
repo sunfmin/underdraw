@@ -14,7 +14,7 @@ mod cli;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Components, Node, State, instantiate};
+use underdraw_format::{Breakpoint, Components, Node, Screen, State};
 use underdraw_handoff::{Expected, handoff};
 use underdraw_layout::{Measure, Page, Rect, layout};
 
@@ -71,7 +71,7 @@ const SLACK: f32 = 1.0;
 /// measured by `measure`, each component drawn as the screen's own components, over underdraw's, say. Refused, with why: a description with faults, a
 /// capture that is not one, a state not shown at that width.
 pub fn compare(
-    screen: &Value,
+    screen: &Screen,
     mapping: &Value,
     tokens: &Value,
     state: State,
@@ -102,7 +102,7 @@ pub fn compare(
     let Some(expected) = expected else {
         return Err(format!("the description does not show {named} at the {breakpoint:?} breakpoint"));
     };
-    let root = instantiate(screen, state, breakpoint)?;
+    let root = screen.instantiate(state, breakpoint, None)?;
     let page = layout(&root, tokens, screen, capture.width, underdraw_format::Lang::default(), measure)?;
 
     let mut known = Vec::new();
@@ -117,7 +117,7 @@ pub fn compare(
         capture: &capture,
         expected,
         page: &page,
-        components: &Components::read(screen),
+        components: &screen.components,
         platform: &handed.platform,
         checked: Checked::default(),
         findings: Vec::new(),

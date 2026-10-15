@@ -2,7 +2,7 @@
 //! found where it was planted, and says what is wrong.
 
 use serde_json::{Value, json};
-use underdraw_format::{Checked, Components, check};
+use underdraw_format::{Checked, Screen, Shared};
 
 /// A frozen copy of `drafts/airbnb-listing`, kept beside the tests so that
 /// designing in the live draft never moves a planted fault. The other crates'
@@ -362,13 +362,22 @@ fn a_component_with_a_backdrop_must_be_an_overlay() {
 
 #[test]
 fn a_component_says_whether_it_scrolls_or_is_pinned() {
-    let defaults = Components::read(&json!({}));
+    let defaults = read(&json!({})).components;
     assert!(defaults.scrolls("Carousel") && defaults.pinned("StickyBar"));
     assert!(!defaults.scrolls("Row") && !defaults.pinned("Row"));
     let screen = json!({ "components": {
         "Feed": { "scrolls": true, "look": "$children" },
         "StickyBar": { "look": "$children" } } });
-    let components = Components::read(&screen);
+    let components = read(&screen).components;
     assert!(components.scrolls("Feed"), "a screen's own component scrolls when it says so");
     assert!(!components.pinned("StickyBar"), "a screen's own component replaces underdraw's whole");
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn check(description: &Value) -> Checked {
+    underdraw_format::check(&read(description))
 }

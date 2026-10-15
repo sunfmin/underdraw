@@ -3,7 +3,8 @@
 //! through a null parent, a field named like a keyword.
 
 use serde_json::{Value, json};
-use underdraw_handoff::handoff;
+use underdraw_format::{Checked, Screen, Shared};
+use underdraw_handoff::Handoff;
 
 fn screen() -> Value {
     json!({
@@ -159,4 +160,13 @@ fn a_condition_on_a_type_is_a_property_of_it() {
             assert!(code.contains(line), "{language}: missing {line:?} in\n{code}");
         }
     }
+}
+
+/// `description` read as a screen of its own, with nothing shared.
+fn read_screen(description: &Value) -> Screen {
+    Screen::read(description, Shared::default())
+}
+
+fn handoff(screen: &Value, mapping: &Value, tokens: &Value) -> Result<Handoff, Box<Checked>> {
+    underdraw_handoff::handoff(&read_screen(screen), mapping, tokens)
 }

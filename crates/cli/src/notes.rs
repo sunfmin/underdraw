@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use underdraw_format::Screen;
 
 use crate::SCREEN;
 use crate::draw::Shown;
@@ -162,8 +163,8 @@ impl Guess {
     /// What made the assumption on the node written `written` in `screen`,
     /// of component `component`, drawn among the screens `drawn`: its own
     /// `assumed`, else a navigate to a screen not drawn, else its component.
-    pub fn of(screen: &Value, written: &str, component: &str, drawn: &BTreeSet<String>) -> Guess {
-        let node = underdraw_format::written_node(screen, written);
+    pub fn of(screen: &Screen, written: &str, component: &str, drawn: &BTreeSet<String>) -> Guess {
+        let node = screen.written_node(written);
         if node.is_some_and(|node| node.contains_key("assumed")) {
             return Guess::Author;
         }
@@ -174,8 +175,9 @@ impl Guess {
 
 /// The screens the node written `written` in `screen` navigates to that
 /// are not among `drawn`.
-fn undrawn(screen: &Value, written: &str, drawn: &BTreeSet<String>) -> Vec<String> {
-    underdraw_format::navigates(screen)
+fn undrawn(screen: &Screen, written: &str, drawn: &BTreeSet<String>) -> Vec<String> {
+    screen
+        .navigates()
         .into_iter()
         .filter(|navigate| navigate.node == written && !drawn.contains(&navigate.to))
         .map(|navigate| navigate.to)
@@ -621,20 +623,24 @@ pub fn counted(dir: &Path) -> Value {
 /// state is, or every node it covered; a whole state once the description
 /// has no state by its name; a transition or a navigate once none is
 /// written with the same keys.
-fn gone(screen: &Value, on: &On) -> Option<String> {
+fn gone(screen: &Screen, on: &On) -> Option<String> {
     let now_gone = |was: String| Some(format!("on {was}, now gone"));
     let state_gone = on.state().filter(|state| {
         let key = match state {
             Shown::Fixture(_) => "fixtures",
             Shown::Phase(_) => "phases",
         };
-        !screen.get(key).and_then(Value::as_object).is_some_and(|all| all.contains_key(state.name()))
+        !screen
+            .description()
+            .get(key)
+            .and_then(Value::as_object)
+            .is_some_and(|all| all.contains_key(state.name()))
     });
     let in_state = |was: String| match state_gone {
         Some(state) => now_gone(format!("{was} in {}", said_state(state))),
         None => now_gone(was),
     };
-    let writes = |id: &str| underdraw_format::writes(screen, id);
+    let writes = |id: &str| screen.writes(id);
     match on {
         On::Node { node, .. } if state_gone.is_some() || !writes(&node.origin.written) => {
             in_state(format!("`{}`", node.origin.written))
@@ -643,7 +649,7 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
             now_gone(format!("the whole of {}", said_state(state)))
         }
         On::Transition { transition } => {
-            let declared = underdraw_format::transitions(screen).into_iter().any(|declared| {
+            let declared = screen.transitions.iter().any(|declared| {
                 declared.from == transition.from
                     && format!("{}.{}", declared.node, declared.event) == transition.on
                     && declared.outcome == transition.outcome
@@ -652,8 +658,9 @@ fn gone(screen: &Value, on: &On) -> Option<String> {
             if declared { None } else { now_gone(format!("transition {}", transition.said())) }
         }
         On::Navigate { navigate } => {
-            let from = screen.get("screen").and_then(Value::as_str) == Some(navigate.from.as_str());
-            let written = underdraw_format::navigates(screen)
+            let from = screen.name() == navigate.from;
+            let written = screen
+                .navigates()
                 .into_iter()
                 .any(|written| written.node == navigate.node && written.to == navigate.to);
             if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
@@ -688,7 +695,7 @@ fn joins(on: &On, states: &[Shown]) -> Option<Shown> {
 /// on the agent still waits. A state with no note gets the first gone
 /// note itself, pinned to the whole state and keeping its id. Whether any
 /// joined.
-fn join(notes: &mut Vec<Note>, screen: &Value, states: &[Shown]) -> bool {
+fn join(notes: &mut Vec<Note>, screen: &Screen, states: &[Shown]) -> bool {
     let mut moved: Vec<Vec<Said>> = vec![Vec::new(); notes.len()];
     let mut gone_from = vec![false; notes.len()];
     let mut joined = false;
@@ -963,6 +970,7 @@ mod tests {
             { "id": "gauge", "component": "Gauge" },
             { "id": "row", "component": "Row", "on": { "tap": { "navigate": "OrderDetail" } } },
         ] } });
+        let screen = Screen::read(&screen, Default::default());
         let none = BTreeSet::new;
         assert_eq!(Guess::of(&screen, "card", "TextField", &none()), Guess::Author);
         assert_eq!(Guess::of(&screen, "row", "Row", &none()), Guess::Undrawn(vec!["OrderDetail".into()]));
@@ -1132,6 +1140,7 @@ mod tests {
             ] },
             "transitions": [{ "from": "default", "on": "go.tap", "to": "empty" }],
         });
+        let screen = Screen::read(&screen, Default::default());
         let states = [Shown::Fixture("default".into()), Shown::Fixture("empty".into())];
         let node = |state: &str, id: &str| On::Node {
             state: Shown::Fixture(state.into()),
