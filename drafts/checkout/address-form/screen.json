@@ -224,7 +224,12 @@
       {
         "id": "bar",
         "component": "StickyBar",
-        "children": [
+        "children": [],
+        "padding": [
+          "space.3",
+          "space.4"
+        ],
+        "trailing": [
           {
             "id": "save",
             "component": "Button",
@@ -262,10 +267,6 @@
               }
             }
           }
-        ],
-        "padding": [
-          "space.3",
-          "space.4"
         ]
       }
     ]
