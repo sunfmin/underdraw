@@ -82,6 +82,14 @@ A stage before the view model exists, such as loading or error, with its own
 node tree that reads no data.
 _Avoid_: status
 
+**Transition**:
+Which state a person reaches when they act on a node in another state:
+from a fixture or phase, on one of a node's events (and, for an event
+that calls an operation, one of its outcomes), to a fixture or phase. For
+the gallery only; never handed off. An event that navigates or goes back
+leaves the screen and is no transition.
+_Avoid_: flow, navigation, edge
+
 **Condition**:
 A named yes/no decision the screen makes, such as `hasDates`, declared once and
 used by name.

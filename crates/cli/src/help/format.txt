@@ -24,6 +24,8 @@ SCREEN.JSON
     "root":       node,                the screen once data has arrived
     "phases":     {"loading": node, "error": node}
                                        trees shown before data; they read no data
+    "transitions": [{"from", "on", "outcome"?, "to"}, …]
+                                       which state acting on a node leads to (TRANSITIONS)
   }
   "$comment", "$note", "$why" may be put on anything: read by people only.
 
@@ -435,6 +437,27 @@ PHASES
   A phase tree has no data roots: no paths, no conditions on data. Inside
   root, every non-nullable path has a value. A section that loads on its own
   later is a nullable field and a condition, not a phase.
+
+TRANSITIONS
+  Which state a person reaches when they act on a node in another state.
+  They are for the gallery, to lay the states out and click through them;
+  they are not handed off, and need not name every event.
+    "transitions": [
+      { "from": "default",       "on": "order-{index}-cancel.tap",            "to": "cancel-dialog" },
+      { "from": "cancel-dialog", "on": "cd-keep.tap",                         "to": "default" },
+      { "from": "cancel-ready",  "on": "cd-confirm.tap", "outcome": "ok",      "to": "default" },
+      { "from": "cancel-ready",  "on": "cd-confirm.tap", "outcome": "shipped", "to": "cancel-ready" }
+    ]
+    "from", "to"  a state: a fixture or a phase
+    "on"          "<node id>.<event>": the node's "id" as written (a template
+                  inside an item, "order-{index}-cancel"), and an event its
+                  "on" handles. The node is shown in "from", at either
+                  breakpoint.
+    "outcome"     given exactly when the event calls an operation: "ok", or
+                  one of the operation's "fails"
+  Opening and closing a popup are transitions like any other. An event
+  that navigates or goes back leaves the screen: it is not a transition.
+  check names a transition whose state, node, event or outcome is not one.
 
 RESPONSIVE
   tokens.json "breakpoint" splits widths into compact and regular; `render
