@@ -2,6 +2,8 @@
 //! screens, told as steps, each a state of one screen; each step but the
 //! last acts on a node, and that act leads to the next step, by a
 //! transition on the same screen or a navigate to the next step's screen.
+//! Across screens, data carries: the values a navigate computes in its
+//! step's state are exactly the params the next step's fixture holds.
 //! For the gallery and check only; nothing is handed off from them.
 
 use std::collections::BTreeMap;
@@ -14,6 +16,7 @@ use crate::conditions::Conditions;
 use crate::domain;
 use crate::fixture;
 use crate::instance::{Node, State, build};
+use crate::params;
 use crate::schema::{Schema, object};
 use crate::transitions;
 
@@ -24,7 +27,8 @@ const KEYS: [&str; 4] = ["screen", "state", "on", "outcome"];
 /// path from the project's root, each with the domain it shares: a step
 /// naming a screen not in `screens` or a state it does not have, an act
 /// whose node its step's state does not show or that has no such event,
-/// and an act that does not lead to the next step.
+/// an act that does not lead to the next step, and a navigate that opens
+/// the next step's screen with values other than its fixture's params.
 pub fn walk(journey: &Value, screens: &BTreeMap<String, Value>) -> Vec<Finding> {
     let mut findings = Findings::default();
     let Some(object) = journey.as_object() else {
@@ -72,6 +76,9 @@ struct Step<'a> {
     state: &'a str,
     /// The state built at each breakpoint it builds at.
     trees: Vec<Node>,
+    /// Each param the screen declares, with the value this step's fixture
+    /// gives it; none in a phase, or when the screen declares no params.
+    params: Vec<(String, Value)>,
     on: Option<(&'a str, &'a str)>,
     outcome: Option<&'a str>,
 }
@@ -158,7 +165,16 @@ impl<'a> Step<'a> {
                 trees.push(tree);
             }
         }
-        Some(Step { path, screen, state, trees, on, outcome })
+        let mut held = Vec::new();
+        if let State::Fixture(name) = built
+            && let Some((_, data)) = fixtures.iter().find(|(fixture, _)| fixture == name)
+        {
+            for (param, _) in params::params(&expanded).unwrap_or_default() {
+                let value = data.get(&param).cloned().unwrap_or(Value::Null);
+                held.push((param, value));
+            }
+        }
+        Some(Step { path, screen, state, trees, params: held, on, outcome })
     }
 
     /// Whether this step, the `index`th, acts on a node its state shows,
@@ -193,6 +209,19 @@ impl<'a> Step<'a> {
         let names = next.screen.get("screen").and_then(Value::as_str);
         let navigates = handler.get("navigate").and_then(Value::as_str);
         if next.path != self.path && navigates.is_some() && navigates == names {
+            let with = handler.get("with");
+            for (param, held) in &next.params {
+                let given = with.and_then(|with| with.get(param)).unwrap_or(&Value::Null);
+                if given != held {
+                    findings.add(
+                        &at,
+                        &format!(
+                            "{node}.{event} in {path} {state} opens {} with {param} {given}, but the next step, {} {}, holds {param} {held}: give the same value on both sides",
+                            next.path, next.path, next.state
+                        ),
+                    );
+                }
+            }
             return;
         }
         let outcome = self.outcome.map(|outcome| format!(" ({outcome})")).unwrap_or_default();
@@ -232,15 +261,16 @@ mod tests {
             "fixtures": { "some": { "items": ["a"] }, "none": { "items": [] } },
             "root": { "id": "list", "kind": "Screen", "children": [
                 { "id": "rows", "kind": "List", "each": "items", "item":
-                    { "id": "row-{index}", "kind": "Button", "text": "{item}", "on": { "tap": { "navigate": "Detail" } } } },
+                    { "id": "row-{index}", "kind": "Button", "text": "{item}", "on": { "tap": { "navigate": "Detail", "with": { "id": "{item}" } } } } },
                 { "id": "more", "kind": "Button", "text": "More", "on": { "tap": { "set": { "open": true } } } }
             ] },
             "transitions": []
         });
         let detail = json!({
             "screen": "Detail",
-            "data": { "open": { "type": "bool = false", "view": true } },
-            "fixtures": { "shut": {}, "opened": { "open": true } },
+            "params": ["id"],
+            "data": { "id": "string", "open": { "type": "bool = false", "view": true } },
+            "fixtures": { "shut": { "id": "a" }, "opened": { "$patch": "shut", "open": true }, "other": { "id": "b" } },
             "root": { "id": "detail", "kind": "Screen", "children": [
                 { "id": "toggle", "kind": "Button", "text": "Open", "on": { "tap": { "toggle": "open" } } }
             ] },
@@ -264,6 +294,20 @@ mod tests {
             { "screen": "app/detail", "state": "opened" }
         ]));
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_navigate_that_opens_the_next_step_with_other_params_is_named() {
+        let found = walked(json!([
+            { "screen": "app/list", "state": "some", "on": "row-{index}.tap" },
+            { "screen": "app/detail", "state": "other" }
+        ]));
+        assert_eq!(
+            found,
+            vec![
+                "steps.0.on: row-{index}.tap in app/list some opens app/detail with id \"a\", but the next step, app/detail other, holds id \"b\": give the same value on both sides"
+            ]
+        );
     }
 
     #[test]
