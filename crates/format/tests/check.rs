@@ -495,6 +495,7 @@ fn a_looks_cases_branch_whose_if_is_not_a_condition_is_found_at_that_branch() {
         let said = format!("{what} is not a condition: an \"if\" takes a condition");
         assert!(found(&checked, at, &said), "expected {said:?} at {at}, got {:#?}", checked.findings);
     }
-    let well_formed = checked.findings.iter().any(|f| f.at.starts_with("components.Toolbar.look.children[3]"));
+    let well_formed =
+        checked.findings.iter().any(|f| f.at.starts_with("components.Toolbar.look.children[3]"));
     assert!(!well_formed, "a name, ! and && pass: {:#?}", checked.findings);
 }
