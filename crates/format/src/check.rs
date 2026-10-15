@@ -648,7 +648,10 @@ impl<'a> Walk<'a> {
                 if !nests {
                     let is = match &held {
                         Some(held) => format!("it is {}", held.describe()),
-                        None => format!("{type_name} has no field {nest}"),
+                        None => format!(
+                            "{type_name} has no field {}",
+                            nest.as_str().map_or(nest.to_string(), str::to_string)
+                        ),
                     };
                     self.findings.add(
                         &format!("{at}.nest"),
