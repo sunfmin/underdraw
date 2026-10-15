@@ -310,12 +310,13 @@ fn lines(root: &Path) -> Vec<Line> {
         journey_lines(root, 0, &mut lines);
     }
     for row in rows {
-        let states = row.description().map(draw::states).and_then(Result::ok).unwrap_or_default();
+        let states = row.states.clone();
         let (depth, dir, faults) = (row.depth + 1, row.dir.clone(), row.faults.clone());
         lines.push(Line { row, state: None, journey: false });
         for state in states {
             let name = state.name().to_string();
-            let row = Row { depth, name, dir: dir.clone(), described: true, faults: faults.clone() };
+            let states = Vec::new();
+            let row = Row { depth, name, dir: dir.clone(), described: true, faults: faults.clone(), states };
             lines.push(Line { row, state: Some(state), journey: false });
         }
         journey_lines(&dir, depth, &mut lines);
@@ -329,7 +330,7 @@ fn journey_lines(dir: &Path, depth: usize, lines: &mut Vec<Line>) {
     for file in journeys::listed(dir) {
         let name = file.file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
         let faults = journeys::faults(&file);
-        let row = Row { depth, name, dir: file, described: false, faults };
+        let row = Row { depth, name, dir: file, described: false, faults, states: Vec::new() };
         lines.push(Line { row, state: None, journey: true });
     }
 }
