@@ -1,0 +1,77 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "new"
+      },
+      "node": {
+        "id": "save",
+        "at": "/root/children/2/children/0",
+        "instance": [],
+        "label": 6,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "和上面的线没什么空间呀。",
+          "taken": 1792064384
+        },
+        {
+          "by": "agent",
+          "says": "改好了：底部栏加了内边距（上下 12、左右 16，和确认订单的底栏一样），「保存」离上面的线留出 12 的空，也不再贴左边。地址簿的「新增收货地址」底栏同样改了。"
+        },
+        {
+          "by": "person",
+          "says": "靠右对齐吧。",
+          "taken": 1792064434
+        },
+        {
+          "by": "agent",
+          "says": "改好了：「保存」靠右，离右边 16。地址簿底部的「新增收货地址」也一起改成靠右，两页一致。",
+          "unread": true
+        }
+      ]
+    },
+    {
+      "id": "N2",
+      "state": {
+        "fixture": "new"
+      },
+      "node": {
+        "id": "field-line",
+        "at": "/root/children/1/children/2",
+        "instance": [],
+        "label": 4,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "✓ right, keep it: take the guess out of the description",
+          "taken": 1792064468,
+          "answers": {
+            "assumed": "地址写成一整行；也可以拆成先选省市区、再填街道门牌，或者在地图上选点",
+            "guess": "author",
+            "answer": "right"
+          }
+        },
+        {
+          "by": "agent",
+          "says": "好的，已去掉这个猜测：地址就写成一整行。"
+        },
+        {
+          "by": "person",
+          "says": "还是拆吧。",
+          "taken": 1792064572
+        },
+        {
+          "by": "agent",
+          "says": "已拆开：地址变成「省份 / 城市 / 区县」三个下拉 +「详细地址」（街道、门牌号、楼栋房号）。点下拉从底部升起选择面板；前一级没选时后一级是灰的。新增了三个状态 picking-province / picking-city / picking-district 看面板。选了省自动接着选市、选了市接着选区，改前一级会清空后面的——这一点我标了橙色 ?（也可以做成一个面板里三列同时滚）。",
+          "unread": true
+        }
+      ]
+    }
+  ]
+}
