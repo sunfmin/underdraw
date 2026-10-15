@@ -28,6 +28,9 @@ pub(crate) struct Elem<'a> {
     /// It is a popup (a node in an `overlay` slot): drawn after the whole
     /// page, so nothing that comes after its node covers it.
     pub(crate) on_top: bool,
+    /// A line between its cells, in this ink, drawn over them: panes
+    /// split without a border round each.
+    pub(crate) dividers: Option<Ink>,
     pub(crate) children: Vec<Elem<'a>>,
 }
 
@@ -69,6 +72,7 @@ impl<'a> Elem<'a> {
             pin: None,
             backdrop: false,
             on_top: false,
+            dividers: None,
             children: Vec::new(),
         }
     }
@@ -200,6 +204,7 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
     }
     mark(&mut out);
     let mut draws = out.draws;
+    let marks = out.tags.len();
     draws.append(&mut out.tags);
     let mut cut = Vec::new();
     for (id, rect) in out.floated {
@@ -207,7 +212,7 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             cut.push(id);
         }
     }
-    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut })
+    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut, marks })
 }
 
 fn add<'e>(
@@ -311,6 +316,7 @@ fn emit<'t, 'n>(
         None => (clip, None),
     };
     let first = out.draws.len();
+    let mut cells = Vec::new();
     for index in 0..elem.children.len() {
         if let (Some(child), Some(laid)) = (elem.children.get(index), laid.children.get(index)) {
             if child.on_top {
@@ -318,7 +324,15 @@ fn emit<'t, 'n>(
             } else {
                 emit(tree, child, laid, rect, inner, out, later)?;
             }
+            if child.pin.is_none() {
+                let at = tree.layout(laid.id)?;
+                let (x, y) = (rect.x + at.location.x, rect.y + at.location.y);
+                cells.push(Rect { x, y, width: at.size.width, height: at.size.height });
+            }
         }
+    }
+    if let Some(ink) = elem.dividers {
+        out.draws.append(&mut dividers(&cells, ink));
     }
     // A guess as big as the page would have its "?" in the page's corner,
     // where the person does not look: it goes on what the node shows.
@@ -345,6 +359,49 @@ fn emit<'t, 'n>(
         out.draws.push(Draw::Clip { rect, radius, draws });
     }
     Ok(())
+}
+
+/// The lines between `cells`, laid out in rows and columns: down the
+/// middle of the gap between a cell and the one before it in its row, and
+/// across the middle of the gap between a cell and the one above it, each
+/// as long as the cell's share of its row or column, so lines meet where
+/// they cross.
+fn dividers(cells: &[Rect], ink: Ink) -> Vec<Draw> {
+    let mut lines = Vec::new();
+    for cell in cells {
+        let (right, bottom) = (cell.x + cell.width, cell.y + cell.height);
+        let (mut before, mut after, mut above, mut below) = (None, None, None, None);
+        for other in cells {
+            let (other_right, other_bottom) = (other.x + other.width, other.y + other.height);
+            if other.y < bottom - 0.5 && cell.y < other_bottom - 0.5 {
+                if other_right <= cell.x + 0.5 {
+                    before = Some(before.map_or(other_right, |at: f32| at.max(other_right)));
+                }
+                if other.x >= right - 0.5 {
+                    after = Some(after.map_or(other.x, |at: f32| at.min(other.x)));
+                }
+            }
+            if other.x < right - 0.5 && cell.x < other_right - 0.5 {
+                if other_bottom <= cell.y + 0.5 {
+                    above = Some(above.map_or(other_bottom, |at: f32| at.max(other_bottom)));
+                }
+                if other.y >= bottom - 0.5 {
+                    below = Some(below.map_or(other.y, |at: f32| at.min(other.y)));
+                }
+            }
+        }
+        let left = before.map_or(cell.x, |at| (at + cell.x) / 2.0);
+        let right = after.map_or(right, |at| (right + at) / 2.0);
+        let top = above.map_or(cell.y, |at| (at + cell.y) / 2.0);
+        let bottom = below.map_or(bottom, |at| (bottom + at) / 2.0);
+        if before.is_some() {
+            lines.push(Draw::Line { from: [left, top], to: [left, bottom], ink });
+        }
+        if above.is_some() {
+            lines.push(Draw::Line { from: [left, top], to: [right, top], ink });
+        }
+    }
+    lines
 }
 
 /// Notes where `node` went, and holds it for its marks, drawn once all is

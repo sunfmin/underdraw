@@ -1,8 +1,8 @@
 {
   "$comment": "The person opens an order from the list and cancels it before it ships.",
   "steps": [
-    { "screen": "orders", "state": "default", "on": "order-{index}.tap" },
-    { "screen": "order", "state": "open", "on": "summary-cancel.tap", "outcome": "ok" },
-    { "screen": "order", "state": "cancelled" }
+    { "screen": "ShopOrders", "state": "default", "on": "order-{index}.tap" },
+    { "screen": "ShopOrder", "state": "open", "on": "summary-cancel.tap", "outcome": "ok" },
+    { "screen": "ShopOrder", "state": "cancelled" }
   ]
 }

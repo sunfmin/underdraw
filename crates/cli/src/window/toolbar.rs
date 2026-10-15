@@ -1,8 +1,9 @@
 //! The toolbar along the window's top, over the three panes: at its left,
 //! back and forward through what the window has shown
-//! ([`super::history`]); at its right, the button that hides and shows the
-//! sidebar, as ⌘\ does. It lies above the gallery's points, which start at
-//! its foot: its own are from `-TOOLBAR` to 0.
+//! ([`super::history`]); at its right, the buttons that hide and show the
+//! marks over the pictures, as ⌘. does, and the sidebar, as ⌘\ does. It
+//! lies above the gallery's points, which start at its foot: its own are
+//! from `-TOOLBAR` to 0.
 
 use underdraw_layout::{Align, Draw, Ink, Measure, Rect};
 
@@ -14,6 +15,7 @@ use crate::chrome::{BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_PADDING as PADDING, 
 pub(super) enum Tool {
     Back,
     Forward,
+    Marks,
     Sidebar,
 }
 

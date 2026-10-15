@@ -124,6 +124,11 @@ pub(crate) struct Seen {
     /// only outlined: while ⌘ (Ctrl) is held, and in the flash after a
     /// ⌘-click that goes nowhere.
     pub lit: bool,
+    /// Whether the marks over the pictures are shown: the labels, the
+    /// guesses, the interaction marks (shown too while `lit`) and the
+    /// journeys'. The node picked, and what acting on it offers, are
+    /// marked either way.
+    pub marks: bool,
     pub lang: Lang,
 }
 
@@ -196,7 +201,7 @@ mod tests {
 
     /// What the window marks with `picked` picked, in English.
     pub(super) fn seen(picked: Option<Target>) -> Seen {
-        Seen { picked, marked: None, offers: Vec::new(), lit: false, lang: Lang::En }
+        Seen { picked, marked: None, offers: Vec::new(), lit: false, marks: true, lang: Lang::En }
     }
 
     /// The middle of `r`.

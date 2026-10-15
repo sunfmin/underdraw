@@ -13,7 +13,8 @@ The decisions:
 - **Linear; a branch is another journey.** It tells as a story and plays
   step by step. The graph is already drawn by the flow and the overviews.
 - **In `<dir>/journeys/<name>.json`**, listed under that directory in the
-  gallery, naming screens by their path from the project's root.
+  gallery, naming each screen by its name, as a navigate does, or by its
+  path from the project's root.
 - **`check` walks it.** Each act's node is shown in its step's state and
   leads to the next step: by a transition on the same screen, or by a
   navigate to the next step's screen. A broken journey is named, which is

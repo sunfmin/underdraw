@@ -112,7 +112,11 @@ pub struct Drawing {
     pub origins: BTreeMap<String, Origin>,
     /// What each node does when acted on, by id.
     pub handlers: BTreeMap<String, Handlers>,
+    /// The wireframe.
     pub scene: Scene,
+    /// Its marks, drawn over it: each label, and each guess's outline and
+    /// "?".
+    pub marks: Scene,
     /// Pixels per point: the one asked for, or less when the page would be
     /// taller than the GPU draws.
     pub scale: f64,
@@ -125,29 +129,12 @@ pub struct Drawing {
 /// even when the description has findings, though none of them can be drawn
 /// until they are fixed.
 pub fn states(path: &Path) -> anyhow::Result<Vec<Shown>> {
-    let (screen, dir) = read(path)?;
-    let checked = checked(&screen, &dir)?;
-    let fixtures = checked.fixtures.into_iter().map(Shown::Fixture);
-    Ok(fixtures.chain(checked.phases.into_iter().map(Shown::Phase)).collect())
-}
-
-/// The state `wanted` names of the description at `path` (a directory or its
-/// screen.json), laid out; refused when the description has findings, since
-/// a picture of it would mislead. Given the screens `drawn` under its root,
-/// a node that navigates to any other is marked assumed; what underdraw
-/// assumes itself is said in `lang`.
-pub fn lay_out(
-    path: &Path,
-    wanted: &Wanted,
-    drawn: Option<&BTreeSet<String>>,
-    lang: Lang,
-) -> anyhow::Result<Laid> {
-    Description::read(path)?.lay_out(wanted, drawn, lang)
+    Ok(Description::read(path)?.states())
 }
 
 /// A description read and checked once, as its files stood then, to lay
 /// out any of its states from without checking it again: checking lays out
-/// every state at two widths, so the gallery keeps one per description
+/// every state at each of its widths, so the gallery keeps one per description
 /// until its files change.
 pub struct Description {
     path: PathBuf,
@@ -167,12 +154,32 @@ impl Description {
         Ok(Description { path: path.to_path_buf(), screen, dir, tokens, checked })
     }
 
+    /// The widths its tokens name it drawn at, the first the one a single
+    /// picture is drawn at: `underdraw_layout::widths`.
+    pub fn widths(&self) -> Vec<u32> {
+        underdraw_layout::widths(&self.tokens)
+    }
+
+    /// Every state it can be shown in, as [`states`] says.
+    pub fn states(&self) -> Vec<Shown> {
+        let fixtures = self.checked.fixtures.iter().cloned().map(Shown::Fixture);
+        fixtures.chain(self.checked.phases.iter().cloned().map(Shown::Phase)).collect()
+    }
+
+    /// The directory the description is in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// The screen's name, as its `screen` gives it.
     pub fn name(&self) -> &str {
         self.screen.name()
     }
 
-    /// The state `wanted` names laid out, as [`lay_out`] says.
+    /// The state `wanted` names laid out; refused when the description has
+    /// findings, since a picture of it would mislead. Given the screens
+    /// `drawn` under its root, a node that navigates to any other is marked
+    /// assumed; what underdraw assumes itself is said in `lang`.
     pub fn lay_out(
         &self,
         wanted: &Wanted,
@@ -271,6 +278,14 @@ fn handled(node: &Node, handlers: &mut BTreeMap<String, Handlers>) {
 }
 
 impl Laid {
+    /// The page painted at exactly `scale` pixels per point, its marks
+    /// over it.
+    pub fn scene(&mut self, scale: f64) -> Scene {
+        let (mut scene, marks) = paint::scene(&self.page, &mut self.typesetter, scale);
+        scene.append(&marks, None);
+        scene
+    }
+
     /// The scene of the page at `scale` pixels per point, or less when that
     /// would make a side longer than `max_side` pixels: a long page is drawn
     /// at a lower scale rather than not at all.
@@ -280,7 +295,7 @@ impl Laid {
         let scale = f64::from(scale).min(tallest);
         let pixels_wide = (f64::from(page.width) * scale).ceil() as u32;
         let pixels_high = (f64::from(page.height) * scale).ceil() as u32;
-        let scene = paint::scene(page, &mut self.typesetter, scale);
+        let (scene, marks) = paint::scene(page, &mut self.typesetter, scale);
         Drawing {
             dir: self.dir,
             shown: self.shown,
@@ -291,6 +306,7 @@ impl Laid {
             written: self.written,
             origins: self.origins,
             scene,
+            marks,
             scale,
             pixels: [pixels_wide, pixels_high],
         }
@@ -309,7 +325,11 @@ mod tests {
 
     #[test]
     fn draws_a_state_without_a_gpu_or_a_file() {
-        let drawing = lay_out(Path::new(DRAFT), &wanted(390), None, Lang::En).unwrap().draw(2, 16384);
+        let drawing = Description::read(Path::new(DRAFT))
+            .unwrap()
+            .lay_out(&wanted(390), None, Lang::En)
+            .unwrap()
+            .draw(2, 16384);
         assert_eq!(drawing.shown.name(), "default");
         assert!(matches!(drawing.shown, Shown::Fixture(_)));
         assert_eq!(drawing.breakpoint, Breakpoint::Compact);
@@ -322,7 +342,8 @@ mod tests {
 
     #[test]
     fn a_page_taller_than_the_gpu_draws_is_drawn_smaller() {
-        let laid = lay_out(Path::new(DRAFT), &wanted(390), None, Lang::En).unwrap();
+        let laid =
+            Description::read(Path::new(DRAFT)).unwrap().lay_out(&wanted(390), None, Lang::En).unwrap();
         let side = laid.page.height.max(laid.page.width);
         let drawing = laid.draw(2, side as u32);
         assert_eq!(drawing.scale, 1.0, "one pixel per point fits");
@@ -340,13 +361,14 @@ mod tests {
     #[test]
     fn a_phase_is_shown_by_name() {
         let wanted = Wanted { phase: Some("loading".into()), ..wanted(390) };
-        let laid = lay_out(Path::new(DRAFT), &wanted, None, Lang::En).unwrap();
+        let laid = Description::read(Path::new(DRAFT)).unwrap().lay_out(&wanted, None, Lang::En).unwrap();
         assert!(matches!(laid.shown, Shown::Phase(ref name) if name == "loading"));
     }
 
     #[test]
     fn says_which_operation_each_node_calls() {
-        let laid = lay_out(Path::new(DRAFT), &wanted(390), None, Lang::En).unwrap();
+        let laid =
+            Description::read(Path::new(DRAFT)).unwrap().lay_out(&wanted(390), None, Lang::En).unwrap();
         assert!(!laid.calls.is_empty(), "the listing calls operations");
         for (id, operations) in &laid.calls {
             assert!(laid.page.nodes.iter().any(|n| &n.id == id), "{id} is a node placed");
