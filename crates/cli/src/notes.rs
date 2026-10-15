@@ -1,6 +1,7 @@
 //! What the person says of a description, pinned where they said it
 //! (ADR 0019): kept in notes.json beside its screen.json, meant to be
-//! committed. The person writes a note in the gallery, on a node; the agent
+//! committed. The person writes a note in the gallery, on a node, a whole
+//! state, a transition's arrow or a navigate's arrow; the agent
 //! answers it with one line; the person closes it, or reopens it with a
 //! line added. The agent never creates, closes or reopens one: what it
 //! wants to ask is an assumption. Each change is read from the file as it
@@ -14,8 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::SCREEN;
-use crate::draw::Shown;
-use crate::reference::{Pointed, Reference};
+use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json.
 pub const NOTES: &str = "notes.json";
@@ -45,17 +45,19 @@ pub struct Said {
     pub says: String,
 }
 
-/// One note, pinned to a node of one state as ⌘C references it: the node
-/// as the description writes it and the instance the person pointed at.
+/// One note, pinned as ⌘C references what it is on: a node as the
+/// description writes it with the instance the person pointed at, a whole
+/// state, a transition or a navigate. A navigate's note is kept by the
+/// description the navigate is written in.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     /// `N1`, `N2`…: numbered in the order written, within the description.
     pub id: String,
     pub status: Status,
-    /// The state it was written in.
-    pub state: Shown,
-    /// The node it is on, and the instance pointed at.
-    pub node: Pointed,
+    /// What it is on, written as its fields: `state` and `node`, `state`,
+    /// `transition` or `navigate`.
+    #[serde(flatten)]
+    pub on: On,
     /// What the person wrote, then each reply and each line the person
     /// added on reopening it, in order.
     pub thread: Vec<Said>,
@@ -64,7 +66,7 @@ pub struct Note {
 impl Note {
     /// The reference to what the note is on, in the description in `dir`.
     pub fn reference(&self, dir: &Path) -> Reference {
-        Reference { description: dir.to_path_buf(), state: self.state.clone(), node: Some(self.node.clone()) }
+        Reference { description: dir.to_path_buf(), on: self.on.clone() }
     }
 
     /// The agent's last reply, once it has answered.
@@ -75,15 +77,19 @@ impl Note {
     /// The note as the `notes` command answers it: with the description it
     /// is in and its reference as one line.
     pub fn answer(&self, root: &Path, dir: &Path) -> Value {
-        json!({
+        let mut answer = json!({
             "description": crate::gallery::within(root, dir),
             "id": self.id,
             "status": self.status,
-            "state": self.state,
-            "node": self.node,
             "thread": self.thread,
             "reference": self.reference(dir).line(),
-        })
+        });
+        if let (Some(answer), Ok(Value::Object(on))) =
+            (answer.as_object_mut(), serde_json::to_value(&self.on))
+        {
+            answer.extend(on);
+        }
+        answer
     }
 }
 
@@ -149,12 +155,9 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
     Ok(answer)
 }
 
-/// A note the person wrote, `says`, on the node `on` references, added to
-/// its description's notes: open, numbered after the last. Its id.
+/// A note the person wrote, `says`, on what `on` references, added to its
+/// description's notes: open, numbered after the last. Its id.
 pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
-    let Some(node) = on.node.clone() else {
-        bail!("a note is pinned to a node: pick one first");
-    };
     let says = said(says)?;
     change(&on.description, |notes| {
         let last = notes.iter().filter_map(|note| note.id.strip_prefix('N')?.parse::<u32>().ok()).max();
@@ -162,8 +165,7 @@ pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
         notes.push(Note {
             id: id.clone(),
             status: Status::Open,
-            state: on.state.clone(),
-            node,
+            on: on.on.clone(),
             thread: vec![Said { by: By::Person, says }],
         });
         Ok(id)
@@ -320,7 +322,8 @@ pub fn counted(dir: &Path) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::Origin;
+    use crate::draw::{Origin, Shown};
+    use crate::reference::{Navigate, Pointed, Transition};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -336,8 +339,10 @@ mod tests {
             Origin { written: "order-{index}".into(), at: "/root/children/1/item".into(), instance: vec![2] };
         Reference {
             description: dir.to_path_buf(),
-            state: Shown::Fixture("default".into()),
-            node: Some(Pointed { origin, label: Some(4), width: 390 }),
+            on: On::Node {
+                state: Shown::Fixture("default".into()),
+                node: Pointed { origin, label: Some(4), width: 390 },
+            },
         }
     }
 
@@ -404,6 +409,56 @@ mod tests {
                 "thread": [{ "by": "person", "says": "the price" }],
             }] })
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_note_on_a_whole_state_or_an_arrow_is_written_as_what_it_is_on() {
+        let dir = dir("arrows");
+        let state = On::State { state: Shown::Phase("loading".into()) };
+        let transition = On::Transition {
+            transition: Transition {
+                from: "default".into(),
+                on: "order-{index}-cancel.tap".into(),
+                outcome: None,
+                to: "cancel-dialog".into(),
+            },
+        };
+        let navigate = On::Navigate {
+            navigate: Navigate {
+                from: "Orders".into(),
+                node: "nav-export".into(),
+                to: "ExportDocuments".into(),
+            },
+        };
+        for on in [&state, &transition, &navigate] {
+            add(&Reference { description: dir.clone(), on: on.clone() }, "here").unwrap();
+        }
+        add(&on(&dir), "and here").unwrap();
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        let pinned: Vec<Value> = file["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|note| {
+                let mut note = note.clone();
+                for key in ["id", "status", "thread"] {
+                    note.as_object_mut().unwrap().remove(key);
+                }
+                note
+            })
+            .collect();
+        assert_eq!(
+            pinned[..3],
+            [
+                json!({ "state": { "phase": "loading" } }),
+                json!({ "transition": { "from": "default", "on": "order-{index}-cancel.tap", "to": "cancel-dialog" } }),
+                json!({ "navigate": { "from": "Orders", "node": "nav-export", "to": "ExportDocuments" } }),
+            ]
+        );
+        let read: Vec<On> = read(&dir).unwrap().into_iter().map(|note| note.on).collect();
+        assert_eq!(read, [state, transition, navigate, on(&dir).on], "each read back as written");
+
         std::fs::write(dir.join(NOTES), "{").unwrap();
         assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();

@@ -208,3 +208,52 @@ fn wait_is_refused_with_answer() {
     assert!(refused["error"].as_str().unwrap().contains("--wait"), "{refused}");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_reference() {
+    let root = root("arrows");
+    let dir = root.join("orders");
+    let note = |id: &str, on: Value| {
+        let mut note = json!({ "id": id, "status": "open", "thread": [{ "by": "person", "says": "why?" }] });
+        note.as_object_mut().unwrap().extend(on.as_object().unwrap().clone());
+        note
+    };
+    let notes = json!({ "notes": [
+        note("N1", json!({ "state": { "phase": "loading" } })),
+        note("N2", json!({ "transition": { "from": "default", "on": "retry.tap", "outcome": "ok", "to": "default" } })),
+        note("N3", json!({ "navigate": { "from": "Orders", "node": "nav-export", "to": "ExportDocuments" } })),
+    ] });
+    std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{answer}");
+    let listed = answer["notes"].as_array().unwrap();
+    assert_eq!(listed[0]["state"], json!({ "phase": "loading" }));
+    assert!(listed[0].get("node").is_none(), "{answer}");
+    assert_eq!(listed[0]["reference"], format!("{} · phase loading", dir.display()));
+    assert_eq!(listed[1]["transition"]["on"], "retry.tap");
+    assert_eq!(
+        listed[1]["reference"],
+        format!("{} · transition from default on retry.tap outcome ok to default", dir.display())
+    );
+    assert_eq!(listed[2]["navigate"]["node"], "nav-export");
+    assert_eq!(
+        listed[2]["reference"],
+        format!("{} · navigate from Orders on nav-export to ExportDocuments", dir.display())
+    );
+    let (answered, code) =
+        underdraw(&["notes", dir.to_str().unwrap(), "--answer", "N3", "--reply", "it goes there"]);
+    assert_eq!((code, &answered["note"]["status"]), (0, &json!("answered")), "{answered}");
+    let file: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("notes.json")).unwrap()).unwrap();
+    assert_eq!(file["notes"][2]["navigate"], notes["notes"][2]["navigate"], "kept as written");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn gallery_help_names_everything_a_note_can_be_pinned_to() {
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["gallery", "--help"]).output().unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    for pinned in ["- a node:", "- a whole state:", "- a transition:", "- a navigate:"] {
+        assert!(help.contains(pinned), "{pinned} not in gallery --help");
+    }
+}
