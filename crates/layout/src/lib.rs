@@ -13,7 +13,7 @@ mod tokens;
 
 use serde::Serialize;
 use serde_json::Value;
-use underdraw_format::Node;
+use underdraw_format::{Lang, Node};
 
 pub use check::{CHECKED_WIDTHS, check};
 
@@ -129,16 +129,18 @@ pub trait Measure {
 /// `root` laid out `width` points wide, its height whatever its content
 /// takes, with `tokens` (tokens.json) for spaces, radii and fonts, and each
 /// kind drawn as `kinds` (the project's kinds.json, over underdraw's own)
-/// says.
+/// says; a node of a kind none of them defines is drawn as a box with its
+/// name, and assumed, said in `lang`.
 pub fn layout(
     root: &Node,
     tokens: &Value,
     kinds: Option<&Value>,
     width: f32,
+    lang: Lang,
     measure: &mut dyn Measure,
 ) -> Result<Page, String> {
     let tokens = tokens::Tokens(tokens);
     let kinds = underdraw_format::Kinds::read(kinds);
-    let elem = look::Catalog { tokens: &tokens, kinds: &kinds }.node(root);
+    let elem = look::Catalog { tokens: &tokens, kinds: &kinds, lang }.node(root);
     place::place(&elem, width, measure).map_err(|e| format!("layout failed: {e}"))
 }

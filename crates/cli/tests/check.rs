@@ -197,3 +197,21 @@ fn one_description_says_nothing_of_where_it_navigates() {
     keys.sort();
     assert_eq!(keys, ["conditions", "findings", "fixtures", "ok", "phases", "screen"], "as before");
 }
+
+#[test]
+fn a_screen_not_drawn_yet_is_assumed_in_a_sentence_in_the_language_asked() {
+    let assumed = |lang: &str| {
+        let (answer, code) = underdraw(&["check", DRAFTS, "--lang", lang]);
+        assert_eq!(code, 0, "{answer:#}");
+        let links = answer["links"].as_array().unwrap().clone();
+        let unresolved = links.iter().find(|link| link["to"] == "OrderDetail").unwrap();
+        let resolved = links.iter().find(|link| link["resolved"] == true).unwrap();
+        assert_eq!(resolved["assumed"], Value::Null, "a resolved navigate assumes nothing");
+        unresolved["assumed"].as_str().unwrap().to_string()
+    };
+    let (en, zh) = (assumed("en"), assumed("zh"));
+    assert!(en.starts_with("This navigates to OrderDetail") && en.ends_with('.'), "{en}");
+    assert!(zh.contains("OrderDetail") && zh.contains("还没画"), "{zh}");
+    let (answer, code) = underdraw(&["check", DRAFTS, "--lang", "fr"]);
+    assert_eq!(code, 2, "{answer}");
+}

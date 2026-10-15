@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
+use underdraw_format::Lang;
 
 use crate::gallery::{self, within};
 use crate::{SCREEN, read};
@@ -33,8 +34,9 @@ pub fn declared(root: &Path) -> BTreeMap<String, PathBuf> {
 }
 
 /// `underdraw check <root>`, for a directory holding no screen.json: every
-/// description under it checked, and the links between them.
-pub fn check_root(root: &Path) -> anyhow::Result<Value> {
+/// description under it checked, and the links between them, what is
+/// assumed of one to a screen not drawn yet said in `lang`.
+pub fn check_root(root: &Path, lang: Lang) -> anyhow::Result<Value> {
     if !root.is_dir() {
         bail!("cannot read {}: pass a screen's directory, or a directory of them", root.display());
     }
@@ -77,6 +79,10 @@ pub fn check_root(root: &Path) -> anyhow::Result<Value> {
                 "node": link.node,
                 "to": link.to,
                 "resolved": link.target.is_some(),
+                "assumed": match link.target {
+                    Some(_) => Value::Null,
+                    None => Value::String(underdraw_format::assumption::undrawn(std::slice::from_ref(&link.to), lang)),
+                },
             })
         })
         .collect();

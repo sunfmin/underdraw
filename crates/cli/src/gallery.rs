@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, bail};
 use serde_json::{Value, json};
-use underdraw_format::{Checked, Finding};
+use underdraw_format::{Checked, Finding, Lang};
 
 use crate::{KINDS, SCREEN, TOKENS, check_at};
 
@@ -197,7 +197,7 @@ pub fn watch(root: &Path, changed: impl Fn() -> bool + Send + 'static) {
 
 /// `underdraw gallery <root>`: the window started in a process of its own,
 /// and what it shows.
-pub fn gallery(root: &Path) -> anyhow::Result<Value> {
+pub fn gallery(root: &Path, lang: Lang) -> anyhow::Result<Value> {
     if !root.is_dir() {
         bail!("{} is not a directory: pass the directory the screen descriptions are under", root.display());
     }
@@ -222,7 +222,7 @@ pub fn gallery(root: &Path) -> anyhow::Result<Value> {
         );
     }
     display()?;
-    let pid = open(&root)?;
+    let pid = open(&root, lang)?;
     Ok(json!({ "root": root, "descriptions": descriptions, "faults": faulty, "opened": true, "pid": pid }))
 }
 
@@ -243,12 +243,14 @@ fn display() -> anyhow::Result<()> {
 
 /// The window over `root` started in a process of its own, which outlives
 /// this one; its pid, once it says its window is open.
-fn open(root: &Path) -> anyhow::Result<u32> {
+fn open(root: &Path, lang: Lang) -> anyhow::Result<u32> {
     let exe = std::env::current_exe().context("cannot find the underdraw binary to start the window with")?;
     let mut command = Command::new(exe);
     command
         .arg("gallery")
         .arg("--window")
+        .arg("--lang")
+        .arg(lang.name())
         .arg(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

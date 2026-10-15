@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use serde_json::json;
-use underdraw_format::{Navigate, assume_undrawn, navigates};
+use underdraw_format::{Lang, Navigate, assume_undrawn, navigates};
 
 fn screen() -> serde_json::Value {
     json!({
@@ -35,7 +35,7 @@ fn every_navigate_on_every_node_cases_included() {
 #[test]
 fn a_node_navigating_to_a_screen_not_drawn_is_assumed() {
     let drawn = BTreeSet::from(["A".to_string(), "B".to_string()]);
-    let marked = assume_undrawn(&screen(), &drawn);
+    let marked = assume_undrawn(&screen(), &drawn, Lang::En);
     let children = &marked["root"]["children"];
     assert_eq!(children[0].get("assumed"), None, "A is drawn");
     let why = children[1]["assumed"].as_str().unwrap();

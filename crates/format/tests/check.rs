@@ -32,6 +32,27 @@ fn each_planted_fault_is_found_where_it_was_planted() {
     // (name, what the draft says, the fault planted in its place, where it is found, what is said)
     let cases = [
         (
+            "assumed-too-short",
+            r#""text": "房客推荐","#,
+            r#""text": "房客推荐", "assumed": "待定","#,
+            "guest-favorite.assumed",
+            "what was guessed and what else it could be",
+        ),
+        (
+            "assumed-a-word-or-two",
+            r#""text": "房客推荐","#,
+            r#""text": "房客推荐", "assumed": "maybe server","#,
+            "guest-favorite.assumed",
+            "too short for the person to answer",
+        ),
+        (
+            "assumed-not-text",
+            r#""text": "房客推荐","#,
+            r#""text": "房客推荐", "assumed": true,"#,
+            "guest-favorite.assumed",
+            "is text",
+        ),
+        (
             "truthiness",
             r#""when": "booking.checkIn != null && booking.checkOut != null""#,
             r#""when": "booking.checkIn && booking.checkOut != null""#,

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use underdraw_format::Finding;
+use underdraw_format::{Finding, Lang};
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
@@ -71,7 +71,7 @@ enum Told {
 /// Opens the window over `root` and runs it until the person closes it.
 /// Says on stdout, in one JSON line, whether the window opened, and nothing
 /// after: the command that started this process reads that line and exits.
-pub fn run(root: &Path) {
+pub fn run(root: &Path, lang: Lang) {
     let event_loop = match EventLoop::with_user_event().build() {
         Ok(event_loop) => event_loop,
         Err(e) => return report(&json!({ "error": e.to_string() })),
@@ -82,6 +82,7 @@ pub fn run(root: &Path) {
         Err(e) => return report(&json!({ "error": e })),
     };
     let mut gallery = Gallery::new(root, typesetter);
+    gallery.lang = lang;
     gallery.proxy = Some(event_loop.create_proxy());
     if let Err(e) = event_loop.run_app(&mut gallery)
         && !gallery.reported
@@ -99,6 +100,8 @@ fn report(line: &Value) {
 
 struct Gallery {
     root: PathBuf,
+    /// The language what underdraw assumes itself is said in.
+    lang: Lang,
     lines: Vec<Line>,
     /// The line of the state shown, of the description when it has none, or
     /// of the directory whose flow is shown.
@@ -287,6 +290,7 @@ impl Gallery {
     fn new(root: &Path, typesetter: text::Typesetter) -> Gallery {
         Gallery {
             root: root.to_path_buf(),
+            lang: Lang::default(),
             lines: lines(root),
             picked: None,
             wanted: None,
@@ -453,9 +457,9 @@ impl Gallery {
                     let says = format!("{on} navigates to {screen}");
                     self.go(Picked { dir: description, state: None }, says);
                 }
-                None => self.say(format!(
-                    "{on} navigates to {screen}, which no description under the root declares: a screen not drawn yet"
-                )),
+                None => {
+                    self.say(format!("{on}: {}", underdraw_format::assumption::undrawn(&[screen], self.lang)))
+                }
             },
             Act::Back => match self.history.pop() {
                 Some(back) => {
@@ -566,7 +570,7 @@ impl Gallery {
                 // A description with no state: lay_out says why.
                 None => Wanted { fixture: None, phase: None, width, scale: 1 },
             };
-            match draw::lay_out(&dir, &wanted, Some(&drawn)) {
+            match draw::lay_out(&dir, &wanted, Some(&drawn), self.lang) {
                 Ok(laid) => {
                     let drawing = laid.draw(1, u32::MAX);
                     pages.push(Page {
@@ -608,13 +612,15 @@ impl Gallery {
             .skip(index + 1)
             .map_while(|(line, Line { state, .. })| Some((line, state.as_ref()?)))
             .collect();
+        let lang = self.lang;
         // Each state laid out on a thread of its own, all at once.
         let drawings: Vec<anyhow::Result<draw::Drawing>> = std::thread::scope(|scope| {
             let laying: Vec<_> = states
                 .iter()
                 .map(|(_, state)| {
                     scope.spawn(move || {
-                        Ok(draw::lay_out(dir, &state.wanted(OVERVIEW, 1), Some(drawn))?.draw(1, u32::MAX))
+                        Ok(draw::lay_out(dir, &state.wanted(OVERVIEW, 1), Some(drawn), lang)?
+                            .draw(1, u32::MAX))
                     })
                 })
                 .collect();
@@ -802,7 +808,7 @@ impl Gallery {
             Some(state) => state.wanted(WIDTHS[0], 1),
             None => Wanted { fixture: None, phase: None, width: WIDTHS[0], scale: 1 },
         };
-        match draw::lay_out(dir, &wanted, Some(drawn)) {
+        match draw::lay_out(dir, &wanted, Some(drawn), self.lang) {
             Ok(laid) => {
                 let drawing = laid.draw(1, u32::MAX);
                 Card::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
@@ -1578,6 +1584,7 @@ mod tests {
             &Path::new(DRAFTS).join("orders"),
             &gallery.lines[error].state.as_ref().unwrap().wanted(OVERVIEW, 1),
             None,
+            Lang::En,
         )
         .unwrap();
         let label = drawing.page.nodes.iter().find(|node| node.id == "retry").unwrap().label.unwrap();
@@ -2005,7 +2012,10 @@ mod tests {
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(
             gallery.panel()[0],
-            "order-{index}.tap navigates to OrderDetail, which no description under the root declares: a screen not drawn yet"
+            format!(
+                "order-{{index}}.tap: {}",
+                underdraw_format::assumption::undrawn(&["OrderDetail".to_string()], Lang::En)
+            )
         );
     }
 
