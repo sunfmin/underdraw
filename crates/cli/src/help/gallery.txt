@@ -22,8 +22,14 @@ DOES
   gray), each in the order written. Picking a state draws it as a wireframe
   at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
   labels them; picking a description picks its first state. Scroll a tall
-  page with the mouse wheel or trackpad. A description with faults
-  shows them instead of a picture: `underdraw check` it.
+  page with the mouse wheel or trackpad. Clicking a node in the picture
+  picks the innermost there, an overlay (a badge, a dialog, a sheet) before
+  what it floats over, outlines it at both widths, and opens a panel with
+  its id, kind, the operation it calls when acted on, what was assumed
+  there (`assumed`), and its label and box at each width, as `render`
+  reports them. Picking another state keeps that id picked while the state
+  has it; clicking where no node is closes the panel. A description with
+  faults shows them instead of a picture: `underdraw check` it.
 
 ANSWERS
   {
