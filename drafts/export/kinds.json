@@ -1,0 +1,6 @@
+{ "kinds": {
+  "ProgressBar": {
+    "doc": "How far a job has got: a thin track, filled from the start by value percent.",
+    "look": { "box": "row", "height": 8, "radius": 999, "fill": "line", "children": [
+      { "box": "row", "width": "{value}%", "height": 8, "radius": 999, "fill": "text" } ] } }
+} }
