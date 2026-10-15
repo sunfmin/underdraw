@@ -339,9 +339,9 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         (
             "bulk-confirmation-without-a-backdrop",
             r#""id": "confirm-delete-selected",
-        "kind": "Dialog""#,
+        "component": "Dialog""#,
             r#""id": "confirm-delete-selected",
-        "kind": "Card""#,
+        "component": "Card""#,
             "confirm-delete-selected-confirm",
             "calls deleteDocs, which is destructive",
         ),
@@ -400,9 +400,9 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         (
             "confirmation-without-a-backdrop",
             r#""id": "confirm-delete",
-        "kind": "Dialog""#,
+        "component": "Dialog""#,
             r#""id": "confirm-delete",
-        "kind": "Card""#,
+        "component": "Card""#,
             "confirm-delete-confirm",
             "calls deleteDoc, which is destructive",
         ),

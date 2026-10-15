@@ -259,10 +259,10 @@ mod tests {
             "screen": "List",
             "data": { "items": "string[]" },
             "fixtures": { "some": { "items": ["a"] }, "none": { "items": [] } },
-            "root": { "id": "list", "kind": "Screen", "children": [
-                { "id": "rows", "kind": "List", "each": "items", "item":
-                    { "id": "row-{index}", "kind": "Button", "text": "{item}", "on": { "tap": { "navigate": "Detail", "with": { "id": "{item}" } } } } },
-                { "id": "more", "kind": "Button", "text": "More", "on": { "tap": { "set": { "open": true } } } }
+            "root": { "id": "list", "component": "Screen", "children": [
+                { "id": "rows", "component": "List", "each": "items", "item":
+                    { "id": "row-{index}", "component": "Button", "text": "{item}", "on": { "tap": { "navigate": "Detail", "with": { "id": "{item}" } } } } },
+                { "id": "more", "component": "Button", "text": "More", "on": { "tap": { "set": { "open": true } } } }
             ] },
             "transitions": []
         });
@@ -271,8 +271,8 @@ mod tests {
             "params": ["id"],
             "data": { "id": "string", "open": { "type": "bool = false", "view": true } },
             "fixtures": { "shut": { "id": "a" }, "opened": { "$patch": "shut", "open": true }, "other": { "id": "b" } },
-            "root": { "id": "detail", "kind": "Screen", "children": [
-                { "id": "toggle", "kind": "Button", "text": "Open", "on": { "tap": { "toggle": "open" } } }
+            "root": { "id": "detail", "component": "Screen", "children": [
+                { "id": "toggle", "component": "Button", "text": "Open", "on": { "tap": { "toggle": "open" } } }
             ] },
             "transitions": [ { "from": "shut", "on": "toggle.tap", "to": "opened" } ]
         });

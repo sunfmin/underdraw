@@ -40,7 +40,7 @@ pub const VERSION: &str = env!("UNDERDRAW_VERSION");
 
 /// The file a screen's directory holds its description in.
 const SCREEN: &str = "screen.json";
-/// What the project's own kinds look like, beside the description; optional.
+/// What the project's own components look like, beside the description; optional.
 const KINDS: &str = "kinds.json";
 
 /// `-h` is the one-screen listing; `--help` adds `help.txt`, the guide an
@@ -88,7 +88,7 @@ enum Command {
         /// The directory the screen descriptions are under, as `check <root>` and the gallery take it: a node that navigates to a screen none of them declares is marked assumed. Not given, navigates are not resolved
         #[arg(long)]
         root: Option<PathBuf>,
-        /// The language underdraw words its own assumptions in, a screen not drawn yet or a kind it does not know: en or zh
+        /// The language underdraw words its own assumptions in, a screen not drawn yet or a component it does not know: en or zh
         #[arg(long, default_value = "en", value_parser = lang)]
         lang: Lang,
     },
@@ -97,7 +97,7 @@ enum Command {
     Gallery {
         /// The directory the screen descriptions are under, at any depth
         root: PathBuf,
-        /// The language underdraw words its own assumptions in, a screen not drawn yet or a kind it does not know: en or zh
+        /// The language underdraw words its own assumptions in, a screen not drawn yet or a component it does not know: en or zh
         #[arg(long, default_value = "en", value_parser = lang)]
         lang: Lang,
         /// Run the window itself, in this process: what the command starts

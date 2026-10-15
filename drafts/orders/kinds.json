@@ -1,5 +1,5 @@
 {
-  "kinds": {
+  "components": {
     "Chip": {
       "doc": "A status filter as a pill: filled when on, with its count.",
       "look": {
@@ -66,7 +66,7 @@
         "stroke": "line",
         "children": [
           {
-            "kind": "Glyph",
+            "component": "Glyph",
             "icon": "search",
             "size": 20
           },
@@ -114,14 +114,14 @@
               {
                 "if": "selected",
                 "then": {
-                  "kind": "Glyph",
+                  "component": "Glyph",
                   "icon": "radio_button_checked",
                   "size": 22
                 }
               },
               {
                 "else": {
-                  "kind": "Glyph",
+                  "component": "Glyph",
                   "icon": "radio_button_unchecked",
                   "size": 22
                 }

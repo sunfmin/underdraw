@@ -3,8 +3,8 @@ person, and hand it off to web, iOS and Android.
 
 A screen description is a directory holding screen.json (the screen: its
 view model, fixtures, conditions and node tree), usually beside
-platforms/*.json and, for kinds of the project's own, kinds.json. How to
-write each file, every kind and every rule: `underdraw check --help`, FORMAT.
+platforms/*.json and, for components of the project's own, kinds.json. How to
+write each file, every component and every rule: `underdraw check --help`, FORMAT.
 
 A screen is in a project: one app's screens under one directory, sharing
 one design language and one domain. Every command finds it the same way:
@@ -48,7 +48,7 @@ START HERE
                              with the golden output of each fixture
 
 WHAT A COMMAND ANSWERS
-  One JSON object on stdout. The exit code says which kind:
+  One JSON object on stdout. The exit code says which answer it is:
     0  the answer, and nothing is wrong
     1  the answer names faults ("ok": false); it is printed in full
     2  the command could not do its work: {"error": "…"}, saying what fixes it

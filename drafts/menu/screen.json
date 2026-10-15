@@ -473,10 +473,10 @@
   "components": {
     "nav": {
       "id": "nav",
-      "kind": "NavBar",
+      "component": "NavBar",
       "leading": {
         "id": "nav-back",
-        "kind": "IconButton",
+        "component": "IconButton",
         "icon": "arrow_back",
         "on": {
           "tap": {
@@ -487,7 +487,7 @@
       "trailing": [
         {
           "id": "nav-search",
-          "kind": "IconButton",
+          "component": "IconButton",
           "icon": "search",
           "on": {
             "tap": {
@@ -497,7 +497,7 @@
         },
         {
           "id": "nav-share",
-          "kind": "IconButton",
+          "component": "IconButton",
           "icon": "ios_share",
           "on": {
             "tap": {
@@ -510,14 +510,14 @@
   },
   "root": {
     "id": "menu",
-    "kind": "Screen",
+    "component": "Screen",
     "children": [
       {
         "ref": "nav"
       },
       {
         "id": "header",
-        "kind": "Stack",
+        "component": "Stack",
         "gap": "space.2",
         "padding": [
           0,
@@ -528,24 +528,24 @@
         "children": [
           {
             "id": "shop-name",
-            "kind": "Text",
+            "component": "Text",
             "font": "font.heading",
             "text": "{restaurant.name}"
           },
           {
             "id": "shop-meta",
-            "kind": "Text",
+            "component": "Text",
             "font": "font.caption",
             "color": "color.textSecondary",
             "text": "★ {restaurant.rating|number:1} · {restaurant.eta} · 配送费 {restaurant.deliveryFee|money}"
           },
           {
             "id": "categories",
-            "kind": "ChipRow",
+            "component": "ChipRow",
             "each": "categories",
             "item": {
               "id": "cat-{index}",
-              "kind": "Chip",
+              "component": "Chip",
               "text": "{item.label}",
               "selected": "{item.selected}",
               "on": {
@@ -559,15 +559,15 @@
       },
       {
         "id": "sections",
-        "kind": "Stack",
+        "component": "Stack",
         "each": "sections",
         "item": {
           "id": "section-{index}",
-          "kind": "Stack",
+          "component": "Stack",
           "children": [
             {
               "id": "section-{index}-head",
-              "kind": "Stack",
+              "component": "Stack",
               "padding": [
                 16,
                 16,
@@ -576,7 +576,7 @@
               ],
               "children": {
                 "id": "section-{index}-title",
-                "kind": "Text",
+                "component": "Text",
                 "font": "font.subhead",
                 "color": "color.textSecondary",
                 "text": "{item.title}"
@@ -584,11 +584,11 @@
             },
             {
               "id": "section-{index}-dishes",
-              "kind": "Stack",
+              "component": "Stack",
               "each": "item.dishes",
               "item": {
                 "id": "dish-{item.id}",
-                "kind": "DishRow",
+                "component": "DishRow",
                 "title": "{item.name}",
                 "detail": "{item.description}",
                 "price": "{item.price|money}",
@@ -610,7 +610,7 @@
       },
       {
         "id": "cart-bar",
-        "kind": "StickyBar",
+        "component": "StickyBar",
         "if": "hasCart",
         "padding": [
           12,
@@ -620,18 +620,18 @@
         "children": [
           {
             "id": "cart-summary",
-            "kind": "Stack",
+            "component": "Stack",
             "gap": "space.1",
             "children": [
               {
                 "id": "cart-total",
-                "kind": "Text",
+                "component": "Text",
                 "font": "font.price",
                 "text": "{cart.total|money}"
               },
               {
                 "id": "cart-count",
-                "kind": "Text",
+                "component": "Text",
                 "font": "font.caption",
                 "color": "color.textSecondary",
                 "text": {
@@ -650,7 +650,7 @@
           },
           {
             "id": "checkout",
-            "kind": "Button",
+            "component": "Button",
             "variant": "primary",
             "text": "去结算",
             "disabled": "!canCheckout",
@@ -665,7 +665,7 @@
     ],
     "overlay": {
       "id": "dish-sheet",
-      "kind": "Sheet",
+      "component": "Sheet",
       "if": "sheetOpen",
       "anchor": {
         "compact": "bottom",
@@ -675,18 +675,18 @@
       "children": [
         {
           "id": "ds-head",
-          "kind": "Stack",
+          "component": "Stack",
           "gap": "space.1",
           "children": [
             {
               "id": "ds-name",
-              "kind": "Text",
+              "component": "Text",
               "font": "font.heading",
               "text": "{customizing.name}"
             },
             {
               "id": "ds-desc",
-              "kind": "Text",
+              "component": "Text",
               "font": "font.caption",
               "color": "color.textSecondary",
               "text": "{customizing.description}"
@@ -695,17 +695,17 @@
         },
         {
           "id": "ds-sizes",
-          "kind": "Section",
+          "component": "Section",
           "title": "规格",
           "subtitle": "必选 · 选 1 项",
           "gap": "space.1",
           "children": {
             "id": "ds-size-list",
-            "kind": "Stack",
+            "component": "Stack",
             "each": "customizing.sizes",
             "item": {
               "id": "size-{item.id}",
-              "kind": "ChoiceRow",
+              "component": "ChoiceRow",
               "text": "{item.label}",
               "icon": {
                 "cases": [
@@ -740,18 +740,18 @@
         },
         {
           "id": "ds-addons",
-          "kind": "Section",
+          "component": "Section",
           "if": "hasAddOns",
           "title": "加料",
           "subtitle": "可多选",
           "gap": "space.1",
           "children": {
             "id": "ds-addon-list",
-            "kind": "Stack",
+            "component": "Stack",
             "each": "customizing.addOns",
             "item": {
               "id": "addon-{item.id}",
-              "kind": "ChoiceRow",
+              "component": "ChoiceRow",
               "text": "{item.label}",
               "icon": {
                 "cases": [
@@ -785,25 +785,25 @@
         },
         {
           "id": "ds-note",
-          "kind": "NoteField",
+          "component": "NoteField",
           "bind": "customizing.note",
           "placeholder": "给厨房留言（选填）"
         },
         {
           "id": "ds-actions",
-          "kind": "Row",
+          "component": "Row",
           "gap": "space.3",
           "children": [
             {
               "id": "ds-quantity",
-              "kind": "Stepper",
+              "component": "Stepper",
               "bind": "customizing.quantity",
               "min": 1,
               "max": 20
             },
             {
               "id": "ds-add",
-              "kind": "Button",
+              "component": "Button",
               "variant": "primary",
               "disabled": "!canAdd",
               "text": {
@@ -844,19 +844,19 @@
   "phases": {
     "loading": {
       "id": "loading",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "ref": "nav"
         },
         {
           "id": "sk",
-          "kind": "Stack",
+          "component": "Stack",
           "padding": 16,
           "children": [
             {
               "id": "sk-lines",
-              "kind": "Skeleton",
+              "component": "Skeleton",
               "shape": [
                 "line 60%",
                 "line 40%",
@@ -872,20 +872,20 @@
     },
     "error": {
       "id": "error",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "ref": "nav"
         },
         {
           "id": "err",
-          "kind": "EmptyState",
+          "component": "EmptyState",
           "icon": "cloud_off",
           "title": "菜单加载失败",
           "detail": "检查网络后重试",
           "action": {
             "id": "retry",
-            "kind": "Button",
+            "component": "Button",
             "text": "重试",
             "on": {
               "tap": {

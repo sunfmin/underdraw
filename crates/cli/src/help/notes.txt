@@ -57,10 +57,10 @@ ASSUMPTIONS
   "answers" saying which and how: "assumed", the guess as the gallery
   showed it; "guess", what made it: "author" (the node's own `assumed`),
   {"undrawn": [<screen>, …]} (a navigate to a screen not drawn yet) or
-  {"kind": <kind>} (a kind underdraw does not know); and "answer":
+  {"component": <component>} (a component underdraw does not know); and "answer":
     right  ✓: the guess was right. Make it a decision: take the guess out
            of the description (remove the node's `assumed`; draw the
-           screen; define the kind), then answer the note saying so. Once
+           screen; define the component), then answer the note saying so. Once
            nothing guesses it, the note closes itself (GONE, below).
     wrong  ✗: the guess was wrong, and the note's thread says what is
            right. Change the description to that, then answer the note;
@@ -73,7 +73,7 @@ GONE
   navigate, is written with the same keys; and a ✓ on an assumption
   closes itself once the guess is taken out: the node writes no
   `assumed`, the screens it named are drawn (under the <path> read) or
-  not navigated to, or its kind is defined or changed ("the assumption on
+  not navigated to, or its component is defined or changed ("the assumption on
   card-number, confirmed, is taken out"). It is judged only once the
   description checks clean, so one half edited closes nothing; then
   whatever reads the notes first, `underdraw notes`, `underdraw check` or

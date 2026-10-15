@@ -9,13 +9,13 @@ use underdraw_format::{Lang, Navigate, assume_undrawn, navigates};
 fn screen() -> serde_json::Value {
     json!({
         "screen": "Home",
-        "root": { "id": "page", "kind": "Column", "children": [
-            { "id": "open-a", "kind": "Button", "on": { "tap": { "navigate": "A", "with": { "id": "1" } } } },
-            { "id": "pick", "kind": "Button", "on": { "tap": { "cases": [
+        "root": { "id": "page", "component": "Column", "children": [
+            { "id": "open-a", "component": "Button", "on": { "tap": { "navigate": "A", "with": { "id": "1" } } } },
+            { "id": "pick", "component": "Button", "on": { "tap": { "cases": [
                 { "if": "ready", "then": { "navigate": "B" } },
                 { "else": { "navigate": "C" } } ] } } },
-            { "id": "guessed", "kind": "Button", "assumed": "its own", "on": { "tap": { "navigate": "D" } } } ] },
-        "phases": { "error": { "id": "retry", "kind": "Button", "on": { "tap": { "navigate": "A" } } } },
+            { "id": "guessed", "component": "Button", "assumed": "its own", "on": { "tap": { "navigate": "D" } } } ] },
+        "phases": { "error": { "id": "retry", "component": "Button", "on": { "tap": { "navigate": "A" } } } },
         "fixtures": { "default": { "on": { "navigate": "NotANode" } } }
     })
 }

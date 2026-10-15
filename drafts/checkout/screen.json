@@ -221,57 +221,57 @@
 
   "components": {
     "nav": {
-      "id": "nav", "kind": "NavBar",
-      "leading": { "id": "nav-back", "kind": "IconButton", "icon": "arrow_back", "on": { "tap": { "back": true } } },
-      "children": { "id": "nav-title", "kind": "Text", "text": "确认订单", "font": "font.subhead" },
-      "trailing": { "id": "nav-secure", "kind": "Glyph", "icon": "lock", "font": "font.caption" }
+      "id": "nav", "component": "NavBar",
+      "leading": { "id": "nav-back", "component": "IconButton", "icon": "arrow_back", "on": { "tap": { "back": true } } },
+      "children": { "id": "nav-title", "component": "Text", "text": "确认订单", "font": "font.subhead" },
+      "trailing": { "id": "nav-secure", "component": "Glyph", "icon": "lock", "font": "font.caption" }
     },
     "place-order": {
-      "id": "place-order", "kind": "Button", "variant": "primary",
+      "id": "place-order", "component": "Button", "variant": "primary",
       "text": "提交订单 · {summary.total|money}",
       "disabled": "!canPlace",
       "on": { "tap": { "call": "placeOrder", "with": { "method": "{payment.method}" } } }
     },
     "place-hint": {
-      "id": "place-hint", "kind": "Text", "if": "!canPlace", "font": "font.caption", "color": "color.danger",
+      "id": "place-hint", "component": "Text", "if": "!canPlace", "font": "font.caption", "color": "color.danger",
       "text": { "cases": [
         { "if": "!hasAddress", "then": "请先添加收货地址" },
         { "else": "有商品缺货，移除后才能提交" }
       ] }
     },
     "summary": {
-      "id": "summary", "kind": "Section", "title": "订单金额", "gap": "space.3",
+      "id": "summary", "component": "Section", "title": "订单金额", "gap": "space.3",
       "children": [
-        { "id": "sum-subtotal", "kind": "SummaryLine", "label": "商品小计（{cart.itemCount} 件）", "value": "{summary.subtotal|money}" },
-        { "id": "sum-shipping", "kind": "SummaryLine", "label": "运费", "value": "{summary.shipping|money}" },
-        { "id": "sum-discount", "kind": "SummaryLine", "if": "promoApplied", "label": "优惠码 {promo.code}", "value": "−{promo.discount|money}" },
-        { "id": "sum-divider", "kind": "Divider" },
-        { "id": "sum-total", "kind": "SummaryLine", "strong": true, "label": "应付合计", "value": "{summary.total|money}" }
+        { "id": "sum-subtotal", "component": "SummaryLine", "label": "商品小计（{cart.itemCount} 件）", "value": "{summary.subtotal|money}" },
+        { "id": "sum-shipping", "component": "SummaryLine", "label": "运费", "value": "{summary.shipping|money}" },
+        { "id": "sum-discount", "component": "SummaryLine", "if": "promoApplied", "label": "优惠码 {promo.code}", "value": "−{promo.discount|money}" },
+        { "id": "sum-divider", "component": "Divider" },
+        { "id": "sum-total", "component": "SummaryLine", "strong": true, "label": "应付合计", "value": "{summary.total|money}" }
       ]
     }
   },
 
   "root": {
-    "id": "checkout", "kind": "Screen",
+    "id": "checkout", "component": "Screen",
     "children": [
       { "ref": "nav" },
       {
-        "id": "body", "kind": "Columns", "padding": "space.4",
+        "id": "body", "component": "Columns", "padding": "space.4",
         "columns": { "compact": ["1fr"], "regular": ["62%", "1fr"] },
         "children": [
           {
-            "id": "main", "kind": "Stack", "gap": "space.6",
+            "id": "main", "component": "Stack", "gap": "space.6",
             "children": [
               {
-                "id": "sec-address", "kind": "Section", "title": "收货地址", "gap": "space.2",
+                "id": "sec-address", "component": "Section", "title": "收货地址", "gap": "space.2",
                 "children": [
-                  { "id": "address", "kind": "ListItem", "if": "hasAddress",
+                  { "id": "address", "component": "ListItem", "if": "hasAddress",
                     "leadingIcon": "location_on",
                     "title": "{address.name}  {address.phone}",
                     "detail": "{address.line}",
                     "trailingIcon": "chevron_right",
                     "on": { "tap": { "navigate": "AddressBook" } } },
-                  { "id": "address-add", "kind": "ListItem", "if": "!hasAddress",
+                  { "id": "address-add", "component": "ListItem", "if": "!hasAddress",
                     "leadingIcon": "add_location_alt",
                     "title": "添加收货地址",
                     "detail": "下单前需要一个收货地址",
@@ -280,30 +280,30 @@
                 ]
               },
               {
-                "id": "sec-items", "kind": "Section", "title": "商品（{cart.itemCount} 件）", "gap": "space.3",
+                "id": "sec-items", "component": "Section", "title": "商品（{cart.itemCount} 件）", "gap": "space.3",
                 "children": [
-                  { "id": "stock-warning", "kind": "ListItem", "if": "hasUnavailable",
+                  { "id": "stock-warning", "component": "ListItem", "if": "hasUnavailable",
                     "leadingIcon": "warning",
                     "title": "{cart.unavailableCount} 件商品缺货",
                     "detail": "移除后即可提交订单" },
                   {
-                    "id": "items", "kind": "List", "gap": "space.4", "each": "cart.items",
+                    "id": "items", "component": "List", "gap": "space.4", "each": "cart.items",
                     "item": {
-                      "id": "item-{index}", "kind": "Row", "gap": "space.3",
+                      "id": "item-{index}", "component": "Row", "gap": "space.3",
                       "children": [
-                        { "id": "item-{index}-photo", "kind": "Thumb", "image": "{item.image}" },
-                        { "id": "item-{index}-info", "kind": "Stack", "gap": "space.1",
+                        { "id": "item-{index}-photo", "component": "Thumb", "image": "{item.image}" },
+                        { "id": "item-{index}-info", "component": "Stack", "gap": "space.1",
                           "children": [
-                            { "id": "item-{index}-name", "kind": "Text", "text": "{item.name}", "maxLines": 2 },
-                            { "id": "item-{index}-variant", "kind": "Text", "text": "{item.variant}", "font": "font.caption", "color": "color.textSecondary" },
-                            { "id": "item-{index}-price", "kind": "Text", "text": "{item.lineTotal|money}", "font": "font.subhead" },
-                            { "id": "item-{index}-oos", "kind": "Badge", "if": "!item.inStock", "text": "缺货" }
+                            { "id": "item-{index}-name", "component": "Text", "text": "{item.name}", "maxLines": 2 },
+                            { "id": "item-{index}-variant", "component": "Text", "text": "{item.variant}", "font": "font.caption", "color": "color.textSecondary" },
+                            { "id": "item-{index}-price", "component": "Text", "text": "{item.lineTotal|money}", "font": "font.subhead" },
+                            { "id": "item-{index}-oos", "component": "Badge", "if": "!item.inStock", "text": "缺货" }
                           ] }
                       ],
                       "trailing": [
-                        { "id": "item-{index}-qty", "kind": "Stepper", "if": "item.inStock", "bind": "item.quantity",
+                        { "id": "item-{index}-qty", "component": "Stepper", "if": "item.inStock", "bind": "item.quantity",
                           "on": { "change": { "call": "setQuantity", "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } },
-                        { "id": "item-{index}-remove", "kind": "Button", "if": "!item.inStock", "variant": "secondary", "size": "small", "text": "移除",
+                        { "id": "item-{index}-remove", "component": "Button", "if": "!item.inStock", "variant": "secondary", "size": "small", "text": "移除",
                           "on": { "tap": { "call": "removeItem", "with": { "id": "{item.id}" } } } }
                       ]
                     }
@@ -311,12 +311,12 @@
                 ]
               },
               {
-                "id": "sec-delivery", "kind": "Section", "title": "配送方式", "gap": "space.2",
+                "id": "sec-delivery", "component": "Section", "title": "配送方式", "gap": "space.2",
                 "children": [
                   {
-                    "id": "delivery", "kind": "List", "gap": "space.2", "each": "delivery",
+                    "id": "delivery", "component": "List", "gap": "space.2", "each": "delivery",
                     "item": {
-                      "id": "delivery-{index}", "kind": "OptionRow",
+                      "id": "delivery-{index}", "component": "OptionRow",
                       "selected": "{item.option.selected}",
                       "title": "{item.option.label}",
                       "detail": "{item.option.eta}",
@@ -330,19 +330,19 @@
                 ]
               },
               {
-                "id": "sec-promo", "kind": "Section", "title": "优惠码", "gap": "space.2",
+                "id": "sec-promo", "component": "Section", "title": "优惠码", "gap": "space.2",
                 "children": [
-                  { "id": "promo-entry", "kind": "Row", "if": "!promoApplied", "gap": "space.2",
+                  { "id": "promo-entry", "component": "Row", "if": "!promoApplied", "gap": "space.2",
                     "children": [
-                      { "id": "promo-code", "kind": "TextField", "bind": "promoCode", "placeholder": "输入优惠码",
+                      { "id": "promo-code", "component": "TextField", "bind": "promoCode", "placeholder": "输入优惠码",
                         "error": { "cases": [
                           { "if": "promoInvalid", "then": "{promo.message}" },
                           { "else": null }
                         ] } },
-                      { "id": "promo-apply", "kind": "Button", "variant": "secondary", "text": "使用", "disabled": "!hasCode",
+                      { "id": "promo-apply", "component": "Button", "variant": "secondary", "text": "使用", "disabled": "!hasCode",
                         "on": { "tap": { "call": "applyPromo", "with": { "code": "{promoCode}" } } } }
                     ] },
-                  { "id": "promo-applied", "kind": "ListItem", "if": "promoApplied",
+                  { "id": "promo-applied", "component": "ListItem", "if": "promoApplied",
                     "leadingIcon": "sell",
                     "title": "{promo.code} 已使用",
                     "detail": "立减 {promo.discount|money}",
@@ -351,66 +351,66 @@
                 ]
               },
               {
-                "id": "sec-payment", "kind": "Section", "title": "支付方式", "gap": "space.2",
+                "id": "sec-payment", "component": "Section", "title": "支付方式", "gap": "space.2",
                 "children": [
                   {
-                    "id": "payment", "kind": "List", "gap": "space.2", "each": "payment.options",
+                    "id": "payment", "component": "List", "gap": "space.2", "each": "payment.options",
                     "item": {
-                      "id": "pay-{index}", "kind": "OptionRow",
+                      "id": "pay-{index}", "component": "OptionRow",
                       "selected": "{item.selected}",
                       "icon": "{item.icon}",
                       "title": "{item.label}",
                       "on": { "tap": { "set": "payment.method", "to": "{item.id}" } }
                     }
                   },
-                  { "id": "card-saved", "kind": "ListItem", "if": "cardSaved",
+                  { "id": "card-saved", "component": "ListItem", "if": "cardSaved",
                     "leadingIcon": "credit_card",
                     "title": "Visa •••• {payment.cardLast4}",
                     "detail": "已保存的卡",
                     "trailingIcon": "chevron_right",
                     "on": { "tap": { "open": "sheet-cards" } } },
-                  { "id": "card-form", "kind": "FieldGroup", "if": "newCard", "gap": "space.2",
+                  { "id": "card-form", "component": "FieldGroup", "if": "newCard", "gap": "space.2",
                     "children": [
-                      { "id": "card-number", "kind": "TextField", "label": "卡号", "placeholder": "1234 5678 9012 3456",
+                      { "id": "card-number", "component": "TextField", "label": "卡号", "placeholder": "1234 5678 9012 3456",
                         "assumed": "Card fields are drawn here; the real build may use the payment provider's hosted fields" },
-                      { "id": "card-row", "kind": "Row", "gap": "space.2",
+                      { "id": "card-row", "component": "Row", "gap": "space.2",
                         "children": [
-                          { "id": "card-expiry", "kind": "TextField", "label": "有效期", "placeholder": "MM / YY" },
-                          { "id": "card-cvc", "kind": "TextField", "label": "安全码", "placeholder": "CVC" }
+                          { "id": "card-expiry", "component": "TextField", "label": "有效期", "placeholder": "MM / YY" },
+                          { "id": "card-cvc", "component": "TextField", "label": "安全码", "placeholder": "CVC" }
                         ] }
                     ] }
                 ]
               },
               {
-                "id": "summary-compact", "kind": "Stack", "only": "compact",
+                "id": "summary-compact", "component": "Stack", "only": "compact",
                 "children": [ { "ref": "summary" } ]
               }
             ]
           },
           {
-            "id": "aside", "kind": "Card", "only": "regular", "padding": "space.5", "radius": "radius.md",
+            "id": "aside", "component": "Card", "only": "regular", "padding": "space.5", "radius": "radius.md",
             "border": "color.border", "elevation": "elevation.card", "gap": "space.4",
             "sticky": true,
             "children": [
               { "ref": "summary" },
               { "ref": "place-order" },
               { "ref": "place-hint" },
-              { "id": "aside-terms", "kind": "Text", "font": "font.caption", "color": "color.textSecondary",
+              { "id": "aside-terms", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
                 "text": "提交即表示同意《购买须知》，7 天无理由退货" }
             ]
           }
         ]
       },
       {
-        "id": "bar", "kind": "StickyBar", "only": "compact", "padding": [12, 16],
+        "id": "bar", "component": "StickyBar", "only": "compact", "padding": [12, 16],
         "children": [
-          { "id": "bar-total", "kind": "Stack", "gap": 0,
+          { "id": "bar-total", "component": "Stack", "gap": 0,
             "children": [
-              { "id": "bar-label", "kind": "Text", "text": "应付合计", "font": "font.caption", "color": "color.textSecondary" },
-              { "id": "bar-amount", "kind": "Text", "text": "{summary.total|money}", "font": "font.price" },
+              { "id": "bar-label", "component": "Text", "text": "应付合计", "font": "font.caption", "color": "color.textSecondary" },
+              { "id": "bar-amount", "component": "Text", "text": "{summary.total|money}", "font": "font.price" },
               { "ref": "place-hint" }
             ] },
-          { "id": "bar-submit", "kind": "Button", "variant": "primary", "text": "提交订单",
+          { "id": "bar-submit", "component": "Button", "variant": "primary", "text": "提交订单",
             "disabled": "!canPlace",
             "on": { "tap": { "call": "placeOrder", "with": { "method": "{payment.method}" } } } }
         ]
@@ -420,21 +420,21 @@
 
   "phases": {
     "loading": {
-      "id": "loading", "kind": "Screen", "children": [
+      "id": "loading", "component": "Screen", "children": [
         { "ref": "nav" },
-        { "id": "loading-body", "kind": "Stack", "padding": "space.4", "gap": "space.6", "children": [
-          { "id": "sk-address", "kind": "Skeleton", "shape": ["line 40%", "line 90%"] },
-          { "id": "sk-items", "kind": "Skeleton", "shape": ["line 30%", "line 80%", "line 80%", "line 80%"] },
-          { "id": "sk-delivery", "kind": "Skeleton", "shape": ["line 30%", "line 90%", "line 90%"] }
+        { "id": "loading-body", "component": "Stack", "padding": "space.4", "gap": "space.6", "children": [
+          { "id": "sk-address", "component": "Skeleton", "shape": ["line 40%", "line 90%"] },
+          { "id": "sk-items", "component": "Skeleton", "shape": ["line 30%", "line 80%", "line 80%", "line 80%"] },
+          { "id": "sk-delivery", "component": "Skeleton", "shape": ["line 30%", "line 90%", "line 90%"] }
         ] }
       ]
     },
     "error": {
-      "id": "error", "kind": "Screen", "children": [
+      "id": "error", "component": "Screen", "children": [
         { "ref": "nav" },
-        { "id": "error-state", "kind": "EmptyState", "icon": "cloud_off",
+        { "id": "error-state", "component": "EmptyState", "icon": "cloud_off",
           "title": "订单信息加载失败", "detail": "请检查网络后重试",
-          "action": { "id": "error-retry", "kind": "Button", "variant": "primary", "text": "重试",
+          "action": { "id": "error-retry", "component": "Button", "variant": "primary", "text": "重试",
                       "on": { "tap": { "call": "getCart" } } } }
       ]
     }

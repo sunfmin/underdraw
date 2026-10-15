@@ -1,14 +1,15 @@
-# Kinds
+# Components drawn as a look
 
-Every node has a `kind` (`Button`, `ListItem`, `TodoRow`), and `kinds.json`
-says what each kind looks like in a wireframe. underdraw ships the kinds in
+Every node names the `component` it is (`Button`, `ListItem`, `TodoRow`), and
+`kinds.json` says what each component looks like in a wireframe. underdraw
+ships its components in
 [`crates/format/kinds.json`](../../crates/format/kinds.json). A project's own
-`kinds.json`, beside `screen.json`, adds kinds and replaces a default by
+`kinds.json`, beside `screen.json`, adds components and replaces a default by
 name. Why: [ADR 0007](../adr/0007-kinds-are-data.md).
 
 ```json
 {
-  "kinds": {
+  "components": {
     "TextField": {
       "doc": "A one-line input: fills what its row leaves.",
       "look": {
@@ -22,17 +23,17 @@ name. Why: [ADR 0007](../adr/0007-kinds-are-data.md).
 }
 ```
 
-`check` refuses a node whose kind no file defines, and every fault in a
-project's looks. A kind is never a guess: `check` refuses `"assumed"` on a
-kind (a node may still carry one).
+`check` refuses a node whose component no file defines, and every fault in a
+project's looks. A component is never a guess: `check` refuses `"assumed"` on
+one (a node may still carry one).
 
-Beside `look` and `doc`, a kind may say how a platform treats it, which
+Beside `look` and `doc`, a component may say how a platform treats it, which
 `compare` reads: `"scrolls": true` when its content scrolls or pages, so what
 is in it may lie outside its frame (`Screen`, `Carousel`), and
 `"pinned": true` when it is pinned to the screen, out of its siblings' order
 (`StickyBar`).
 
-A layout rule (grow, alignment, sizes) belongs in the kind's look, written
+A layout rule (grow, alignment, sizes) belongs in the component's look, written
 once, and never on a node in `screen.json`. A screen describes structure.
 
 ## Looks
@@ -43,7 +44,7 @@ A look is one of these:
 |---|---|
 | `{ "box": …, … }` | A box: see below. `box` is `"row"` (items centred across), `"column"`, `"grid"`, or left out (a plain box). |
 | `{ "text": …, … }` | Text: see below. |
-| `{ "kind": "Glyph", "icon": "{leadingIcon}", … }` | Another kind's look drawn inside this one, with the other keys as its props. It belongs to this node and is not a node of its own. |
+| `{ "component": "Glyph", "icon": "{leadingIcon}", … }` | Another component's look drawn inside this one, with the other keys as its props. It belongs to this node and is not a node of its own. |
 | `{ "repeat": 30, "each": look }` | `each` repeated: a count, or a list (`"{shape}"`, `["50%", "35%"]`). Inside `each`, `n` counts from 1, `index` counts from 0, and `item` is the element. At most 1000. |
 | `{ "cases": [ { "if": …, "then": look }, { "else": look } ] }` | The first branch whose `if` holds. |
 | `"$children"` | The node's children: `leading`, the body, then `trailing` pushed to the far end. `overlay` children float at their `anchor`. |

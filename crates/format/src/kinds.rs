@@ -1,4 +1,4 @@
-//! The kinds a description may use and what each looks like: kinds.json,
+//! The components a description may use and what each looks like: kinds.json,
 //! underdraw's defaults with a project's file over them by name. The look
 //! itself is drawn by underdraw-layout; here it is read and checked. Why:
 //! [ADR 0007](../../../docs/adr/0007-kinds-are-data.md).
@@ -9,7 +9,7 @@ use crate::check::Findings;
 use crate::icons;
 use crate::overlay::Edge;
 
-/// The kinds underdraw ships, in the form a project's kinds.json takes.
+/// The components underdraw ships, in the form a project's kinds.json takes.
 const DEFAULTS: &str = include_str!("../kinds.json");
 
 /// What a look key takes, as far as `check` can tell before the look is
@@ -29,13 +29,13 @@ pub enum Takes {
 }
 
 /// Every key a look may hold, and what it takes: what underdraw-layout
-/// reads. A look with `kind` holds that kind's props instead.
+/// reads. A look with `component` holds that component's props instead.
 pub const LOOK: [(&str, Takes); 43] = [
     ("if", Takes::Any),
     ("cases", Takes::Any),
     ("repeat", Takes::Any),
     ("each", Takes::Any),
-    ("kind", Takes::Any),
+    ("component", Takes::Any),
     ("children", Takes::Any),
     ("text", Takes::Any),
     ("font", Takes::Any),
@@ -84,7 +84,7 @@ pub fn takes(key: &str) -> Option<Takes> {
 /// Keys a look may also hold, read by people and not drawn.
 const NOTES: [&str; 2] = ["$comment", "doc"];
 
-/// What a kind may say of itself beside its look, each true or false: how a
+/// What a component may say of itself beside its look, each true or false: how a
 /// platform treats it, which `compare` reads.
 const FLAGS: [&str; 2] = ["scrolls", "pinned"];
 
@@ -139,7 +139,7 @@ pub(crate) fn track_faults(tracks: &Value, at: &str, findings: &mut Findings) {
 }
 
 /// Whether a box in a look asks for a backdrop and does not float by its
-/// own `pin`: only a kind's whole look, put in an `overlay`, may.
+/// own `pin`: only a component's whole look, put in an `overlay`, may.
 fn backdrop_without_pin(look: &Map<String, Value>) -> bool {
     look.get("backdrop") == Some(&Value::Bool(true)) && !look.contains_key("pin")
 }
@@ -195,7 +195,7 @@ fn pin_faults(pin: &Value, at: &str, findings: &mut Findings) {
     }
 }
 
-/// Every kind there is.
+/// Every component there is.
 pub struct Kinds {
     kinds: Map<String, Value>,
 }
@@ -215,7 +215,7 @@ impl Kinds {
     }
 
     fn add(&mut self, file: &Value) {
-        if let Some(Value::Object(kinds)) = file.get("kinds") {
+        if let Some(Value::Object(kinds)) = file.get("components") {
             for (name, kind) in kinds {
                 self.kinds.insert(name.clone(), kind.clone());
             }
@@ -226,7 +226,7 @@ impl Kinds {
         self.kinds.contains_key(kind)
     }
 
-    /// What `kind` looks like, when it is a kind.
+    /// What `kind` looks like, when it is a component.
     pub fn look(&self, kind: &str) -> Option<&Value> {
         self.kinds.get(kind).and_then(|entry| entry.get("look"))
     }
@@ -253,8 +253,9 @@ impl Kinds {
         self.look(kind).and_then(Value::as_object).is_some_and(backdrop_without_pin)
     }
 
-    /// Every fault in the looks of `project`'s kinds, at `kinds.<Name>…`:
-    /// a kind with no look, a key no look reads, a filter or kind that does
+    /// Every fault in the looks of `project`'s components, at
+    /// `components.<Name>…`: a component with no look, a key no look reads,
+    /// a filter or component that does
     /// not exist.
     pub(crate) fn check(&self, project: Option<&Value>, findings: &mut Findings) {
         let Some(project) = project else {
@@ -266,32 +267,35 @@ impl Kinds {
                 "icons are Material Symbols names (fonts.google.com/icons) and need no entry; take this out",
             );
         }
-        let Some(Value::Object(kinds)) = project.get("kinds") else {
-            if project.get("kinds").is_some() {
-                findings.add("kinds", "kinds.json's \"kinds\" maps each kind's name to {\"look\": …}");
+        let Some(Value::Object(components)) = project.get("components") else {
+            if project.get("components").is_some() {
+                findings.add(
+                    "components",
+                    "kinds.json's \"components\" maps each component's name to {\"look\": …}",
+                );
             }
             return;
         };
-        for (name, kind) in kinds {
-            let at = format!("kinds.{name}");
-            if kind.get("assumed").is_some() {
-                findings.add(&format!("{at}.assumed"), "underdraw draws no guesses: finish this kind's look and take assumed out; a note for people goes in \"doc\"");
+        for (name, component) in components {
+            let at = format!("components.{name}");
+            if component.get("assumed").is_some() {
+                findings.add(&format!("{at}.assumed"), "underdraw draws no guesses: finish this component's look and take assumed out; a note for people goes in \"doc\"");
             }
             for flag in FLAGS {
-                if let Some(value) = kind.get(flag)
+                if let Some(value) = component.get(flag)
                     && !value.is_boolean()
                 {
                     findings.add(&format!("{at}.{flag}"), &format!("{flag} is true or false"));
                 }
             }
-            match kind.get("look") {
+            match component.get("look") {
                 Some(look) => self.look_faults(look, &format!("{at}.look"), true, findings),
-                None => findings.add(&at, "a kind needs \"look\": what it is drawn as"),
+                None => findings.add(&at, "a component needs \"look\": what it is drawn as"),
             }
         }
     }
 
-    /// `top`: `look` is what the kind's node is drawn as, which an overlay
+    /// `top`: `look` is what the component's node is drawn as, which an overlay
     /// pins; anything inside it floats only by its own `pin`.
     fn look_faults(&self, look: &Value, at: &str, top: bool, findings: &mut Findings) {
         match look {
@@ -308,17 +312,20 @@ impl Kinds {
                 }
             }
             Value::Object(object) => {
-                let nested = object.get("kind").and_then(Value::as_str);
+                let nested = object.get("component").and_then(Value::as_str);
                 if !top && backdrop_without_pin(object) {
                     findings.add(
                         at,
-                        "backdrop is drawn only by a box that floats: the whole look of a kind put in \"overlay\", or a box with \"pin\"",
+                        "backdrop is drawn only by a box that floats: the whole look of a component put in \"overlay\", or a box with \"pin\"",
                     );
                 }
-                if let Some(kind) = nested
-                    && !self.has(kind)
+                if let Some(name) = nested
+                    && !self.has(name)
                 {
-                    findings.add(at, &format!("kind {kind} is not defined in kinds.json or underdraw's own"));
+                    findings.add(
+                        at,
+                        &format!("component {name} is not defined in kinds.json or underdraw's own"),
+                    );
                 }
                 for (key, value) in object {
                     if key == "cases" {
@@ -331,7 +338,7 @@ impl Kinds {
                             None => findings.add(
                                 at,
                                 &format!(
-                                    "{key} is not a key a look reads; see `underdraw check --help`, KINDS.JSON"
+                                    "{key} is not a key a look reads; see `underdraw check --help`, LOOKS"
                                 ),
                             ),
                         }

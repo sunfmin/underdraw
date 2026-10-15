@@ -6,7 +6,7 @@
   "elementTree": "XCUITest：app.descendants(matching: .any) 按 identifier 读 frame；或 idb ui describe-all",
   "tokenNaming": { "pattern": "Theme.{group}.{name}", "example": "color.primary → Theme.color.primary；space.4 → Theme.space._4（数字开头的名字前加 _）" },
   "breakpoints": "horizontalSizeClass：.compact → compact，.regular → regular（iPad 横屏 / 分屏）",
-  "kinds": {
+  "components": {
     "Screen": "NavigationStack 里的一个 View",
     "NavBar": ".toolbar；transparentOverContent → .toolbarBackground(.hidden) + 滚动后渐显",
     "IconButton": "Button { } label: { Image(systemName:) }.accessibilityLabel(label)",

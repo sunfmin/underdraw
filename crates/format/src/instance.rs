@@ -40,7 +40,7 @@ pub struct Node {
     /// `[2]` for the third row; empty outside any.
     #[serde(skip)]
     pub instance: Vec<usize>,
-    pub kind: String,
+    pub component: String,
     /// Every property other than the node's structure, with templates filled
     /// and cases and responsive values chosen.
     pub props: Map<String, Value>,
@@ -84,7 +84,7 @@ pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", 
 
 /// Keys that only steer how the tree is built.
 const STRUCTURE: [&str; 11] =
-    ["id", "kind", "ref", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
+    ["id", "component", "ref", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
 
 /// The screen `screen` in `state`, at `breakpoint`. The description is
 /// expected to have passed `check`; what it cannot make sense of is an error.
@@ -195,13 +195,13 @@ impl Fill<'_> {
             Some(Value::String(id)) => (self.text(id, scope)?, id.clone()),
             _ => return Err(format!("a node has no id: {written}")),
         };
-        let kind = object.get("kind").and_then(Value::as_str).unwrap_or_default().to_string();
+        let component = object.get("component").and_then(Value::as_str).unwrap_or_default().to_string();
         let mut node = Node {
             id,
             written_id,
             written_at: at.at.clone(),
             instance: at.instance.clone(),
-            kind,
+            component,
             props: Map::new(),
             children: Vec::new(),
             slot: slot.to_string(),

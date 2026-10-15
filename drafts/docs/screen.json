@@ -554,16 +554,16 @@
   "components": {
     "nav": {
       "id": "nav",
-      "kind": "NavBar",
+      "component": "NavBar",
       "children": {
         "id": "nav-title",
-        "kind": "Text",
+        "component": "Text",
         "text": "团队文档",
         "font": "font.heading"
       },
       "trailing": {
         "id": "nav-new",
-        "kind": "IconButton",
+        "component": "IconButton",
         "icon": "add",
         "on": {
           "tap": {
@@ -575,14 +575,14 @@
   },
   "root": {
     "id": "docs",
-    "kind": "Screen",
+    "component": "Screen",
     "children": [
       {
         "ref": "nav"
       },
       {
         "id": "toolbar",
-        "kind": "Row",
+        "component": "Row",
         "gap": 12,
         "padding": [
           0,
@@ -593,21 +593,21 @@
         "children": [
           {
             "id": "doc-count",
-            "kind": "Text",
+            "component": "Text",
             "font": "font.caption",
             "color": "color.textSecondary",
             "text": "共 {summary.count} 个文档"
           },
           {
             "id": "selected-count",
-            "kind": "Text",
+            "component": "Text",
             "if": "hasSelection",
             "font": "font.caption",
             "text": "已选 {selection.count} 个"
           },
           {
             "id": "delete-selected",
-            "kind": "Button",
+            "component": "Button",
             "size": "small",
             "variant": "secondary",
             "text": "删除所选",
@@ -622,7 +622,7 @@
         ],
         "trailing": {
           "id": "sort-button",
-          "kind": "SortButton",
+          "component": "SortButton",
           "text": "排序：{sort.label}",
           "trailingIcon": {
             "cases": [
@@ -644,12 +644,12 @@
       },
       {
         "id": "list",
-        "kind": "Stack",
+        "component": "Stack",
         "if": "hasDocs",
         "each": "docs",
         "item": {
           "id": "doc-{item.doc.id}",
-          "kind": "DocRow",
+          "component": "DocRow",
           "leadingIcon": "{item.doc.icon}",
           "title": "{item.doc.title}",
           "shared": "{item.doc.shared}",
@@ -665,7 +665,7 @@
           "trailing": [
             {
               "id": "doc-{item.doc.id}-select",
-              "kind": "Checkbox",
+              "component": "Checkbox",
               "checked": "{item.selected}",
               "on": {
                 "tap": {
@@ -675,7 +675,7 @@
             },
             {
               "id": "doc-{item.doc.id}-more",
-              "kind": "IconButton",
+              "component": "IconButton",
               "icon": "more_horiz",
               "on": {
                 "tap": {
@@ -689,14 +689,14 @@
           ],
           "overlay": {
             "id": "doc-{item.doc.id}-menu",
-            "kind": "Menu",
+            "component": "Menu",
             "if": "item.menuOpen",
             "anchor": "top-trailing",
             "dismiss": "tap outside or choose an item",
             "children": [
               {
                 "id": "doc-{item.doc.id}-rename",
-                "kind": "MenuItem",
+                "component": "MenuItem",
                 "leadingIcon": "edit",
                 "text": "重命名",
                 "on": {
@@ -710,7 +710,7 @@
               },
               {
                 "id": "doc-{item.doc.id}-copy",
-                "kind": "MenuItem",
+                "component": "MenuItem",
                 "leadingIcon": "link",
                 "text": "复制链接",
                 "on": {
@@ -724,7 +724,7 @@
               },
               {
                 "id": "doc-{item.doc.id}-move",
-                "kind": "MenuItem",
+                "component": "MenuItem",
                 "leadingIcon": "drive_file_move",
                 "text": "移动到…",
                 "on": {
@@ -738,11 +738,11 @@
               },
               {
                 "id": "doc-{item.doc.id}-divider",
-                "kind": "MenuDivider"
+                "component": "MenuDivider"
               },
               {
                 "id": "doc-{item.doc.id}-delete",
-                "kind": "MenuItem",
+                "component": "MenuItem",
                 "leadingIcon": "delete",
                 "text": "删除",
                 "destructive": true,
@@ -762,18 +762,18 @@
         },
         "overlay": {
           "id": "sort-menu",
-          "kind": "Menu",
+          "component": "Menu",
           "if": "sortOpen",
           "anchor": "top-trailing",
           "width": 180,
           "dismiss": "tap outside or choose an option",
           "children": {
             "id": "sort-options",
-            "kind": "Stack",
+            "component": "Stack",
             "each": "sort.options",
             "item": {
               "id": "sort-{item.id}",
-              "kind": "MenuItem",
+              "component": "MenuItem",
               "text": "{item.label}",
               "selected": "{item.selected}",
               "on": {
@@ -791,7 +791,7 @@
       },
       {
         "id": "load-more",
-        "kind": "Button",
+        "component": "Button",
         "if": "hasMore",
         "text": "加载更多",
         "on": {
@@ -805,14 +805,14 @@
       },
       {
         "id": "empty",
-        "kind": "EmptyState",
+        "component": "EmptyState",
         "if": "!hasDocs",
         "icon": "folder_open",
         "title": "还没有文档",
         "detail": "新建一个，或者把文件拖到这里",
         "action": {
           "id": "empty-new",
-          "kind": "Button",
+          "component": "Button",
           "text": "新建文档",
           "on": {
             "tap": {
@@ -825,7 +825,7 @@
     "overlay": [
       {
         "id": "confirm-delete",
-        "kind": "Dialog",
+        "component": "Dialog",
         "if": "confirmingDelete",
         "anchor": "center",
         "width": {
@@ -836,24 +836,24 @@
       "children": [
         {
           "id": "confirm-delete-title",
-          "kind": "Text",
+          "component": "Text",
           "text": "删除这个文档？",
           "font": "font.heading"
         },
         {
           "id": "confirm-delete-detail",
-          "kind": "Text",
+          "component": "Text",
           "text": "团队里的所有人都将无法再打开它，删除后无法恢复。",
           "color": "color.textSecondary"
         },
         {
           "id": "confirm-delete-actions",
-          "kind": "Row",
+          "component": "Row",
           "gap": 12,
           "children": [
             {
               "id": "confirm-delete-cancel",
-              "kind": "Button",
+              "component": "Button",
               "variant": "secondary",
               "text": "取消",
               "on": {
@@ -864,7 +864,7 @@
             },
             {
               "id": "confirm-delete-confirm",
-              "kind": "Button",
+              "component": "Button",
               "variant": "primary",
               "destructive": true,
               "text": "删除",
@@ -883,7 +883,7 @@
       },
       {
         "id": "confirm-delete-selected",
-        "kind": "Dialog",
+        "component": "Dialog",
         "if": "confirmingDeleteSelected",
         "anchor": "center",
         "width": {
@@ -894,24 +894,24 @@
         "children": [
           {
             "id": "confirm-delete-selected-title",
-            "kind": "Text",
+            "component": "Text",
             "text": "删除所选的 {selection.count} 个文档？",
             "font": "font.heading"
           },
           {
             "id": "confirm-delete-selected-detail",
-            "kind": "Text",
+            "component": "Text",
             "text": "团队里的所有人都将无法再打开它们，删除后无法恢复。",
             "color": "color.textSecondary"
           },
           {
             "id": "confirm-delete-selected-actions",
-            "kind": "Row",
+            "component": "Row",
             "gap": 12,
             "children": [
               {
                 "id": "confirm-delete-selected-cancel",
-                "kind": "Button",
+                "component": "Button",
                 "variant": "secondary",
                 "text": "取消",
                 "on": {
@@ -922,7 +922,7 @@
               },
               {
                 "id": "confirm-delete-selected-confirm",
-                "kind": "Button",
+                "component": "Button",
                 "variant": "primary",
                 "destructive": true,
                 "text": "删除",
@@ -944,19 +944,19 @@
   "phases": {
     "loading": {
       "id": "loading",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "ref": "nav"
         },
         {
           "id": "sk",
-          "kind": "Stack",
+          "component": "Stack",
           "padding": 16,
           "children": [
             {
               "id": "sk-lines",
-              "kind": "Skeleton",
+              "component": "Skeleton",
               "shape": [
                 "line 30%",
                 "line 90%",
@@ -973,20 +973,20 @@
     },
     "error": {
       "id": "error",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "ref": "nav"
         },
         {
           "id": "err",
-          "kind": "EmptyState",
+          "component": "EmptyState",
           "icon": "cloud_off",
           "title": "文档加载失败",
           "detail": "检查网络后重试",
           "action": {
             "id": "retry",
-            "kind": "Button",
+            "component": "Button",
             "text": "重试",
             "on": {
               "tap": {

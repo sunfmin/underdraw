@@ -147,23 +147,23 @@
   },
   "root": {
     "id": "todo-screen",
-    "kind": "Screen",
+    "component": "Screen",
     "children": [
       {
         "id": "header",
-        "kind": "Stack",
+        "component": "Stack",
         "gap": "space.1",
         "padding": "space.4",
         "children": [
           {
             "id": "header-title",
-            "kind": "Text",
+            "component": "Text",
             "text": "我的待办",
             "font": "font.title"
           },
           {
             "id": "header-count",
-            "kind": "Text",
+            "component": "Text",
             "if": "hasTodos",
             "font": "font.caption",
             "color": "color.textSecondary",
@@ -183,19 +183,19 @@
       },
       {
         "id": "composer",
-        "kind": "Row",
+        "component": "Row",
         "gap": "space.3",
         "padding": "space.4",
         "children": [
           {
             "id": "composer-input",
-            "kind": "TextField",
+            "component": "TextField",
             "bind": "composer.text",
             "placeholder": "添加一项待办…"
           },
           {
             "id": "composer-add",
-            "kind": "Button",
+            "component": "Button",
             "variant": "primary",
             "text": "添加",
             "disabled": "!canAdd",
@@ -212,11 +212,11 @@
       },
       {
         "id": "divider",
-        "kind": "Divider"
+        "component": "Divider"
       },
       {
         "id": "todo-body",
-        "kind": "Stack",
+        "component": "Stack",
         "padding": [
           0,
           "space.4"
@@ -225,7 +225,7 @@
         "children": [
           {
             "id": "todo-empty",
-            "kind": "EmptyState",
+            "component": "EmptyState",
             "if": "!hasTodos",
             "icon": "checklist",
             "title": "还没有待办",
@@ -233,12 +233,12 @@
           },
           {
             "id": "todo-list",
-            "kind": "List",
+            "component": "List",
             "if": "hasTodos",
             "each": "todos",
             "item": {
               "id": "todo-{index}",
-              "kind": "ListItem",
+              "component": "ListItem",
               "title": "{item.title}",
               "leadingIcon": {
                 "cases": [
@@ -263,7 +263,7 @@
           },
           {
             "id": "clear-completed",
-            "kind": "Link",
+            "component": "Link",
             "if": "hasCompleted",
             "text": "清除已完成（{summary.completed}）"
           }
@@ -274,11 +274,11 @@
   "phases": {
     "loading": {
       "id": "todo-loading",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "id": "loading-skeleton",
-          "kind": "Skeleton",
+          "component": "Skeleton",
           "shape": [
             "line 40%",
             "line 90%",

@@ -45,7 +45,7 @@ DOES
   page with the mouse wheel or trackpad. Clicking a node in the picture
   picks the innermost there, an overlay (a badge, a dialog, a sheet) before
   what it floats over, outlines it at both widths, and opens a panel with
-  its id, kind, the operation it calls when acted on, what was assumed
+  its id, component, the operation it calls when acted on, what was assumed
   there (`assumed`), and its label and box at each width, as `render`
   reports them. A node that navigates to a screen no description under
   <root> declares is drawn with the orange "?", a screen not drawn yet, as

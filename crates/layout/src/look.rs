@@ -1,10 +1,10 @@
 // A style is built one property per line, as CSS reads.
 #![allow(clippy::field_reassign_with_default)]
 
-//! Kinds as data: what each kind of node looks like, read from kinds.json
+//! Components as data: what each component of a node looks like, read from kinds.json
 //! (underdraw's defaults, under a project's own) and turned into boxes for
 //! `place` to lay out. A look is a box, text, a `repeat`, `cases`, another
-//! kind, or `"$children"`; it reads the node's props through `{prop|filter}`
+//! component, or `"$children"`; it reads the node's props through `{prop|filter}`
 //! templates. Why: [ADR 0007](../../../docs/adr/0007-kinds-are-data.md).
 
 use serde_json::{Map, Value};
@@ -21,7 +21,7 @@ const MOST_REPEATED: u64 = 1000;
 /// How far in from its node's edges an overlay that is not flush stands.
 const OVERLAY_INSET: f32 = 16.0;
 
-/// What a look reads: the props of the kind it draws, the names a `repeat`
+/// What a look reads: the props of the component it draws, the names a `repeat`
 /// binds (`n` from 1, `index` from 0, `item`), and the node whose children
 /// `"$children"` stands for.
 struct Scope<'p, 'a> {
@@ -55,17 +55,18 @@ pub(crate) struct Catalog<'t> {
 }
 
 impl Catalog<'_> {
-    /// `node` drawn as its kind's look says, tagged as the node; a box with
-    /// the kind's name, marked as a guess, when no kind has that name.
+    /// `node` drawn as its component's look says, tagged as the node; a box with
+    /// the component's name, marked as a guess, when no component has that name.
     pub(crate) fn node<'a>(&self, node: &'a Node) -> Elem<'a> {
-        let mut elem = match self.kinds.look(&node.kind) {
+        let mut elem = match self.kinds.look(&node.component) {
             Some(look) => {
                 let scope = Scope { props: &node.props, vars: Map::new(), node: Some(node) };
                 self.one(look, &scope)
             }
             None => {
-                let mut elem = self.unknown(&node.kind, Some(node));
-                elem.assumed = Some(underdraw_format::assumption::unknown_kind(&node.kind, self.lang));
+                let mut elem = self.unknown(&node.component, Some(node));
+                elem.assumed =
+                    Some(underdraw_format::assumption::unknown_component(&node.component, self.lang));
                 elem
             }
         };
@@ -114,7 +115,7 @@ impl Catalog<'_> {
         if let Some(over) = object.get("repeat") {
             return self.repeat(over, object.get("each").unwrap_or(&Value::Null), scope);
         }
-        if let Some(Value::String(name)) = object.get("kind") {
+        if let Some(Value::String(name)) = object.get("component") {
             return vec![self.nested(name, object, scope)];
         }
         if object.contains_key("text") {
@@ -151,12 +152,12 @@ impl Catalog<'_> {
         made
     }
 
-    /// Another kind's look, inside this one, with the props written beside
-    /// `kind`. It is part of this node, not a node of its own.
+    /// Another component's look, inside this one, with the props written beside
+    /// `component`. It is part of this node, not a node of its own.
     fn nested<'a>(&self, name: &str, object: &Map<String, Value>, scope: &Scope<'_, 'a>) -> Elem<'a> {
         let mut props = Map::new();
         for (key, value) in object {
-            if key != "kind" && key != "if" {
+            if key != "component" && key != "if" {
                 props.insert(key.clone(), self.resolve(value, scope));
             }
         }
@@ -396,14 +397,15 @@ impl Catalog<'_> {
         built
     }
 
-    /// A dashed box that names `kind`, holding `node`'s children, for a kind
+    /// A dashed box that names `component`, holding `node`'s children, for a component
     /// with no look: nothing is silently dropped.
-    fn unknown<'a>(&self, kind: &str, node: Option<&'a Node>) -> Elem<'a> {
+    fn unknown<'a>(&self, component: &str, node: Option<&'a Node>) -> Elem<'a> {
         let mut style = Style { flex_direction: FlexDirection::Column, ..Style::default() };
         style.gap = taffy::Size { width: length(8.0), height: length(8.0) };
         style.padding = sides(8.0, 8.0, 8.0, 8.0);
         let font = self.tokens.font(None, "font.caption");
-        let mut parts = vec![Elem::text(Style::default(), Words::new(kind.to_string(), font, Ink::Muted))];
+        let mut parts =
+            vec![Elem::text(Style::default(), Words::new(component.to_string(), font, Ink::Muted))];
         if let Some(node) = node {
             parts.append(&mut self.children(node));
         }

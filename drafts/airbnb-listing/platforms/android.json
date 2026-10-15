@@ -6,7 +6,7 @@
   "elementTree": "adb shell uiautomator dump → XML，按 resource-id 读 bounds",
   "tokenNaming": { "pattern": "AppTheme.{group}.{name}", "example": "color.primary → AppTheme.color.primary；space.4 → AppTheme.space._4（数字开头的名字前加 _）" },
   "breakpoints": "WindowSizeClass：COMPACT → compact，MEDIUM/EXPANDED → regular",
-  "kinds": {
+  "components": {
     "Screen": "Scaffold",
     "NavBar": "TopAppBar；transparentOverContent → 透明背景 + 滚动后变色（TopAppBarScrollBehavior）",
     "IconButton": "IconButton { Icon(contentDescription = label) }",

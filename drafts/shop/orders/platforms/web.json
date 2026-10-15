@@ -3,7 +3,7 @@
   "language": "typescript",
   "testId": "data-testid=\"{id}\"",
   "tokenNaming": { "pattern": "var(--{group}-{name})" },
-  "kinds": {
+  "components": {
     "Screen": "<main>",
     "Text": "<p>",
     "Button": "<button>",

@@ -6,7 +6,7 @@
   "elementTree": "Playwright：遍历带 data-testid 的元素，读 getBoundingClientRect",
   "tokenNaming": { "pattern": "var(--{group}-{kebab-name})", "example": "color.textSecondary → var(--color-text-secondary)" },
   "breakpoints": "CSS media query：compact = max-width 743px",
-  "kinds": {
+  "components": {
     "Screen": "<main>",
     "NavBar": "不渲染（站点顶栏负责），见 screen.json 的 platform.web.hidden",
     "IconButton": "<button aria-label=\"{label}\">",

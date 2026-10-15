@@ -1,5 +1,5 @@
 {
-  "kinds": {
+  "components": {
     "Chip": {
       "doc": "A menu category as a pill: filled when it is the one in view.",
       "look": {
@@ -206,7 +206,7 @@
         "items": "center",
         "children": [
           {
-            "kind": "Glyph",
+            "component": "Glyph",
             "icon": "{icon}",
             "size": 22
           },

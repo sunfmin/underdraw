@@ -1,6 +1,6 @@
 {
   "$comment": "What each kind looks like in a wireframe: underdraw's defaults. A project's kinds.json adds kinds and replaces these by name. The look vocabulary is docs/format/kinds.md.",
-  "kinds": {
+  "components": {
     "Screen":     { "scrolls": true, "look": { "box": "column", "frame": true, "fill": "paper", "children": ["$children"] } },
     "Scroll":     { "scrolls": true, "look": { "box": "column", "frame": true, "children": ["$children"] } },
     "Stack":      { "look": { "box": "column", "frame": true, "children": ["$children"] } },
@@ -65,11 +65,11 @@
     "Divider": { "look": { "height": 1, "fill": "line" } },
     "ListItem": {
       "look": { "box": "row", "gap": 12, "padding": [12, 0], "children": [
-        { "if": "leadingIcon", "kind": "Glyph", "icon": "{leadingIcon}", "size": 24 },
+        { "if": "leadingIcon", "component": "Glyph", "icon": "{leadingIcon}", "size": 24 },
         { "box": "column", "gap": 2, "grow": 1, "shrink": 1, "children": [
           { "text": "{title}", "font": "font.body", "strike": "{strikethrough}" },
           { "if": "detail", "text": "{detail}", "font": "font.caption", "ink": "muted" } ] },
-        { "if": "trailingIcon", "kind": "Glyph", "icon": "{trailingIcon}", "size": 24 } ] }
+        { "if": "trailingIcon", "component": "Glyph", "icon": "{trailingIcon}", "size": 24 } ] }
     },
     "Metric": {
       "look": { "box": "column", "gap": 2, "children": [
@@ -78,7 +78,7 @@
     },
     "EmptyState": {
       "look": { "box": "column", "gap": 8, "items": "center", "padding": 24, "children": [
-        { "kind": "Glyph", "icon": "{icon}", "size": 48, "font": 28, "background": "fill" },
+        { "component": "Glyph", "icon": "{icon}", "size": 48, "font": 28, "background": "fill" },
         { "text": "{title}", "font": "font.subhead", "align": "center" },
         { "if": "detail", "text": "{detail}", "font": "font.body", "ink": "muted", "align": "center" },
         "$children" ] }
@@ -125,9 +125,9 @@
       "look": { "box": "row", "justify": "between", "padding": [8, 12], "children": [
         { "text": "{label}", "font": "font.body" },
         { "box": "row", "gap": 12, "children": [
-          { "kind": "Glyph", "icon": "remove", "size": 32, "font": 20 },
+          { "component": "Glyph", "icon": "remove", "size": 32, "font": 20 },
           { "text": "{value}", "font": "font.body" },
-          { "kind": "Glyph", "icon": "add", "size": 32, "font": 20 } ] } ] }
+          { "component": "Glyph", "icon": "add", "size": 32, "font": 20 } ] } ] }
     },
     "PriceBreakdown": {
       "doc": "Lines of a price: each of lines and then total, named, beside a gray amount; gray bars for the names too when lines are not given.",

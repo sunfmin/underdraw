@@ -43,8 +43,8 @@ listing draft shows a photo carousel and a sticky bar on a phone, and a photo
 grid and a booking card beside the content on a desktop:
 
 ```json
-{ "id": "photos-carousel", "kind": "ImageCarousel", "only": "compact", … }
-{ "id": "photos-grid",     "kind": "ImageGrid",     "only": "regular", … }
+{ "id": "photos-carousel", "component": "ImageCarousel", "only": "compact", … }
+{ "id": "photos-grid",     "component": "ImageGrid",     "only": "regular", … }
 ```
 
 **A responsive value** is an object keyed by both breakpoints, in place of any

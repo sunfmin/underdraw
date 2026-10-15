@@ -15,7 +15,7 @@ fn detail() -> Value {
             "default": { "orderId": "o1", "history": false },
             "history": { "$patch": "default", "history": true }
         },
-        "root": { "id": "page", "kind": "Stack", "children": [ { "id": "title", "kind": "Text", "text": "{orderId}" } ] }
+        "root": { "id": "page", "component": "Stack", "children": [ { "id": "title", "component": "Text", "text": "{orderId}" } ] }
     })
 }
 
@@ -26,10 +26,10 @@ fn list(with: Value) -> Value {
         "data": { "orders": "Order[]", "count": "int" },
         "types": { "Order": { "id": "string 1..", "paid": "bool" } },
         "fixtures": { "default": { "orders": [ { "id": "o1", "paid": true } ], "count": 1 } },
-        "root": { "id": "page", "kind": "Stack", "children": [
-            { "id": "row", "kind": "Stack", "each": "orders", "item": { "id": "row-{item.id}", "kind": "Button", "label": "{item.id}",
+        "root": { "id": "page", "component": "Stack", "children": [
+            { "id": "row", "component": "Stack", "each": "orders", "item": { "id": "row-{item.id}", "component": "Button", "label": "{item.id}",
               "on": { "tap": { "navigate": "OrderDetail", "with": with } } } },
-            { "id": "later", "kind": "Button", "label": "Later", "on": { "tap": { "navigate": "Invoice", "with": { "anything": 1 } } } } ] }
+            { "id": "later", "component": "Button", "label": "Later", "on": { "tap": { "navigate": "Invoice", "with": { "anything": 1 } } } } ] }
     })
 }
 

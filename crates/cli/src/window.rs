@@ -1794,7 +1794,7 @@ impl Gallery {
     /// last act on a node came to, and any outcomes to
     /// choose from, each on a line of its own; then the note being written,
     /// or how to start one; then the note picked; then, of the node picked,
-    /// its id, kind, the operation it calls, what was assumed there, its
+    /// its id, component, the operation it calls, what was assumed there, its
     /// label and box at each width, or of the arrow picked, what it is; and
     /// a line to write a note on it. Nothing when none of these is there.
     fn panel_rows(&self) -> Vec<(String, Option<Do>)> {
@@ -1903,10 +1903,14 @@ impl Gallery {
         };
         let screen = crate::read(&on.description).map(|(screen, _)| screen).unwrap_or(Value::Null);
         let id = self.node.clone().unwrap_or_default();
-        let kind =
-            pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)).map(|n| n.kind.clone());
-        let guess =
-            Guess::of(&screen, &node.origin.written, &kind.unwrap_or_default(), &links::drawn(&self.root));
+        let component =
+            pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)).map(|n| n.component.clone());
+        let guess = Guess::of(
+            &screen,
+            &node.origin.written,
+            &component.unwrap_or_default(),
+            &links::drawn(&self.root),
+        );
         let answers = Answers { assumed, guess, answer };
         match answer {
             Answer::Right => match notes::judge(&on, answers, "") {
@@ -2348,7 +2352,8 @@ impl Gallery {
             Some(operations) => operations.join(", "),
             None => "nothing".to_string(),
         };
-        let mut lines = vec![format!("id  {id}"), format!("kind  {}", node.kind), format!("calls  {calls}")];
+        let mut lines =
+            vec![format!("id  {id}"), format!("component  {}", node.component), format!("calls  {calls}")];
         match node.assumed.as_deref() {
             Some(assumed) => {
                 let (guessed, other) = parts(assumed);
@@ -3370,7 +3375,7 @@ mod tests {
             panel[..5],
             [
                 "id  nav-save",
-                "kind  IconButton",
+                "component  IconButton",
                 "calls  toggleSaved",
                 "assumed  nothing",
                 "at 390  label 3 · box 334, 8 · 40 × 40",

@@ -107,7 +107,7 @@ pub enum Answer {
 }
 
 /// What made an assumption: written `"author"`, `{"undrawn": [<screen>,
-/// …]}` or `{"kind": <kind>}`.
+/// …]}` or `{"component": <component>}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Guess {
@@ -116,28 +116,28 @@ pub enum Guess {
     /// A navigate to these screens, which no description under the root
     /// declares: screens not drawn yet.
     Undrawn(Vec<String>),
-    /// A kind underdraw does not know.
-    Kind(String),
+    /// A component underdraw does not know.
+    Component(String),
 }
 
 impl Guess {
     /// What made the assumption on the node written `written` in `screen`,
-    /// of kind `kind`, drawn among the screens `drawn`: its own `assumed`,
-    /// else a navigate to a screen not drawn, else its kind.
-    pub fn of(screen: &Value, written: &str, kind: &str, drawn: &BTreeSet<String>) -> Guess {
+    /// of component `component`, drawn among the screens `drawn`: its own
+    /// `assumed`, else a navigate to a screen not drawn, else its component.
+    pub fn of(screen: &Value, written: &str, component: &str, drawn: &BTreeSet<String>) -> Guess {
         let node = underdraw_format::written_node(screen, written);
         if node.is_some_and(|node| node.contains_key("assumed")) {
             return Guess::Author;
         }
         let undrawn = undrawn(screen, written, drawn);
-        if undrawn.is_empty() { Guess::Kind(kind.to_string()) } else { Guess::Undrawn(undrawn) }
+        if undrawn.is_empty() { Guess::Component(component.to_string()) } else { Guess::Undrawn(undrawn) }
     }
 
     /// Whether the guess is still made of the node written `written` in
     /// `screen`, in the description in `dir`, among the screens `drawn`
     /// under the root: its `assumed` still written; a screen it named still
-    /// navigated to and not drawn; its kind still its kind and still
-    /// unknown.
+    /// navigated to and not drawn; its component still its component
+    /// and still unknown.
     fn stands(
         &self,
         screen: &Value,
@@ -152,13 +152,14 @@ impl Guess {
                 let undrawn = undrawn(screen, written, &drawn());
                 screens.iter().any(|screen| undrawn.contains(screen))
             }
-            Guess::Kind(kind) => {
-                let still = node.and_then(|node| node.get("kind")).and_then(Value::as_str) == Some(kind);
+            Guess::Component(component) => {
+                let still =
+                    node.and_then(|node| node.get("component")).and_then(Value::as_str) == Some(component);
                 let kinds = crate::read_kinds(dir).ok().flatten();
                 let components = screen.get("components").and_then(Value::as_object);
                 still
-                    && !underdraw_format::Kinds::read(kinds.as_ref()).has(kind)
-                    && !components.is_some_and(|components| components.contains_key(kind))
+                    && !underdraw_format::Kinds::read(kinds.as_ref()).has(component)
+                    && !components.is_some_and(|components| components.contains_key(component))
             }
         }
     }
@@ -737,10 +738,10 @@ mod tests {
         );
         assert_eq!(notes[0].answer(&dir, &dir)["answers"]["answer"], "right", "`notes` lists how it answers");
         assert_eq!(notes[1].answers.as_ref().unwrap().answer, Answer::Wrong);
-        let others = [Guess::Undrawn(vec!["OrderDetail".into()]), Guess::Kind("Gauge".into())];
+        let others = [Guess::Undrawn(vec!["OrderDetail".into()]), Guess::Component("Gauge".into())];
         assert_eq!(
             others.map(|guess| serde_json::to_value(guess).unwrap()),
-            [json!({ "undrawn": ["OrderDetail"] }), json!({ "kind": "Gauge" })]
+            [json!({ "undrawn": ["OrderDetail"] }), json!({ "component": "Gauge" })]
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -748,31 +749,37 @@ mod tests {
     #[test]
     fn a_guess_stands_while_the_description_still_makes_it() {
         let dir = dir("stands");
-        let screen = json!({ "root": { "id": "list", "kind": "Column", "children": [
-            { "id": "card", "kind": "TextField", "assumed": "drawn here; or hosted" },
-            { "id": "gauge", "kind": "Gauge" },
-            { "id": "row", "kind": "Row", "on": { "tap": { "navigate": "OrderDetail" } } },
+        let screen = json!({ "root": { "id": "list", "component": "Column", "children": [
+            { "id": "card", "component": "TextField", "assumed": "drawn here; or hosted" },
+            { "id": "gauge", "component": "Gauge" },
+            { "id": "row", "component": "Row", "on": { "tap": { "navigate": "OrderDetail" } } },
         ] } });
         let none = BTreeSet::new;
         assert_eq!(Guess::of(&screen, "card", "TextField", &none()), Guess::Author);
         assert_eq!(Guess::of(&screen, "row", "Row", &none()), Guess::Undrawn(vec!["OrderDetail".into()]));
-        assert_eq!(Guess::of(&screen, "gauge", "Gauge", &none()), Guess::Kind("Gauge".into()));
+        assert_eq!(Guess::of(&screen, "gauge", "Gauge", &none()), Guess::Component("Gauge".into()));
         for (guess, written) in [
             (Guess::Author, "card"),
             (Guess::Undrawn(vec!["OrderDetail".into()]), "row"),
-            (Guess::Kind("Gauge".into()), "gauge"),
+            (Guess::Component("Gauge".into()), "gauge"),
         ] {
             assert!(guess.stands(&screen, &dir, written, none), "{guess:?}");
         }
         let drawn = || BTreeSet::from(["OrderDetail".to_string()]);
         assert!(!Guess::Undrawn(vec!["OrderDetail".into()]).stands(&screen, &dir, "row", drawn), "drawn now");
-        let taken = json!({ "root": { "id": "list", "kind": "Column", "children": [
-            { "id": "card", "kind": "TextField" },
-            { "id": "gauge", "kind": "Text" },
+        let taken = json!({ "root": { "id": "list", "component": "Column", "children": [
+            { "id": "card", "component": "TextField" },
+            { "id": "gauge", "component": "Text" },
         ] } });
         assert!(!Guess::Author.stands(&taken, &dir, "card", none), "its assumed taken out");
-        assert!(!Guess::Kind("Gauge".into()).stands(&taken, &dir, "gauge", none), "another kind now");
-        assert!(!Guess::Kind("Row".into()).stands(&screen, &dir, "row", none), "a kind underdraw knows");
+        assert!(
+            !Guess::Component("Gauge".into()).stands(&taken, &dir, "gauge", none),
+            "another component now"
+        );
+        assert!(
+            !Guess::Component("Row".into()).stands(&screen, &dir, "row", none),
+            "a component underdraw knows"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 

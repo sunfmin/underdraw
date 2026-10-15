@@ -31,12 +31,12 @@
     }
   },
   "root": {
-    "id": "order", "kind": "Screen", "padding": "space.4", "gap": "space.3",
+    "id": "order", "component": "Screen", "padding": "space.4", "gap": "space.3",
     "children": [
-      { "id": "number", "kind": "Text", "text": "Order {order.number}", "font": "font.title" },
-      { "id": "customer", "kind": "Text", "text": "{order.customer}" },
-      { "id": "total", "kind": "Text", "text": "{order.total|money}", "color": "color.textSecondary" },
-      { "id": "cancel", "kind": "Button", "if": "order.cancellable", "text": "Cancel order", "variant": "secondary",
+      { "id": "number", "component": "Text", "text": "Order {order.number}", "font": "font.title" },
+      { "id": "customer", "component": "Text", "text": "{order.customer}" },
+      { "id": "total", "component": "Text", "text": "{order.total|money}", "color": "color.textSecondary" },
+      { "id": "cancel", "component": "Button", "if": "order.cancellable", "text": "Cancel order", "variant": "secondary",
         "on": { "tap": { "call": "cancelOrder", "with": { "id": "{order.id}" } } } }
     ]
   },

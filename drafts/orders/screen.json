@@ -394,10 +394,10 @@
   "components": {
     "nav": {
       "id": "nav",
-      "kind": "NavBar",
+      "component": "NavBar",
       "leading": {
         "id": "nav-back",
-        "kind": "IconButton",
+        "component": "IconButton",
         "icon": "arrow_back",
         "on": {
           "tap": {
@@ -407,13 +407,13 @@
       },
       "children": {
         "id": "nav-title",
-        "kind": "Text",
+        "component": "Text",
         "text": "订单管理",
         "font": "font.heading"
       },
       "trailing": {
         "id": "nav-export",
-        "kind": "IconButton",
+        "component": "IconButton",
         "icon": "download",
         "on": {
           "tap": {
@@ -425,14 +425,14 @@
   },
   "root": {
     "id": "orders",
-    "kind": "Screen",
+    "component": "Screen",
     "children": [
       {
         "ref": "nav"
       },
       {
         "id": "toolbar",
-        "kind": "Stack",
+        "component": "Stack",
         "gap": "space.3",
         "padding": [
           0,
@@ -441,19 +441,19 @@
         "children": [
           {
             "id": "search",
-            "kind": "SearchField",
+            "component": "SearchField",
             "bind": "query",
             "placeholder": "搜索订单号或顾客",
             "debounceMs": 300
           },
           {
             "id": "filters",
-            "kind": "ChipRow",
+            "component": "ChipRow",
             "gap": "space.2",
             "each": "filters",
             "item": {
               "id": "filter-{index}",
-              "kind": "Chip",
+              "component": "Chip",
               "text": "{item.label} {item.count}",
               "selected": "{item.selected}",
               "on": {
@@ -469,7 +469,7 @@
           },
           {
             "id": "match-count",
-            "kind": "Text",
+            "component": "Text",
             "if": "hasOrders",
             "font": "font.caption",
             "color": "color.textSecondary",
@@ -479,7 +479,7 @@
       },
       {
         "id": "table",
-        "kind": "Stack",
+        "component": "Stack",
         "if": "hasOrders",
         "padding": [
           0,
@@ -488,13 +488,13 @@
         "children": [
           {
             "id": "table-frame",
-            "kind": "Stack",
+            "component": "Stack",
             "radius": "radius.md",
             "border": "color.border",
             "children": [
               {
                 "id": "table-head",
-                "kind": "OrderTableHeader",
+                "component": "OrderTableHeader",
                 "columns": {
                   "compact": [
                     "5fr",
@@ -519,11 +519,11 @@
               },
               {
                 "id": "table-body",
-                "kind": "Stack",
+                "component": "Stack",
                 "each": "orders",
                 "item": {
                   "id": "order-{index}",
-                  "kind": "OrderTableRow",
+                  "component": "OrderTableRow",
                   "title": "#{item.number}",
                   "status": "{item.statusLabel}",
                   "customer": "{item.customer}",
@@ -540,7 +540,7 @@
                   },
                   "children": {
                     "id": "order-{index}-cancel",
-                    "kind": "IconButton",
+                    "component": "IconButton",
                     "if": "item.cancellable",
                     "icon": "cancel",
                     "accessibilityLabel": "取消订单",
@@ -582,7 +582,7 @@
       },
       {
         "id": "load-more-bar",
-        "kind": "Stack",
+        "component": "Stack",
         "if": "hasMore",
         "padding": [
           8,
@@ -592,7 +592,7 @@
         ],
         "children": {
           "id": "load-more",
-          "kind": "Button",
+          "component": "Button",
           "variant": "secondary",
           "text": "加载更多",
           "on": {
@@ -607,14 +607,14 @@
       },
       {
         "id": "no-match",
-        "kind": "EmptyState",
+        "component": "EmptyState",
         "if": "noMatch",
         "icon": "search_off",
         "title": "没有找到“{query}”",
         "detail": "试试订单号的后几位，或顾客的姓",
         "action": {
           "id": "clear-search",
-          "kind": "Button",
+          "component": "Button",
           "variant": "secondary",
           "text": "清除搜索",
           "on": {
@@ -627,7 +627,7 @@
       },
       {
         "id": "filter-empty",
-        "kind": "EmptyState",
+        "component": "EmptyState",
         "if": "filterEmpty",
         "icon": "inbox",
         "title": "这个状态下还没有订单"
@@ -635,36 +635,36 @@
     ],
     "overlay": {
       "id": "cancel-dialog",
-      "kind": "Dialog",
+      "component": "Dialog",
       "if": "dialogOpen",
       "role": "alertdialog",
       "dismissOnBackdrop": true,
       "children": [
         {
           "id": "cd-title",
-          "kind": "Text",
+          "component": "Text",
           "font": "font.heading",
           "text": "取消订单 #{cancelling.number}？"
         },
         {
           "id": "cd-who",
-          "kind": "Text",
+          "component": "Text",
           "color": "color.textSecondary",
           "text": "{cancelling.customer} · {cancelling.total|money}"
         },
         {
           "id": "cd-refund",
-          "kind": "Text",
+          "component": "Text",
           "if": "willRefund",
           "text": "该订单已付款，取消后将原路退款 {cancelling.total|money}。"
         },
         {
           "id": "cd-reasons",
-          "kind": "Stack",
+          "component": "Stack",
           "each": "cancelling.reasons",
           "item": {
             "id": "reason-{index}",
-            "kind": "ReasonOption",
+            "component": "ReasonOption",
             "text": "{item.label}",
             "selected": "{item.selected}",
             "on": {
@@ -677,12 +677,12 @@
         },
         {
           "id": "cd-actions",
-          "kind": "Row",
+          "component": "Row",
           "gap": "space.3",
           "children": [
             {
               "id": "cd-keep",
-              "kind": "Button",
+              "component": "Button",
               "variant": "secondary",
               "text": "再想想",
               "on": {
@@ -693,7 +693,7 @@
             },
             {
               "id": "cd-confirm",
-              "kind": "Button",
+              "component": "Button",
               "variant": "primary",
               "disabled": "!canConfirm",
               "text": {
@@ -729,19 +729,19 @@
   "phases": {
     "loading": {
       "id": "loading",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "ref": "nav"
         },
         {
           "id": "sk",
-          "kind": "Stack",
+          "component": "Stack",
           "padding": 16,
           "children": [
             {
               "id": "sk-lines",
-              "kind": "Skeleton",
+              "component": "Skeleton",
               "shape": [
                 "line 100%",
                 "line 60%",
@@ -759,20 +759,20 @@
     },
     "error": {
       "id": "error",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "ref": "nav"
         },
         {
           "id": "err",
-          "kind": "EmptyState",
+          "component": "EmptyState",
           "icon": "cloud_off",
           "title": "订单加载失败",
           "detail": "检查网络后重试",
           "action": {
             "id": "retry",
-            "kind": "Button",
+            "component": "Button",
             "text": "重试",
             "on": {
               "tap": {

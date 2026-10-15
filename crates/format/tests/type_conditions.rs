@@ -35,10 +35,10 @@ fn screen(cancel: Value) -> Value {
         "fixtures": {
             "default": { "orders": [order("a", "pending", json!(null)), order("b", "shipped", json!("leave it at the door"))] }
         },
-        "root": { "id": "root", "kind": "Screen", "children": [
-            { "id": "list", "kind": "List", "each": "orders", "item": {
-                "id": "order-{index}", "kind": "Card", "children": [
-                    { "id": "order-{index}-note", "kind": "Text", "if": "item.hasNote", "text": "{item.note}" },
+        "root": { "id": "root", "component": "Screen", "children": [
+            { "id": "list", "component": "List", "each": "orders", "item": {
+                "id": "order-{index}", "component": "Card", "children": [
+                    { "id": "order-{index}-note", "component": "Text", "if": "item.hasNote", "text": "{item.note}" },
                     cancel
                 ] } }
         ] }
@@ -46,7 +46,7 @@ fn screen(cancel: Value) -> Value {
 }
 
 fn button(extra: Value) -> Value {
-    let mut button = json!({ "id": "order-{index}-cancel", "kind": "Button", "text": "Cancel",
+    let mut button = json!({ "id": "order-{index}-cancel", "component": "Button", "text": "Cancel",
                              "on": { "tap": { "call": "cancelOrder", "with": { "id": "{item.id}" } } } });
     for (key, value) in extra.as_object().unwrap() {
         button[key] = value.clone();

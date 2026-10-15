@@ -1,7 +1,7 @@
 
 FORMAT — how to write a description
   The reference for writing screen.json, domain.json, tokens.json and
-  kinds.json, from the files' keys to every built-in kind.
+  kinds.json, from the files' keys to every built-in component.
 
 FILES
   <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
@@ -11,7 +11,7 @@ FILES
   tokens.json         design tokens; read by name, always this file name,
                       from the nearest directory at or above <dir> that
                       has one (beside screen.json, or shared above it)
-  <dir>/kinds.json    optional: the project's own kinds (KINDS.JSON below)
+  <dir>/kinds.json    optional: the project's own components (LOOKS below)
   <dir>/platforms/<name>.json
                       how one platform builds it: `underdraw handoff --help`
   <dir>/journeys/<name>.json
@@ -178,14 +178,15 @@ CASES
 NODES
   A node is an object:
     "id"        required, unique: "todo-{index}" inside an item template
-    "kind"      a built-in kind (BUILT-IN KINDS) or one in kinds.json
+    "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
+                or one in kinds.json (LOOKS); check refuses "kind", its old name
     "if"        a use site: the node and all inside it show only when it holds
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
     "item"      the node repeated; it sees item (the element) and index (0..)
     "limit"     at most this many elements: 5, or {"compact": 6, "regular": 9}
     "bind"      a path (or a list of paths) the person edits; its value is
-                given to the kind as "value" ("bind": "composer.text";
+                given to the component as "value" ("bind": "composer.text";
                 a date range: ["booking.checkIn", "booking.checkOut"])
     "disabled"  a use site: "!canAdd"
     "on"        actions (ACTIONS below)
@@ -194,7 +195,7 @@ NODES
                 sentence (ASSUMED below): drawn orange until the person agrees
     "platform"  {"web": {"hidden": true, "$why": "…"}} or {"ios": {"<prop>": v}}:
                 one platform leaves it out, or builds a prop differently
-    any other key   a prop of the kind, such as "text", "variant", "icon"
+    any other key   a prop of the component, such as "text", "variant", "icon"
   Slots hold child nodes (one node or a list; never cases: use "if"):
     children   the body, in order
     leading    before the body;  trailing  pushed to the far end
@@ -204,9 +205,9 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
-  A kind draws its slots only if its look places "$children".
-  "each" with no "item" passes the elements to the kind as "items" (photos):
-    { "id": "photos", "kind": "ImageCarousel", "each": "listing.photos" }
+  A component draws its slots only if its look places "$children".
+  "each" with no "item" passes the elements to the component as "items" (photos):
+    { "id": "photos", "component": "ImageCarousel", "each": "listing.photos" }
   "item" sees item and index; "children" of the same node are drawn once
   and see neither.
 
@@ -221,13 +222,13 @@ ASSUMED
   the language you speak with the person, whatever the description's
   "locale" is. Take it out once the person confirms it.
   The assumptions underdraw makes itself, a navigate to a screen not drawn
-  yet and a kind it does not know, come as whole sentences naming that
-  screen or kind, in English or Chinese as the command that reports them
+  yet and a component it does not know, come as whole sentences naming
+  that screen or component, in English or Chinese as the command that reports them
   is asked: --lang en|zh on `check <root>`, `render` and `gallery`,
   English by default.
 
 LAYOUT ON A NODE
-  Direction comes from the kind: Stack, List, Scroll, Screen, Card,
+  Direction comes from the component: Stack, List, Scroll, Screen, Card,
   FieldGroup are columns; Row, NavBar, StickyBar, Carousel are rows; Grid
   and Columns are grids. These containers take from the node:
     "gap"        a length: 12 or a token "space.3"
@@ -237,8 +238,8 @@ LAYOUT ON A NODE
     "elevation"  an elevation token: outlined in the wireframe
     "columns"    Grid and Columns only: a count, or tracks ["58%", "1fr"]
   Section takes "gap" and "padding" too. Width, grow, alignment and sizes
-  are never written on a node: they belong to a kind's look (KINDS.JSON).
-  When a built-in kind does not lay out as needed, define a kind.
+  are never written on a node: they belong to a component's look (LOOKS).
+  When a built-in component does not lay out as needed, define one.
 
 ACTIONS
   "on" maps an event (usually "tap") to actions, each "name": argument.
@@ -270,7 +271,7 @@ ACTIONS
   with "bind", raised once the person has edited the bound value. Its
   handler reads the new value through the bound path, so an edit that
   changes domain data calls the operation that saves it:
-    { "id": "qty-{index}", "kind": "Stepper", "bind": "item.quantity",
+    { "id": "qty-{index}", "component": "Stepper", "bind": "item.quantity",
       "on": { "change": { "call": "setQuantity",
                           "with": { "id": "{item.id}", "quantity": "{item.quantity}" } } } }
   A node with "on" or "bind" is one a person can act on.
@@ -340,17 +341,17 @@ OPERATIONS
   acts on: "if": "item.cancellable" on a row that calls cancelOrder with
   { "id": "{item.id}" }, or "disabled": "!item.cancellable".
   A destructive operation is called only from inside its confirmation: a
-  popup (POPUPS) whose kind's look has "backdrop": true, and that a node
+  popup (POPUPS) whose component's look has "backdrop": true, and that a node
   opens by its id with { "open": "<id>" }. The node a person first acts on
   opens it; only the button inside the popup calls the operation:
     the row menu's item:  "on": { "tap": { "open": "confirm-delete",
                                            "with": { "id": "{item.doc.id}" } } }
-    the screen's overlay: { "id": "confirm-delete", "kind": "Dialog",
+    the screen's overlay: { "id": "confirm-delete", "component": "Dialog",
                             "if": "confirmingDelete", "anchor": "center",
                             "children": [ …the question…,
-      { "id": "confirm-delete-cancel", "kind": "Button", "text": "取消",
+      { "id": "confirm-delete-cancel", "component": "Button", "text": "取消",
         "on": { "tap": { "close": "confirm-delete" } } },
-      { "id": "confirm-delete-confirm", "kind": "Button", "text": "删除",
+      { "id": "confirm-delete-confirm", "component": "Button", "text": "删除",
         "on": { "tap": { "call": "deleteDoc", "with": { "id": "{rowMenu.docId}" } } } } ] }
   with "confirmingDelete": "canDelete && rowMenu.confirming" in conditions,
   so the popup's "if" gates the call too, and a fixture that opens it.
@@ -386,7 +387,7 @@ OPERATIONS
   A row's checkbox toggles a view-state field of its row ("toggle":
   "item.selected"), and the app keeps selection in step. The node that
   acts on the selection is gated on it, here opening the confirmation:
-    { "id": "delete-selected", "kind": "Button", "text": "删除所选",
+    { "id": "delete-selected", "component": "Button", "text": "删除所选",
       "disabled": "!hasSelection",
       "on": { "tap": { "open": "confirm-delete-selected" } } }
   and the confirmation's button, under "if": "confirmingDeleteSelected",
@@ -451,7 +452,7 @@ PAGING
   null for the first page (a sort, a retry), or the field of "data" filled
   from its "next" for the page after it, offered only while that is not
   null ("load more", or the end of a list):
-    { "id": "load-more", "kind": "Button", "if": "hasMore", "text": "Load more",
+    { "id": "load-more", "component": "Button", "if": "hasMore", "text": "Load more",
       "on": { "tap": { "call": "listDocs", "with": { "cursor": "{next}" } } } }
   Give the fixtures both states: one with "next" set (more to come) and one
   with it null (the last page), so hasMore holds in one and not another.
@@ -461,24 +462,24 @@ PAGING
   --cursor and --limit, and its stdout holds "next" (see cli --help).
 
 COMPONENTS
-  "components": { "nav-back": { "id": "nav-back", "kind": "IconButton",
+  "components": { "nav-back": { "id": "nav-back", "component": "IconButton",
                                 "icon": "arrow_back", "on": {"tap": {"back": true}} } }
   used as { "ref": "nav-back" } anywhere a node goes, phases included.
 
 POPUPS
-  underdraw has no dialog, sheet or menu kind. A popup is a state like any
+  underdraw has no dialog, sheet or menu component. A popup is a state like any
   other: a nullable field holds what it shows, a condition says it is open,
   a fixture opens it, and its node floats in the screen's "overlay":
     "data":       { …, "cancelling": "CancelRequest?" },
     "conditions": { "dialogOpen": { "when": "cancelling != null", "label": "Dialog open" } },
     "fixtures":   { …, "cancel-dialog": { "$patch": "default", "cancelling": {…} } },
-    "root": { "id": "screen", "kind": "Screen", "children": [ … ],
-              "overlay": { "id": "cancel-dialog", "kind": "Dialog", "if": "dialogOpen",
+    "root": { "id": "screen", "component": "Screen", "children": [ … ],
+              "overlay": { "id": "cancel-dialog", "component": "Dialog", "if": "dialogOpen",
                            "anchor": "center", "children": [ … ] } }
   Inside it, paths through the nullable field are safe: "if" tests it.
   The button that opens it says so with a UI-only action, { "open": "cancel-dialog" };
   a list of choices inside it is "each" like anywhere else.
-  "Dialog" is the project's own kind (kinds.json): a look such as
+  "Dialog" is the project's own component (kinds.json): a look such as
   { "box": "column", "backdrop": true, "width": "{width|or:88%}",
     "padding": 24, "radius": 16, "fill": "paper", "stroke": "line",
     "children": ["$children"] }, with
@@ -493,8 +494,8 @@ POPUPS
     number, since nothing there can be acted on while it is open.
 
 PHASES
-  "phases": { "loading": { "id": "loading", "kind": "Screen", "children": [
-                { "id": "sk", "kind": "Skeleton", "shape": ["image 4:3", "line 60%"] } ] } }
+  "phases": { "loading": { "id": "loading", "component": "Screen", "children": [
+                { "id": "sk", "component": "Skeleton", "shape": ["image 4:3", "line 60%"] } ] } }
   A phase tree has no data roots: no paths, no conditions on data. Inside
   root, every non-nullable path has a value. A section that loads on its own
   later is a nullable field and a condition, not a phase.
@@ -563,8 +564,8 @@ RESPONSIVE
   A responsive value names both breakpoints; a value the same at both is
   written once.
 
-BUILT-IN KINDS
-  Kind             props it reads (all optional unless named)
+BUILT-IN COMPONENTS
+  Component        props it reads (all optional unless named)
   Screen           the root; slots. gap, padding
   Scroll, Stack, List, FieldGroup
                    a column of children. gap, padding, radius, border, elevation
@@ -598,9 +599,9 @@ BUILT-IN KINDS
   Stepper          label, bind (an int): − value +
   PriceBreakdown   lines (list of names), total (default "合计")
   Skeleton         shape: a list of "image 4:3" and "line 70%"
-  Props a kind does not read still reach `handoff` (and so the builder):
+  Props a component does not read still reach `handoff` (and so the builder):
   write what the platform needs to know, such as "minLength", "sticky".
-  The built-in kinds use the fonts font.body, font.subhead, font.caption,
+  The built-in components use the fonts font.body, font.subhead, font.caption,
   font.heading and font.price: define them in tokens.json.
 
 DOMAIN.JSON
@@ -650,11 +651,12 @@ TOKENS.JSON
   draws muted, color.primary strong, color.border as a line, other colours
   as text.
 
-KINDS.JSON
-  The project's own kinds, and replacements for built-ins by name. A kind
-  is never a guess: write its whole look; check refuses "assumed" on a kind
-  (a node may still carry one).
-    { "kinds": { "Chip": {
+LOOKS
+  kinds.json beside screen.json holds the project's own components drawn
+  as a look, and replacements for built-ins by name. A component is never
+  a guess: write its whole look; check refuses "assumed" on one (a node
+  may still carry one).
+    { "components": { "Chip": {
         "doc": "A filter as a pill: filled when on.",
         "look": { "box": "row", "gap": 6, "padding": [6, 12], "radius": 999,
                   "fill":  { "cases": [ { "if": "selected", "then": "strong" }, { "else": null } ] },
@@ -662,19 +664,19 @@ KINDS.JSON
                   "children": [ { "text": "{text}", "font": "font.caption",
                                   "ink": { "cases": [ { "if": "selected", "then": "paper" },
                                                       { "else": "text" } ] } } ] } } } }
-  Beside "look" and "doc", a kind may say how a platform treats it, which
+  Beside "look" and "doc", a component may say how a platform treats it, which
   `compare` reads (each true or false):
     "scrolls": true    its content scrolls or pages, so what is in it may
                        lie outside its frame (Screen, Scroll, Carousel)
     "pinned":  true    pinned to the screen, out of its siblings' order
                        (StickyBar)
-  A node then writes { "id": "chip-direct", "kind": "Chip", "text": "Direct",
+  A node then writes { "id": "chip-direct", "component": "Chip", "text": "Direct",
   "selected": "{filters.direct}" }. A look's templates read the node's props
   (after the node's own templates are filled), not data.
   A look is one of:
     {"box": "row"|"column"|"grid" or none, …box keys}    a box
     {"text": "…", …text keys}                            text
-    {"kind": "Glyph", "icon": "{leadingIcon}", …props}   another kind drawn inside
+    {"component": "Glyph", "icon": "{leadingIcon}", …props}   another component drawn inside
     {"repeat": 3 | "{list}" | ["50%", "35%"], "each": look}
                        repeated; inside: n (from 1), index (from 0), item
     {"cases": [{"if": …, "then": look}, {"else": look}]}
@@ -701,7 +703,7 @@ KINDS.JSON
                          parent; each axis start | center | end
     backdrop             true, on an overlay: a see-through dark over the node
                          it floats over, and nothing there can be acted on.
-                         Only the whole look of a kind put in "overlay", or a
+                         Only the whole look of a component put in "overlay", or a
                          box with "pin", floats: check refuses it elsewhere
     itemWidth            every child this wide, not shrinking
     frame                true: the node's padding, gap, radius, border and
@@ -733,14 +735,14 @@ A WHOLE SCREEN
       "some":  { "inbox": { "count": 1, "messages": [{ "from": "Ana", "unread": true }] } },
       "empty": { "inbox": { "count": 0, "messages": [] } }
     },
-    "root": { "id": "inbox", "kind": "Screen", "padding": "space.4", "children": [
-      { "id": "empty", "kind": "EmptyState", "if": "!hasMessages",
+    "root": { "id": "inbox", "component": "Screen", "padding": "space.4", "children": [
+      { "id": "empty", "component": "EmptyState", "if": "!hasMessages",
         "icon": "inbox", "title": "No mail" },
-      { "id": "list", "kind": "List", "if": "hasMessages", "each": "inbox.messages",
-        "item": { "id": "msg-{index}", "kind": "ListItem", "title": "{item.from}",
+      { "id": "list", "component": "List", "if": "hasMessages", "each": "inbox.messages",
+        "item": { "id": "msg-{index}", "component": "ListItem", "title": "{item.from}",
                   "leadingIcon": { "cases": [ { "if": "item.unread", "then": "mail.fill" },
                                               { "else": "drafts" } ] },
                   "on": { "tap": { "navigate": "Message", "with": {"index": "{index}"} } } } } ] },
-    "phases": { "loading": { "id": "loading", "kind": "Screen", "children": [
-      { "id": "sk", "kind": "Skeleton", "shape": ["line 90%", "line 90%"] } ] } }
+    "phases": { "loading": { "id": "loading", "component": "Screen", "children": [
+      { "id": "sk", "component": "Skeleton", "shape": ["line 90%", "line 90%"] } ] } }
   }

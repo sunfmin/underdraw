@@ -96,8 +96,8 @@ fn each_type_is_bounded_as_check_bounds_it() {
             "b": { "$patch": "a", "on": false, "owner": null }
         },
         "conditions": { "isOn": { "when": "on", "label": "on" } },
-        "root": { "id": "root", "kind": "Screen", "children": [
-            { "id": "t", "kind": "Text", "text": "{name}", "if": "isOn" } ] }
+        "root": { "id": "root", "component": "Screen", "children": [
+            { "id": "t", "component": "Text", "text": "{name}", "if": "isOn" } ] }
     });
     let base = json!({ "name": "ab", "count": 1, "day": "2026-01-02",
                        "price": { "amount": 100, "currency": "JPY" }, "plan": "yearly", "tags": [] });
