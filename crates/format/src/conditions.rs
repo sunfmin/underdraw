@@ -83,11 +83,20 @@ impl Conditions {
         for condition in &read {
             names.push(condition.name.clone());
         }
-        for condition in &mut read {
-            if let Some(on) = &condition.on {
-                qualify(&mut condition.when, on, &names);
-            }
+        let mut read_qualified = Vec::new();
+        for condition in &read {
+            let when = match &condition.on {
+                Some(on) => qualified(&condition.when, on, &names),
+                None => condition.when.clone(),
+            };
+            read_qualified.push(Condition {
+                name: condition.name.clone(),
+                label: condition.label.clone(),
+                when,
+                on: condition.on.clone(),
+            });
         }
+        let read = read_qualified;
         let conditions = Conditions(read);
         for condition in &conditions.0 {
             let at = format!("conditions.{}", condition.name);
@@ -553,29 +562,34 @@ impl Conditions {
 
 /// `expr` with each name that is a condition on the type `on`, written
 /// short (`cancellable`), given its whole name (`Order.cancellable`).
-fn qualify(expr: &mut Expr, on: &str, names: &[String]) {
-    let atom = |atom: &mut Atom| match atom {
+fn qualified(expr: &Expr, on: &str, names: &[String]) -> Expr {
+    match expr {
+        Expr::Or(items) => Expr::Or(qualified_all(items, on, names)),
+        Expr::And(items) => Expr::And(qualified_all(items, on, names)),
+        Expr::Not(inner) => Expr::Not(Box::new(qualified(inner, on, names))),
+        Expr::Atom(atom) => Expr::Atom(qualified_atom(atom, on, names)),
+        Expr::Compare(op, l, r) => {
+            Expr::Compare(*op, qualified_atom(l, on, names), qualified_atom(r, on, names))
+        }
+    }
+}
+
+fn qualified_all(items: &[Expr], on: &str, names: &[String]) -> Vec<Expr> {
+    let mut out = Vec::new();
+    for item in items {
+        out.push(qualified(item, on, names));
+    }
+    out
+}
+
+fn qualified_atom(atom: &Atom, on: &str, names: &[String]) -> Atom {
+    match atom {
         Atom::Name(name) => {
             let whole = format!("{on}.{name}");
-            if names.contains(&whole) {
-                *name = whole;
-            }
+            if names.contains(&whole) { Atom::Name(whole) } else { Atom::Name(name.clone()) }
         }
-        Atom::Group(inner) => qualify(inner, on, names),
-        _ => {}
-    };
-    match expr {
-        Expr::Or(items) | Expr::And(items) => {
-            for item in items {
-                qualify(item, on, names);
-            }
-        }
-        Expr::Not(inner) => qualify(inner, on, names),
-        Expr::Atom(a) => atom(a),
-        Expr::Compare(_, l, r) => {
-            atom(l);
-            atom(r);
-        }
+        Atom::Group(inner) => Atom::Group(Box::new(qualified(inner, on, names))),
+        other => other.clone(),
     }
 }
 

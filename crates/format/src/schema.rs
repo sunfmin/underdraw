@@ -301,12 +301,17 @@ impl Schema {
             let Some(Shape::Object(fields)) = self.shape(&field) else {
                 return None;
             };
-            field = match fields.iter().find(|(name, _)| name == segment) {
-                Some((_, next)) => next.clone(),
-                // A condition declared on the type reads as a Bool field.
-                None if self.declares(field.base.name(), segment) => Field::of(Base::Bool),
-                None => return None,
-            };
+            let mut next = None;
+            for (name, inner) in fields {
+                if name == segment {
+                    next = Some(inner.clone());
+                }
+            }
+            // A condition declared on the type reads as a Bool field.
+            if next.is_none() && self.declares(field.base.name(), segment) {
+                next = Some(Field::of(Base::Bool));
+            }
+            field = next?;
             walked.push('.');
             walked.push_str(segment);
         }
