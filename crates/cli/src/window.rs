@@ -47,6 +47,7 @@ use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
+use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
 
@@ -1999,7 +2000,7 @@ impl Gallery {
         self.cards()
             .into_iter()
             .flat_map(|card| {
-                let blocks = card.blocks.iter().flat_map(Block::says).map(str::to_string).collect::<Vec<_>>();
+                let blocks = card.blocks.iter().flat_map(Block::says).collect::<Vec<_>>();
                 std::iter::once(card.title).chain(blocks)
             })
             .collect()
@@ -2198,28 +2199,35 @@ impl Gallery {
                 blocks.push(Block::Muted(gallery::within(&self.root, dir)));
             }
             for item in &inbox.yours {
-                blocks.push(match item {
+                blocks.push(Block::Item(match item {
                     Item::Guess(guess) => {
                         let (written, state, (guessed, _)) =
                             (&guess.written, guess.state.name(), parts(&guess.assumed));
-                        Block::Button(
-                            chrome!(
-                                lang,
-                                "? {written} in {state}: {guessed}",
-                                "? {written}（{state}）：{guessed}"
-                            ),
-                            Do::Visit(Visit::Guess((*dir).clone(), guess.state.clone(), guess.id.clone())),
-                        )
+                        Listed {
+                            mark: "?".to_string(),
+                            mark_ink: Ink::Assumed,
+                            on: chrome!(lang, "{written} in {state}", "{written}（{state}）"),
+                            says: guessed.to_string(),
+                            ink: Ink::Muted,
+                            does: Do::Visit(Visit::Guess(
+                                (*dir).clone(),
+                                guess.state.clone(),
+                                guess.id.clone(),
+                            )),
+                        }
                     }
                     Item::Answered(note) => {
-                        let (id, on, reply) =
-                            (&note.id, note.on.said(lang), note.reply().unwrap_or_default());
-                        Block::Button(
-                            chrome!(lang, "{id} · {on} · agent: {reply}", "{id} · {on} · 代理：{reply}"),
-                            Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
-                        )
+                        let reply = note.reply().unwrap_or_default();
+                        Listed {
+                            mark: note.id.clone(),
+                            mark_ink: Ink::Note,
+                            on: note.on.said(lang),
+                            says: chrome!(lang, "agent: {reply}", "代理：{reply}"),
+                            ink: Ink::Answered,
+                            does: Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
+                        }
                     }
-                });
+                }));
             }
         }
         let yours: usize = inboxes.iter().map(|(_, inbox)| inbox.yours.len()).sum();
@@ -2229,7 +2237,7 @@ impl Gallery {
         let agents: usize = inboxes.iter().map(|(_, inbox)| inbox.agents.len()).sum();
         if agents > 0 {
             let fold = if self.waiting { "▾" } else { "▸" };
-            blocks.push(Block::Button(
+            blocks.push(Block::Fold(
                 chrome!(lang, "{fold} waiting on the agent · {agents}", "{fold} 等代理处理 · {agents}"),
                 Do::Waiting,
             ));
@@ -2237,13 +2245,17 @@ impl Gallery {
         if self.waiting {
             for (dir, inbox) in &inboxes {
                 for note in &inbox.agents {
-                    let (id, on) = (&note.id, note.on.said(lang));
-                    let said = if grouped {
-                        format!("{} · {id} · {on}", gallery::within(&self.root, dir))
-                    } else {
-                        format!("{id} · {on}")
-                    };
-                    blocks.push(Block::Button(said, Do::Visit(Visit::Note((*dir).clone(), note.id.clone()))));
+                    let on = note.on.said(lang);
+                    let on =
+                        if grouped { format!("{} · {on}", gallery::within(&self.root, dir)) } else { on };
+                    blocks.push(Block::Item(Listed {
+                        mark: note.id.clone(),
+                        mark_ink: Ink::Note,
+                        on,
+                        says: String::new(),
+                        ink: Ink::Muted,
+                        does: Do::Visit(Visit::Note((*dir).clone(), note.id.clone())),
+                    }));
                 }
             }
         }
@@ -2384,12 +2396,13 @@ impl Gallery {
         let (guessed, other) = parts(&assumed);
         let mut blocks = vec![
             Block::Big(guessed.to_string()),
-            Block::Muted(match other {
-                Some(other) => chrome!(lang, "or else  {other}", "也可能  {other}"),
-                None => {
-                    chrome!(lang, "or else  not said: ✗ says what it is", "也可能  没说：用 ✗ 说明是什么")
-                }
-            }),
+            Block::Fact(
+                chrome!(lang, "or else", "也可能"),
+                match other {
+                    Some(other) => other.to_string(),
+                    None => chrome!(lang, "not said: ✗ says what it is", "没说：用 ✗ 说明是什么"),
+                },
+            ),
         ];
         if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
             for note in notes.iter().filter(|note| note.status != Status::Closed) {
@@ -3011,11 +3024,11 @@ impl Gallery {
         );
         let mut blocks = Vec::new();
         if region.nodes.is_empty() {
-            blocks.push(Block::Muted(chrome!(lang, "covers  no node", "覆盖  没有节点")));
+            blocks.push(Block::Fact(chrome!(lang, "covers", "覆盖"), chrome!(lang, "no node", "没有节点")));
         }
         for origin in &region.nodes {
             let node = format!("{}{}", origin.written, reference::instance(&origin.instance));
-            blocks.push(Block::Muted(chrome!(lang, "covers  {node}", "覆盖  {node}")));
+            blocks.push(Block::Fact(chrome!(lang, "covers", "覆盖"), node));
         }
         Some(Card::new(title, blocks))
     }
@@ -3031,40 +3044,42 @@ impl Gallery {
         let lang = self.lang;
         let (page, node) =
             pages.iter().find_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?)))?;
-        let mut blocks = vec![Block::Text(match page.calls.get(id) {
-            Some(operations) => {
-                let operations = operations.join(", ");
-                chrome!(lang, "calls  {operations}", "调用  {operations}")
-            }
-            None => chrome!(lang, "calls  nothing", "调用  无"),
-        })];
+        let calls = match page.calls.get(id) {
+            Some(operations) => operations.join(", "),
+            None => chrome!(lang, "nothing", "无"),
+        };
+        let mut blocks = vec![Block::Fact(chrome!(lang, "calls", "调用"), calls)];
         let (fold, details) = match lang {
             Lang::En => (if self.details { "▾" } else { "▸" }, "details"),
             Lang::Zh => (if self.details { "▾" } else { "▸" }, "详情"),
         };
-        blocks.push(Block::Button(format!("{fold} {details}"), Do::Details));
+        blocks.push(Block::Fold(format!("{fold} {details}"), Do::Details));
         if self.details {
-            blocks.push(Block::Muted(chrome!(lang, "id  {id}", "标识  {id}")));
+            blocks.push(Block::Fact(chrome!(lang, "id", "标识"), id.clone()));
             for page in pages {
                 let width = page.width;
-                blocks.push(Block::Muted(match page.nodes.iter().find(|n| &n.id == id) {
-                    Some(node) => {
-                        let r = node.rect;
-                        let label = match (node.label, lang) {
-                            (Some(n), Lang::En) => format!("label {n}"),
-                            (Some(n), Lang::Zh) => format!("编号 {n}"),
-                            (None, Lang::En) => "no label".to_string(),
-                            (None, Lang::Zh) => "无编号".to_string(),
-                        };
-                        let (x, y, w, h) = (r.x, r.y, r.width, r.height);
-                        chrome!(
-                            lang,
-                            "at {width}  {label} · box {x}, {y} · {w} × {h}",
-                            "宽 {width}  {label} · 框 {x}, {y} · {w} × {h}"
-                        )
-                    }
-                    None => chrome!(lang, "at {width}  not in this state", "宽 {width}  这个状态里没有"),
-                }));
+                let at = chrome!(lang, "at {width}", "宽 {width}");
+                blocks.push(Block::Fact(
+                    at,
+                    match page.nodes.iter().find(|n| &n.id == id) {
+                        Some(node) => {
+                            let r = node.rect;
+                            let label = match (node.label, lang) {
+                                (Some(n), Lang::En) => format!("label {n}"),
+                                (Some(n), Lang::Zh) => format!("编号 {n}"),
+                                (None, Lang::En) => "no label".to_string(),
+                                (None, Lang::Zh) => "无编号".to_string(),
+                            };
+                            let (x, y, w, h) = (r.x, r.y, r.width, r.height);
+                            chrome!(
+                                lang,
+                                "{label} · box {x}, {y} · {w} × {h}",
+                                "{label} · 框 {x}, {y} · {w} × {h}"
+                            )
+                        }
+                        None => chrome!(lang, "not in this state", "这个状态里没有"),
+                    },
+                ));
             }
         }
         Some(Card::new(node.component.clone(), blocks))
@@ -5992,7 +6007,7 @@ mod tests {
             .inbox_card()
             .into_iter()
             .flat_map(|card| {
-                let blocks = card.blocks.iter().flat_map(Block::says).map(str::to_string).collect::<Vec<_>>();
+                let blocks = card.blocks.iter().flat_map(Block::says).collect::<Vec<_>>();
                 std::iter::once(card.title).chain(blocks)
             })
             .collect()
@@ -6005,13 +6020,16 @@ mod tests {
         gallery.size = (1440.0, 900.0);
         let orders = line_of(&gallery, "orders");
         gallery.pick(orders);
+        // Each assumption an item: its "?" and what it is on, then what was guessed.
         let guesses = [
-            "? nav-export in default: This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet",
-            "? order-{index} in default: This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet",
+            "? nav-export in default",
+            "This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet",
+            "? order-{index} in default",
+            "This navigates to OrderDetail, which no description under the root declares, so it is guessed that OrderDetail is a screen not drawn yet",
         ];
-        assert_eq!(inbox(&gallery), ["waits on you · 2", guesses[0], guesses[1]]);
+        assert_eq!(inbox(&gallery)[..], [&["waits on you · 2"][..], &guesses].concat());
 
-        assert!(click_panel_line(&mut gallery, guesses[0]));
+        assert!(click_panel_line(&mut gallery, "nav-export in default"), "an item is clicked by its box");
         assert_eq!(shown(&gallery), "orders · default", "clicking an item shows its state");
         assert_eq!(gallery.node.as_deref(), Some("nav-export"), "with its node picked");
         assert_eq!(gallery.panel()[0], "assumed, for you to answer", "its assumption, to answer");
@@ -6027,16 +6045,16 @@ mod tests {
         notes::add(&whole, "too dense").unwrap();
         gallery.reload();
         gallery.pick(orders);
-        let answered = "N1 · on nav-export in default at 390 · agent: it says Export now";
+        let answered = ["N1 on nav-export in default at 390", "agent: it says Export now"];
         assert_eq!(
-            inbox(&gallery),
-            ["waits on you · 3", guesses[0], guesses[1], answered, "▸ waiting on the agent · 1"],
+            inbox(&gallery)[..],
+            [&["waits on you · 3"][..], &guesses, &answered, &["▸ waiting on the agent · 1"]].concat(),
             "two assumptions unanswered and one note answered; the open note folded to its count"
         );
         assert!(click_panel_line(&mut gallery, "▸ waiting on the agent · 1"));
-        assert_eq!(inbox(&gallery)[4..], ["▾ waiting on the agent · 1", "N2 · on the whole of default"]);
+        assert_eq!(inbox(&gallery)[7..], ["▾ waiting on the agent · 1", "N2 on the whole of default"]);
 
-        assert!(click_panel_line(&mut gallery, answered));
+        assert!(click_panel_line(&mut gallery, "on nav-export in default at 390"));
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(gallery.node.as_deref(), Some("nav-export"), "the note's node picked");
         assert_eq!(
@@ -6055,8 +6073,8 @@ mod tests {
             everything.iter().position(|line| line == "pay/checkout").unwrap(),
         );
         assert_eq!(
-            everything[at_orders + 1..at_orders + 4],
-            [guesses[0], guesses[1], answered],
+            everything[at_orders + 1..at_orders + 7],
+            [&guesses[..], &answered].concat(),
             "{everything:?}"
         );
         assert!(at_orders < at_checkout, "grouped by description, in the tree's order");
@@ -6069,7 +6087,7 @@ mod tests {
         assert!(!inbox(&gallery).contains(&"orders".to_string()), "a directory's is what is under it");
 
         notes::close(&dir, "N1").unwrap();
-        let assumed = guesses[0].split_once(": ").unwrap().1.to_string();
+        let assumed = guesses[1].to_string();
         let guess = Guess::Undrawn(vec!["ExportDocuments".into()]);
         notes::judge(&on_export, Answers { assumed, guess, answer: Answer::Right }, "").unwrap();
         gallery.reload();
@@ -6078,10 +6096,11 @@ mod tests {
             inbox(&gallery),
             [
                 "waits on you · 1",
-                guesses[1],
+                guesses[2],
+                guesses[3],
                 "▾ waiting on the agent · 2",
-                "N2 · on the whole of default",
-                "N3 · on nav-export in default at 390",
+                "N2 on the whole of default",
+                "N3 on nav-export in default at 390",
             ],
             "closed, and answered ✓, they leave as the files change"
         );
