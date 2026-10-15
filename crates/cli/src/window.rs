@@ -32,15 +32,15 @@ use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::chrome::{
     ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SPACE,
-    THUMB, THUMB_TALL, TREE,
+    THUMB, THUMB_TALL, TREE, TREE_LEAST,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
-use crate::field::{Edit, Field};
+use crate::field::{Edit, Field, Motion};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
@@ -157,6 +157,13 @@ struct Gallery {
     /// Whether the card of the node picked is unfolded to its details: its
     /// id, and its label and box at each width.
     details: bool,
+    /// The tree's width, in points: where the line between it and the
+    /// pictures is, and the pictures' pane starts. Dragging the line moves
+    /// it, held to [`Gallery::tree_bounds`].
+    tree: f64,
+    /// Whether the line between the tree and the pictures is held, being
+    /// dragged.
+    resizing: bool,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
@@ -196,6 +203,9 @@ struct Gallery {
     /// Where the caret of the note being written was last drawn, in window
     /// points: an input method shows what it offers beside it.
     caret: Option<Rect>,
+    /// Where the text of the note being written was, in window points,
+    /// while the left button, pressed on it, is held: a drag selects.
+    selecting: Option<(f64, f64)>,
     /// The arrow picked in the overview or the flow shown, by its place
     /// among their arrows.
     arrow: Option<usize>,
@@ -227,8 +237,9 @@ struct Draft {
 }
 
 impl Draft {
-    fn new(on: Writing) -> Draft {
-        Draft { on, text: Field::default() }
+    /// A note on `on`, nothing typed yet, set by `typesetter`'s fonts.
+    fn new(on: Writing, typesetter: &text::Typesetter) -> Draft {
+        Draft { on, text: Field::new(typesetter) }
     }
 }
 
@@ -620,6 +631,8 @@ impl Gallery {
             across: 0.0,
             sidebar: true,
             details: false,
+            tree: TREE,
+            resizing: false,
             cursor: (0.0, 0.0),
             acting: false,
             history: Vec::new(),
@@ -635,6 +648,7 @@ impl Gallery {
             draft: None,
             confirming: None,
             caret: None,
+            selecting: None,
             arrow: None,
             note: None,
             hovered: None,
@@ -660,7 +674,7 @@ impl Gallery {
     /// Scrolled `right` and `down` points, the pane under the pointer: the
     /// tree, the sidebar, or the pictures, which alone scroll across.
     fn wheel(&mut self, right: f64, down: f64) {
-        if self.cursor.0 < TREE {
+        if self.cursor.0 < self.tree {
             self.tree_scroll += down;
         } else if self.cursor.0 >= self.pane_right() {
             self.side_scroll += down;
@@ -679,7 +693,34 @@ impl Gallery {
 
     /// How wide the pictures' pane is, between the tree and the sidebar.
     fn pane(&self) -> f64 {
-        self.pane_right() - TREE
+        self.pane_right() - self.tree
+    }
+
+    /// The least and the most the tree's width can be: [`TREE_LEAST`], and
+    /// what leaves the pictures' pane room for the phone's picture at
+    /// [`SMALLEST`], with the space around it. In a window too narrow for
+    /// both, the least.
+    fn tree_bounds(&self) -> (f64, f64) {
+        let picture = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
+        (TREE_LEAST, (self.pane_right() - picture).max(TREE_LEAST))
+    }
+
+    /// Whether the pointer is on the line between the tree and the
+    /// pictures, near enough to take hold of it.
+    fn on_tree_line(&self) -> bool {
+        (self.cursor.0 - self.tree).abs() <= chrome::GRIP
+    }
+
+    /// The pointer moved, the line held: the tree as wide as where the
+    /// pointer is, within its bounds, and the pictures fitted to what is
+    /// left. Whether the line is held.
+    fn resize_tree(&mut self) -> bool {
+        if !self.resizing {
+            return false;
+        }
+        self.tree = self.cursor.0;
+        self.clamp();
+        true
     }
 
     /// The sidebar shown, or hidden, its width given to the pictures.
@@ -697,13 +738,22 @@ impl Gallery {
     /// picks the arrow, or the description whose box is, under it. Whether
     /// that changed what is shown.
     fn press(&mut self) -> bool {
+        // On the line between the tree and the pictures, only taking hold
+        // of it: no line of the tree, nor region, is picked.
+        if self.on_tree_line() {
+            self.resizing = true;
+            return false;
+        }
         if self.cursor.0 >= self.pane_right() {
+            if self.press_field() {
+                return true;
+            }
             return match self.button_at(self.cursor) {
                 Some(does) => self.click(does),
                 None => false,
             };
         }
-        if self.cursor.0 >= TREE {
+        if self.cursor.0 >= self.tree {
             if self.acting && matches!(self.picture, Picture::Pages(_)) {
                 return self.act();
             }
@@ -806,6 +856,8 @@ impl Gallery {
     /// click while N is pressed, a note started on the node clicked.
     /// Whether that changed what is shown.
     fn release(&mut self) -> bool {
+        self.selecting = None;
+        self.resizing = false;
         let Some(from) = self.held.take() else {
             return false;
         };
@@ -1058,7 +1110,7 @@ impl Gallery {
                 true
             }
             Do::Reopen(dir, id) => {
-                self.draft = Some(Draft::new(Writing::Reopening(dir, id)));
+                self.draft = Some(Draft::new(Writing::Reopening(dir, id), &self.typesetter));
                 true
             }
             Do::Show(dir, id) => {
@@ -1528,7 +1580,7 @@ impl Gallery {
             .enumerate()
             .map(|(index, thumb)| {
                 let (column, row) = ((index % columns) as f64, (index / columns) as f64);
-                let x = TREE + MARGIN + column * (THUMB + SPACE);
+                let x = self.tree + MARGIN + column * (THUMB + SPACE);
                 let y = MARGIN - self.scroll + CAPTION + row * (CAPTION + THUMB_TALL + SPACE);
                 (x, y, THUMB, (thumb.height * THUMB / thumb.width).min(THUMB_TALL))
             })
@@ -1782,7 +1834,7 @@ impl Gallery {
 
     /// Where the flow's top-left corner is in the window, in points.
     fn flow_origin(&self) -> (f64, f64) {
-        (TREE + MARGIN, MARGIN - self.scroll)
+        (self.tree + MARGIN, MARGIN - self.scroll)
     }
 
     /// `at`, a point in the window, in the flow's points.
@@ -1797,7 +1849,7 @@ impl Gallery {
             return Vec::new();
         };
         let zoom = self.zoom(self.pane());
-        let mut x = TREE + MARGIN - self.across;
+        let mut x = self.tree + MARGIN - self.across;
         let top = MARGIN - self.scroll + CAPTION;
         pages
             .iter()
@@ -2485,7 +2537,7 @@ impl Gallery {
                 }
                 self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
-            Answer::Wrong => self.draft = Some(Draft::new(Writing::Rejecting(on, answers))),
+            Answer::Wrong => self.draft = Some(Draft::new(Writing::Rejecting(on, answers), &self.typesetter)),
         }
     }
 
@@ -2741,7 +2793,7 @@ impl Gallery {
     fn draft_on(&mut self, on: Reference) {
         self.acted = None;
         self.note = None;
-        self.draft = Some(Draft::new(Writing::On(on)));
+        self.draft = Some(Draft::new(Writing::On(on), &self.typesetter));
     }
 
     /// The note being written saved to notes.json, and its pin drawn; or,
@@ -2757,11 +2809,11 @@ impl Gallery {
         }
         let lang = self.lang;
         let saved = match &draft.on {
-            Writing::On(on) => notes::add(on, draft.text.text())
+            Writing::On(on) => notes::add(on, &draft.text.text())
                 .map(|id| (on.description.clone(), id, chrome!(lang, "saved", "已保存"))),
-            Writing::Reopening(dir, id) => notes::reopen(dir, id, draft.text.text())
+            Writing::Reopening(dir, id) => notes::reopen(dir, id, &draft.text.text())
                 .map(|()| (dir.clone(), id.clone(), chrome!(lang, "reopened", "已重开"))),
-            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), draft.text.text())
+            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text.text())
                 .map(|id| (on.description.clone(), id, chrome!(lang, "saved ✗", "已保存 ✗"))),
         };
         match saved {
@@ -2816,8 +2868,24 @@ impl Gallery {
                     self.draft = None;
                     true
                 }
-                Key::Named(NamedKey::ArrowLeft) => draft.text.edit(Edit::Left),
-                Key::Named(NamedKey::ArrowRight) => draft.text.edit(Edit::Right),
+                Key::Named(
+                    named @ (NamedKey::ArrowLeft
+                    | NamedKey::ArrowRight
+                    | NamedKey::ArrowUp
+                    | NamedKey::ArrowDown
+                    | NamedKey::Home
+                    | NamedKey::End),
+                ) => {
+                    let motion = match named {
+                        NamedKey::ArrowLeft => Motion::Left,
+                        NamedKey::ArrowRight => Motion::Right,
+                        NamedKey::ArrowUp => Motion::Up,
+                        NamedKey::ArrowDown => Motion::Down,
+                        NamedKey::Home => Motion::Home,
+                        _ => Motion::End,
+                    };
+                    draft.text.edit(if self.shift { Edit::Select(motion) } else { Edit::Move(motion) })
+                }
                 Key::Named(NamedKey::Backspace) => draft.text.edit(Edit::Back),
                 Key::Named(NamedKey::Delete) => draft.text.edit(Edit::Delete),
                 _ => match text {
@@ -2867,9 +2935,9 @@ impl Gallery {
             return false;
         };
         match ime {
-            Ime::Preedit(composing, _) => draft.text.compose(&composing),
+            Ime::Preedit(composing, cursor) => draft.text.compose(&composing, cursor),
             Ime::Commit(text) => draft.text.type_in(&text),
-            Ime::Enabled | Ime::Disabled => draft.text.compose(""),
+            Ime::Enabled | Ime::Disabled => draft.text.compose("", None),
         }
         true
     }
@@ -2877,6 +2945,62 @@ impl Gallery {
     /// ⌘A in the note being written: all of it selected. Whether one is.
     fn select_all(&mut self) -> bool {
         self.draft.as_mut().is_some_and(|draft| draft.text.edit(Edit::All))
+    }
+
+    /// ⌘C, or ⌘X when `cut`, in the note being written: what is selected
+    /// put on the clipboard, and, cut, taken out. Whether something was
+    /// selected: ⌘C with nothing selected copies the reference instead.
+    fn copy_selected(&mut self, cut: bool) -> bool {
+        let Some(draft) = &mut self.draft else {
+            return false;
+        };
+        let copied = if cut { draft.text.cut() } else { draft.text.selected().map(str::to_string) };
+        let Some(copied) = copied else {
+            return false;
+        };
+        if let Some(clipboard) = self.clipboard() {
+            let _ = clipboard.set_text(copied);
+        }
+        true
+    }
+
+    /// Where the text of the note being written is, in window points,
+    /// while one is and the sidebar is shown.
+    fn field_rect(&mut self) -> Option<Rect> {
+        if !self.sidebar || self.draft.is_none() {
+            return None;
+        }
+        let cards = self.sidebar_cards();
+        sidebar::lay_out(&cards, self.pane_right(), -self.side_scroll, &mut self.typesetter).field
+    }
+
+    /// The caret of the note being written put where the pointer is on its
+    /// text (with Shift, what is selected drawn to there), and held there to
+    /// drag a selection. Whether the pointer is on its text.
+    fn press_field(&mut self) -> bool {
+        let Some(field) = self.field_rect() else {
+            return false;
+        };
+        let (x, y) = (f64::from(field.x), f64::from(field.y));
+        let at = self.cursor;
+        let on = (x..=x + f64::from(field.width)).contains(&at.0)
+            && (y..=y + f64::from(field.height)).contains(&at.1);
+        let Some(draft) = self.draft.as_mut().filter(|_| on) else {
+            return false;
+        };
+        draft.text.point((at.0 - x, at.1 - y), self.shift);
+        self.selecting = Some((x, y));
+        true
+    }
+
+    /// What is selected in the note being written drawn to where the
+    /// pointer is, while it drags from a press on its text. Whether it is.
+    fn drag_field(&mut self) -> bool {
+        let (Some((x, y)), Some(draft)) = (self.selecting, &mut self.draft) else {
+            return false;
+        };
+        draft.text.point((self.cursor.0 - x, self.cursor.1 - y), true);
+        true
     }
 
     /// The notes on what is shown, not closed, drawn on it; blue while open,
@@ -3272,8 +3396,11 @@ impl Gallery {
         (list, y)
     }
 
-    /// The scrolls kept inside what there is to scroll.
+    /// The tree's width kept within its bounds, and the scrolls inside
+    /// what there is to scroll.
     fn clamp(&mut self) {
+        let (least, most) = self.tree_bounds();
+        self.tree = self.tree.clamp(least, most);
         let height = self.size.1;
         let below = (self.pictures_height(self.pane()) - height).max(0.0);
         self.scroll = self.scroll.clamp(0.0, below);
@@ -3288,14 +3415,14 @@ impl Gallery {
     /// The whole window, in points.
     fn frame(&mut self) -> Scene {
         let (width, height) = self.size;
-        let mut list =
-            vec![Draw::Line { from: [TREE as f32, 0.0], to: [TREE as f32, height as f32], ink: Ink::Line }];
+        let tree = self.tree;
+        let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
             let Line { row, state, .. } = line;
             let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
             if self.picked == Some(index) {
                 list.push(Draw::Box {
-                    rect: rect(6.0, y + 1.0, TREE - 12.0, ROW - 2.0),
+                    rect: rect(6.0, y + 1.0, tree - 12.0, ROW - 2.0),
                     radius: chrome::PICKED_RADIUS,
                     fill: Some(Ink::Fill),
                     stroke: None,
@@ -3310,7 +3437,7 @@ impl Gallery {
                 (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
                 (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
-            let mut right = TREE - 14.0;
+            let mut right = tree - 14.0;
             let open = self.open_notes(row, state.as_ref());
             if open > 0 {
                 let said = match open {
@@ -3329,7 +3456,7 @@ impl Gallery {
             let top = y + (ROW - f64::from(chrome::BODY.line_height)) / 2.0;
             list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
-        let left = TREE + MARGIN;
+        let left = tree + MARGIN;
         let (faults, _) = self.faults(self.pane());
         let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
         let zoom = self.zoom(self.pane());
@@ -3448,10 +3575,10 @@ impl Gallery {
 
         let mut scene = Scene::new();
         let at = Affine::IDENTITY;
-        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, TREE, height));
-        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(TREE, 0.0, right, height));
+        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, tree, height));
+        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(tree, 0.0, right, height));
         scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(right, 0.0, width, height));
-        scene.push_clip_layer(Fill::NonZero, at, &Area::new(TREE, 0.0, right, height));
+        scene.push_clip_layer(Fill::NonZero, at, &Area::new(tree, 0.0, right, height));
         if let Picture::Flow(flow) = &self.picture {
             let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
             for (place, tile) in flow.map.places.iter().zip(&flow.tiles) {
@@ -3506,7 +3633,13 @@ impl Gallery {
         paint::draws(&mut scene, at, &over, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
         paint::draws(&mut scene, at, &side, chrome::colour, &mut self.typesetter);
+        // The tree's names cut at its edge, however narrow it is dragged.
+        scene.push_clip_layer(Fill::NonZero, at, &Area::new(0.0, 0.0, tree, height));
         paint::draws(&mut scene, at, &list, chrome::colour, &mut self.typesetter);
+        scene.pop_layer();
+        let edge =
+            [Draw::Line { from: [tree as f32, 0.0], to: [tree as f32, height as f32], ink: Ink::Line }];
+        paint::draws(&mut scene, at, &edge, chrome::colour, &mut self.typesetter);
         scene
     }
 
@@ -3901,7 +4034,14 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
                 let window = shown.window.clone();
-                if self.hover() || self.held.is_some() {
+                let grip = if self.resizing || self.on_tree_line() {
+                    CursorIcon::EwResize
+                } else {
+                    CursorIcon::Default
+                };
+                window.set_cursor(grip);
+                let resized = self.resize_tree();
+                if resized || self.hover() || self.held.is_some() || self.drag_field() {
                     window.request_redraw();
                 }
             }
@@ -3930,9 +4070,17 @@ impl ApplicationHandler<Told> for Gallery {
                 self.toggle_sidebar();
                 window.request_redraw();
             }
+            WindowEvent::KeyboardInput { event, .. } if self.acting && is_key(&event, "x", KeyCode::KeyX) => {
+                let window = shown.window.clone();
+                if self.copy_selected(true) {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } if self.acting && copies(&event) => {
                 let window = shown.window.clone();
-                self.copy();
+                if !self.copy_selected(false) {
+                    self.copy();
+                }
                 window.request_redraw();
             }
             WindowEvent::KeyboardInput { event, .. }
@@ -4096,7 +4244,7 @@ mod tests {
         assert_eq!(widths, vec![390.0, 1120.0]);
         assert_eq!(captions(&gallery), ["default · 390", "default · 1120"]);
         assert!(!gallery.press(), "picking it again changes nothing");
-        gallery.cursor = (TREE + 100.0, 100.0);
+        gallery.cursor = (gallery.tree + 100.0, 100.0);
         gallery.press();
         assert_eq!(gallery.picked, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
@@ -4181,7 +4329,7 @@ mod tests {
         gallery.press();
         let end = gallery.pictures_height(gallery.pane()) - 900.0;
         assert!(end > 0.0, "the listing is taller than the window");
-        gallery.cursor = (TREE + 100.0, 400.0);
+        gallery.cursor = (gallery.tree + 100.0, 400.0);
         gallery.wheel(0.0, 120.0);
         assert_eq!(gallery.scroll, 120.0);
         gallery.wheel(0.0, 1e6);
@@ -4410,7 +4558,7 @@ mod tests {
         assert_eq!(gallery.zoom(gallery.pane()), SMALLEST, "no smaller than half");
         let beyond = gallery.pictures_width(gallery.pane()) - gallery.pane();
         assert!(beyond > 0.0, "wider than the pane");
-        gallery.cursor = (TREE + 100.0, 400.0);
+        gallery.cursor = (gallery.tree + 100.0, 400.0);
         gallery.wheel(1e6, 0.0);
         assert_eq!(gallery.across, beyond, "scrolled across as far as the last picture's end");
         gallery.cursor = on_node(&gallery, 1, "nav-save");
@@ -4431,6 +4579,52 @@ mod tests {
         assert!(!tagged.is_empty(), "the labels are kept apart from the scene");
         let drawn: Vec<(f32, String)> = gallery.labels().iter().filter_map(tag).collect();
         assert_eq!(drawn, tagged, "each drawn at its own size, at half size too");
+    }
+
+    #[test]
+    fn dragging_the_line_between_the_tree_and_the_pictures_resizes_the_tree_within_its_bounds() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing + 1);
+        assert_eq!(gallery.tree, TREE, "the window opens with the tree at 260pt");
+        // The sidebar hidden, the pictures are above half size, to shrink.
+        gallery.toggle_sidebar();
+        let (picked, wide) = (gallery.picked, gallery.zoom(gallery.pane()));
+
+        gallery.cursor = (TREE + 2.0, 300.0);
+        assert!(!gallery.press(), "a press on the line changes nothing shown");
+        assert_eq!(gallery.picked, picked, "and picks no line of the tree");
+        assert!(gallery.held.is_none(), "nor starts a region");
+        gallery.cursor = (400.0, 320.0);
+        assert!(gallery.resize_tree(), "the drag moves the line");
+        assert_eq!(gallery.tree, 400.0, "to where the pointer is");
+        assert_eq!(gallery.origins()[0].0, 400.0 + MARGIN, "the pictures start after it");
+        assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
+        assert!(!gallery.release(), "letting go picks nothing");
+        assert_eq!(gallery.picked, picked);
+        assert!(gallery.region.is_none());
+        gallery.cursor = (500.0, 320.0);
+        assert!(!gallery.resize_tree(), "let go, the line stays");
+        assert_eq!(gallery.tree, 400.0);
+        gallery.toggle_sidebar();
+
+        gallery.cursor = (402.0, 300.0);
+        gallery.press();
+        gallery.cursor = (20.0, 300.0);
+        gallery.resize_tree();
+        assert_eq!(gallery.tree, TREE_LEAST, "no narrower than 160pt");
+        gallery.cursor = (1400.0, 300.0);
+        gallery.resize_tree();
+        let room = f64::from(WIDTHS[0]) * SMALLEST + 2.0 * MARGIN;
+        assert_eq!(gallery.tree, gallery.pane_right() - room, "the pictures keep room for a half-size phone");
+        gallery.release();
+
+        gallery.size = (900.0, 900.0);
+        gallery.clamp();
+        assert_eq!(gallery.tree, 900.0 - sidebar::WIDTH - room, "a narrower window narrows the tree too");
+        gallery.size = (500.0, 900.0);
+        gallery.clamp();
+        assert_eq!(gallery.tree, TREE_LEAST, "never below its least");
     }
 
     #[test]
@@ -4531,7 +4725,7 @@ mod tests {
         let typing = state_of(&gallery, "typing");
         gallery.pick(typing);
         let before = heights(&gallery);
-        gallery.cursor = (TREE + 100.0, 100.0);
+        gallery.cursor = (gallery.tree + 100.0, 100.0);
         gallery.wheel(0.0, 40.0);
         assert_eq!(gallery.scroll, 40.0);
 
@@ -5013,9 +5207,14 @@ mod tests {
     fn press_keys(gallery: &mut Gallery, keys: &[&str]) {
         for key in keys {
             let named = |named| Key::Named(named);
-            gallery.shift = *key == "⇧Enter";
-            let (pressed, text) = match *key {
-                "Enter" | "⇧Enter" => (named(NamedKey::Enter), Some("\r")),
+            let unshifted = key.strip_prefix('⇧').filter(|rest| !rest.is_empty());
+            gallery.shift = unshifted.is_some();
+            let (pressed, text) = match unshifted.unwrap_or(key) {
+                "Enter" => (named(NamedKey::Enter), Some("\r")),
+                "Home" => (named(NamedKey::Home), None),
+                "End" => (named(NamedKey::End), None),
+                "↑" => (named(NamedKey::ArrowUp), None),
+                "↓" => (named(NamedKey::ArrowDown), None),
                 "Backspace" => (named(NamedKey::Backspace), None),
                 "Delete" => (named(NamedKey::Delete), None),
                 "Esc" => (named(NamedKey::Escape), None),
@@ -5373,6 +5572,44 @@ mod tests {
         let notes = notes::read(&dir).unwrap();
         assert_eq!(notes[1].status, Status::Closed, "the ✓ closes itself");
         assert_eq!(notes[0].status, Status::Answered, "the ✗ waits for the person, as any note does");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_note_is_edited_anywhere_selected_by_keys_or_a_drag_and_pasted_into() {
+        let root = root_of("notes-edit", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        let on = On::State { state: State::Fixture("default".into()) };
+        gallery.draft_on(Reference { description: root.join("orders"), on });
+        let written = |gallery: &Gallery| gallery.draft.as_ref().unwrap().text.text();
+        type_text(&mut gallery, "ac");
+        press_keys(&mut gallery, &["←", "b", "Home", ">", "End", "!"]);
+        assert_eq!(written(&gallery), ">abc!", "typed where the caret is");
+        type_text(&mut gallery, " too red");
+        press_keys(&mut gallery, &["⇧←", "⇧←", "⇧←"]);
+        let selected = gallery.draft.as_ref().unwrap().text.shown().selected;
+        assert_eq!(selected.len(), 3, "the selection is drawn");
+        type_text(&mut gallery, "blue");
+        assert_eq!(written(&gallery), ">abc! too blue", "typing replaces what is selected");
+        press_keys(&mut gallery, &["Home", "⇧→", "⇧→", "⇧→", "⇧→", "⇧→"]);
+        assert!(gallery.type_in("abc"), "⌘V pastes in place of what is selected");
+        assert_eq!(written(&gallery), "abc too blue");
+
+        let field = gallery.field_rect().expect("the note's field is in the sidebar");
+        let middle = f64::from(field.y) + f64::from(field.height) / 2.0;
+        gallery.cursor = (f64::from(field.x) + 1.0, middle);
+        assert!(gallery.press(), "a press on the field's text puts the caret there");
+        gallery.cursor = (f64::from(field.x + field.width) - 1.0, middle);
+        assert!(gallery.drag_field(), "a drag selects");
+        gallery.release();
+        assert!(!gallery.drag_field(), "released, the pointer selects no more");
+        assert_eq!(gallery.draft.as_ref().unwrap().text.selected(), Some("abc too blue"));
+        type_text(&mut gallery, "x");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&root.join("orders")).unwrap().remove(0);
+        assert_eq!(note.thread[0].says, "x");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5823,6 +6060,13 @@ mod tests {
 
         press_keys(&mut gallery, &["←", "←"]);
         assert_eq!(played(&gallery).0, 1, "back to the first step");
+        let orders = Path::new(DRAFTS).join("shop").join("orders");
+        let on = On::State { state: State::Fixture("default".into()) };
+        gallery.draft_on(Reference { description: orders, on });
+        press_keys(&mut gallery, &["a", "→", "←", "b"]);
+        assert_eq!(played(&gallery).0, 1, "while a note is written, → and ← move its caret, not the journey");
+        assert_eq!(gallery.draft.as_ref().unwrap().text.text(), "ba");
+        press_keys(&mut gallery, &["Esc"]);
         assert!(click_panel_line(&mut gallery, "→ next step"));
         assert_eq!(played(&gallery).0, 2);
         assert!(click_panel_line(&mut gallery, "← previous step"));

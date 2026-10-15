@@ -11,7 +11,7 @@ use std::sync::{Mutex, OnceLock};
 use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
 use parley::{
     Affinity, Alignment, AlignmentOptions, Cursor, FontContext, FontFamily, FontWeight, Language, Layout,
-    LayoutContext, LineHeight, Selection, StyleProperty,
+    LayoutContext, LineHeight, PlainEditor, PlainEditorDriver, Selection, StyleProperty,
 };
 use underdraw_layout::{Align, Font, Measure, Rect, Size};
 
@@ -90,15 +90,24 @@ impl Typesetter {
         Ok(Typesetter { fonts, layouts: LayoutContext::new(), locale, families, measured: HashMap::new() })
     }
 
+    /// A typesetter of its own, setting text as this one does.
+    pub fn like(&self) -> Typesetter {
+        Typesetter {
+            fonts: self.fonts.clone(),
+            layouts: LayoutContext::new(),
+            locale: self.locale,
+            families: self.families,
+            measured: HashMap::new(),
+        }
+    }
+
     /// `text` in `font`, broken into lines no wider than `max_width`.
     pub fn set(&mut self, text: &str, font: Font, max_width: Option<f32>, align: Align) -> Layout<()> {
+        let styles = self.styles(font, is_icons(text));
         let mut builder = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, true);
-        let families = if is_icons(text) { ICON_FAMILIES } else { self.families };
-        builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Borrowed(families))));
-        builder.push_default(StyleProperty::FontSize(font.size));
-        builder.push_default(StyleProperty::Locale(self.locale));
-        builder.push_default(StyleProperty::FontWeight(FontWeight::new(f32::from(font.weight))));
-        builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(font.line_height)));
+        for style in styles {
+            builder.push_default(style);
+        }
         let mut layout = builder.build(text);
         layout.break_all_lines(max_width);
         let alignment = match align {
@@ -108,6 +117,36 @@ impl Typesetter {
         };
         layout.align(alignment, AlignmentOptions::default());
         layout
+    }
+
+    /// How text in `font` is set, in the icon fonts when it is `icons`:
+    /// the same for what is drawn as for what is edited.
+    fn styles(&self, font: Font, icons: bool) -> [StyleProperty<'static, ()>; 5] {
+        let families = if icons { ICON_FAMILIES } else { self.families };
+        [
+            StyleProperty::FontFamily(FontFamily::Source(Cow::Borrowed(families))),
+            StyleProperty::FontSize(font.size),
+            StyleProperty::Locale(self.locale),
+            StyleProperty::FontWeight(FontWeight::new(f32::from(font.weight))),
+            StyleProperty::LineHeight(LineHeight::Absolute(font.line_height)),
+        ]
+    }
+
+    /// An editor of text in `font`, in a box `width` wide: its lines broken
+    /// where [`Typesetter::set`] breaks the same text drawn there, so that
+    /// its caret moves up and down, and a point is found, on the text drawn.
+    pub fn editor(&self, font: Font, width: f32) -> PlainEditor<()> {
+        let mut editor = PlainEditor::new(font.size);
+        for style in self.styles(font, false) {
+            editor.edit_styles().insert(style);
+        }
+        editor.set_width(Some(width + HAIR));
+        editor
+    }
+
+    /// `editor` driven with this typesetter's fonts.
+    pub fn drive<'a>(&'a mut self, editor: &'a mut PlainEditor<()>) -> PlainEditorDriver<'a, ()> {
+        editor.driver(&mut self.fonts, &mut self.layouts)
     }
 
     /// Where the bytes `range` of `text` are, set in `font` from the left

@@ -63,8 +63,13 @@ pub const CARD_PADDING: f64 = 12.0;
 pub const CARD_BETWEEN: f64 = 6.0;
 /// How much taller than its text a button is.
 pub const BUTTON_PAD: f64 = 7.0;
-/// The tree's width, in points.
+/// The tree's width as the window opens, and the least it is dragged to,
+/// in points: the gallery keeps the width it has now.
 pub const TREE: f64 = 260.0;
+pub const TREE_LEAST: f64 = 160.0;
+/// How near the line between the tree and the pictures, either side, the
+/// pointer takes hold of it, in points.
+pub const GRIP: f64 = 4.0;
 /// One row of the tree, in points.
 pub const ROW: f64 = 28.0;
 /// How far in each directory level moves a row.
