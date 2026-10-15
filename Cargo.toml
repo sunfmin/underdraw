@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/format", "crates/layout", "crates/handoff", "crates/compare", "crates/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/sunfmin/underdraw"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+# preserve_order: fixtures and conditions are reported in the order they are written.
+serde_json = { version = "1", features = ["preserve_order"] }
+# Refinement attributes; they expand to nothing under a plain `cargo build`.
+flux-rs = { git = "https://github.com/flux-rs/flux.git", rev = "b2f3e31e17727ffe08c2efee1e7aa0bc4f0a66f9" }
+# Flux's refinements of the standard library, at the same revision: without
+# them a `Vec` has no length Flux knows of. Both are empty under a plain build.
+flux-alloc = { git = "https://github.com/flux-rs/flux.git", rev = "b2f3e31e17727ffe08c2efee1e7aa0bc4f0a66f9" }
+flux-core = { git = "https://github.com/flux-rs/flux.git", rev = "b2f3e31e17727ffe08c2efee1e7aa0bc4f0a66f9" }
+
+# The checker ./verify.sh runs, beside the Flux revision above. It refuses
+# any other: each value is what the tool reports about itself.
+[workspace.metadata.checker]
+fixpoint = "0.9.6.3.8 (684d0829c19fbee83b892c9f5e20c2598897297c)"
+z3 = "5.1.0"
+
+# A PNG is compressed in these: unoptimised, as a debug build and the
+# tests have them, writing `render --all`'s sheet takes half a minute.
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.flate2]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.simd-adler32]
+opt-level = 3
