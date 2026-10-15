@@ -41,6 +41,31 @@ pub struct Node {
     pub interactive: bool,
 }
 
+/// One operation a node calls: the event it is called on, and what it is
+/// given.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Call<'a> {
+    pub on: &'a str,
+    pub operation: &'a str,
+    pub with: Option<&'a Value>,
+}
+
+impl Node {
+    /// Each operation it calls, in the order its `on` lists the events.
+    pub fn calls(&self) -> Vec<Call<'_>> {
+        let Some(Value::Object(events)) = self.props.get("on") else {
+            return Vec::new();
+        };
+        events
+            .iter()
+            .filter_map(|(on, action)| match action.get("call") {
+                Some(Value::String(operation)) => Some(Call { on, operation, with: action.get("with") }),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 /// Keys that hold child nodes.
 pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
 

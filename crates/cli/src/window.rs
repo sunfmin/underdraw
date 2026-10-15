@@ -1,15 +1,17 @@
 //! The gallery's window, run in a process of its own: the tree of
 //! descriptions and their states on the left and, for the state picked, its
-//! picture drawn at a phone and a desktop width side by side. The tree and panels
-//! are drawn by hand, in the inks a wireframe is drawn in.
+//! picture drawn at a phone and a desktop width side by side, where a node
+//! can be picked to read what it is. The tree and panels are drawn by hand,
+//! in the inks a wireframe is drawn in.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
 use underdraw_format::Finding;
-use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
+use underdraw_layout::{Align, Draw, Font, Ink, Measure, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
@@ -38,6 +40,8 @@ const MARGIN: f64 = 24.0;
 const CAPTION: f64 = 26.0;
 /// How far one notch of a mouse wheel scrolls.
 const NOTCH: f64 = 40.0;
+/// One line of the panel of the node picked.
+const PANEL_LINE: f64 = 20.0;
 /// The space between one finding and the next.
 const GAP: f64 = 12.0;
 
@@ -79,6 +83,9 @@ struct Gallery {
     /// The line of the state shown, or of the description when it has none.
     picked: Option<usize>,
     picture: Picture,
+    /// The id of the node picked in the picture, kept from state to state
+    /// while the state shown has it.
+    node: Option<String>,
     /// How far the pictures, and the tree, are scrolled down, in points.
     scroll: f64,
     tree_scroll: f64,
@@ -145,6 +152,28 @@ struct Page {
     scene: Scene,
     width: f64,
     height: f64,
+    /// Every node with an id, in the order drawn: one drawn later is over
+    /// one drawn before, and an overlay is drawn after what it floats over.
+    nodes: Vec<Placed>,
+    /// The operations each node calls when acted on, by id.
+    calls: BTreeMap<String, Vec<String>>,
+}
+
+impl Page {
+    /// The node that a press at `at`, in the page's points, is on: the
+    /// innermost there, an overlay before what it floats over.
+    fn node_at(&self, at: (f64, f64)) -> Option<&Placed> {
+        self.nodes.iter().rev().find(|node| {
+            let r = node.rect;
+            let (x, y) = (f64::from(r.x), f64::from(r.y));
+            (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1)
+        })
+    }
+
+    /// Whether a node of id `id` is in it.
+    fn has(&self, id: &str) -> bool {
+        self.nodes.iter().any(|node| node.id == id)
+    }
 }
 
 impl Gallery {
@@ -155,6 +184,7 @@ impl Gallery {
             lines: lines(root),
             picked: None,
             picture: Picture::Faults(Vec::new()),
+            node: None,
             scroll: 0.0,
             tree_scroll: 0.0,
             cursor: (0.0, 0.0),
@@ -178,11 +208,15 @@ impl Gallery {
         self.clamp();
     }
 
-    /// A press where the pointer is: picks the state, or the description, on
-    /// the line of the tree under it. Whether that changed what is shown.
+    /// A press where the pointer is: on the tree, picks the state, or the
+    /// description, on the line under it; on the pictures, picks the node
+    /// under it, or none. Whether that changed what is shown.
     fn press(&mut self) -> bool {
         if self.cursor.0 >= TREE {
-            return false;
+            let node = self.node_at(self.cursor);
+            let changed = node != self.node;
+            self.node = node;
+            return changed;
         }
         let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
         if line < 0.0 {
@@ -238,6 +272,8 @@ impl Gallery {
                         width: f64::from(drawing.page.width),
                         height: f64::from(drawing.page.height),
                         scene: drawing.scene,
+                        nodes: drawing.page.nodes,
+                        calls: drawing.calls,
                     });
                 }
                 Err(e) => {
@@ -247,7 +283,110 @@ impl Gallery {
                 }
             }
         }
+        let kept = self.node.as_ref().is_some_and(|id| pages.iter().any(|page| page.has(id)));
+        if !kept {
+            self.node = None;
+        }
         self.picture = Picture::Pages(pages);
+    }
+
+    /// Where each picture's top-left corner is in the window, in points.
+    fn origins(&self) -> Vec<(f64, f64)> {
+        let Picture::Pages(pages) = &self.picture else {
+            return Vec::new();
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        let mut x = TREE + MARGIN;
+        let top = MARGIN - self.scroll + CAPTION;
+        pages
+            .iter()
+            .map(|page| {
+                let at = (x, top);
+                x += page.width * zoom + MARGIN;
+                at
+            })
+            .collect()
+    }
+
+    /// The id of the node under `at`, a point in the window, in whichever
+    /// picture it falls on; none off the pictures or where no node is.
+    fn node_at(&self, at: (f64, f64)) -> Option<String> {
+        let Picture::Pages(pages) = &self.picture else {
+            return None;
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        pages
+            .iter()
+            .zip(self.origins())
+            .find_map(|(page, (left, top))| {
+                let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
+                ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y))
+                    .then(|| page.node_at((x, y)).map(|node| node.id.clone()))
+            })
+            .flatten()
+    }
+
+    /// The outline around the node picked, in window points, in each
+    /// picture that has it.
+    fn outlines(&self) -> Vec<Rect> {
+        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+            return Vec::new();
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        pages
+            .iter()
+            .zip(self.origins())
+            .filter_map(|(page, (left, top))| {
+                let r = page.nodes.iter().find(|n| &n.id == id)?.rect;
+                let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
+                let (w, h) = (f64::from(r.width) * zoom, f64::from(r.height) * zoom);
+                Some(rect(x - 2.0, y - 2.0, w + 4.0, h + 4.0))
+            })
+            .collect()
+    }
+
+    /// What the panel says of the node picked, one line each: its id, kind,
+    /// the operation it calls, what was assumed there, then its label and
+    /// box at each width. Nothing when no node is picked.
+    fn panel(&self) -> Vec<String> {
+        let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
+            return Vec::new();
+        };
+        let found: Vec<(&Page, &Placed)> =
+            pages.iter().filter_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?))).collect();
+        let Some(&(page, node)) = found.first() else {
+            return Vec::new();
+        };
+        let calls = match page.calls.get(id) {
+            Some(operations) => operations.join(", "),
+            None => "nothing".to_string(),
+        };
+        let mut lines = vec![
+            format!("id  {id}"),
+            format!("kind  {}", node.kind),
+            format!("calls  {calls}"),
+            format!("assumed  {}", node.assumed.as_deref().unwrap_or("nothing")),
+        ];
+        for page in pages {
+            let width = page.width;
+            lines.push(match page.nodes.iter().find(|n| &n.id == id) {
+                Some(node) => {
+                    let r = node.rect;
+                    let label = node.label.map_or_else(|| "no label".to_string(), |n| format!("label {n}"));
+                    format!("at {width}  {label} · box {}, {} · {} × {}", r.x, r.y, r.width, r.height)
+                }
+                None => format!("at {width}  not in this state"),
+            });
+        }
+        lines
+    }
+
+    /// How tall the panel is, at the foot of the pictures' pane.
+    fn panel_height(&self) -> f64 {
+        match self.panel().len() {
+            0 => 0.0,
+            lines => lines as f64 * PANEL_LINE + MARGIN,
+        }
     }
 
     /// How much the pictures are scaled down to fit side by side in a pane
@@ -268,7 +407,7 @@ impl Gallery {
         match &self.picture {
             Picture::Pages(pages) => {
                 let tallest = pages.iter().map(|p| p.height).fold(0.0, f64::max);
-                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN
+                MARGIN + CAPTION + tallest * self.zoom(pane) + MARGIN + self.panel_height()
             }
             Picture::Faults(_) => self.faults(pane).1 + MARGIN,
         }
@@ -357,18 +496,16 @@ impl Gallery {
         let mut pane: Vec<Draw> = faults.into_iter().map(|draw| moved(draw, left, -self.scroll)).collect();
         let zoom = self.zoom(width - TREE);
         let mut pages = Vec::new();
+        let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
         match &self.picture {
             Picture::Pages(shots) => {
-                let mut x = left;
-                for shot in shots {
-                    let top = MARGIN - self.scroll;
+                for (shot, at) in shots.iter().zip(origins) {
                     pane.push(words(
-                        rect(x, top, shot.width * zoom, 16.0),
+                        rect(at.0, at.1 - CAPTION, shot.width * zoom, 16.0),
                         shot.caption.clone(),
                         Ink::Muted,
                         400,
                     ));
-                    let at = (x, top + CAPTION);
                     pane.push(Draw::Box {
                         rect: rect(at.0 - 0.5, at.1 - 0.5, shot.width * zoom + 1.0, shot.height * zoom + 1.0),
                         radius: 0.0,
@@ -377,7 +514,36 @@ impl Gallery {
                         dashed: false,
                     });
                     pages.push((at, &shot.scene));
-                    x += shot.width * zoom + MARGIN;
+                }
+                for around in outlines {
+                    pane.push(Draw::Box {
+                        rect: around,
+                        radius: 3.0,
+                        fill: None,
+                        stroke: Some(Ink::Strong),
+                        dashed: false,
+                    });
+                }
+                if !panel.is_empty() {
+                    let tall = self.panel_height();
+                    let top = height - tall;
+                    pane.push(Draw::Box {
+                        rect: rect(TREE, top, width - TREE, tall),
+                        radius: 0.0,
+                        fill: Some(Ink::Paper),
+                        stroke: Some(Ink::Line),
+                        dashed: false,
+                    });
+                    for (index, line) in panel.into_iter().enumerate() {
+                        let y = top + MARGIN / 2.0 + index as f64 * PANEL_LINE;
+                        let weight = if index == 0 { 600 } else { 400 };
+                        pane.push(words(
+                            rect(left, y + 2.0, width - left - MARGIN, 16.0),
+                            line,
+                            Ink::Text,
+                            weight,
+                        ));
+                    }
                 }
             }
             Picture::Faults(_) => {}
@@ -603,7 +769,8 @@ mod tests {
         over_row(&mut gallery, docs + 1);
         assert!(!gallery.press(), "nor does picking the state it shows");
         gallery.cursor = (TREE + 100.0, 100.0);
-        assert!(!gallery.press(), "a press on the pictures picks nothing");
+        gallery.press();
+        assert_eq!(gallery.picked, Some(docs + 1), "a press on the pictures leaves the state picked");
     }
 
     #[test]
@@ -627,6 +794,105 @@ mod tests {
         gallery.wheel(1e6);
         let end = gallery.lines.len() as f64 * ROW + MARGIN - 900.0;
         assert_eq!(gallery.tree_scroll, end, "as far as its last line");
+    }
+
+    /// The point in the window at the middle of node `id` in picture `page`.
+    fn on_node(gallery: &Gallery, page: usize, id: &str) -> (f64, f64) {
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: it has faults") };
+        let node = pages[page].nodes.iter().find(|n| n.id == id).unwrap();
+        let (left, top) = gallery.origins()[page];
+        let zoom = gallery.zoom(gallery.size.0 - TREE);
+        let r = node.rect;
+        let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
+        (left + middle.0 * zoom, top + middle.1 * zoom)
+    }
+
+    /// The gallery showing line `index` of the tree.
+    fn showing(gallery: &mut Gallery, index: usize) {
+        over_row(gallery, index);
+        gallery.press();
+    }
+
+    #[test]
+    fn a_node_picked_in_the_picture_is_outlined_and_says_what_it_is() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        assert!(gallery.press(), "a node is picked");
+        assert_eq!(gallery.node.as_deref(), Some("nav-save"), "the innermost, not the bar it sits in");
+        let panel = gallery.panel();
+        assert_eq!(
+            panel[..5],
+            [
+                "id  nav-save",
+                "kind  IconButton",
+                "calls  toggleSaved",
+                "assumed  nothing",
+                "at 390  label 3 · box 334, 8 · 40 × 40",
+            ]
+        );
+        assert!(panel[5].starts_with("at 1120  label "), "and where it is at the other width: {}", panel[5]);
+        assert!(!gallery.press(), "picking it again changes nothing");
+        assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
+    }
+
+    #[test]
+    fn what_was_assumed_is_said() {
+        let mut gallery = gallery();
+        let checkout = line_of(&gallery, "checkout");
+        let states = gallery.lines[checkout + 1..].iter().take_while(|line| line.state.is_some()).count();
+        let shown = (1..=states).find(|offset| {
+            showing(&mut gallery, checkout + offset);
+            let Picture::Pages(pages) = &gallery.picture else { return false };
+            pages[0].has("card-number")
+        });
+        assert!(shown.is_some(), "a state of checkout shows the card form");
+        gallery.cursor = on_node(&gallery, 0, "card-number");
+        gallery.press();
+        assert!(gallery.panel().iter().any(|line| line.starts_with("assumed  Card fields are drawn here")));
+    }
+
+    #[test]
+    fn an_overlay_is_picked_before_what_it_floats_over() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 1, "photos-show-all");
+        gallery.press();
+        assert_eq!(gallery.node.as_deref(), Some("photos-show-all"), "not the photos under it");
+    }
+
+    #[test]
+    fn switching_state_keeps_the_node_picked_while_the_state_has_it() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 0, "nav-back");
+        gallery.press();
+        showing(&mut gallery, listing + 2);
+        assert_eq!(gallery.node.as_deref(), Some("nav-back"), "another fixture has it");
+        showing(&mut gallery, listing + 5);
+        assert_eq!(gallery.node.as_deref(), Some("nav-back"), "and so does the loading phase");
+        gallery.cursor = on_node(&gallery, 0, "loading-skeleton");
+        gallery.press();
+        showing(&mut gallery, listing + 1);
+        assert_eq!(gallery.node, None, "the data has no skeleton");
+        assert!(gallery.panel().is_empty());
+    }
+
+    #[test]
+    fn a_press_where_no_node_is_clears_the_pick() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        showing(&mut gallery, listing);
+        gallery.cursor = on_node(&gallery, 0, "nav-save");
+        gallery.press();
+        let (left, top) = gallery.origins()[1];
+        gallery.cursor = (left - MARGIN / 2.0, top + 10.0);
+        assert!(gallery.press(), "between the pictures");
+        assert_eq!(gallery.node, None);
+        assert!(gallery.panel().is_empty(), "the panel is gone");
     }
 
     #[test]
