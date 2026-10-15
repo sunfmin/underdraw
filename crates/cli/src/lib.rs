@@ -37,6 +37,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use draw::{Shown, Wanted};
 use serde_json::{Value, json};
 use underdraw_format::{Lang, Screen, ScreenParams, State};
+use underdraw_layout::WIDTH_RANGE;
 
 use crate::project::{Project, TOKENS};
 
@@ -83,10 +84,10 @@ enum Command {
         /// A phase to show instead of data, such as loading
         #[arg(long)]
         phase: Option<String>,
-        /// The page width in points: 390 is a phone, 1120 a laptop browser
-        #[arg(long, default_value_t = 390, value_parser = clap::value_parser!(u32).range(200..=4000))]
-        width: u32,
-        /// Every fixture and phase, each at 390 and 1120, captioned, in one PNG
+        /// The page width in points: 390 is a phone, 1120 a laptop browser. Not given, the first of the widths its tokens.json names ("widths"), or 390
+        #[arg(long, value_parser = clap::value_parser!(u32).range(i64::from(*WIDTH_RANGE.start())..=i64::from(*WIDTH_RANGE.end())))]
+        width: Option<u32>,
+        /// Every fixture and phase, each at every width its tokens.json names (390 and 1120 when none), captioned, in one PNG
         #[arg(long, conflicts_with_all = ["fixture", "phase", "width"])]
         all: bool,
         /// Pixels per point
@@ -212,7 +213,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             render_all(&path, scale, out, root.as_deref(), lang)
         }
         Command::Render { path, fixture, phase, width, scale, out, root, lang, all: false } => {
-            render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref(), lang)
+            let wanted = |first| Wanted { fixture, phase, width: width.unwrap_or(first), scale };
+            render(&path, wanted, out, root.as_deref(), lang)
         }
         Command::Schema { path } => schema(&path),
         Command::Cli { path } => derive_cli(&path),
@@ -460,18 +462,23 @@ fn state_json(shown: &Shown) -> Value {
     }
 }
 
+/// The state of the description at `path` that `wanted` names, given the
+/// first of the widths its tokens name, drawn to a PNG.
 fn render(
     path: &Path,
-    wanted: &Wanted,
+    wanted: impl FnOnce(u32) -> Wanted,
     out: Option<PathBuf>,
     root: Option<&Path>,
     lang: Lang,
 ) -> anyhow::Result<Value> {
     let drawn = drawn_under(root)?;
-    let laid = draw::lay_out(path, wanted, drawn.as_ref(), lang)?;
+    let description = draw::Description::read(path)?;
+    let wanted = &wanted(description.widths()[0]);
+    let laid = description.lay_out(wanted, drawn.as_ref(), lang)?;
     let mut gpu = gpu::Gpu::open()?;
-    let drawing = laid.draw(wanted.scale, gpu.max_side);
+    let mut drawing = laid.draw(wanted.scale, gpu.max_side);
     let [pixels_wide, pixels_high] = drawing.pixels;
+    drawing.scene.append(&drawing.marks, None);
     let pixels = gpu.render(&drawing.scene, pixels_wide, pixels_high)?;
 
     let name = drawing.shown.name();

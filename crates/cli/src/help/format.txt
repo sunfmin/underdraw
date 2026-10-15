@@ -155,8 +155,9 @@ CONDITIONS
 
 TEMPLATES AND FORMATS
   Any string may hold placeholders: {path} or {path|format}. A path is
-  dot-separated: a data root, or inside "item" also item and index. No
-  operators in a placeholder. {{ and }} are literal braces.
+  dot-separated: a data root, or inside "item" also item, index and the
+  index a repeat around it names ("index": "row"). No operators in a
+  placeholder. {{ and }} are literal braces.
     "text": "{summary.remaining} left · {booking.total|money}"
   Formats (closed set; a value that needs one and lacks it is a fault):
     (none)       string, int
@@ -185,7 +186,9 @@ CASES
 
 NODES
   A node is an object:
-    "id"        unique: "todo-{index}" inside an item template. Required on
+    "id"        unique in every state: "todo-{index}" inside an item
+                template, "cell-{row}-{index}" inside one inside another
+                ("index" below); check names an id two nodes share. Required on
                 a node with "on", "bind" or "assumed", and on an instance
                 of a component holding one; any other may leave it out
                 and is given one, the same on every run and unchanged by
@@ -194,7 +197,9 @@ NODES
                 text, title, label or icon ("page-text-hello-name" for
                 {"component": "Text", "text": "Hello {name}"} in "page";
                 four hex digits for text with no ASCII word), "-{index}"
-                after an item's, "-2", "-3"… after one taken. A component's
+                after an item's (inside a repeat inside one, the outer's
+                {index} in the id it is in said by the outer's "index"
+                name), "-2", "-3"… after one taken. A component's
                 own nodes are given theirs without its root's. check,
                 render, handoff and the gallery all name it so
     "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
@@ -204,6 +209,15 @@ NODES
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
     "item"      the node repeated; it sees item (the element) and index (0..)
+    "index"     a name for this repeat's index, beside "each": "row". A
+                repeat inside one rebinds item and index, so a node there
+                reaches this one's index only by its name:
+                  { "id": "rows", "component": "List", "each": "rows", "index": "row",
+                    "item": { "id": "row-{index}", "component": "List", "each": "item.cells",
+                      "item": { "id": "cell-{row}-{index}", "component": "Button", … } } }
+                gives cell-0-0, cell-0-1, cell-1-0…; a transition or a
+                journey names it as written, "cell-{row}-{index}.tap". A
+                word no data root, enclosing repeat, item, index or n takes
     "limit"     at most this many elements: 5, or {"compact": 6, "regular": 9}
     "bind"      a path (or a list of paths) the person edits; its value is
                 given to the component as "value" ("bind": "composer.text";
@@ -260,6 +274,10 @@ LAYOUT ON A NODE
     "border"     a colour token: "color.border"
     "elevation"  an elevation token: outlined in the wireframe
     "columns"    Grid and Columns only: a count, or tracks ["58%", "1fr"]
+    "dividers"   Grid and Columns only: true draws a line between the cells,
+                 in the line ink, for panes split without a border round each
+  Each cell of a Grid or Columns is as tall as its row, so its border and
+  fill reach the row's foot.
   Section takes "gap" and "padding" too. Width, grow, alignment and sizes
   are never written on a node: they belong to a component's look (LOOKS).
   When a built-in component does not lay out as needed, define one.
@@ -620,8 +638,9 @@ POPUPS
     Screen, the middle and the bottom are those of the whole page, which
     is as tall as its content. A sheet's look leaves out "width".
   - The page is only as tall as its content: an overlay taller than that
-    runs off it and is cut. check finds it, in each state at widths 390
-    and 1120; give the fixture that opens it more content behind it.
+    runs off it and is cut. check finds it, in each state at each of the
+    project's widths (TOKENS.JSON); give the fixture that opens it more
+    content behind it.
   - "backdrop": true dims the screen behind it; what is behind gets no
     number, since nothing there can be acted on while it is open.
 
@@ -660,14 +679,16 @@ JOURNEYS
     {
       "$comment": "The person opens an order and cancels it before it ships.",
       "steps": [
-        { "screen": "orders", "state": "default", "on": "order-{index}.tap" },
-        { "screen": "order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
-        { "screen": "order",  "state": "cancelled" }
+        { "screen": "Orders", "state": "default", "on": "order-{index}.tap" },
+        { "screen": "Order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
+        { "screen": "Order",  "state": "cancelled" }
       ]
     }
-    "screen"   the screen's directory, by its path from the project root
-               (the nearest directory at or above <dir> holding
-               domain.json; with none, <dir> itself): "orders/list"
+    "screen"   the screen's name, as a navigate names it: "Orders"; or its
+               directory, by its path from the project root (the nearest
+               directory at or above <dir> holding domain.json; with none,
+               <dir> itself): "orders/list". A name no description under
+               the root declares is a finding at the step
     "state"    a fixture or a phase of that screen
     "on"       on every step but the last: "<node id>.<event>", the node
                acted on, its id as written, as in TRANSITIONS
@@ -777,8 +798,14 @@ TOKENS.JSON
     "font":       { "body":    { "size": 16, "weight": 400, "lineHeight": 22 },
                     "caption": { "size": 14, "weight": 400, "lineHeight": 18 }, … },
     "elevation":  { "card": { "y": 2, "blur": 8, "color": "#0000001A" } },
-    "breakpoint": { "compact": [0, 743], "regular": [744, null] }
+    "breakpoint": { "compact": [0, 743], "regular": [744, null] },
+    "widths":     [390, 1440]
   }
+  "widths" are the widths in points the project's descriptions are drawn
+  and checked at, each a whole number from 200 to 4000: check lays every
+  state out at each, the gallery draws a state at each side by side, in
+  the order named, and `render` draws at the first unless given --width.
+  With no "widths", 390 (a phone) and 1120 (a desktop).
   A token is named by its dotted path: "space.4", "radius.md", "font.body",
   "color.textSecondary", "elevation.card". A length is a number or a token
   naming one. Groups and names are the project's; a platform file names
@@ -840,6 +867,7 @@ LOOKS
                          ["3fr", "1fr", 48]; check refuses anything else
     fill stroke radius dashed   outline and fill in an ink
     cross topLine        a crossed placeholder, a line on top, in an ink
+    dividers             a line between the cells, in an ink (true: line)
     clip                 cut children at this radius (false: never)
     overflowX            "clip": a row that runs off the edge
     pin                  {"x": "end", "y": "end", "inset": 12}: floats over the

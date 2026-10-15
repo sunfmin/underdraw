@@ -65,6 +65,23 @@ DOES
   ⌘\ does. The history is not kept once the window closes; ← and → alone,
   without ⌘, still step a journey played.
 
+  Left of it, "hide marks ⌘." hides every mark the gallery draws over the
+  pictures, leaving the bare wireframe, and "show marks ⌘." shows them
+  again; ⌘. (Ctrl+. on Linux and Windows, as the button then says) does
+  the same. The marks are the purple marks of where acting goes (dashed
+  outlines, ↗ and → badges), the numbered labels, the orange "?" of each
+  assumption and its outline, the blue pins of notes, and the journeys'
+  marks: the double ring on the node a journey acts on next and each
+  journey's mark on an overview's states. They are hidden at both widths
+  and in states, overviews and flows alike. They are shown when the window
+  opens; hidden, they stay hidden as you pick and act, from state to state
+  and screen to screen, and are shown again once the window is closed and
+  opened. Hidden, the node picked is still drawn as picked, with its go-to
+  buttons; a click still picks and a ⌘-click still acts; holding ⌘ still
+  lights up the purple marks for as long as it is held (the labels, the
+  "?" and the pins stay hidden). A press where a hidden journey's mark was
+  picks its state, and one where a hidden pin was, what is under it.
+
   Each pane that scrolls shows a scrollbar while what it holds is larger
   than it, and none while it fits: the tree and the sidebar on their right
   edge, the pictures on their right edge and, when they scroll sideways,
@@ -86,16 +103,19 @@ DOES
   shows the flow and the inbox of everything under it), each
   description opened into its states: its fixtures, then its phases (in
   gray), each in the order written. Picking a state draws it as a wireframe
-  at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
+  at each of the widths its tokens.json names ("widths", in the order
+  named; with none named, 390, a phone, and 1120, a desktop) side by side,
+  labelled as `render`
   labels them: a red circle with a white number at the top left of each
   node a person can act on, a red no wireframe draws with, so it stands
   out from the grays it sits on. A label only names its node, for "number
-  3" to mean one node in the conversation. The two pictures scale down together to fit the width left
+  3" to mean one node in the conversation. The pictures scale down together to fit the width left
   between the tree and the sidebar, down to half size; in a window too
   narrow for that they stay at half size and scroll sideways (a trackpad's
   sideways swipe, or Shift and the wheel). Their labels, and the orange
   "?", stay at full size, readable at half size, and a click picks the
-  node under it at any size. Picking a description shows its overview: every state, small
+  node under it at any size. Picking a description shows its overview: every state, drawn at
+  the first of those widths, small
   and captioned with its name, in a grid in the order the tree lists them,
   tall ones cut at the foot, and each transition the description declares
   (`transitions` in screen.json) as an arrow from its `from` state to its
@@ -105,7 +125,7 @@ DOES
   transition reaches or leaves is still shown. Clicking a state's picture
   picks that state. Picking a directory draws the flow between the screens
   under it: each description a box named as its directory, holding a small picture of its first state
-  at 390, and each navigate an arrow from the box of the description it is
+  at the first of its widths, and each navigate an arrow from the box of the description it is
   in to the box of the screen it names, labelled with the node's id. The
   arrows are the "links" `underdraw check <root>` reports, no other: a
   navigate to a description outside the directory brings that box in too;

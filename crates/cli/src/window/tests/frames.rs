@@ -351,6 +351,19 @@ fn a_state_at_both_widths_with_its_labels() {
 }
 
 #[test]
+fn a_state_and_an_overview_with_their_marks_hidden() {
+    drawn("state-bare", drafts(), WINDOW, |gallery| {
+        show(gallery, "airbnb-listing", "default");
+        gallery.use_tool(Tool::Marks);
+    });
+    drawn("overview-bare", drafts(), WINDOW, |gallery| {
+        let order = description_in(gallery, "shop/order");
+        showing(gallery, order);
+        gallery.use_tool(Tool::Marks);
+    });
+}
+
+#[test]
 fn an_overview_with_its_arrows_and_journey_marks() {
     let gallery = held("overview", drafts(), WINDOW, |gallery| {
         let order = description_in(gallery, "shop/order");

@@ -43,6 +43,8 @@ pub(super) const WORDS: Words = Words {
     go_forward: "→ 進む",
     hide_sidebar: "サイドバーを隠す",
     show_sidebar: "サイドバーを表示",
+    hide_marks: "マークを隠す {keys}",
+    show_marks: "マークを表示 {keys}",
     journey_mark: "→ {name} · ステップ {number}",
     nothing_to_copy: "コピーするものがありません：先に状態、その中のノード、または矢印を選んでください",
     no_clipboard: "コピー先のクリップボードがありません",

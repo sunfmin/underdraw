@@ -182,7 +182,8 @@ impl Catalog<'_> {
     }
 
     /// A box: its layout (`box`, sizes, `gap`, `padding`, …), how it looks
-    /// (`fill`, `stroke`, `radius`, `cross`, `topLine`) and its `children`.
+    /// (`fill`, `stroke`, `radius`, `cross`, `topLine`, `dividers`) and its
+    /// `children`.
     /// A `frame` also takes the container props a description may set on
     /// the node: `padding`, `gap`, `radius`, `border`, `elevation`.
     fn boxed<'a>(&self, object: &Object, scope: &Scope<'_, 'a>) -> Elem<'a> {
@@ -227,6 +228,11 @@ impl Catalog<'_> {
         if let Some(line) = ink(self.tokens, &get("topLine")) {
             elem = elem.with(Look::TopLine(line));
         }
+        // A line between its cells: true for the line ink, or an ink.
+        elem.dividers = match get("dividers") {
+            Value::Bool(true) => Some(Ink::Line),
+            value => ink(self.tokens, &value),
+        };
         let mut children = Vec::new();
         if let Some(looks) = object.get("children") {
             children = self.build(looks, scope);

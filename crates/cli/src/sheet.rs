@@ -1,5 +1,5 @@
-//! Every state of a description at each of [`WIDTHS`], on one sheet:
-//! `render --all`. A row a state, in the order `check` lists them, its
+//! Every state of a description at each of the widths its tokens name, on
+//! one sheet: `render --all`. A row a state, in the order `check` lists them, its
 //! pages side by side, each under a caption naming its state and width as
 //! the gallery does ("default · 390"), on the gallery's desk.
 
@@ -12,7 +12,7 @@ use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 
 use crate::chrome::{self, CAPTION, MARGIN};
-use crate::draw::{Description, Laid, WIDTHS};
+use crate::draw::{Description, Laid};
 use crate::{paint, text};
 
 /// Every state laid out at each width, and where each page sits.
@@ -40,7 +40,7 @@ pub struct Drawn {
 }
 
 impl Sheet {
-    /// Every state of `description` laid out at each of [`WIDTHS`], as one
+    /// Every state of `description` laid out at each of the widths its tokens name, as one
     /// `render` would lay it out given `drawn` and `lang`; refused as
     /// `render` refuses a description with findings.
     pub fn lay_out(
@@ -51,10 +51,11 @@ impl Sheet {
         let mut pages = Vec::new();
         let mut y = MARGIN as f32;
         let mut width = MARGIN as f32;
+        let widths = description.widths();
         for state in description.states() {
             let mut x = MARGIN as f32;
             let mut tallest = 0.0f32;
-            for page in WIDTHS {
+            for &page in &widths {
                 let laid = description.lay_out(&state.wanted(page, 1), drawn, lang)?;
                 tallest = tallest.max(laid.page.height);
                 let next = x + laid.page.width + MARGIN as f32;
@@ -117,10 +118,13 @@ mod tests {
         let description = Description::read(Path::new(DRAFT)).unwrap();
         let mut sheet = Sheet::lay_out(&description, None, Lang::En).unwrap();
         let states = description.states();
-        assert_eq!(sheet.pages.len(), states.len() * WIDTHS.len());
+        assert_eq!(sheet.pages.len(), states.len() * underdraw_layout::DEFAULT_WIDTHS.len());
         for (row, state) in states.iter().enumerate() {
             let pages = &sheet.pages[row * 2..row * 2 + 2];
-            assert_eq!([pages[0].laid.page.width, pages[1].laid.page.width], WIDTHS.map(|w| w as f32));
+            assert_eq!(
+                [pages[0].laid.page.width, pages[1].laid.page.width],
+                underdraw_layout::DEFAULT_WIDTHS.map(|w| w as f32)
+            );
             assert!(pages.iter().all(|p| &p.laid.shown == state));
             assert_eq!(pages[0].y, pages[1].y, "a state's pages side by side");
             assert!(pages[0].x + pages[0].laid.page.width < pages[1].x, "and apart");
