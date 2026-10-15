@@ -579,8 +579,10 @@ COMPONENTS
   gallery list it among the descriptions. It is one instance, named as
   the component is in kebab case (order-row, so its nodes are
   order-row-cancel), drawn in each fixture; it declares no screen, so no
-  navigate reaches it. A shared component without fixtures is a finding
-  there, never on a screen using it; a screen's own component takes none.
+  navigate reaches it. One that declares no params has one state to
+  show and needs no "fixtures": without them it is drawn in one, named
+  default. One with params and no fixtures is a finding there, never on
+  a screen using it; a screen's own component takes none.
 
 POPUPS
   underdraw has no dialog, sheet or menu component. A popup is a state like any
