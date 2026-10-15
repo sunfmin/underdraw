@@ -7,9 +7,11 @@ WHO
 
 READS
   <path>/screen.json, or <path> when it is a file, with the domain.json of
-  its project when there is one (DOMAIN.JSON below), and kinds.json beside it
-  when there is one: every node's component must be defined there or by
-  underdraw, and its looks are checked too (LOOKS below). Once the
+  its project when there is one (DOMAIN.JSON below): every node's component
+  must be one of the screen's own "components" or underdraw's, and the
+  screen's own are checked too: each has a look or nodes, and a look reads
+  only the params it declares (COMPONENTS, LOOKS below). A kinds.json
+  beside it is a finding: its components belong in "components". Once the
   description has no other fault, its tokens.json too (the nearest at or
   above the screen, as `underdraw --help` says): every fixture and phase
   is laid out at widths 390 and 1120, in the system's fonts as `render`

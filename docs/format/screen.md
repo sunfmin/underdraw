@@ -8,11 +8,10 @@
 | `title` | What a person calls it. |
 | `locale` | The language its text is in, a BCP 47 tag such as `zh-CN`. Optional. |
 | `tokens` | The design tokens file beside it, usually `tokens.json`. |
-| | `kinds.json` beside it, when there is one, defines the project's own kinds: see [kinds](kinds.md). |
 | `data`, `types` | The view model: see [data](data.md). |
 | `fixtures` | Sample view models, one state each: see [data](data.md#fixtures). |
 | `conditions` | The named yes/no tests: see [expressions](expressions.md). |
-| `components` | Nodes used more than once, by `ref`. |
+| `components` | The screen's own components, each a look with its `params` (see [components](kinds.md)), or `nodes` used more than once, by `ref`. |
 | `root` | The node tree shown once data is present. |
 | `phases` | Trees shown before data arrives, such as `loading`: see [data](data.md#phases). |
 
