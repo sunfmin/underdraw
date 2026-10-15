@@ -1,8 +1,9 @@
 //! The gallery's window, run in a process of its own: the tree of
 //! descriptions and their states on the left and, for the state picked, its
 //! picture drawn at a phone and a desktop width side by side, where a node
-//! can be picked to read what it is; for a directory picked, the flow
-//! between the screens under it. The tree and panels are drawn by hand,
+//! can be picked to read what it is, or acted on to follow what the
+//! description says happens, as a prototype; for a directory picked, the
+//! flow between the screens under it. The tree and panels are drawn by hand,
 //! in the inks a wireframe is drawn in. The window is drawn from the files
 //! as they now stand: as they change under its root, the tree and the state
 //! shown follow.
@@ -24,7 +25,8 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
-use crate::draw::{self, Shown as State, Wanted};
+use crate::act::{self, Act};
+use crate::draw::{self, Handlers, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::{gpu, links, paint, text};
@@ -114,6 +116,14 @@ struct Gallery {
     tree_scroll: f64,
     /// Where the pointer is, in points.
     cursor: (f64, f64),
+    /// Whether a click acts on the node under it, rather than picks it: ⌘,
+    /// or Ctrl, is held.
+    acting: bool,
+    /// The states acting has come from, the last one last: where `back`
+    /// returns to. Picking a state in the tree starts a new path.
+    history: Vec<Picked>,
+    /// What the last act on a node came to, while nothing else is done.
+    acted: Option<Acted>,
     /// The window's width and height, in points.
     size: (f64, f64),
     /// Sets the tree's and the captions' text.
@@ -153,6 +163,14 @@ fn lines(root: &Path) -> Vec<Line> {
         }
     }
     lines
+}
+
+/// What an act on a node came to, as the panel says it at its top.
+struct Acted {
+    says: String,
+    /// The outcomes the person chooses from, each with the state it goes
+    /// to; none once the act has gone somewhere, or where it goes nowhere.
+    choices: Vec<(String, String)>,
 }
 
 /// A line of the tree by name: its directory, a description's or not, and
@@ -211,6 +229,8 @@ struct Page {
     nodes: Vec<Placed>,
     /// The operations each node calls when acted on, by id.
     calls: BTreeMap<String, Vec<String>>,
+    /// What each node does when acted on, by id.
+    handlers: BTreeMap<String, Handlers>,
 }
 
 /// A description's overview: each of its states, in the order the tree
@@ -275,6 +295,9 @@ impl Gallery {
             scroll: 0.0,
             tree_scroll: 0.0,
             cursor: (0.0, 0.0),
+            acting: false,
+            history: Vec::new(),
+            acted: None,
             size: (0.0, 0.0),
             typesetter,
             shown: None,
@@ -296,9 +319,10 @@ impl Gallery {
     }
 
     /// A press where the pointer is: on the tree, picks the line under it;
-    /// on the pictures, picks the node under it, or none; on the flow, picks
-    /// the description whose box is under it. Whether that changed what is
-    /// shown.
+    /// on the pictures, picks the node under it, or none, or acts on it
+    /// while [`Gallery::acting`]; on an outcome listed in the panel, chooses
+    /// it; on the flow, picks the description whose box is under it.
+    /// Whether that changed what is shown.
     fn press(&mut self) -> bool {
         if self.cursor.0 >= TREE
             && let Picture::Flow(flow) = &self.picture
@@ -314,16 +338,25 @@ impl Gallery {
             return true;
         }
         if self.cursor.0 >= TREE {
+            if let Some(line) = self.panel_line(self.cursor.1) {
+                return self.choose(line);
+            }
             if let Picture::Overview(_) = self.picture {
                 let Some(line) = self.state_at(self.cursor) else {
                     return false;
                 };
+                self.history.clear();
+                self.acted = None;
                 self.pick(line);
                 return true;
             }
+            if self.acting {
+                return self.act();
+            }
             let node = self.node_at(self.cursor);
-            let changed = node != self.node;
+            let changed = node != self.node || self.acted.is_some();
             self.node = node;
+            self.acted = None;
             return changed;
         }
         let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
@@ -332,6 +365,8 @@ impl Gallery {
         }
         match self.shows(line as usize) {
             Some(index) if Some(index) != self.picked => {
+                self.history.clear();
+                self.acted = None;
                 self.pick(index);
                 true
             }
@@ -354,12 +389,9 @@ impl Gallery {
         let (wanted, scroll) = (self.wanted.take(), self.scroll);
         self.lines = lines(&self.root);
         self.picked = None;
+        self.acted = None;
         self.picture = Picture::Faults(Vec::new());
-        let named = |line: &Line, wanted: &Picked| {
-            line.row.dir == wanted.dir
-                && line.state.as_ref().map(|state| state.name()) == wanted.state.as_deref()
-        };
-        let again = wanted.as_ref().and_then(|wanted| self.lines.iter().position(|line| named(line, wanted)));
+        let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
         let description = wanted.as_ref().and_then(|wanted| {
             self.lines.iter().position(|line| line.state.is_none() && line.row.dir == wanted.dir)
         });
@@ -373,6 +405,123 @@ impl Gallery {
             self.wanted = wanted;
         }
         self.clamp();
+    }
+
+    /// The line of the state `named` names, or of its directory when it
+    /// names no state.
+    fn line_named(&self, named: &Picked) -> Option<usize> {
+        self.lines.iter().position(|line| {
+            line.row.dir == named.dir
+                && line.state.as_ref().map(|state| state.name()) == named.state.as_deref()
+        })
+    }
+
+    /// Acts on the node under the pointer, as the description says: a
+    /// transition declared from the state shown on the event a click raises
+    /// goes to its state, or lists its outcomes to choose from; a navigate
+    /// goes to the first state of the screen it names; back returns along
+    /// the path taken. The panel says what came of it, and so where nothing
+    /// is declared. Whether that changed what is shown.
+    fn act(&mut self) -> bool {
+        let Some((id, handlers, calls)) = self.hit(self.cursor).map(|(page, node)| {
+            let handlers = page.handlers.get(&node.id).cloned().unwrap_or_default();
+            (node.id.clone(), handlers, page.calls.get(&node.id).cloned().unwrap_or_default())
+        }) else {
+            let changed = self.node.is_some() || self.acted.is_some();
+            self.node = None;
+            self.acted = None;
+            return changed;
+        };
+        self.node = Some(id);
+        let Some(here) = self.wanted.clone() else {
+            return true;
+        };
+        let state = here.state.clone().unwrap_or_default();
+        let on = format!("{}.{}", handlers.written, act::event(&handlers.events));
+        let screen = crate::read(&here.dir).map(|(screen, _)| screen).unwrap_or(Value::Null);
+        match act::act(&screen, &state, &handlers.written, &handlers.events) {
+            Act::Go { to } => {
+                let says = format!("{on} in {state} → {to}");
+                self.go(Picked { dir: here.dir, state: Some(to) }, says);
+            }
+            Act::Choose(choices) => {
+                let says = format!("{on} in {state} calls {}: click how it answered", calls.join(", "));
+                self.acted = Some(Acted { says, choices });
+            }
+            Act::Navigate(screen) => match links::declared(&self.root).remove(&screen) {
+                Some(description) => {
+                    let says = format!("{on} navigates to {screen}");
+                    self.go(Picked { dir: description, state: None }, says);
+                }
+                None => self.say(format!(
+                    "{on} navigates to {screen}, which no description under the root declares: a screen not drawn yet"
+                )),
+            },
+            Act::Back => match self.history.pop() {
+                Some(back) => {
+                    let to = self.named(&back);
+                    match self.line_named(&back) {
+                        Some(index) => {
+                            self.pick(index);
+                            self.say(format!("{on} goes back to {to}"));
+                        }
+                        None => self.say(format!("{on} goes back to {to}, which is gone")),
+                    }
+                }
+                None => self.say(format!(
+                    "{on} goes back, but no act led here: back returns along the path taken by acting"
+                )),
+            },
+            Act::Nothing => self.say(format!("no transition from {state} on {on}")),
+        }
+        true
+    }
+
+    /// The outcome on line `line` of the panel chosen: the state it goes
+    /// to shown. Whether there was one there.
+    fn choose(&mut self, line: usize) -> bool {
+        let chosen = self.acted.as_ref().and_then(|acted| acted.choices.get(line.checked_sub(1)?)).cloned();
+        let (Some((outcome, to)), Some(here)) = (chosen, self.wanted.clone()) else {
+            return false;
+        };
+        let state = here.state.clone().unwrap_or_default();
+        self.go(Picked { dir: here.dir, state: Some(to.clone()) }, format!("{outcome} in {state} → {to}"));
+        true
+    }
+
+    /// The state `to` names shown, or its description's first state when
+    /// it names none, as an act on a node led to it: where
+    /// the person was is kept for `back`, and the panel says `says`.
+    fn go(&mut self, to: Picked, says: String) {
+        let Some(mut index) = self.line_named(&to) else {
+            return self.say(format!("{says}, which the tree does not list"));
+        };
+        // A description named alone: its first state, the line under it.
+        if to.state.is_none()
+            && self.lines.get(index + 1).is_some_and(|next| next.state.is_some() && next.row.dir == to.dir)
+        {
+            index += 1;
+        }
+        if let Some(here) = self.wanted.clone() {
+            self.history.push(here);
+        }
+        self.pick(index);
+        self.say(says);
+    }
+
+    /// The panel told `says`, and nothing to choose.
+    fn say(&mut self, says: String) {
+        self.acted = Some(Acted { says, choices: Vec::new() });
+    }
+
+    /// `picked` as the panel names it: its description, relative to the
+    /// root, and its state.
+    fn named(&self, picked: &Picked) -> String {
+        let within = gallery::within(&self.root, &picked.dir);
+        match &picked.state {
+            Some(state) => format!("{within} · {state}"),
+            None => within,
+        }
     }
 
     /// What picking line `index` shows: a state drawn at each of `WIDTHS`,
@@ -427,6 +576,7 @@ impl Gallery {
                         scene: drawing.scene,
                         nodes: drawing.page.nodes,
                         calls: drawing.calls,
+                        handlers: drawing.handlers,
                     });
                 }
                 Err(e) => {
@@ -693,6 +843,12 @@ impl Gallery {
     /// The id of the node under `at`, a point in the window, in whichever
     /// picture it falls on; none off the pictures or where no node is.
     fn node_at(&self, at: (f64, f64)) -> Option<String> {
+        self.hit(at).map(|(_, node)| node.id.clone())
+    }
+
+    /// The node under `at`, a point in the window, and the picture it is
+    /// in; none off the pictures or where no node is.
+    fn hit(&self, at: (f64, f64)) -> Option<(&Page, &Placed)> {
         let Picture::Pages(pages) = &self.picture else {
             return None;
         };
@@ -703,9 +859,17 @@ impl Gallery {
             .find_map(|(page, (left, top))| {
                 let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
                 ((0.0..=page.width).contains(&x) && (0.0..=page.height).contains(&y))
-                    .then(|| page.node_at((x, y)).map(|node| node.id.clone()))
+                    .then(|| page.node_at((x, y)).map(|node| (page, node)))
             })
             .flatten()
+    }
+
+    /// The line of the panel at `y`, a height in the window; none off the
+    /// panel, or where there is no panel.
+    fn panel_line(&self, y: f64) -> Option<usize> {
+        let tall = self.panel_height();
+        let top = self.size.1 - tall;
+        (tall > 0.0 && y >= top).then(|| ((y - top - MARGIN / 2.0) / PANEL_LINE).floor().max(0.0) as usize)
     }
 
     /// The outline around the node picked, in window points, in each
@@ -727,10 +891,25 @@ impl Gallery {
             .collect()
     }
 
-    /// What the panel says of the node picked, one line each: its id, kind,
-    /// the operation it calls, what was assumed there, then its label and
-    /// box at each width. Nothing when no node is picked.
+    /// What the panel says, one line each: what the last act on a node
+    /// came to, and any outcomes to choose from, each on a line of its own;
+    /// then, of the node picked, its id, kind, the operation it calls, what
+    /// was assumed there, then its label and box at each width. Nothing
+    /// when no node is picked and nothing was acted on.
     fn panel(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        if let Some(Acted { says, choices }) = &self.acted {
+            lines.push(says.clone());
+            for (outcome, to) in choices {
+                lines.push(format!("    {outcome} → {to}"));
+            }
+        }
+        lines.extend(self.node_panel());
+        lines
+    }
+
+    /// What the panel says of the node picked: nothing when none is.
+    fn node_panel(&self) -> Vec<String> {
         let (Some(id), Picture::Pages(pages)) = (&self.node, &self.picture) else {
             return Vec::new();
         };
@@ -1234,6 +1413,10 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let held = modifiers.state();
+                self.acting = held.super_key() || held.control_key();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let down = match delta {
                     MouseScrollDelta::LineDelta(_, y) => -f64::from(y) * NOTCH,
@@ -1734,6 +1917,114 @@ mod tests {
         gallery.pick(1);
         assert!(matches!(&gallery.picture, Picture::Faults(shown) if shown == &gallery.lines[0].row.faults));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The line of state `state` of the description named `description`.
+    fn state_in(gallery: &Gallery, description: &str, state: &str) -> usize {
+        let at = line_of(gallery, description);
+        at + 1
+            + gallery.lines[at + 1..]
+                .iter()
+                .take_while(|l| l.state.is_some())
+                .position(|l| l.row.name == state)
+                .unwrap()
+    }
+
+    /// The gallery showing state `state` of the description `description`.
+    fn show(gallery: &mut Gallery, description: &str, state: &str) {
+        let line = state_in(gallery, description, state);
+        showing(gallery, line);
+    }
+
+    /// The state shown, as "<description> · <state>".
+    fn shown(gallery: &Gallery) -> String {
+        gallery.named(gallery.wanted.as_ref().unwrap())
+    }
+
+    /// Node `id` acted on, ⌘ held, in the phone's picture.
+    fn act_on(gallery: &mut Gallery, id: &str) -> bool {
+        gallery.cursor = on_node(gallery, 0, id);
+        gallery.acting = true;
+        let changed = gallery.press();
+        gallery.acting = false;
+        changed
+    }
+
+    #[test]
+    fn acting_on_a_node_follows_its_transition_and_a_plain_click_only_picks_it() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        gallery.cursor = on_node(&gallery, 0, "order-0-cancel");
+        assert!(gallery.press());
+        assert_eq!(shown(&gallery), "orders · default", "a plain click picks the node, and stays");
+        assert!(act_on(&mut gallery, "order-0-cancel"));
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "a row's button, by its id as written");
+        assert_eq!(gallery.panel()[0], "order-{index}-cancel.tap in default → cancel-dialog");
+    }
+
+    #[test]
+    fn several_outcomes_are_chosen_in_the_panel() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "cancel-ready");
+        act_on(&mut gallery, "cd-confirm");
+        assert_eq!(shown(&gallery), "orders · cancel-ready", "nothing is shown until an outcome is chosen");
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered");
+        assert_eq!(panel[1..3], ["    ok → default", "    shipped → cancel-ready"]);
+        let top = gallery.size.1 - gallery.panel_height();
+        gallery.cursor = (TREE + 100.0, top + MARGIN / 2.0 + 1.5 * PANEL_LINE);
+        assert!(gallery.press(), "the first outcome clicked");
+        assert_eq!(shown(&gallery), "orders · default");
+        assert_eq!(gallery.panel()[0], "ok in cancel-ready → default");
+    }
+
+    #[test]
+    fn navigate_goes_to_the_screens_first_state_and_back_returns_along_the_path() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        act_on(&mut gallery, "order-0-cancel");
+        act_on(&mut gallery, "nav-export");
+        let export = line_of(&gallery, "export");
+        assert_eq!(gallery.picked, Some(export + 1), "the export screen's first state");
+        assert_eq!(gallery.panel()[0], "nav-export.tap navigates to ExportDocuments");
+        act_on(&mut gallery, "nav-back");
+        assert_eq!(shown(&gallery), "orders · cancel-dialog", "back across screens, to where it came from");
+        assert_eq!(gallery.panel()[0], "nav-back.tap goes back to orders · cancel-dialog");
+        act_on(&mut gallery, "nav-back");
+        assert_eq!(shown(&gallery), "orders · default");
+        act_on(&mut gallery, "nav-back");
+        assert_eq!(shown(&gallery), "orders · default", "nowhere further back");
+        assert!(gallery.panel()[0].contains("no act led here"), "{}", gallery.panel()[0]);
+    }
+
+    #[test]
+    fn a_navigate_to_a_screen_not_drawn_yet_says_so() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        act_on(&mut gallery, "order-0");
+        assert_eq!(shown(&gallery), "orders · default");
+        assert_eq!(
+            gallery.panel()[0],
+            "order-{index}.tap navigates to OrderDetail, which no description under the root declares: a screen not drawn yet"
+        );
+    }
+
+    #[test]
+    fn a_node_with_nothing_declared_says_so() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "cancel-unpaid");
+        act_on(&mut gallery, "cd-keep");
+        assert_eq!(shown(&gallery), "orders · cancel-unpaid", "nothing declared: it stays");
+        assert_eq!(gallery.panel()[0], "no transition from cancel-unpaid on cd-keep.tap");
+        assert_eq!(gallery.panel()[1], "id  cd-keep", "and the node is picked");
+        act_on(&mut gallery, "nav-export");
+        let todo = line_of(&gallery, "todo");
+        over_row(&mut gallery, todo);
+        gallery.press();
+        assert!(
+            gallery.history.is_empty() && gallery.acted.is_none(),
+            "picking in the tree starts a new path"
+        );
     }
 
     /// A root of its own named `name`, holding copies of the drafts `copied`

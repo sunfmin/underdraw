@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use underdraw_format::{Breakpoint, Model, Node, State, Transition};
 use underdraw_layout::Page;
 use vello::Scene;
@@ -51,6 +51,15 @@ impl Shown {
     }
 }
 
+/// What a node does when acted on: its id as the description writes it,
+/// which a transition names it by, and its handlers by event, their cases
+/// decided in the state shown.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Handlers {
+    pub written: String,
+    pub events: Map<String, Value>,
+}
+
 /// One state laid out, the scene not built yet: everything that can be
 /// wrong with the description is found by here, before a GPU is needed.
 pub struct Laid {
@@ -62,6 +71,8 @@ pub struct Laid {
     pub page: Page,
     /// The operations each node calls when acted on, by id.
     pub calls: BTreeMap<String, Vec<String>>,
+    /// What each node does when acted on, by id.
+    pub handlers: BTreeMap<String, Handlers>,
     /// The id each node is first given in this state, by its id as the
     /// description writes it: a transition names a node so.
     pub written: BTreeMap<String, String>,
@@ -79,6 +90,8 @@ pub struct Drawing {
     pub calls: BTreeMap<String, Vec<String>>,
     /// The id each node is first given in this state, by its id as written.
     pub written: BTreeMap<String, String>,
+    /// What each node does when acted on, by id.
+    pub handlers: BTreeMap<String, Handlers>,
     pub scene: Scene,
     /// Pixels per point: the one asked for, or less when the page would be
     /// taller than the GPU draws.
@@ -130,9 +143,11 @@ pub fn lay_out(path: &Path, wanted: &Wanted, drawn: Option<&BTreeSet<String>>) -
         .map_err(anyhow::Error::msg)?;
     let mut calls = BTreeMap::new();
     called(&root, &mut calls);
+    let mut handlers = BTreeMap::new();
+    handled(&root, &mut handlers);
     let mut written = BTreeMap::new();
     ids(&root, &mut written);
-    Ok(Laid { dir, shown, breakpoint, page, calls, written, typesetter })
+    Ok(Laid { dir, shown, breakpoint, page, calls, handlers, written, typesetter })
 }
 
 /// The transitions the description at `path` declares, in the order
@@ -171,6 +186,19 @@ fn called(node: &Node, calls: &mut BTreeMap<String, Vec<String>>) {
     }
 }
 
+/// What `node` and each node in it do when acted on, added to `handlers`
+/// by id.
+fn handled(node: &Node, handlers: &mut BTreeMap<String, Handlers>) {
+    let events = match node.props.get("on") {
+        Some(Value::Object(events)) => events.clone(),
+        _ => Map::new(),
+    };
+    handlers.insert(node.id.clone(), Handlers { written: node.written_id.clone(), events });
+    for child in &node.children {
+        handled(child, handlers);
+    }
+}
+
 impl Laid {
     /// The scene of the page at `scale` pixels per point, or less when that
     /// would make a side longer than `max_side` pixels: a long page is drawn
@@ -188,6 +216,7 @@ impl Laid {
             breakpoint: self.breakpoint,
             page: self.page,
             calls: self.calls,
+            handlers: self.handlers,
             written: self.written,
             scene,
             scale,

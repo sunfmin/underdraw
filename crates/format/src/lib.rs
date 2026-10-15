@@ -43,4 +43,4 @@ pub use model::{Model, model};
 pub use operations::{BulkOf, Does, Fill, Operation, Operations};
 pub use overlay::{Anchor, Edge, Placement};
 pub use schema::{Schema, Shape};
-pub use transitions::Transition;
+pub use transitions::{Transition, read as transitions};
