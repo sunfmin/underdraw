@@ -14,6 +14,10 @@ The five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+## Tests
+
+A test asserts the text, or the numbers, it chose: the few lines or values that show the behaviour it is about. It never compares images or pixels, and never holds a whole output to a golden file. Where the look is the point (a scrollbar shown, a zoom, a mark hidden), assert it from the state that decides it. So adding a draft, or rewording a message, fails only the tests about that thing.
+
 ## Designing a mockup with underdraw
 
 When asked to design a mockup (a screen, a draft) with the built underdraw tool, work only from the tool itself:
