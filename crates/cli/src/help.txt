@@ -7,12 +7,14 @@ platforms/*.json and, for kinds of the project's own, kinds.json. How to
 write each file, every kind and every rule: `underdraw check --help`, FORMAT.
 
 NEEDS
-  System fonts to check a description; to render one, also a GPU (Metal on
-  macOS, Vulkan or DirectX 12 elsewhere): `underdraw doctor` says.
+  System fonts to check a description; to render one or open the gallery,
+  also a GPU (Metal on macOS, Vulkan or DirectX 12 elsewhere): `underdraw
+  doctor` says. The gallery also needs a display.
 
 START HERE
   underdraw check <dir>      read the description and name every fault
-  underdraw render <dir>     then draw it, and show the PNG to the person
+  underdraw gallery <root>   then show it to the person: a window over every
+                             description under <root>, drawn as it now stands
   underdraw handoff <dir> --platform ios
                              once agreed: what to build, and what to test it against
   underdraw compare <dir> --platform ios --capture c.json
@@ -31,7 +33,10 @@ WHAT A COMMAND ANSWERS
 COMMANDS
   For the agent writing a description:
     underdraw check <dir>    every fault, and which fixtures each condition holds in
-    underdraw render <dir>   a wireframe PNG of one state, and where each node went
+    underdraw gallery <root> a window for the person: every description under
+                             <root>, each drawn at a phone and a desktop width
+    underdraw render <dir>   a wireframe PNG of one state, and where each node went,
+                             for the agent to read the node boxes
   For the agent building the screen on a platform:
     underdraw schema <dir>   the view model as a JSON Schema, to validate API data against
     underdraw handoff <dir> --platform <name>

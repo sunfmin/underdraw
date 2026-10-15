@@ -1,11 +1,11 @@
 WHEN
-  After `underdraw check` answers "ok": true, to see the screen: show the
-  PNG to the person to settle what it should look like, and read the node
-  boxes to know where each part went. Render each fixture and phase that
-  matters, at a phone width (390) and a desktop width (1120).
+  After `underdraw check` answers "ok": true, to read the node boxes and
+  know where each part went, at a phone width (390) and a desktop width
+  (1120). What a person looks at is the gallery (`underdraw gallery`), not
+  these PNGs.
 
 WHO
-  The agent that writes the description, for the person it works with.
+  The agent that writes the description.
 
 READS
   <path>/screen.json and, beside it, tokens.json (spaces, radii, fonts,
