@@ -361,6 +361,26 @@ fn a_component_with_a_backdrop_must_be_an_overlay() {
 }
 
 #[test]
+fn a_node_in_a_slot_a_look_never_draws_is_found() {
+    let slotted = r#""text": "房客推荐", "overlay": { "id": "dot", "component": "Badge", "text": "1" },
+        "trailing": [ { "id": "a", "component": "Icon", "icon": "star" }, { "id": "b", "component": "Icon", "icon": "star" } ],"#;
+    let checked = check(&planted("slotted", r#""text": "房客推荐","#, slotted));
+    assert!(
+        found(&checked, "guest-favorite.overlay", "Badge's look places no \"$children\", so dot in overlay"),
+        "{:#?}",
+        checked.findings
+    );
+    assert!(found(&checked, "guest-favorite.trailing", "so a, b in trailing"), "{:#?}", checked.findings);
+
+    // A look that places "$children", even in one branch of its cases, draws them.
+    let mut placed: Value = serde_json::from_str(&DRAFT.replace(r#""text": "房客推荐","#, slotted)).unwrap();
+    placed["components"]["Badge"] = json!({ "params": ["text"], "look": { "box": "row", "children": [
+        { "text": "{text}" }, { "cases": [ { "if": "text", "then": "$children" }, { "else": null } ] } ] } });
+    let checked = check(&placed);
+    assert!(!checked.findings.iter().any(|f| f.at.starts_with("guest-favorite.")), "{:#?}", checked.findings);
+}
+
+#[test]
 fn a_component_says_whether_it_scrolls_or_is_pinned() {
     let defaults = Components::read(&json!({}));
     assert!(defaults.scrolls("Carousel") && defaults.pinned("StickyBar"));
