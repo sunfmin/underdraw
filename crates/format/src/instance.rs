@@ -8,9 +8,10 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::breakpoint::{self, Breakpoint};
-use crate::components;
+use crate::components::{self, Components};
 use crate::conditions::{Conditions, UseSite};
 use crate::expand::{Instances, Met};
+use crate::field::Field;
 use crate::links::Undrawn;
 use crate::schema::object;
 use crate::screen::Screen;
@@ -139,7 +140,13 @@ pub(crate) fn build(
         }
     };
     let instances = Instances::new(screen.components.subtrees());
-    let mut fill = Fill { conditions: &screen.conditions, instances, breakpoint, undrawn };
+    let mut fill = Fill {
+        conditions: &screen.conditions,
+        components: &screen.components,
+        instances,
+        breakpoint,
+        undrawn,
+    };
     let at = match state {
         State::Fixture(_) => "/root".to_string(),
         State::Phase(name) => format!("/phases/{}", escaped(name)),
@@ -177,6 +184,9 @@ fn escaped(key: &str) -> String {
 
 struct Fill<'c> {
     conditions: &'c Conditions,
+    /// What types the props of each look component, so a bool one given
+    /// an expression is given whether it holds.
+    components: &'c Components,
     /// The instances being built, each with where it is written and the
     /// scope it is in: what a `{"slot": …}` node inside stands for is
     /// built there.
@@ -233,7 +243,7 @@ impl Fill<'_> {
         let mut params = Map::new();
         for (name, field) in &component.params {
             let value = match object.get("with").and_then(|with| with.get(name)) {
-                Some(given) => self.argument(given, scope)?,
+                Some(given) => self.typed(given, Some(field), scope)?,
                 None => field.default.clone().unwrap_or(Value::Null),
             };
             params.insert(name.clone(), value);
@@ -293,6 +303,19 @@ impl Fill<'_> {
             return false;
         }
         !matches!(object.get("if"), Some(Value::String(used)) if !self.holds(used, scope))
+    }
+
+    /// What a param of type `param` (none when its component lists its
+    /// params untyped) is given, in `scope`: at a bool position an
+    /// expression (`"!canBack"`) gives whether it holds; anything else is
+    /// read as [`Fill::argument`] reads it.
+    fn typed(&self, given: &Value, param: Option<&Field>, scope: &Value) -> Result<Value, String> {
+        match given {
+            Value::String(used) if !used.starts_with('{') && param.is_some_and(Field::is_bool) => {
+                Ok(Value::Bool(self.holds(used, scope)))
+            }
+            _ => self.argument(given, scope),
+        }
     }
 
     /// What a param is given in `with`, or a prop on a node, read in the
@@ -363,11 +386,11 @@ impl Fill<'_> {
                 let mut on = self.value(value, scope)?;
                 repath(&mut on, &self.instances);
                 node.props.insert(key.clone(), on);
-            } else if let ("disabled", Value::String(used)) = (key.as_str(), value) {
-                node.props.insert(key.clone(), Value::Bool(self.holds(used, scope)));
             } else {
-                // A look's prop, as a param in `with`, may be given a condition.
-                node.props.insert(key.clone(), self.argument(value, scope)?);
+                // A look's prop, as a param in `with`, is read by its type.
+                let typed = self.components.typed(&node.component).unwrap_or_default();
+                let param = typed.iter().find(|(param, _)| param == key).map(|(_, field)| field);
+                node.props.insert(key.clone(), self.typed(value, param, scope)?);
             }
         }
         // What a bound field shows: the value at its path (or paths).

@@ -95,6 +95,12 @@ impl Field {
         Field::of(self.base.clone())
     }
 
+    /// Whether a value of it is one yes/no, null or not: a bool position,
+    /// which takes an expression (`"!canBack"`).
+    pub fn is_bool(&self) -> bool {
+        self.base == Base::Bool && !self.array
+    }
+
     /// True of a non-null, non-array Bool: what a condition may test as is.
     pub fn is_plain_bool(&self) -> bool {
         self.base == Base::Bool && !self.array && !self.nullable

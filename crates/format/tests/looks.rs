@@ -63,9 +63,9 @@ fn a_look_with_typed_params_holds_each_prop_to_its_type() {
         (json!({ "selected": true, "text": 2 }), "chip.text", "and the parameter is string"),
         (json!({ "selected": true }), "chip", "Chip reads text (string), which the node does not give"),
         (
-            json!({ "selected": "!hasItems", "text": "Milk" }),
+            json!({ "selected": "on and off", "text": "Milk" }),
             "chip.selected",
-            "is text, and selected is a bool",
+            "\"on and off\" is no expression, and this is a bool",
         ),
         (json!({ "selected": true, "text": "{hasItems}" }), "chip.text", "is the condition hasItems, a Bool"),
     ] {

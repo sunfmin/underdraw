@@ -47,19 +47,40 @@ impl Look {
     /// each placeholder's, each a condition's, and the props a `frame`
     /// takes. A component's name and the notes for people read nothing.
     pub fn reads(&self, bound: &[&str], read: &mut Vec<String>) {
+        self.collect(bound, Reading::All, read);
+    }
+
+    /// The params this reads only as a yes/no: each named bare in an `if`
+    /// or a branch's `if` (`disabled`, `!selected`), never compared, shown
+    /// or given on. A listed param of these is a bool in all but its type.
+    pub fn only_asks(&self) -> Vec<String> {
+        let (mut read, mut asked) = (Vec::new(), Vec::new());
+        self.collect(&[], Reading::All, &mut read);
+        self.collect(&[], Reading::Asked, &mut asked);
+        let mut only = Vec::new();
+        for name in &asked {
+            let times = |names: &[String]| names.iter().filter(|other| *other == name).count();
+            if times(&read) == times(&asked) && !only.contains(name) {
+                only.push(name.clone());
+            }
+        }
+        only
+    }
+
+    fn collect(&self, bound: &[&str], reading: Reading, read: &mut Vec<String>) {
         match self {
-            Look::Text { template, .. } => {
+            Look::Text { template, .. } if reading == Reading::All => {
                 for placeholder in template.placeholders() {
                     placeholder.read(bound, read);
                 }
             }
             Look::List(looks) => {
                 for look in looks {
-                    look.reads(bound, read);
+                    look.collect(bound, reading, read);
                 }
             }
-            Look::Object(object) => object.reads(bound, read),
-            Look::Children | Look::Plain(_) => {}
+            Look::Object(object) => object.collect(bound, reading, read),
+            Look::Text { .. } | Look::Children | Look::Plain(_) => {}
         }
     }
 
@@ -212,14 +233,17 @@ impl Object {
         self.written("backdrop") == Some(&Value::Bool(true)) && self.key("pin").is_none()
     }
 
-    fn reads(&self, bound: &[&str], read: &mut Vec<String>) {
-        if self.written("frame") == Some(&Value::Bool(true)) && self.component().is_none() {
+    fn collect(&self, bound: &[&str], reading: Reading, read: &mut Vec<String>) {
+        if reading == Reading::All
+            && self.written("frame") == Some(&Value::Bool(true))
+            && self.component().is_none()
+        {
             for name in FRAMED {
                 read_name(name, bound, read);
             }
         }
         if let Some(condition) = &self.when {
-            condition.reads(bound, read);
+            condition.collect(bound, reading, read);
         }
         let repeats = self.key("repeat").is_some();
         for key in &self.keys {
@@ -227,20 +251,20 @@ impl Object {
                 "each" if repeats => {
                     let mut inner = bound.to_vec();
                     inner.extend(REPEATED);
-                    key.look.reads(&inner, read);
+                    key.look.collect(&inner, reading, read);
                 }
                 "component" => {}
                 name if NOTES.contains(&name) => {}
-                _ => key.look.reads(bound, read),
+                _ => key.look.collect(bound, reading, read),
             }
         }
         if let Some(cases) = &self.cases {
             for branch in &cases.branches {
                 if let Some(condition) = &branch.when {
-                    condition.reads(bound, read);
+                    condition.collect(bound, reading, read);
                 }
                 for side in [&branch.then, &branch.otherwise].into_iter().flatten() {
-                    side.reads(bound, read);
+                    side.collect(bound, reading, read);
                 }
             }
         }
@@ -317,10 +341,41 @@ impl Condition {
         all
     }
 
-    fn reads(&self, bound: &[&str], read: &mut Vec<String>) {
-        for placeholder in self.placeholders() {
-            placeholder.read(bound, read);
+    fn collect(&self, bound: &[&str], reading: Reading, read: &mut Vec<String>) {
+        match (reading, &self.parsed) {
+            (Reading::All, _) => {
+                for placeholder in self.placeholders() {
+                    placeholder.read(bound, read);
+                }
+            }
+            (Reading::Asked, Ok(expr)) => expr_asks(expr, bound, read),
+            (Reading::Asked, Err(_)) => {}
         }
+    }
+}
+
+/// Which names [`Look::collect`] gathers: every one read, or only those
+/// asked as a bare yes/no.
+#[derive(Clone, Copy, PartialEq)]
+enum Reading {
+    All,
+    Asked,
+}
+
+/// Each name `expr` asks bare, as a yes/no, outside any comparison.
+fn expr_asks(expr: &Expr<Placeholder>, bound: &[&str], asked: &mut Vec<String>) {
+    match expr {
+        Expr::Or(items) | Expr::And(items) => {
+            for item in items {
+                expr_asks(item, bound, asked);
+            }
+        }
+        Expr::Not(inner) => expr_asks(inner, bound, asked),
+        Expr::Atom(Atom::Group(inner)) => expr_asks(inner, bound, asked),
+        Expr::Atom(Atom::Name(placeholder)) if placeholder.filters.is_empty() => {
+            placeholder.read(bound, asked)
+        }
+        Expr::Atom(_) | Expr::Compare(..) => {}
     }
 }
 
