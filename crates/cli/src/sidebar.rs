@@ -7,29 +7,15 @@
 
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
+pub use crate::chrome::SIDEBAR as WIDTH;
+use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, INSET};
+use crate::chrome::{
+    BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
+    CARD_TEXT as BODY, CARD_TITLE as TITLE, GUTTER,
+};
 use crate::field::Shown;
 use crate::notes::By;
 use crate::text::Typesetter;
-
-/// How wide the sidebar is, in points.
-pub const WIDTH: f64 = 360.0;
-/// The space around the cards, and between them.
-const GUTTER: f64 = 12.0;
-/// The space inside a card, around what it holds.
-const PADDING: f64 = 12.0;
-/// The space between one block of a card and the next.
-const BETWEEN: f64 = 6.0;
-/// How much taller than its text a button is.
-const BUTTON_PAD: f64 = 7.0;
-
-const TITLE: Font = Font { size: 13.0, weight: 600, line_height: 18.0 };
-const BODY: Font = Font { size: 13.0, weight: 400, line_height: 18.0 };
-const BUTTON: Font = Font { size: 13.0, weight: 600, line_height: 16.0 };
-const BIG: Font = Font { size: 20.0, weight: 600, line_height: 26.0 };
-/// The space inside a bubble, or a field, around its text.
-const INSET: f64 = 8.0;
-/// How much of the card's width a bubble takes at most.
-const BUBBLE: f64 = 0.82;
 
 /// One card: a title, and the blocks under it.
 pub struct Card<A> {
@@ -154,7 +140,7 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mu
         y += PADDING;
         laid.draws.push(Draw::Box {
             rect: rect(left + GUTTER, card_top, WIDTH - 2.0 * GUTTER, y - card_top),
-            radius: 8.0,
+            radius: CARD_RADIUS,
             fill: Some(Ink::Paper),
             stroke: Some(Ink::Line),
             dashed: false,
@@ -197,7 +183,7 @@ fn button<'a, A>(
     let around = rect(x, y, wide, tall);
     draws.push(Draw::Box {
         rect: around,
-        radius: 6.0,
+        radius: BUTTON_RADIUS,
         fill: Some(Ink::Paper),
         stroke: Some(Ink::Muted),
         dashed: false,
@@ -224,11 +210,11 @@ fn bubble(
     let (box_wide, box_tall) = (words_wide + 2.0 * INSET, tall + 2.0 * INSET);
     let (left, fill, ink) = match by {
         By::Person => (x + wide - box_wide, Ink::Note, Ink::Paper),
-        By::Agent => (x, Ink::Fill, Ink::Text),
+        By::Agent => (x, Ink::Line, Ink::Text),
     };
     draws.push(Draw::Box {
         rect: rect(left, y, box_wide, box_tall),
-        radius: 10.0,
+        radius: BUBBLE_RADIUS,
         fill: Some(fill),
         stroke: None,
         dashed: false,
@@ -254,7 +240,7 @@ fn field(
     let box_tall = tall + 2.0 * INSET;
     draws.push(Draw::Box {
         rect: rect(x, y, wide, box_tall),
-        radius: 6.0,
+        radius: BUTTON_RADIUS,
         fill: Some(Ink::Paper),
         stroke: Some(Ink::Note),
         dashed: false,

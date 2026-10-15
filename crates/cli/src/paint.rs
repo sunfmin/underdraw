@@ -9,9 +9,9 @@ use vello::peniko::{Color, Fill};
 
 use crate::text::Typesetter;
 
-/// The colour of each ink. Gray throughout, but for what was assumed and
-/// the person's notes.
-fn colour(ink: Ink) -> Color {
+/// The colour of each ink in a wireframe. Gray throughout, but for what
+/// was assumed and the person's notes.
+pub fn colour(ink: Ink) -> Color {
     let rgb = match ink {
         Ink::Text | Ink::Strong => [0x22, 0x22, 0x22],
         Ink::Muted => [0x6A, 0x6A, 0x6A],
@@ -32,18 +32,25 @@ pub fn scene(page: &Page, typesetter: &mut Typesetter, scale: f64) -> Scene {
     let at = Affine::scale(scale);
     let paper = RoundedRect::new(0.0, 0.0, f64::from(page.width), f64::from(page.height), 0.0);
     scene.fill(Fill::NonZero, at, colour(Ink::Paper), None, &paper);
-    draws(&mut scene, at, &page.draws, typesetter);
+    draws(&mut scene, at, &page.draws, colour, typesetter);
     scene
 }
 
-/// `list` painted into `scene`, its points taken through `at`.
-pub fn draws(scene: &mut Scene, at: Affine, list: &[Draw], typesetter: &mut Typesetter) {
+/// `list` painted into `scene`, its points taken through `at`, each ink in
+/// the colour `colour` gives it: a wireframe's, or the gallery's chrome's.
+pub fn draws(
+    scene: &mut Scene,
+    at: Affine,
+    list: &[Draw],
+    colour: fn(Ink) -> Color,
+    typesetter: &mut Typesetter,
+) {
     for draw in list {
-        paint(scene, at, draw, typesetter);
+        paint(scene, at, draw, colour, typesetter);
     }
 }
 
-fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter) {
+fn paint(scene: &mut Scene, at: Affine, draw: &Draw, colour: fn(Ink) -> Color, typesetter: &mut Typesetter) {
     match draw {
         Draw::Box { rect, radius, fill, stroke, dashed } => {
             let shape = rounded(*rect, *radius);
@@ -59,7 +66,7 @@ fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter
             }
         }
         Draw::Text { rect, text, font, ink, max_lines, align, underline, strike } => {
-            let words = Words { font: *font, ink: *ink, max_lines: *max_lines, align: *align };
+            let words = Words { font: *font, ink: colour(*ink), max_lines: *max_lines, align: *align };
             set(scene, at, *rect, text, words, (*underline, *strike), typesetter);
         }
         Draw::Cross { rect, ink } => {
@@ -76,7 +83,7 @@ fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter
         Draw::Clip { rect, radius, draws } => {
             scene.push_clip_layer(Fill::NonZero, at, &rounded(*rect, *radius));
             for draw in draws {
-                paint(scene, at, draw, typesetter);
+                paint(scene, at, draw, colour, typesetter);
             }
             scene.pop_layer();
         }
@@ -86,7 +93,7 @@ fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter
             scene.fill(Fill::NonZero, at, colour(*ink), None, &circle);
             scene.stroke(&Stroke::new(1.5), at, colour(Ink::Paper), None, &circle);
             let font = Font { size: 11.0, weight: 700, line_height: rect.height };
-            let words = Words { font, ink: Ink::Paper, max_lines: Some(1), align: Align::Center };
+            let words = Words { font, ink: colour(Ink::Paper), max_lines: Some(1), align: Align::Center };
             set(scene, at, *rect, text, words, (false, false), typesetter);
         }
     }
@@ -96,7 +103,7 @@ use crate::text::HAIR;
 
 struct Words {
     font: Font,
-    ink: Ink,
+    ink: Color,
     max_lines: Option<u32>,
     align: Align,
 }
@@ -120,7 +127,7 @@ fn set(
         Align::Center => HAIR / 2.0,
         Align::End => HAIR,
     };
-    let brush = colour(words.ink);
+    let brush = words.ink;
     let origin = at * Affine::translate((f64::from(rect.x - back), f64::from(rect.y)));
     for (index, line) in layout.lines().enumerate() {
         if words.max_lines.is_some_and(|max| index >= max as usize) {

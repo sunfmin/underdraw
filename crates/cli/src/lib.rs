@@ -5,11 +5,13 @@
 //! answer as one JSON object.
 
 mod act;
+mod chrome;
 mod draw;
 mod field;
 mod flow;
 mod gallery;
 mod gpu;
+mod inbox;
 mod journeys;
 mod links;
 mod notes;
