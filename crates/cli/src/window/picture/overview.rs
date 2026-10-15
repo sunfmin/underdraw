@@ -259,7 +259,7 @@ impl Shows for Overview {
             Target::State(line) | Target::Pass { state: line, .. } => {
                 On::State { state: self.thumbs.iter().find(|thumb| thumb.line == *line)?.state.clone() }
             }
-            Target::Caption => On::Screen { whole: Whole::Screen },
+            Target::Caption => On::Whole { whole: Whole::Screen },
             Target::Node { .. } | Target::Box(_) => return None,
         };
         Some(Reference { description: self.dir.clone(), on })
