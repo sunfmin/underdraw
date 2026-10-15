@@ -1,0 +1,202 @@
+{
+  "$comment": "The gallery's journeys, described as a screen would be: a design of the gallery, not how it is built (ADR 0017 still draws it by hand).",
+  "types": {
+    "Stop": {
+      "number": "int 1..",
+      "screen": {
+        "type": "string 1..",
+        "doc": "The step's screen, by its directory under the project root"
+      },
+      "state": "string 1..",
+      "last": {
+        "type": "bool = false",
+        "doc": "The journey's last step"
+      },
+      "here": {
+        "type": "bool = false",
+        "doc": "The step shown"
+      },
+      "passed": {
+        "type": "bool = false",
+        "doc": "A step before the one shown"
+      },
+      "broken": {
+        "type": "bool = false",
+        "doc": "The step check names, where the journey breaks"
+      }
+    },
+    "Journey": {
+      "name": "string 1..",
+      "about": {
+        "type": "string",
+        "doc": "The journey's $comment; empty when it has none"
+      },
+      "steps": {
+        "type": "int 1..",
+        "derived": {
+          "app": "stops' length"
+        }
+      },
+      "stops": "Stop[] 1..",
+      "brokenAt": {
+        "type": "int?",
+        "doc": "The step check names first, when it does not walk"
+      },
+      "route": {
+        "type": "string 1..",
+        "derived": {
+          "app": "the stops' screens, joined by ›, a screen twice in a row once"
+        }
+      }
+    },
+    "TreeRow": {
+      "name": "string 1..",
+      "kind": "RowKind",
+      "meta": "string = \"\"",
+      "picked": "bool = false",
+      "folded": {
+        "type": "bool = false",
+        "view": true,
+        "doc": "Its lines folded away, so not drawn; the tree still lists them"
+      },
+      "entry": {
+        "type": "TreeJourney?",
+        "doc": "The journey a journey's line is"
+      },
+      "children": {
+        "type": "TreeRow[]",
+        "doc": "The lines a level in: what the directory, description or journeys/ holds"
+      }
+    },
+    "RowKind": "enum(directory, description, state, phase, journeys, journey)",
+    "Note": {
+      "id": "string 1..",
+      "stands": "NoteStands",
+      "messages": "Message[] 1..",
+      "handed": {
+        "type": "bool = false",
+        "doc": "The agent waiting with `notes --wait` has taken it"
+      },
+      "seconds": {
+        "type": "int 0.. = 0",
+        "doc": "How long the agent has had it, counting up each second the window is open"
+      }
+    },
+    "NoteStands": "enum(waiting, answered)",
+    "Message": {
+      "who": "Who",
+      "text": "string 1.."
+    },
+    "Who": "enum(person, agent)",
+    "Fault": {
+      "at": "string 1..",
+      "problem": "string 1..",
+      "file": "string 1.."
+    },
+    "Bar": {
+      "back": {
+        "type": "bool = false",
+        "doc": "The window has shown something before this: ← back goes there"
+      },
+      "forward": {
+        "type": "bool = false",
+        "doc": "The person went back: → forward returns"
+      },
+      "crumbs": {
+        "type": "string 1..",
+        "doc": "Where the window is, from the root: drafts › shop › order › cancel-dialog"
+      },
+      "mode": {
+        "type": "Mode = \"inspect\"",
+        "view": true,
+        "doc": "What a plain click on a picture does"
+      },
+      "agent": {
+        "type": "Agent",
+        "doc": "Whether an agent is waiting on this root with `underdraw notes --wait` now"
+      },
+      "waitingOnYou": {
+        "type": "int 0..",
+        "doc": "Assumptions not answered and agent answers not read, under the root"
+      },
+      "inboxOpen": {
+        "type": "bool = false",
+        "doc": "The inbox shown in the sidebar, whatever is picked",
+        "view": true
+      },
+      "sidebar": {
+        "type": "bool = true",
+        "doc": "The sidebar shown; ⌘\\ hides it",
+        "view": true
+      }
+    },
+    "Mode": "enum(inspect, play)",
+    "Agent": "enum(listening, away)",
+    "TreeJourney": {
+      "journey": "Journey",
+      "played": "bool = false",
+      "drawn": {
+        "type": "bool = false",
+        "doc": "Its path drawn on the flow"
+      }
+    }
+  },
+  "conditions": {
+    "Journey.broken": {
+      "when": "brokenAt != null",
+      "label": "Does not walk"
+    },
+    "Journey.told": {
+      "when": "about != \"\"",
+      "label": "Says what it is about"
+    },
+    "Message.mine": {
+      "when": "who == \"person\"",
+      "label": "Said by the person"
+    },
+    "TreeRow.heading": {
+      "when": "kind == \"directory\" || kind == \"description\" || kind == \"journeys\"",
+      "label": "A directory, a description or journeys/"
+    },
+    "TreeRow.phase": {
+      "when": "kind == \"phase\"",
+      "label": "A phase"
+    },
+    "TreeRow.metered": {
+      "when": "meta != \"\"",
+      "label": "Says how many"
+    },
+    "Bar.canBack": {
+      "when": "back == true",
+      "label": "Somewhere to go back to"
+    },
+    "Bar.canForward": {
+      "when": "forward == true",
+      "label": "Somewhere to go forward to"
+    },
+    "Bar.inspecting": {
+      "when": "mode == \"inspect\"",
+      "label": "A click inspects"
+    },
+    "Bar.playing": {
+      "when": "mode == \"play\"",
+      "label": "A click acts, as in the app"
+    },
+    "Bar.listening": {
+      "when": "agent == \"listening\"",
+      "label": "An agent is listening"
+    },
+    "Bar.owed": {
+      "when": "waitingOnYou > 0",
+      "label": "Something waits on the person"
+    },
+    "Bar.sidebarShown": {
+      "when": "sidebar == true",
+      "label": "The sidebar shown"
+    },
+    "TreeRow.journeyLine": {
+      "when": "entry != null",
+      "label": "A journey's line"
+    }
+  }
+}
