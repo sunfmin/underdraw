@@ -30,13 +30,13 @@ mod showcase;
 mod subtrees;
 mod template;
 mod transitions;
+pub mod words;
 
 // Never called: each is there for Flux to refuse.
 #[cfg(flux)]
 #[allow(dead_code)]
 mod rejected;
 
-pub use assumption::Lang;
 pub use breakpoint::Breakpoint;
 pub use check::{Checked, Condition, Finding, check, check_among};
 pub use components::{Components, FILTERS, LOOK, SHARED as SHARED_COMPONENTS, Takes, Track, takes};
@@ -56,3 +56,4 @@ pub use schema::{Schema, Shape};
 pub use showcase::{showcase, shows};
 pub use subtrees::{Subtrees, join as join_id};
 pub use transitions::{Transition, read as transitions, writes, written_node};
+pub use words::{Lang, fill};

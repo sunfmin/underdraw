@@ -1,38 +1,9 @@
 //! What an assumption must say for the person to answer it: what was
 //! guessed, and what else it could be. The agent writes its own `assumed`;
 //! the ones underdraw makes itself (a screen not drawn yet, a component it does
-//! not know) are written here, as whole sentences in the language asked for.
+//! not know) are said here, in the language asked for ([`crate::words`]).
 
-/// The language underdraw words its own assumptions in, as the commands
-/// that report them are asked (`--lang`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Lang {
-    #[default]
-    En,
-    Zh,
-}
-
-impl Lang {
-    /// Every language, by the name `--lang` takes.
-    pub const NAMES: [&'static str; 2] = ["en", "zh"];
-
-    /// Its name, as `--lang` takes it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Lang::En => "en",
-            Lang::Zh => "zh",
-        }
-    }
-
-    /// The language `name` names, as `--lang` takes it.
-    pub fn parse(name: &str) -> Option<Lang> {
-        match name {
-            "en" => Some(Lang::En),
-            "zh" => Some(Lang::Zh),
-            _ => None,
-        }
-    }
-}
+use crate::words::Lang;
 
 /// The fewest words an `assumed` says what was guessed and what else it
 /// could be in, where words are spaced.
@@ -63,36 +34,17 @@ fn is_unspaced(c: char) -> bool {
 /// The assumption on a node that navigates to `screens`, none of which a
 /// description under the root declares.
 pub fn undrawn(screens: &[String], lang: Lang) -> String {
-    match lang {
-        Lang::En => {
-            let (names, it, is) = match screens {
-                [one] => (one.clone(), "it", "is a screen"),
-                _ => (screens.join(", "), "them", "are screens"),
-            };
-            format!(
-                "This navigates to {names}, which no description under the root declares, so it is guessed that {names} {is} not drawn yet; it could instead be a misspelt name of a screen that is drawn, or the navigate may not be wanted at all: draw {it}, or correct the name."
-            )
-        }
-        Lang::Zh => {
-            let names = screens.join("、");
-            format!(
-                "这里跳转到 {names}，但根目录下没有任何描述声明它，所以猜测 {names} 是还没画的屏幕；也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。"
-            )
-        }
+    let names = screens.join(lang.words().list_separator);
+    match screens {
+        [_] => crate::say!(lang, undrawn_one, names),
+        _ => crate::say!(lang, undrawn_many, names),
     }
 }
 
 /// The assumption on a node of `component`, which none of the screen's own components and none of
 /// underdraw's own components define.
 pub fn unknown_component(component: &str, lang: Lang) -> String {
-    match lang {
-        Lang::En => format!(
-            "{component} is not a component underdraw knows, so it is drawn as a box with its name, guessed to be a component of this project whose look is not written yet; it could instead be a misspelt name of a component underdraw has: define it in the screen's \"components\", with its params and look, or correct the name."
-        ),
-        Lang::Zh => format!(
-            "{component} 不是 underdraw 认识的组件，所以画成一个写着名字的框，猜测它是这个项目里还没写外观的组件；也可能是 underdraw 已有组件的名字写错了：在 screen.json 的 \"components\" 里写出它的 params 和外观，或者改正名字。"
-        ),
-    }
+    crate::say!(lang, unknown_component, component)
 }
 
 #[cfg(test)]
@@ -118,7 +70,7 @@ mod tests {
 
     #[test]
     fn what_underdraw_assumes_itself_is_long_enough_in_every_language() {
-        for lang in Lang::NAMES.map(|name| Lang::parse(name).unwrap()) {
+        for lang in Lang::all() {
             for said in [undrawn(&["OrderDetail".to_string()], lang), unknown_component("Gauge", lang)] {
                 assert_eq!(too_short(&said), None, "{said}");
             }
