@@ -8,7 +8,7 @@
 //! on its nodes, on regions dragged over it, on a whole state, and on the
 //! arrows of an overview or a flow, each drawn as a numbered pin where it
 //! was written; the window writes nothing else. The tree and panels are drawn by hand, in
-//! the inks a wireframe is drawn in. The window is drawn from the files as
+//! the chrome's look ([`chrome`]). The window is drawn from the files as
 //! they now stand: as they change under its root, the tree, the state shown
 //! and its notes follow.
 
@@ -32,46 +32,25 @@ use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::act::{self, Act};
+use crate::chrome::{
+    ARROW_FONT, ARROWS, CAPTION, DOT, GAP, INDENT, MARGIN, MARK, MARK_INSET, MARK_TALL, PANEL_LINE, PIN, ROW,
+    SPACE, THUMB, THUMB_TALL, TREE,
+};
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, By, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
-use crate::{gpu, links, paint, text};
+use crate::{chrome, gpu, links, paint, text};
 
 /// The widths each description is drawn at: a phone, and a desktop.
 const WIDTHS: [u32; 2] = [390, 1120];
-
-/// The tree's width, in points.
-const TREE: f64 = 260.0;
-/// One row of the tree, in points.
-const ROW: f64 = 26.0;
-/// How far in each directory level moves a row.
-const INDENT: f64 = 14.0;
-/// The space around the pictures, and between them.
-const MARGIN: f64 = 24.0;
-/// The caption over each picture.
-const CAPTION: f64 = 26.0;
+/// The width each state is drawn at in a description's overview.
+const OVERVIEW: u32 = 390;
 /// How far one notch of a mouse wheel scrolls.
 const NOTCH: f64 = 40.0;
-/// One line of the panel of the node picked.
-const PANEL_LINE: f64 = 20.0;
-/// The space between one finding and the next.
-const GAP: f64 = 12.0;
-/// The width each state is drawn at in a description's overview, and how
-/// wide and, at most, how tall its picture there is.
-const OVERVIEW: u32 = 390;
-const THUMB: f64 = 160.0;
-const THUMB_TALL: f64 = 320.0;
-/// The space between two states in the overview, where the arrows run.
-const SPACE: f64 = 72.0;
-/// How far apart the arrows leaving, or reaching, one box of the flow are.
-const ARROWS: f64 = 24.0;
-/// A note's pin, where it was written, and the faint dot of it elsewhere:
-/// how wide each is.
-const PIN: f64 = 22.0;
-const DOT: f64 = 8.0;
+
 /// How far the pointer moves, held down, before a press is a drag over a
 /// region rather than a click.
 const DRAG: f64 = 6.0;
@@ -448,13 +427,6 @@ struct Pass {
     wide: f64,
 }
 
-/// The font a journey's mark in the overview is labelled in.
-const PASS_FONT: Font = Font { size: 11.0, weight: 600, line_height: 14.0 };
-/// How tall a journey's mark in the overview is, and how far it is set in
-/// from its picture's corner and from the mark above it.
-const PASS_TALL: f64 = 18.0;
-const PASS_INSET: f64 = 6.0;
-
 /// One transition: from one state to another, by their places in
 /// [`Overview::thumbs`], labelled with the label of the node acted on and,
 /// for a call, the outcome.
@@ -467,9 +439,6 @@ struct Arrow {
     /// The transition, as a reference names it.
     transition: reference::Transition,
 }
-
-/// The font the overview's arrows are labelled in.
-const ARROW_FONT: Font = Font { size: 12.0, weight: 600, line_height: 16.0 };
 
 impl Page {
     /// The node that a press at `at`, in the page's points, is on: the
@@ -1309,7 +1278,7 @@ impl Gallery {
                 let thumb = thumbs.iter().position(|thumb| thumb.name == on.state);
                 let Some(thumb) = thumb.filter(|_| on.dir == dir) else { continue };
                 let label = format!("→ {} · step {}", journey.row.name, step + 1);
-                let wide = f64::from(self.typesetter.text(&label, PASS_FONT, None).width) + 10.0;
+                let wide = f64::from(self.typesetter.text(&label, MARK, None).width) + 10.0;
                 thumbs[thumb].journeys.push(Pass { line, step, label, wide });
             }
         }
@@ -1373,9 +1342,9 @@ impl Gallery {
         let mut list = Vec::new();
         for (thumb, (x, y, w, _)) in overview.thumbs.iter().zip(self.cells()) {
             for (index, pass) in thumb.journeys.iter().enumerate() {
-                let top = y + PASS_INSET + index as f64 * (PASS_TALL + PASS_INSET / 2.0);
-                let wide = pass.wide.min(w - 2.0 * PASS_INSET);
-                list.push((rect(x + PASS_INSET, top, wide, PASS_TALL), pass));
+                let top = y + MARK_INSET + index as f64 * (MARK_TALL + MARK_INSET / 2.0);
+                let wide = pass.wide.min(w - 2.0 * MARK_INSET);
+                list.push((rect(x + MARK_INSET, top, wide, MARK_TALL), pass));
             }
         }
         list
@@ -1453,23 +1422,29 @@ impl Gallery {
         };
         let mut list = Vec::new();
         for (index, (arrow, (path, at))) in overview.arrows.iter().zip(self.overview_arrows()).enumerate() {
-            let ink = if self.arrow == Some(index) { Ink::Strong } else { Ink::Text };
+            // The arrow picked stands out; the others are drawn quieter
+            // than their labels, which are what a person reads.
+            let (ink, edge, said) = if self.arrow == Some(index) {
+                (Ink::Strong, Ink::Strong, Ink::Strong)
+            } else {
+                (Ink::Muted, Ink::Line, Ink::Text)
+            };
             for pair in path.windows(2) {
                 list.push(line(pair[0], pair[1], ink));
             }
             list.extend(head(path[path.len() - 2], path[path.len() - 1], ink));
             list.push(Draw::Box {
                 rect: at,
-                radius: 9.0,
+                radius: chrome::MARK_RADIUS,
                 fill: Some(Ink::Paper),
-                stroke: Some(ink),
+                stroke: Some(edge),
                 dashed: false,
             });
             let label = Draw::Text {
                 rect: rect(f64::from(at.x), f64::from(at.y) + 1.0, f64::from(at.width), 16.0),
                 text: arrow.label.clone(),
                 font: ARROW_FONT,
-                ink,
+                ink: said,
                 max_lines: Some(1),
                 align: Align::Center,
                 underline: false,
@@ -2453,7 +2428,7 @@ impl Gallery {
         let Some(said) = reply else {
             return Vec::new();
         };
-        let font = Font { size: 13.0, weight: 400, line_height: 16.0 };
+        let font = chrome::BODY;
         let set = self.typesetter.text(&said, font, Some(320.0));
         let (wide, tall) = (f64::from(set.width) + 1.0, f64::from(set.height));
         let (x, y) = (f64::from(pin.rect.x), f64::from(pin.rect.y) + PIN + 4.0);
@@ -2464,7 +2439,7 @@ impl Gallery {
         vec![
             Draw::Box {
                 rect: rect(x, y, wide + 16.0, tall + 12.0),
-                radius: 4.0,
+                radius: chrome::PICKED_RADIUS,
                 fill: Some(Ink::Paper),
                 stroke: Some(Ink::Answered),
                 dashed: false,
@@ -2528,12 +2503,12 @@ impl Gallery {
             (false, 1) => format!("{within} has a fault, so it is not drawn: `underdraw check` it"),
             (false, n) => format!("{within} has {n} faults, so it is not drawn: `underdraw check` it"),
         };
-        let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, 600)];
+        let mut list = vec![words(rect(0.0, MARGIN, wide, 18.0), heading, Ink::Text, chrome::HEADING)];
         let mut y = MARGIN + CAPTION + GAP;
         for fault in faults {
-            list.push(words(rect(0.0, y, wide, 16.0), fault.at.clone(), Ink::Muted, 600));
+            list.push(words(rect(0.0, y, wide, 16.0), fault.at.clone(), Ink::Muted, chrome::HEADING));
             y += 18.0;
-            let font = Font { size: 13.0, weight: 400, line_height: 16.0 };
+            let font = chrome::BODY;
             let tall = f64::from(self.typesetter.text(&fault.problem, font, Some(wide as f32)).height);
             let mut problem = words(rect(0.0, y, wide, tall), fault.problem.clone(), Ink::Text, 400);
             if let Draw::Text { max_lines, .. } = &mut problem {
@@ -2564,48 +2539,39 @@ impl Gallery {
             let y = MARGIN / 2.0 + index as f64 * ROW - self.tree_scroll;
             if self.picked == Some(index) {
                 list.push(Draw::Box {
-                    rect: rect(4.0, y, TREE - 8.0, ROW),
-                    radius: 4.0,
+                    rect: rect(6.0, y + 1.0, TREE - 12.0, ROW - 2.0),
+                    radius: chrome::PICKED_RADIUS,
                     fill: Some(Ink::Fill),
                     stroke: None,
                     dashed: false,
                 });
             }
-            let x = 12.0 + row.depth as f64 * INDENT;
+            let x = 14.0 + row.depth as f64 * INDENT;
             let (name, ink, weight) = match (row.description(), state) {
-                _ if line.journey => (format!("→ {}", row.name), Ink::Text, 400),
-                (None, _) => (format!("{}/", row.name), Ink::Muted, 600),
-                (Some(_), None) => (row.name.clone(), Ink::Text, 600),
+                _ if line.journey => (format!("→ {}", row.name), Ink::Note, 500),
+                (None, _) => (format!("{}/", row.name), Ink::Muted, chrome::HEADING),
+                (Some(_), None) => (row.name.clone(), Ink::Text, chrome::HEADING),
                 (Some(_), Some(State::Fixture(_))) => (row.name.clone(), Ink::Text, 400),
                 (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
-            let mut right = TREE - 8.0;
+            let mut right = TREE - 14.0;
             let open = self.open_notes(row, state.as_ref());
             if open > 0 {
-                let mark = match open {
+                let said = match open {
                     1 => "1 note".to_string(),
                     n => format!("{n} notes"),
                 };
-                let mut tag = words(rect(x, y + 5.0, right - 4.0 - x, 16.0), mark, Ink::Note, 600);
-                if let Draw::Text { align, .. } = &mut tag {
-                    *align = Align::End;
-                }
-                list.push(tag);
-                right -= 60.0;
+                right = mark(&mut list, &mut self.typesetter, (right, y), said, Ink::Note);
             }
             if state.is_none() && !row.faults.is_empty() {
-                let mark = match row.faults.len() {
+                let said = match row.faults.len() {
                     1 => "1 fault".to_string(),
                     n => format!("{n} faults"),
                 };
-                let mut tag = words(rect(x, y + 5.0, right - 4.0 - x, 16.0), mark, Ink::Strong, 600);
-                if let Draw::Text { align, .. } = &mut tag {
-                    *align = Align::End;
-                }
-                list.push(tag);
-                right -= 64.0;
+                right = mark(&mut list, &mut self.typesetter, (right, y), said, Ink::Strong);
             }
-            list.push(words(rect(x, y + 5.0, right - x, 16.0), name, ink, weight));
+            let top = y + (ROW - f64::from(chrome::BODY.line_height)) / 2.0;
+            list.push(words(rect(x, top, right - x, 16.0), name, ink, weight));
         }
         let left = TREE + MARGIN;
         let (faults, _) = self.faults(width - TREE);
@@ -2613,6 +2579,8 @@ impl Gallery {
         let zoom = self.zoom(width - TREE);
         let mut pages = Vec::new();
         let mut thumbs = Vec::new();
+        // What the pictures are drawn on, each a sheet on the desk.
+        let mut sheets = Vec::new();
         let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
         let marks = self.marks();
         let regions = self.regions();
@@ -2621,19 +2589,11 @@ impl Gallery {
         match &self.picture {
             Picture::Pages(shots) => {
                 for (shot, at) in shots.iter().zip(origins) {
-                    pane.push(words(
+                    pane.push(caption(
                         rect(at.0, at.1 - CAPTION, shot.width * zoom, 16.0),
                         shot.caption.clone(),
-                        Ink::Muted,
-                        400,
                     ));
-                    pane.push(Draw::Box {
-                        rect: rect(at.0 - 0.5, at.1 - 0.5, shot.width * zoom + 1.0, shot.height * zoom + 1.0),
-                        radius: 0.0,
-                        fill: None,
-                        stroke: Some(Ink::Line),
-                        dashed: false,
-                    });
+                    sheets.push(rect(at.0, at.1, shot.width * zoom, shot.height * zoom));
                     pages.push((at, &shot.scene));
                 }
                 // The node a journey acts on next, ringed twice in the
@@ -2647,7 +2607,7 @@ impl Gallery {
                                 f64::from(around.width) - 2.0 * inset,
                                 f64::from(around.height) - 2.0 * inset,
                             ),
-                            radius: 5.0,
+                            radius: chrome::PICKED_RADIUS - inset as f32,
                             fill: None,
                             stroke: Some(Ink::Note),
                             dashed: false,
@@ -2657,7 +2617,7 @@ impl Gallery {
                 for around in outlines {
                     pane.push(Draw::Box {
                         rect: around,
-                        radius: 3.0,
+                        radius: chrome::PICKED_RADIUS / 2.0,
                         fill: None,
                         stroke: Some(Ink::Strong),
                         dashed: false,
@@ -2676,14 +2636,8 @@ impl Gallery {
             Picture::Overview(overview) => {
                 for (thumb, (x, y, w, h)) in overview.thumbs.iter().zip(cells) {
                     let ink = if thumb.phase { Ink::Muted } else { Ink::Text };
-                    pane.push(words(rect(x, y - CAPTION, w, 16.0), thumb.name.clone(), ink, 600));
-                    pane.push(Draw::Box {
-                        rect: rect(x - 0.5, y - 0.5, w + 1.0, h + 1.0),
-                        radius: 0.0,
-                        fill: None,
-                        stroke: Some(Ink::Line),
-                        dashed: false,
-                    });
+                    pane.push(words(rect(x, y - CAPTION, w, 16.0), thumb.name.clone(), ink, chrome::HEADING));
+                    sheets.push(rect(x, y, w, h));
                     thumbs.push(((x, y, w, h), w / thumb.width, &thumb.scene));
                 }
                 pane.extend(arrows);
@@ -2692,9 +2646,9 @@ impl Gallery {
                 for (at, pass) in self.passes() {
                     pane.push(Draw::Box {
                         rect: at,
-                        radius: 9.0,
-                        fill: Some(Ink::Paper),
-                        stroke: Some(Ink::Note),
+                        radius: chrome::MARK_RADIUS,
+                        fill: Some(Ink::Note),
+                        stroke: None,
                         dashed: false,
                     });
                     pane.push(Draw::Text {
@@ -2705,8 +2659,8 @@ impl Gallery {
                             14.0,
                         ),
                         text: pass.label.clone(),
-                        font: PASS_FONT,
-                        ink: Ink::Note,
+                        font: MARK,
+                        ink: Ink::Paper,
                         max_lines: Some(1),
                         align: Align::Start,
                         underline: false,
@@ -2724,12 +2678,13 @@ impl Gallery {
                 rect: rect(TREE, top, width - TREE, tall),
                 radius: 0.0,
                 fill: Some(Ink::Paper),
-                stroke: Some(Ink::Line),
+                stroke: None,
                 dashed: false,
             });
+            pane.push(line((TREE, top), (width, top), Ink::Line));
             for (index, line) in panel.into_iter().enumerate() {
                 let y = top + MARGIN / 2.0 + index as f64 * PANEL_LINE;
-                let weight = if index == 0 { 600 } else { 400 };
+                let weight = if index == 0 { chrome::HEADING } else { 400 };
                 pane.push(words(rect(left, y + 2.0, width - left - MARGIN, 16.0), line, Ink::Text, weight));
             }
         }
@@ -2737,9 +2692,25 @@ impl Gallery {
 
         let mut scene = Scene::new();
         let at = Affine::IDENTITY;
-        let paper = Area::new(0.0, 0.0, width, height);
-        scene.fill(Fill::NonZero, at, vello::peniko::Color::WHITE, None, &paper);
+        scene.fill(Fill::NonZero, at, chrome::SIDE, None, &Area::new(0.0, 0.0, TREE, height));
+        scene.fill(Fill::NonZero, at, chrome::DESK, None, &Area::new(TREE, 0.0, width, height));
         scene.push_clip_layer(Fill::NonZero, at, &Area::new(TREE, 0.0, width, height));
+        if let Picture::Flow(flow) = &self.picture {
+            let at = Affine::translate(self.flow_origin()) * Affine::scale(zoom);
+            for (place, card) in flow.map.places.iter().zip(&flow.cards) {
+                if !matches!(card, Card::Undrawn) {
+                    sheet(
+                        &mut scene,
+                        at,
+                        rect(place.x, place.y, flow::WIDE, flow::TALL),
+                        chrome::SHEET_RADIUS,
+                    );
+                }
+            }
+        }
+        for around in sheets {
+            sheet(&mut scene, at, around, 0.0);
+        }
         for ((x, y), page) in pages {
             scene.append(page, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
         }
@@ -2763,11 +2734,11 @@ impl Gallery {
                 scene.append(picture, Some(at * small));
                 scene.pop_layer();
             }
-            paint::draws(&mut scene, at, &flow_draws(flow, self.arrow), &mut self.typesetter);
+            paint::draws(&mut scene, at, &flow_draws(flow, self.arrow), chrome::colour, &mut self.typesetter);
         }
-        paint::draws(&mut scene, at, &pane, &mut self.typesetter);
+        paint::draws(&mut scene, at, &pane, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
-        paint::draws(&mut scene, at, &list, &mut self.typesetter);
+        paint::draws(&mut scene, at, &list, chrome::colour, &mut self.typesetter);
         scene
     }
 
@@ -2840,7 +2811,7 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
         list.extend(head(path[path.len() - 2], path[path.len() - 1], ink));
         let mut label = words(at, arrow.link.node.clone(), ink, 400);
         if let Draw::Text { align, font, .. } = &mut label {
-            font.size = 11.0;
+            *font = Font { weight: 500, ..MARK };
             if path[1].0 < path[0].0 {
                 *align = Align::End;
             }
@@ -2860,12 +2831,12 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
         let undrawn = matches!(card, Card::Undrawn);
         list.push(Draw::Box {
             rect: rect(x, y, flow::WIDE, flow::TALL),
-            radius: 6.0,
+            radius: chrome::SHEET_RADIUS,
             fill: None,
-            stroke: Some(if undrawn { Ink::Assumed } else { Ink::Line }),
+            stroke: undrawn.then_some(Ink::Assumed),
             dashed: undrawn,
         });
-        list.push(words(rect(x + 8.0, y + 4.0, flow::WIDE - 16.0, 16.0), name, ink, 600));
+        list.push(words(rect(x + 8.0, y + 4.0, flow::WIDE - 16.0, 16.0), name, ink, chrome::HEADING));
         list.push(line((x, y + flow::TITLE), (x + flow::WIDE, y + flow::TITLE), Ink::Line));
         let middle = (x + flow::WIDE / 2.0, y + (flow::TITLE + flow::TALL) / 2.0);
         match card {
@@ -2875,8 +2846,12 @@ fn flow_draws(flow: &Flow, picked: Option<usize>) -> Vec<Draw> {
                     1 => "faulty: 1 fault, not drawn".to_string(),
                     n => format!("faulty: {n} faults, not drawn"),
                 };
-                let mut said =
-                    words(rect(x + 8.0, middle.1 - 8.0, flow::WIDE - 16.0, 16.0), mark, Ink::Strong, 600);
+                let mut said = words(
+                    rect(x + 8.0, middle.1 - 8.0, flow::WIDE - 16.0, 16.0),
+                    mark,
+                    Ink::Strong,
+                    chrome::HEADING,
+                );
                 if let Draw::Text { align, .. } = &mut said {
                     *align = Align::Center;
                 }
@@ -2972,12 +2947,77 @@ fn moved(mut draw: Draw, dx: f64, dy: f64) -> Draw {
     draw
 }
 
+/// A mark on the tree's line at `y`, a pill of `ground` ending at `right`
+/// with `said` in it in the paper's ink, added to `list`: where what is left
+/// of the line ends.
+fn mark(
+    list: &mut Vec<Draw>,
+    typesetter: &mut text::Typesetter,
+    (right, y): (f64, f64),
+    said: String,
+    ground: Ink,
+) -> f64 {
+    let wide = f64::from(typesetter.text(&said, MARK, None).width) + 2.0 * MARK_INSET;
+    let (left, top) = (right - wide, y + (ROW - MARK_TALL) / 2.0);
+    list.push(Draw::Box {
+        rect: rect(left, top, wide, MARK_TALL),
+        radius: chrome::MARK_RADIUS,
+        fill: Some(ground),
+        stroke: None,
+        dashed: false,
+    });
+    list.push(Draw::Text {
+        rect: rect(
+            left,
+            top + (MARK_TALL - f64::from(MARK.line_height)) / 2.0,
+            wide,
+            f64::from(MARK.line_height),
+        ),
+        text: said,
+        font: MARK,
+        ink: Ink::Paper,
+        max_lines: Some(1),
+        align: Align::Center,
+        underline: false,
+        strike: false,
+    });
+    left - MARK_INSET
+}
+
+/// A sheet the size of `around`, in `at`'s points, laid on the desk: its
+/// shadow, its paper, and the hairline round it.
+fn sheet(scene: &mut Scene, at: Affine, around: Rect, radius: f32) {
+    let (x, y) = (f64::from(around.x), f64::from(around.y));
+    let (w, h) = (f64::from(around.width), f64::from(around.height));
+    let r = f64::from(radius);
+    let shadow = Area::new(x, y + chrome::SHADOW_DROP, x + w, y + h + chrome::SHADOW_DROP);
+    scene.draw_blurred_rounded_rect(at, shadow, chrome::SHADOW, r, chrome::SHADOW_BLUR);
+    let paper = vello::kurbo::RoundedRect::new(x, y, x + w, y + h, r);
+    scene.fill(Fill::NonZero, at, chrome::colour(Ink::Paper), None, &paper);
+    let edge = vello::kurbo::RoundedRect::new(x - 0.5, y - 0.5, x + w + 0.5, y + h + 0.5, r);
+    scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Line), None, &edge);
+}
+
+/// `text`, a picture's caption, in `rect`.
+fn caption(rect: Rect, text: String) -> Draw {
+    Draw::Text {
+        rect,
+        text,
+        font: chrome::CAPTION_FONT,
+        ink: Ink::Muted,
+        max_lines: Some(1),
+        align: Align::Start,
+        underline: false,
+        strike: false,
+    }
+}
+
 /// `text` on one line in `rect`, in the interface's size.
 fn words(rect: Rect, text: String, ink: Ink, weight: u16) -> Draw {
     Draw::Text {
         rect,
         text,
-        font: Font { size: 13.0, weight, line_height: 16.0 },
+        font: Font { weight, ..chrome::BODY },
         ink,
         max_lines: Some(1),
         align: Align::Start,
