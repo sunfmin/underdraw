@@ -4,8 +4,6 @@
 //! built from its nodes and `only` applied, so what remains is a plain tree
 //! for layout.
 
-use std::collections::BTreeMap;
-
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -14,6 +12,7 @@ use crate::check::Findings;
 use crate::components;
 use crate::conditions::{Conditions, UseSite};
 use crate::domain;
+use crate::expand::{Instances, Met};
 use crate::fixture;
 use crate::schema::{Schema, object};
 use crate::subtrees::{self, Subtrees};
@@ -136,17 +135,18 @@ pub(crate) fn build(
         }
     };
     let components = Subtrees::read(screen);
-    let fill = Fill { conditions, components: &components, breakpoint };
+    let mut fill = Fill { conditions, instances: Instances::new(&components), breakpoint };
     let at = match state {
         State::Fixture(_) => "/root".to_string(),
         State::Phase(name) => format!("/phases/{}", escaped(name)),
     };
-    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new() }, None)?;
+    let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new() })?;
     built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
 }
 
 /// Where a node is written, and for which elements of the `each`s around
 /// it: what [`Node::written_at`] and [`Node::instance`] are given.
+#[derive(Clone)]
 struct Written {
     at: String,
     instance: Vec<usize>,
@@ -168,43 +168,25 @@ fn escaped(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
-struct Fill<'a> {
-    conditions: &'a Conditions,
-    components: &'a Subtrees<'a>,
+struct Fill<'c, 'a> {
+    conditions: &'c Conditions,
+    /// The instances being built, each with where it is written and the
+    /// scope it is in: what a `{"slot": …}` node inside stands for is
+    /// built there.
+    instances: Instances<'c, 'a, (Written, Value)>,
     breakpoint: Breakpoint,
 }
 
-/// The instance of a component whose nodes are being built.
-struct Inside<'i> {
-    /// The component's name.
-    name: &'i str,
-    /// The instance's id, and its id as written: what each node inside is
-    /// named by, joined to its own.
-    id: String,
-    written_id: String,
-    /// The path each param was given, where it was given one whole: what a
-    /// `set` or `toggle` on the param acts on.
-    paths: BTreeMap<String, String>,
-    /// The instance, where it is written, and the scope it is in: what a
-    /// `{"slot": …}` node inside stands for is built there.
-    instance: &'i Map<String, Value>,
-    at: &'i Written,
-    scope: &'i Value,
-    /// The instance it is itself inside, if any.
-    outer: Option<&'i Inside<'i>>,
-}
-
-impl Fill<'_> {
+impl Fill<'_, '_> {
     /// The nodes `written` becomes in `scope`: none when it is hidden, one
     /// otherwise, or what an instance gives in a slot.
-    /// `at` is where it is written, and `inside` the instance it is in.
+    /// `at` is where it is written.
     fn node(
-        &self,
+        &mut self,
         written: &Value,
         scope: &Value,
         slot: &str,
         at: &Written,
-        inside: Option<&Inside>,
     ) -> Result<Vec<Node>, String> {
         let Some(object) = written.as_object() else {
             return Err(format!("expected a node, found {written}"));
@@ -215,107 +197,82 @@ impl Fill<'_> {
                     .to_string(),
             );
         }
-        if let Some(inside) = inside
-            && subtrees::is_slot(object)
-        {
-            let Some(given) = subtrees::slotted(object, inside.instance) else {
-                return Ok(Vec::new());
-            };
-            let key = object.get("slot").and_then(Value::as_str).unwrap_or_default();
-            return self.slot(given, inside.scope, key, inside.at, inside.outer);
-        }
+        let component = match self.instances.met(object) {
+            Met::Slot(key) => {
+                let Some(frame) = self.instances.leave() else {
+                    return Err(format!("{{\"slot\": \"{key}\"}} is outside any component"));
+                };
+                let built = match frame.given(&key) {
+                    Some(given) => self.slot(given, &frame.at.1, &key, &frame.at.0),
+                    None => Ok(Vec::new()),
+                };
+                self.instances.resume(frame);
+                return built;
+            }
+            Met::Instance(component) => Some(component),
+            Met::Node => None,
+        };
         if !self.shown(object, scope) {
             return Ok(Vec::new());
         }
         let (id, written_id) = match object.get("id") {
-            Some(Value::String(id)) => (
-                subtrees::join(inside.map(|inside| inside.id.as_str()), &self.text(id, scope)?),
-                subtrees::join(inside.map(|inside| inside.written_id.as_str()), id),
-            ),
+            Some(Value::String(id)) => self.instances.ids(id, &self.text(id, scope)?),
             _ => return Err(format!("a node has no id: {written}")),
         };
-        if let Some(component) = self.components.of(object) {
-            let mut outer = inside;
-            while let Some(around) = outer {
-                if around.name == component.name {
-                    return Err(format!("component {} uses itself", component.name));
-                }
-                outer = around.outer;
-            }
-            let mut params = Map::new();
-            let mut paths = BTreeMap::new();
-            for (name, field) in &component.params {
-                let given = object.get("with").and_then(|with| with.get(name));
-                let value = match given {
-                    Some(given) => self.argument(given, scope)?,
-                    None => field.default.clone().unwrap_or(Value::Null),
-                };
-                params.insert(name.clone(), value);
-                if let Some(path) = given.and_then(Value::as_str).and_then(template::whole) {
-                    paths.insert(
-                        name.clone(),
-                        inside.map_or(path.clone(), |inside| through(&path, &inside.paths)),
-                    );
-                }
-            }
-            let root = component.nodes;
-            let params = Value::Object(params);
-            if !self.shown(root, &params) {
-                return Ok(Vec::new());
-            }
-            let inner = Inside {
-                name: component.name,
-                id,
-                written_id,
-                paths,
-                instance: object,
-                at,
-                scope,
-                outer: inside,
+        let Some(component) = component else {
+            return Ok(vec![self.build(object, scope, slot, at, id, written_id)?]);
+        };
+        let mut params = Map::new();
+        for (name, field) in &component.params {
+            let value = match object.get("with").and_then(|with| with.get(name)) {
+                Some(given) => self.argument(given, scope)?,
+                None => field.default.clone().unwrap_or(Value::Null),
             };
-            let at = Written {
-                at: format!(
-                    "/{}/{}/nodes",
-                    if component.shared { components::SHARED } else { subtrees::KEY },
-                    escaped(component.name)
-                ),
-                instance: at.instance.clone(),
-            };
-            let mut node = self.build(
-                root,
-                &params,
-                slot,
-                &at,
-                Some(&inner),
-                inner.id.clone(),
-                inner.written_id.clone(),
-            )?;
-            if let Some(Value::String(assumed)) = object.get("assumed") {
-                node.assumed = Some(assumed.clone());
-            }
-            return Ok(vec![node]);
+            params.insert(name.clone(), value);
         }
-        Ok(vec![self.build(object, scope, slot, at, inside, id, written_id)?])
+        let root = component.nodes;
+        let params = Value::Object(params);
+        self.instances.enter(
+            component,
+            object,
+            id.clone(),
+            written_id.clone(),
+            (at.clone(), scope.clone()),
+        )?;
+        let inner = Written {
+            at: format!(
+                "/{}/{}/nodes",
+                if component.shared { components::SHARED } else { subtrees::KEY },
+                escaped(component.name)
+            ),
+            instance: at.instance.clone(),
+        };
+        let built = if self.shown(root, &params) {
+            self.build(root, &params, slot, &inner, id, written_id).map(Some)
+        } else {
+            Ok(None)
+        };
+        self.instances.leave();
+        let Some(mut node) = built? else {
+            return Ok(Vec::new());
+        };
+        if let Some(Value::String(assumed)) = object.get("assumed") {
+            node.assumed = Some(assumed.clone());
+        }
+        Ok(vec![node])
     }
 
     /// What an instance gives in the slot `key`, `given`, built in the
     /// instance's scope, `scope`, where it is written, `at`.
-    fn slot(
-        &self,
-        given: &Value,
-        scope: &Value,
-        key: &str,
-        at: &Written,
-        inside: Option<&Inside>,
-    ) -> Result<Vec<Node>, String> {
+    fn slot(&mut self, given: &Value, scope: &Value, key: &str, at: &Written) -> Result<Vec<Node>, String> {
         let mut nodes = Vec::new();
         match given {
             Value::Array(items) => {
                 for (index, child) in items.iter().enumerate() {
-                    nodes.append(&mut self.node(child, scope, key, &at.under(key, Some(index)), inside)?);
+                    nodes.append(&mut self.node(child, scope, key, &at.under(key, Some(index)))?);
                 }
             }
-            one => nodes.append(&mut self.node(one, scope, key, &at.under(key, None), inside)?),
+            one => nodes.append(&mut self.node(one, scope, key, &at.under(key, None))?),
         }
         Ok(nodes)
     }
@@ -343,14 +300,12 @@ impl Fill<'_> {
 
     /// The node `object`, named `id` (and `written_id` as written), with
     /// what it holds.
-    #[allow(clippy::too_many_arguments)]
     fn build(
-        &self,
+        &mut self,
         object: &Map<String, Value>,
         scope: &Value,
         slot: &str,
         at: &Written,
-        inside: Option<&Inside>,
         id: String,
         written_id: String,
     ) -> Result<Node, String> {
@@ -380,13 +335,13 @@ impl Fill<'_> {
                     let scope = with(scope, item, index);
                     let mut at = at.under(key, None);
                     at.instance.push(index);
-                    node.children.append(&mut self.node(value, &scope, "item", &at, inside)?);
+                    node.children.append(&mut self.node(value, &scope, "item", &at)?);
                 }
             } else if SLOTS.contains(&key.as_str()) {
-                node.children.append(&mut self.slot(value, scope, key, at, inside)?);
-            } else if let ("on", Some(inside)) = (key.as_str(), inside) {
+                node.children.append(&mut self.slot(value, scope, key, at)?);
+            } else if key == "on" && self.instances.innermost().is_some() {
                 let mut on = self.value(value, scope)?;
-                repath(&mut on, &inside.paths);
+                repath(&mut on, &self.instances);
                 node.props.insert(key.clone(), on);
             } else if let ("disabled", Value::String(used)) = (key.as_str(), value) {
                 node.props.insert(key.clone(), Value::Bool(self.holds(used, scope)));
@@ -537,41 +492,29 @@ impl Fill<'_> {
     }
 }
 
-/// `path`, read inside an instance whose params were given `paths`, as
-/// the path it is where the instance is: a param given a path whole
-/// stands for that path.
-fn through(path: &str, paths: &BTreeMap<String, String>) -> String {
-    let (first, rest) = path.split_once('.').map_or((path, None), |(first, rest)| (first, Some(rest)));
-    match (paths.get(first), rest) {
-        (Some(given), Some(rest)) => format!("{given}.{rest}"),
-        (Some(given), None) => given.clone(),
-        (None, _) => path.to_string(),
-    }
-}
-
 /// The handlers `on`, inside a component, with each path a `set` or
 /// `toggle` writes through a param made the path the param was given:
 /// a component holds no view state, and acts on what was passed in.
-fn repath(on: &mut Value, paths: &BTreeMap<String, String>) {
+fn repath<T>(on: &mut Value, instances: &Instances<T>) {
     match on {
         Value::Object(object) => {
             for (key, value) in object.iter_mut() {
                 match (key.as_str(), value) {
-                    ("set" | "toggle", Value::String(path)) => *path = through(path, paths),
+                    ("set" | "toggle", Value::String(path)) => *path = instances.through(path),
                     ("set", Value::Object(written)) => {
                         let mut renamed = Map::new();
                         for (path, value) in std::mem::take(written) {
-                            renamed.insert(through(&path, paths), value);
+                            renamed.insert(instances.through(&path), value);
                         }
                         *written = renamed;
                     }
-                    (_, value) => repath(value, paths),
+                    (_, value) => repath(value, instances),
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                repath(item, paths);
+                repath(item, instances);
             }
         }
         _ => {}

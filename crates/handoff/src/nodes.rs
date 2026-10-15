@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Finding, Subtrees, join_id};
+use underdraw_format::{Finding, Instances, Met};
 
 /// One node, as the platform builds it.
 #[derive(Debug, Serialize)]
@@ -68,69 +68,50 @@ const OTHER: [&str; 8] = ["id", "component", "with", "assumed", "platform", "on"
 pub struct Walk<'a> {
     pub platform: &'a str,
     pub mapping: &'a Value,
-    pub components: &'a Subtrees<'a>,
+    /// The instances whose nodes are being walked: each node inside is
+    /// named by the instance's id, as written, joined to its own.
+    pub instances: Instances<'a, 'a, ()>,
     pub specs: Vec<Spec>,
     pub hidden: Vec<Hidden>,
     pub findings: Vec<Finding>,
 }
 
-/// The instance of a component whose nodes are being walked.
-pub struct Inside<'i, 'a> {
-    /// The instance's id, as written: each node inside is named by it
-    /// joined to its own.
-    id: String,
-    /// The instance: what a `{"slot": …}` node inside stands for is what
-    /// it gives there.
-    instance: &'a Map<String, Value>,
-    /// The node the instance sits in, and the instance it is itself inside.
-    parent: Option<String>,
-    outer: Option<&'i Inside<'i, 'a>>,
-}
-
-impl<'a> Walk<'a> {
-    /// `written`, found under `slot` of `parent`, inside the instance
-    /// `inside` if any, and everything in it. An instance of a component is
-    /// its nodes, each named by the instance's id joined to its own.
-    pub fn node(
-        &mut self,
-        written: &'a Value,
-        parent: Option<&str>,
-        slot: &str,
-        inside: Option<&Inside<'_, 'a>>,
-    ) {
+impl Walk<'_> {
+    /// `written`, found under `slot` of `parent`, and everything in it. An
+    /// instance of a component is its nodes, each named by the instance's
+    /// id joined to its own; what an instance gives in a slot sits where
+    /// its component places the slot.
+    pub fn node(&mut self, written: &Value, parent: Option<&str>, slot: &str) {
         let object = match written {
             Value::Array(items) => {
                 for item in items {
-                    self.node(item, parent, slot, inside);
+                    self.node(item, parent, slot);
                 }
                 return;
             }
             Value::Object(object) => object,
             _ => return,
         };
-        if let Some(inside) = inside
-            && let Some(Value::String(key)) = object.get("slot")
-            && !object.contains_key("component")
-        {
-            if let Some(given) = inside.instance.get(key) {
-                self.node(given, inside.parent.as_deref(), key, inside.outer);
+        let raw = object.get("id").and_then(Value::as_str).unwrap_or_default();
+        let (_, id) = self.instances.ids(raw, raw);
+        match self.instances.met(object) {
+            Met::Slot(key) => {
+                if let Some(frame) = self.instances.leave() {
+                    if let Some(given) = frame.given(&key) {
+                        self.node(given, parent, &key);
+                    }
+                    self.instances.resume(frame);
+                }
             }
-            return;
+            Met::Instance(component) => {
+                if let Err(problem) = self.instances.enter(component, object, id.clone(), id.clone(), ()) {
+                    return self.findings.push(Finding { at: id, problem });
+                }
+                self.spec(component.nodes, Some(object), id, parent, slot);
+                self.instances.leave();
+            }
+            Met::Node => self.spec(object, None, id, parent, slot),
         }
-        let id = join_id(
-            inside.map(|inside| inside.id.as_str()),
-            object.get("id").and_then(Value::as_str).unwrap_or_default(),
-        );
-        if let Some(component) = self.components.of(object) {
-            let inner = Inside {
-                id: id.clone(),
-                instance: object,
-                parent: parent.map(str::to_string),
-                outer: inside,
-            };
-            return self.spec(component.nodes, Some(object), id, parent, slot, Some(&inner));
-        }
-        self.spec(object, None, id, parent, slot, inside);
     }
 
     /// The node `object`, named `id`, and everything in it; for the root
@@ -138,12 +119,11 @@ impl<'a> Walk<'a> {
     /// `only` and `with` are said of it too.
     fn spec(
         &mut self,
-        object: &'a Map<String, Value>,
-        instance: Option<&'a Map<String, Value>>,
+        object: &Map<String, Value>,
+        instance: Option<&Map<String, Value>>,
         id: String,
         parent: Option<&str>,
         slot: &str,
-        inside: Option<&Inside<'_, 'a>>,
     ) {
         let Some(component) = object.get("component").and_then(Value::as_str) else {
             return;
@@ -205,7 +185,7 @@ impl<'a> Walk<'a> {
         });
         for key in SLOTS {
             if let Some(children) = object.get(key) {
-                self.node(children, Some(&id), key, inside);
+                self.node(children, Some(&id), key);
             }
         }
     }
