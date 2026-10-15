@@ -131,7 +131,10 @@ WAITING
   Each message it hands over is marked taken in notes.json, with the
   time, so the gallery tells the person "the agent is changing it" and
   how long ago; a message already taken keeps its time. A note taken
-  still waits, and is listed again until it is answered.
+  still waits, and is listed again until it is answered. While it
+  blocks, the toolbar of a gallery over <root>, or a directory under it,
+  says "Agent listening"; within two seconds of its ending, "No agent
+  listening".
   When one waits already it answers at once; when none does, it reads the
   files again every fraction of a second, and answers as soon as the
   person starts a note, or says more in one, in the gallery. A message of
