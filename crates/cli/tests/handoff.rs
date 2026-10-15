@@ -134,3 +134,31 @@ fn a_guess_is_handed_off_as_unconfirmed() {
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn says_what_each_expression_comes_to_in_each_state() {
+    let (answer, _) = underdraw(&["handoff", DRAFT, "--platform", "ios"]);
+    let state = answer["states"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["state"] == json!({ "fixture": "unavailable" }) && s["breakpoint"] == "regular")
+        .unwrap();
+    let at = |node: &str, at: &str| {
+        let expressions = state["expressions"].as_array().unwrap();
+        let found =
+            expressions.iter().find(|e| e["node"].as_str().unwrap_or_default() == node && e["at"] == at);
+        found.unwrap_or_else(|| panic!("nothing at {node}.{at}")).clone()
+    };
+    assert_eq!(at("", "conditions.datesUnavailable")["value"], json!(true));
+    assert_eq!(at("reserve-button", "disabled")["value"], state["shows"]["reserve-button"]["disabled"]);
+    let chosen = at("reserve-button", "text.cases");
+    assert_eq!(
+        (&chosen["expression"], &chosen["branch"], &chosen["value"]),
+        (&json!("else"), &json!(2), &json!("日期不可订"))
+    );
+
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["handoff", "--help"]).output().unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    assert!(help.contains("\"expressions\" is the test oracle"), "{help}");
+}

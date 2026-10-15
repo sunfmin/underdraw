@@ -168,7 +168,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             let state = screen.state(from);
             let shown = Breakpoint::ALL.into_iter().any(|breakpoint| {
                 build(screen, state, breakpoint, None)
-                    .is_ok_and(|tree| transitions::holds(&tree, &transition.node))
+                    .is_ok_and(|built| transitions::holds(&built.root, &transition.node))
             });
             if !shown {
                 findings.add(
@@ -188,7 +188,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
         for state in &states {
             for breakpoint in Breakpoint::ALL {
                 if let Ok(tree) = build(screen, screen.state(state), breakpoint, None)
-                    && let Some(twice) = twice(&tree, &mut BTreeSet::new())
+                    && let Some(twice) = twice(&tree.root, &mut BTreeSet::new())
                     && named.insert(twice.written_id.clone())
                 {
                     findings.add(&twice.written_id, &format!(

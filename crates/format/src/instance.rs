@@ -63,6 +63,38 @@ pub struct Node {
     pub interactive: bool,
 }
 
+/// One expression as one state decided it: a use site, a bool param or
+/// prop, a `cases` branch tested or chosen, or a condition over the data.
+/// The value the tree was built from, so what render draws and what a
+/// platform's test asserts are one answer.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Evaluated {
+    /// The id of the node it is written on, as built (`order-3-cancel`);
+    /// none for a condition.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub node: String,
+    /// Where on the node: `if`, `disabled`, `with.dim`, `text.cases[0].if`,
+    /// `text.cases`; or `conditions.hasDates`.
+    pub at: String,
+    /// As written: a use site (`!bar.canBack`), a placeholder
+    /// (`{hasDates}`), a chosen branch's `if` or `else`, a condition's name.
+    pub expression: String,
+    /// For a `cases`: which branch was chosen, from 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<usize>,
+    /// What it evaluates to: true or false, or a chosen branch's value,
+    /// filled.
+    pub value: Value,
+}
+
+/// A screen in one state, and every expression as that state decided it,
+/// in the order the tree was built.
+#[derive(Clone, Debug)]
+pub struct Instantiated {
+    pub root: Node,
+    pub evaluated: Vec<Evaluated>,
+}
+
 /// One operation a node calls: the event it is called on, and what it is
 /// given.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -116,7 +148,7 @@ pub(crate) fn build(
     state: State,
     breakpoint: Breakpoint,
     undrawn: Option<&Undrawn>,
-) -> Result<Node, String> {
+) -> Result<Instantiated, String> {
     let (fixtures, description) = (&screen.fixtures, screen.description());
     let (tree, data) = match state {
         State::Fixture(name) => {
@@ -146,13 +178,30 @@ pub(crate) fn build(
         instances,
         breakpoint,
         undrawn,
+        evaluated: Vec::new(),
     };
+    // Each condition over the data, as this fixture decides it; a phase
+    // reads no data.
+    if let State::Fixture(_) = state {
+        for condition in screen.conditions.all() {
+            if condition.on.is_none() {
+                fill.evaluated.push(Evaluated {
+                    node: String::new(),
+                    at: format!("conditions.{}", condition.name),
+                    expression: condition.name.clone(),
+                    branch: None,
+                    value: Value::Bool(screen.conditions.holds(&condition.name, &data)),
+                });
+            }
+        }
+    }
     let at = match state {
         State::Fixture(_) => "/root".to_string(),
         State::Phase(name) => format!("/phases/{}", escaped(name)),
     };
     let mut built = fill.node(tree, &data, "root", &Written { at, instance: Vec::new(), shared: false })?;
-    built.pop().ok_or_else(|| "the root is hidden in this state".to_string())
+    let root = built.pop().ok_or_else(|| "the root is hidden in this state".to_string())?;
+    Ok(Instantiated { root, evaluated: fill.evaluated })
 }
 
 /// Where a node is written, and for which elements of the `each`s around
@@ -193,6 +242,8 @@ struct Fill<'c> {
     instances: Instances<'c, (Written, Value)>,
     breakpoint: Breakpoint,
     undrawn: Option<&'c Undrawn<'c>>,
+    /// Every expression decided so far.
+    evaluated: Vec<Evaluated>,
 }
 
 impl Fill<'_> {
@@ -230,20 +281,20 @@ impl Fill<'_> {
             Met::Instance(component) => Some(component),
             Met::Node => None,
         };
-        if !self.shown(object, scope) {
-            return Ok(Vec::new());
-        }
         let (id, written_id) = match object.get("id") {
             Some(Value::String(id)) => self.instances.ids(id, &self.text(id, scope)?),
             _ => return Err(format!("a node has no id: {written}")),
         };
+        if !self.shown(object, scope, &id) {
+            return Ok(Vec::new());
+        }
         let Some(component) = component else {
             return Ok(vec![self.build(object, scope, slot, at, id, written_id)?]);
         };
         let mut params = Map::new();
         for (name, field) in &component.params {
             let value = match object.get("with").and_then(|with| with.get(name)) {
-                Some(given) => self.typed(given, Some(field), scope)?,
+                Some(given) => self.typed(given, Some(field), scope, &id, &format!("with.{name}"))?,
                 None => field.default.clone().unwrap_or(Value::Null),
             };
             params.insert(name.clone(), value);
@@ -265,7 +316,7 @@ impl Fill<'_> {
             instance: at.instance.clone(),
             shared: component.shared,
         };
-        let built = if self.shown(root, &params) {
+        let built = if self.shown(root, &params, &id) {
             self.build(root, &params, slot, &inner, id, written_id).map(Some)
         } else {
             Ok(None)
@@ -295,38 +346,60 @@ impl Fill<'_> {
         Ok(nodes)
     }
 
-    /// Whether the node `object` is shown in `scope`, at this breakpoint.
-    fn shown(&self, object: &Map<String, Value>, scope: &Value) -> bool {
+    /// Whether the node `object`, named `id`, is shown in `scope`, at this
+    /// breakpoint.
+    fn shown(&mut self, object: &Map<String, Value>, scope: &Value, id: &str) -> bool {
         if let Some(Value::String(only)) = object.get("only")
             && Breakpoint::parse(only) != Some(self.breakpoint)
         {
             return false;
         }
-        !matches!(object.get("if"), Some(Value::String(used)) if !self.holds(used, scope))
+        !matches!(object.get("if"), Some(Value::String(used)) if !self.holds(used, scope, id, "if"))
     }
 
     /// What a param of type `param` (none when its component lists its
     /// params untyped) is given, in `scope`: at a bool position an
     /// expression (`"!canBack"`) gives whether it holds; anything else is
-    /// read as [`Fill::argument`] reads it.
-    fn typed(&self, given: &Value, param: Option<&Field>, scope: &Value) -> Result<Value, String> {
+    /// read as [`Fill::argument`] reads it. `node` and `at` say where it is
+    /// written, for what is decided there.
+    fn typed(
+        &mut self,
+        given: &Value,
+        param: Option<&Field>,
+        scope: &Value,
+        node: &str,
+        at: &str,
+    ) -> Result<Value, String> {
         match given {
             Value::String(used) if !used.starts_with('{') && param.is_some_and(Field::is_bool) => {
-                Ok(Value::Bool(self.holds(used, scope)))
+                Ok(Value::Bool(self.holds(used, scope, node, at)))
             }
-            _ => self.argument(given, scope),
+            _ => self.argument(given, scope, node, at),
         }
     }
 
     /// What a param is given in `with`, or a prop on a node, read in the
     /// instance's scope: a condition's name in braces gives whether it holds.
-    fn argument(&self, given: &Value, scope: &Value) -> Result<Value, String> {
+    fn argument(&mut self, given: &Value, scope: &Value, node: &str, at: &str) -> Result<Value, String> {
         match given.as_str().and_then(template::whole) {
             Some(name) if self.conditions.contains(&name) => {
-                Ok(Value::Bool(self.conditions.holds(&name, scope)))
+                let holds = Value::Bool(self.conditions.holds(&name, scope));
+                self.decided(node, at, format!("{{{name}}}"), None, holds.clone());
+                Ok(holds)
             }
-            _ => self.value(given, scope),
+            _ => self.value(given, scope, node, at),
         }
+    }
+
+    /// Records that `expression`, written at `at` on `node`, came to `value`.
+    fn decided(&mut self, node: &str, at: &str, expression: String, branch: Option<usize>, value: Value) {
+        self.evaluated.push(Evaluated {
+            node: node.to_string(),
+            at: at.to_string(),
+            expression,
+            branch,
+            value,
+        });
     }
 
     /// The node `object`, named `id` (and `written_id` as written), with
@@ -383,14 +456,16 @@ impl Fill<'_> {
             } else if SLOTS.contains(&key.as_str()) {
                 node.children.append(&mut self.slot(value, scope, key, at)?);
             } else if key == "on" && self.instances.innermost().is_some() {
-                let mut on = self.value(value, scope)?;
+                let mut on = self.value(value, scope, &node.id, key)?;
                 repath(&mut on, &self.instances);
                 node.props.insert(key.clone(), on);
             } else {
                 // A look's prop, as a param in `with`, is read by its type.
-                let typed = self.components.typed(&node.component).unwrap_or_default();
+                let components = self.components;
+                let typed = components.typed(&node.component).unwrap_or_default();
                 let param = typed.iter().find(|(param, _)| param == key).map(|(_, field)| field);
-                node.props.insert(key.clone(), self.typed(value, param, scope)?);
+                let id = node.id.clone();
+                node.props.insert(key.clone(), self.typed(value, param, scope, &id, key)?);
             }
         }
         // What a bound field shows: the value at its path (or paths).
@@ -449,27 +524,32 @@ impl Fill<'_> {
     }
 
     /// A property's value in `scope`: templates filled, `cases` and
-    /// responsive objects decided, nested values in turn.
-    fn value(&self, written: &Value, scope: &Value) -> Result<Value, String> {
+    /// responsive objects decided, nested values in turn. `node` and `at`
+    /// say where it is written, for what is decided there.
+    fn value(&mut self, written: &Value, scope: &Value, node: &str, at: &str) -> Result<Value, String> {
         match written {
             Value::String(text) => self.template(text, scope),
             Value::Array(items) => {
                 let mut filled = Vec::new();
-                for item in items {
-                    filled.push(self.value(item, scope)?);
+                for (index, item) in items.iter().enumerate() {
+                    filled.push(self.value(item, scope, node, &format!("{at}[{index}]"))?);
                 }
                 Ok(Value::Array(filled))
             }
             Value::Object(object) => {
                 if let Some(Value::Array(branches)) = object.get("cases") {
-                    return self.value(&self.choose(branches, scope)?, scope);
+                    let at = format!("{at}.cases");
+                    let (branch, expression, chosen) = self.choose(branches, scope, node, &at)?;
+                    let chosen = self.value(&chosen, scope, node, &format!("{at}[{branch}]"))?;
+                    self.decided(node, &at, expression, Some(branch), chosen.clone());
+                    return Ok(chosen);
                 }
                 if breakpoint::is_responsive(object) {
-                    return self.value(breakpoint::at(written, self.breakpoint), scope);
+                    return self.value(breakpoint::at(written, self.breakpoint), scope, node, at);
                 }
                 let mut filled = Map::new();
                 for (key, value) in object {
-                    filled.insert(key.clone(), self.value(value, scope)?);
+                    filled.insert(key.clone(), self.value(value, scope, node, &format!("{at}.{key}"))?);
                 }
                 Ok(Value::Object(filled))
             }
@@ -477,22 +557,41 @@ impl Fill<'_> {
         }
     }
 
-    fn choose(&self, branches: &[Value], scope: &Value) -> Result<Value, String> {
-        for branch in branches {
+    /// The branch of `branches` that holds in `scope`, the first whose
+    /// `if` does or else the `else`: its index, its `if` (or `else`) as
+    /// written, and its value, unfilled. Each `if` tested is decided at
+    /// `at[<index>].if`.
+    fn choose(
+        &mut self,
+        branches: &[Value],
+        scope: &Value,
+        node: &str,
+        at: &str,
+    ) -> Result<(usize, String, Value), String> {
+        for (index, branch) in branches.iter().enumerate() {
             match (branch.get("if"), branch.get("then"), branch.get("else")) {
-                (Some(Value::String(used)), Some(then), _) if self.holds(used, scope) => {
-                    return Ok(then.clone());
+                (Some(Value::String(used)), Some(then), _) => {
+                    if self.holds(used, scope, node, &format!("{at}[{index}].if")) {
+                        return Ok((index, used.clone(), then.clone()));
+                    }
                 }
-                (None, _, Some(otherwise)) => return Ok(otherwise.clone()),
+                (None, _, Some(otherwise)) => return Ok((index, "else".to_string(), otherwise.clone())),
                 _ => {}
             }
         }
         Err("no branch of cases holds, and there is no else".to_string())
     }
 
-    /// Whether the use site `used` holds: each of its `&&` terms (`!`, then
-    /// a condition or a Bool path) does. One that is no use site never holds.
-    fn holds(&self, used: &str, scope: &Value) -> bool {
+    /// Whether the use site `used`, written at `at` on `node`, holds: each
+    /// of its `&&` terms (`!`, then a condition or a Bool path) does. One
+    /// that is no use site never holds.
+    fn holds(&mut self, used: &str, scope: &Value, node: &str, at: &str) -> bool {
+        let holds = self.use_site(used, scope);
+        self.decided(node, at, used.to_string(), None, Value::Bool(holds));
+        holds
+    }
+
+    fn use_site(&self, used: &str, scope: &Value) -> bool {
         UseSite::parse(used).is_some_and(|site| {
             site.terms.iter().all(|term| {
                 let holds = if self.conditions.contains(&term.name) {
