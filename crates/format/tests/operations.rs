@@ -267,7 +267,7 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             delete_with,
             r#""call": "deleteDoc", "with": { "id": "{rowMenu}" }"#,
             "confirm-delete-confirm.on.tap.with.id",
-            "is RowMenu?, and the parameter is string",
+            "is RowMenu, and the parameter is string",
         ),
         (
             "with-a-path-that-is-not-one",

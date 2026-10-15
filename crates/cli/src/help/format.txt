@@ -167,8 +167,8 @@ TEMPLATES AND FORMATS
   Any other property given exactly one placeholder and nothing else gets the
   value itself, with its type: "value": "{listing.rating}", "each" items.
   A bool, enum, image or object cannot be shown as text: choose words with
-  cases. A nullable value (or one reached through it) may be shown only
-  where an enclosing "if" or cases branch tests it != null, directly or via
+  cases. A nullable value (or one reached through it) may be shown, or given
+  to a param that is not nullable, only where its own or an enclosing "if" or cases branch tests it != null, directly or via
   a condition whose top-level && chain says so. A negation guarantees nothing.
 
 CASES
