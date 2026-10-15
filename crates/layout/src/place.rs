@@ -121,6 +121,8 @@ struct Out {
     marked: Vec<Marked>,
     /// Each node floated over another, by id, and where it went.
     floated: Vec<(String, Rect)>,
+    /// The whole page: no tag is drawn past its edge.
+    page: Rect,
 }
 
 /// A node to number or mark as guessed, unless something drawn later
@@ -133,25 +135,15 @@ struct Marked {
     acts: bool,
     /// It was guessed: it gets an orange outline and "?".
     guessed: bool,
+    /// Where its "?" goes, when it was guessed.
+    guess: Rect,
     covered: bool,
 }
 
-impl Marked {
-    /// Where its number goes.
-    fn number_tag(&self) -> Rect {
-        tag(self.rect.x - 6.0, self.rect.y - 6.0)
-    }
-
-    /// Where its "?" goes.
-    fn guess_tag(&self) -> Rect {
-        guess_tag(self.rect)
-    }
-}
-
-/// Where the "?" of a node guessed, laid out at `rect`, goes: over its
-/// top-right corner.
-pub(crate) fn guess_tag(rect: Rect) -> Rect {
-    tag(rect.x + rect.width - 12.0, rect.y - 6.0)
+/// Where the "?" of a guess goes: over the top-right corner of `shown`,
+/// what the person sees of it, kept on `page`.
+fn guess_tag(shown: Rect, page: Rect) -> Rect {
+    tag(shown.x + shown.width - 12.0, shown.y - 6.0, page)
 }
 
 pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Result<Page, TaffyError> {
@@ -189,12 +181,14 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             height: known.height.unwrap_or(height),
         })
     })?;
+    let size = tree.layout(laid.id)?.size;
     let mut out = Out {
         draws: Vec::new(),
         tags: Vec::new(),
         nodes: Vec::new(),
         marked: Vec::new(),
         floated: Vec::new(),
+        page: Rect { x: 0.0, y: 0.0, width: size.width, height: size.height },
     };
     let mut later = Vec::new();
     emit(&tree, root, &laid, Rect::default(), None, &mut out, &mut later)?;
@@ -205,7 +199,6 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
         next += 1;
     }
     mark(&mut out);
-    let size = tree.layout(laid.id)?.size;
     let mut draws = out.draws;
     draws.append(&mut out.tags);
     let mut cut = Vec::new();
@@ -306,14 +299,18 @@ fn emit<'t, 'n>(
             strike: words.strike,
         });
     }
-    if let Some(node) = elem.source {
-        let assumed = node.assumed.clone().or_else(|| elem.assumed.clone());
-        record(node, assumed, rect, clip, out);
-    }
+    let guessed = match elem.source {
+        Some(node) => {
+            let assumed = node.assumed.clone().or_else(|| elem.assumed.clone());
+            record(node, assumed, rect, clip, out)
+        }
+        None => None,
+    };
     let (inner, saved) = match elem.clip {
         Some(_) => (Some(cut(rect, clip)), Some(std::mem::take(&mut out.draws))),
         None => (clip, None),
     };
+    let first = out.draws.len();
     for index in 0..elem.children.len() {
         if let (Some(child), Some(laid)) = (elem.children.get(index), laid.children.get(index)) {
             if child.on_top {
@@ -321,6 +318,17 @@ fn emit<'t, 'n>(
             } else {
                 emit(tree, child, laid, rect, inner, out, later)?;
             }
+        }
+    }
+    // A guess as big as the page would have its "?" in the page's corner,
+    // where the person does not look: it goes on what the node shows.
+    if let Some(index) = guessed
+        && covers(rect, out.page)
+    {
+        let page = out.page;
+        let shown = out.draws.iter().skip(first).map(extent).filter(|r| !covers(*r, page)).reduce(union);
+        if let (Some(shown), Some(marked)) = (shown, out.marked.get_mut(index)) {
+            marked.guess = guess_tag(shown, page);
         }
     }
     if let (Some(radius), Some(saved)) = (elem.clip, saved) {
@@ -333,16 +341,25 @@ fn emit<'t, 'n>(
 /// Notes where `node` went, and holds it for its marks, drawn once all is
 /// drawn: a number when a person can act on it, a dashed outline and "?"
 /// when `assumed` says why it was guessed. A node cut away entirely gets
-/// none.
-fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, out: &mut Out) {
+/// none. Says where in `Out::marked` it is held, when it was guessed.
+fn record(
+    node: &Node,
+    assumed: Option<String>,
+    rect: Rect,
+    clip: Option<Rect>,
+    out: &mut Out,
+) -> Option<usize> {
     let seen = match clip {
         Some(area) => overlaps(rect, area),
         None => true,
     };
     let (acts, guessed) = (seen && node.interactive, seen && assumed.is_some());
+    let mut held = None;
     if acts || guessed {
         let listed = (!node.id.is_empty()).then_some(out.nodes.len());
-        out.marked.push(Marked { node: listed, rect, acts, guessed, covered: false });
+        let guess = guess_tag(rect, out.page);
+        held = guessed.then_some(out.marked.len());
+        out.marked.push(Marked { node: listed, rect, acts, guessed, guess, covered: false });
     }
     if !node.id.is_empty() {
         out.nodes.push(Placed {
@@ -351,20 +368,23 @@ fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, 
             rect,
             label: None,
             assumed,
+            guess_tag: None,
         });
     }
+    held
 }
 
 /// Marks what an opaque box at `over`, drawn on top, covers: a node whose
 /// middle is under it, or whose tag would sit on it.
 fn cover(over: Rect, out: &mut Out) {
+    let page = out.page;
     for marked in &mut out.marked {
         let rect = marked.rect;
         let middle =
             Rect { x: rect.x + rect.width / 2.0, y: rect.y + rect.height / 2.0, width: 0.0, height: 0.0 };
         if inside(middle, over)
-            || (marked.acts && overlaps(marked.number_tag(), over))
-            || (marked.guessed && overlaps(marked.guess_tag(), over))
+            || (marked.acts && overlaps(number_tag(rect, page), over))
+            || (marked.guessed && overlaps(marked.guess, over))
         {
             marked.covered = true;
         }
@@ -383,7 +403,11 @@ fn mark(out: &mut Out) {
             if let Some(placed) = marked.node.and_then(|index| out.nodes.get_mut(index)) {
                 placed.label = Some(next);
             }
-            out.tags.push(Draw::Tag { rect: marked.number_tag(), text: next.to_string(), ink: Ink::Strong });
+            out.tags.push(Draw::Tag {
+                rect: number_tag(marked.rect, out.page),
+                text: next.to_string(),
+                ink: Ink::Strong,
+            });
             next = next.saturating_add(1);
         }
         if marked.guessed {
@@ -397,7 +421,10 @@ fn mark(out: &mut Out) {
                 stroke: Some(Ink::Assumed),
                 dashed: true,
             });
-            out.tags.push(Draw::Tag { rect: marked.guess_tag(), text: "?".to_string(), ink: Ink::Assumed });
+            if let Some(placed) = marked.node.and_then(|index| out.nodes.get_mut(index)) {
+                placed.guess_tag = Some(marked.guess);
+            }
+            out.tags.push(Draw::Tag { rect: marked.guess, text: "?".to_string(), ink: Ink::Assumed });
         }
     }
 }
@@ -420,9 +447,50 @@ fn along(edge: Edge, start: f32, length: f32, size: f32, inset: f32) -> f32 {
     }
 }
 
-/// A tag's circle at `x`, `y`, kept on the page.
-fn tag(x: f32, y: f32) -> Rect {
-    Rect { x: x.max(1.0), y: y.max(1.0), width: 18.0, height: 18.0 }
+/// Where the number of a node laid out at `rect` goes: over its top-left
+/// corner, kept on `page`.
+fn number_tag(rect: Rect, page: Rect) -> Rect {
+    tag(rect.x - 6.0, rect.y - 6.0, page)
+}
+
+/// A tag's circle at `x`, `y`, moved in as far as it takes to be wholly on
+/// `page`, a point clear of its edge.
+fn tag(x: f32, y: f32, page: Rect) -> Rect {
+    let (size, margin) = (18.0, 1.0);
+    let x = x.min(page.x + page.width - size - margin).max(page.x + margin);
+    let y = y.min(page.y + page.height - size - margin).max(page.y + margin);
+    Rect { x, y, width: size, height: size }
+}
+
+/// Whether `rect` covers all of `page`, to within half a point.
+fn covers(rect: Rect, page: Rect) -> bool {
+    rect.x <= page.x + 0.5
+        && rect.y <= page.y + 0.5
+        && rect.x + rect.width >= page.x + page.width - 0.5
+        && rect.y + rect.height >= page.y + page.height - 0.5
+}
+
+/// The area `draw` takes.
+fn extent(draw: &Draw) -> Rect {
+    match draw {
+        Draw::Box { rect, .. }
+        | Draw::Text { rect, .. }
+        | Draw::Cross { rect, .. }
+        | Draw::Clip { rect, .. }
+        | Draw::Tag { rect, .. } => *rect,
+        Draw::Line { from, to, .. } => {
+            let (x, y) = (from[0].min(to[0]), from[1].min(to[1]));
+            Rect { x, y, width: from[0].max(to[0]) - x, height: from[1].max(to[1]) - y }
+        }
+    }
+}
+
+/// The smallest rect holding both `a` and `b`.
+fn union(a: Rect, b: Rect) -> Rect {
+    let (x, y) = (a.x.min(b.x), a.y.min(b.y));
+    let right = (a.x + a.width).max(b.x + b.width);
+    let bottom = (a.y + a.height).max(b.y + b.height);
+    Rect { x, y, width: right - x, height: bottom - y }
 }
 
 fn overlaps(a: Rect, b: Rect) -> bool {
