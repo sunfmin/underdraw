@@ -1,0 +1,132 @@
+{
+  "$comment": "一篇团队文档：从文档列表点一行打开。读的人看正文和目录；能编辑的人多一个「编辑」。",
+  "screen": "Document",
+  "title": "文档",
+  "locale": "zh-CN",
+  "tokens": "tokens.json",
+  "params": ["id"],
+
+  "data": {
+    "id": "string",
+    "doc": { "type": "Document", "from": "getDocument" }
+  },
+
+  "types": {
+    "Document": {
+      "id": "string",
+      "url": "url",
+      "title": "string 1..60",
+      "owner": "string 1..20",
+      "updated": "date",
+      "shared": "bool = false",
+      "canEdit": { "type": "bool", "doc": "这个人能不能改这篇文档" },
+      "sections": "Section[] 1..50"
+    },
+    "Section": {
+      "heading": "string 1..60",
+      "body": "string 1..2000"
+    }
+  },
+
+  "conditions": {
+    "editable": { "when": "doc.canEdit", "label": "能编辑" }
+  },
+
+  "operations": {
+    "getDocument": {
+      "query": "打开时给的 id 那篇文档，含正文",
+      "result": "Document",
+      "fails": { "notFound": "文档已被删除", "forbidden": "没有权限看" }
+    }
+  },
+
+  "fixtures": {
+    "default": {
+      "id": "a",
+      "doc": {
+        "id": "a",
+        "url": "https://docs.example.com/d/a",
+        "title": "2027 年度产品路线图",
+        "owner": "我",
+        "updated": "2026-10-14",
+        "shared": true,
+        "canEdit": true,
+        "sections": [
+          { "heading": "目标", "body": "明年把团队文档做成大家每天打开的地方：写、找、评论都在一处。" },
+          { "heading": "上半年", "body": "离线编辑、模板库、更快的搜索。每一项都有负责人和验收标准，见下面的表格。" },
+          { "heading": "下半年", "body": "开放 API 和第三方集成；按团队统计谁在用、用了什么。" }
+        ]
+      }
+    },
+    "read-only": {
+      "$patch": "default",
+      "doc": { "owner": "王磊", "canEdit": false }
+    }
+  },
+
+  "root": {
+    "id": "document", "component": "Screen",
+    "children": [
+      { "id": "nav", "component": "NavBar",
+        "leading": [ { "id": "nav-back", "component": "IconButton", "icon": "arrow_back",
+                       "on": { "tap": { "back": true } } } ],
+        "children": [ { "id": "nav-title", "component": "Text", "font": "font.subhead", "maxLines": 1,
+                        "text": "{doc.title}" } ],
+        "trailing": [
+          { "id": "nav-share", "component": "IconButton", "icon": "ios_share",
+            "on": { "tap": { "share": "{doc.url}" } } },
+          { "id": "nav-edit", "component": "Button", "variant": "primary", "size": "small", "text": "编辑",
+            "if": "editable",
+            "assumed": "能编辑的人点「编辑」进入编辑；也可能直接在正文里点就能改，不需要这个按钮" }
+        ] },
+
+      { "id": "content", "component": "Scroll",
+        "children": [
+          { "id": "body", "component": "Columns", "columns": { "compact": 1, "regular": ["1fr", "3fr"] },
+            "padding": "space.6", "gap": "space.6",
+            "children": [
+              { "id": "outline", "component": "Stack", "only": "regular", "gap": "space.2",
+                "children": [
+                  { "id": "outline-title", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
+                    "text": "目录" },
+                  { "id": "outline-items", "component": "Stack", "gap": "space.1", "each": "doc.sections",
+                    "item": { "id": "outline-{index}", "component": "Link", "font": "font.body",
+                              "text": "{item.heading}",
+                              "on": { "tap": { "scrollTo": "section-{index}" } } } }
+                ] },
+              { "id": "article", "component": "Stack", "gap": "space.6",
+                "children": [
+                  { "id": "header", "component": "Stack", "gap": "space.2",
+                    "children": [
+                      { "id": "title", "component": "Text", "font": "font.heading", "text": "{doc.title}" },
+                      { "id": "meta", "component": "Row", "gap": "space.2",
+                        "children": [
+                          { "id": "meta-text", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
+                            "text": "{doc.owner} · 更新于 {doc.updated|date}" },
+                          { "id": "meta-shared", "component": "Badge", "if": "doc.shared", "text": "已共享" },
+                          { "id": "meta-read-only", "component": "Badge", "if": "!editable", "text": "只读" }
+                        ] }
+                    ] },
+                  { "id": "sections", "component": "Stack", "gap": "space.6", "each": "doc.sections",
+                    "item": { "id": "section-{index}", "component": "Section", "title": "{item.heading}",
+                              "children": [ { "id": "section-{index}-body", "component": "Text",
+                                              "text": "{item.body}" } ] } }
+                ] }
+            ] }
+        ] }
+    ]
+  },
+
+  "phases": {
+    "loading": { "id": "loading", "component": "Screen", "children": [
+      { "id": "loading-sk", "component": "Skeleton", "shape": ["line 70%", "line 40%", "line 100%", "line 100%", "line 60%"] } ] },
+    "error": { "id": "error", "component": "Screen", "children": [
+      { "id": "error-nav", "component": "NavBar",
+        "leading": [ { "id": "error-back", "component": "IconButton", "icon": "arrow_back",
+                       "on": { "tap": { "back": true } } } ] },
+      { "id": "error-state", "component": "EmptyState", "icon": "warning",
+        "title": "文档打不开", "detail": "它可能已被删除，或你没有权限看。",
+        "action": { "id": "error-retry", "component": "Button", "variant": "secondary", "text": "重试",
+                    "on": { "tap": { "call": "getDocument" } } } } ] }
+  }
+}

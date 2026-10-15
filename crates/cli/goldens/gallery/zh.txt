@@ -1,0 +1,32 @@
+tree
+  root/
+    checkout
+      ▸ default
+      express-alipay
+      promo-applied
+      promo-invalid
+      no-address-new-card
+      out-of-stock
+      loading
+      error
+picture
+  page default · 390
+    picked address: 16, 106 · 358 × 66
+    ↗ nav-back, address
+  page default · 1120
+    picked address: 16, 106 · 675 × 66
+    ↗ nav-back, address
+sidebar
+  假定，等你回答
+    这里跳转到 AddressBook，但根目录下没有任何描述声明它，所以猜测 AddressBook 是还没画的屏幕
+    也可能  也可能是已画屏幕的名字写错了，或者根本不需要这个跳转：把它画出来，或者改正名字。
+    ✓ 对，保留
+    ✗ 不对…
+    ✓：代理去掉这个猜测 · ✗：说明什么是对的
+  ListItem
+    调用  无
+    ↗ AddressBook · 还没画
+    按住 ⌘（Ctrl）点这个节点，效果相同。
+    ▸ 详情
+  便签 · 还没说过什么
+    在下面说要改什么：回车发送，Shift+回车换行。
