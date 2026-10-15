@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 use crate::check::Findings;
 use crate::field::{self, Field};
 use crate::icons;
+use crate::length::Computed;
 use crate::look::{
     Cases, Condition, Filter, Flow, Items, Justify, Look, NOTES, Overflow, SelfAlign, TextAlign,
 };
@@ -373,6 +374,21 @@ impl Components {
         self.with_look(component).and_then(|looks| looks.looks.get(component))
     }
 
+    /// Every length a declared look component computes (`{depth} *
+    /// space.4`): the component's name, where the length is, as `check`
+    /// names it, and the length.
+    pub fn lengths(&self) -> Vec<(&str, String, &Computed)> {
+        let mut all = Vec::new();
+        for Declared { name, at, .. } in &self.declared {
+            if let Some(look) = self.look(name) {
+                let mut found = Vec::new();
+                look.lengths(&format!("{at}.look"), &mut found);
+                all.extend(found.into_iter().map(|(at, computed)| (name.as_str(), at, computed)));
+            }
+        }
+        all
+    }
+
     /// The params of the look component `component`, each with its type,
     /// when it types them (`{"selected": "bool"}`); none when it lists
     /// their names, which take any value.
@@ -451,7 +467,7 @@ impl Components {
                 ),
                 (Some(_), None) => {
                     if let Some(look) = self.look(name) {
-                        self.look_component(component, look, at, findings)
+                        self.look_component(component, look, self.typed(name), at, findings)
                     }
                 }
                 (None, Some(_)) => {}
@@ -496,7 +512,16 @@ impl Components {
     }
 
     /// Every fault in the look component `component`, whose look is `look`.
-    fn look_component(&self, component: &Value, look: &Look, at: &str, findings: &mut Findings) {
+    /// Its lengths are read against its `typed` params: none when they
+    /// are listed.
+    fn look_component(
+        &self,
+        component: &Value,
+        look: &Look,
+        typed: Option<&[(String, Field)]>,
+        at: &str,
+        findings: &mut Findings,
+    ) {
         if component.get("assumed").is_some() {
             findings.add(&format!("{at}.assumed"), "underdraw draws no guesses: finish this component's look and take assumed out; a note for people goes in \"doc\"");
         }
@@ -508,6 +533,13 @@ impl Components {
             }
         }
         self.look_faults(look, &format!("{at}.look"), true, findings);
+        let mut lengths = Vec::new();
+        look.lengths(&format!("{at}.look"), &mut lengths);
+        for (at, computed) in lengths {
+            for fault in computed.faults(typed) {
+                findings.add(&at, &fault);
+            }
+        }
         let params = match component.get("params") {
             None => Vec::new(),
             Some(Value::Array(names)) if names.iter().all(Value::is_string) => {
@@ -610,7 +642,7 @@ impl Components {
                     self.branch_faults(cases, &format!("{at}.cases"), top, findings);
                 }
             }
-            Look::Children | Look::Plain(_) => {}
+            Look::Children | Look::Length(_) | Look::Plain(_) => {}
         }
     }
 

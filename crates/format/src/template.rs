@@ -104,6 +104,12 @@ fn placeholder(inside: &str) -> Result<Placeholder, String> {
         Some((path, format)) => (path, Some(format)),
         None => (inside, None),
     };
+    if path.contains(['*', '×', '+', '/', '-']) {
+        return Err(format!(
+            "{{{inside}}} is arithmetic, and a template never computes: {}",
+            crate::length::ONLY_A_LOOK
+        ));
+    }
     if !path.split('.').all(crate::field::is_identifier) {
         return Err(format!(
             "{{{inside}}} is not a placeholder: it holds a path and an optional |format, no operators"

@@ -11,6 +11,7 @@ FIND IT
     put a value in a string, a date, money, a plural        TEMPLATES AND FORMATS
     choose a property's value per state                     CASES
     what each value position takes; "!x" given to a bool    EXPRESSIONS
+    compute a length: indent a line by its depth            EXPRESSIONS, LOOKS
     write the node tree, an id, a list of items             NODES
     a tree: a file tree, nested comments, folding rows      TREES
     mark a guess for the person to confirm                  ASSUMED

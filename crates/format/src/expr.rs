@@ -378,6 +378,12 @@ fn lex(text: &str) -> Result<Vec<Token>, String> {
             }
             '(' => Token::Open,
             ')' => Token::Close,
+            '*' | '×' | '+' | '/' => {
+                return Err(format!(
+                    "{c} is arithmetic, and a yes/no never computes: compare a derived field, or {}",
+                    crate::length::ONLY_A_LOOK
+                ));
+            }
             '"' => {
                 let mut s = String::new();
                 let mut closed = false;

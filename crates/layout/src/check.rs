@@ -42,7 +42,8 @@ pub fn widths(tokens: &Value) -> Vec<u32> {
 }
 
 /// Every fault in `screen`: what underdraw_format finds, then, when there
-/// is none, widths in `tokens` that cannot be used, or else every overlay
+/// is none, each length a look computes that cannot be proved from 0 to
+/// `MOST` points, then widths in `tokens` that cannot be used, or else every overlay
 /// that runs off the page in some state at one of the widths it names
 /// ([`widths`]), with text measured by `measure`, and every node that
 /// draws a state `pictures` cannot give. `tokens` is the file
@@ -59,6 +60,15 @@ pub fn check(
         Ok(model) => model,
         Err(checked) => return Ok(*checked),
     };
+    // A length a look computes is proved in range before anything is drawn.
+    let lengths = crate::length::faults(&screen.components, tokens);
+    if !lengths.is_empty() {
+        let mut checked = model.checked;
+        for (at, problem) in lengths {
+            checked.fault(Finding { at, problem });
+        }
+        return Ok(checked);
+    }
     let widths = match named_widths(tokens) {
         Ok(widths) => widths,
         Err(problem) => {

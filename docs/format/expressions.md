@@ -1,13 +1,15 @@
 # Expressions
 
-A screen description holds only three kinds of dynamic value. Nothing else in
-it computes anything.
+A screen description holds only three kinds of dynamic value, and a look one
+more: a length it computes. Nothing else in it computes anything.
 
 | Kind | Where | Example |
 |---|---|---|
 | **Template** | any string | `"{listing.guests} guests · {booking.total\|money}"` |
 | **Condition** | the screen's `conditions` table | `"hasDates": {"when": "booking.checkIn != null && booking.checkOut != null"}` |
 | **Cases** | any property value | `{"cases": [{"if": "listing.isSaved", "then": "heart.fill"}, {"else": "heart"}]}` |
+
+| **Computed length** | a look's length key only | `"padding": [8, 12, 8, "{depth} * space.4 + 12"]` |
 
 Why so little: see [ADR 0001](../adr/0001-expressions-name-conditions-not-logic-in-strings.md).
 
@@ -93,7 +95,8 @@ Types are strict, the same on every platform:
 - `<` `<=` `>` `>=` compare numbers or dates.
 - A string literal compared with an enum must be one of its members.
 - Comparing a value that cannot be null with `null` is an error: it is constant.
-- No arithmetic. A value computed from others (`booking.nights`,
+- No arithmetic (only a look computes, and only a length: see Computed
+  lengths). A value computed from others (`booking.nights`,
   `booking.total`) is declared in `data` as derived and supplied by fixtures —
   the screen does not compute business values.
 
@@ -156,6 +159,36 @@ Chooses one value for any property — text, icon, variant, action:
 
 - Branches are tried in order; the first true one wins.
 - The last branch must be `else`. Every state has a defined value.
+
+## Computed lengths
+
+A look component's length key (`gap`, `padding` or any side of it, `margin`,
+`size`, `width`, `height`, `basis`, `radius`, `itemWidth`) may compute its
+length: `length × int` and `length + length`, written `*` (or `×`) and `+`.
+
+```
+sum     = product ("+" product)*
+product = operand ("*" operand)*
+operand = whole number | token | "{" param "}"
+```
+
+- A product holds one length (a token, or else a whole number of points) and
+  ints (the look's params, and any other whole number). A length times a
+  length, and ints alone, are refused.
+- No division, no subtraction, no fraction, no floating point.
+- Each param is read whole (`{depth}`) and is typed an int with both bounds
+  (`"depth": "int 0..4"`). From those bounds and the tokens' values, check
+  proves the length stays from 0 to 10,000 points, and names an operand
+  without bounds and a length that can pass either end. The layout crate
+  holds every step to that range, which Flux proves cannot overflow.
+- render draws it at what it comes to; handoff gives each platform the
+  expression (`"lengths"`) to compute as written, never a number per fixture.
+- A tree line a look draws on its own indents by its depth this way, not by a
+  `cases` table of one length per depth. The rows of a list nested as a tree
+  are stepped in by the list's `"indent"` instead.
+
+Arithmetic anywhere else (a condition's `when`, a use site, a placeholder, a
+node's prop or `with`) is a finding: give the look the operands as props.
 
 ## Checks this makes possible
 

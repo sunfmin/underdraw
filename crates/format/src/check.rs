@@ -1331,6 +1331,9 @@ impl<'a> Walk<'a> {
         // The path the value is, when it is one whole placeholder.
         let mut path = None;
         let given = match value {
+            Value::String(text) if crate::length::arithmetic(text) => {
+                return self.template(text, scope, &known.not_null, at, "");
+            }
             Value::String(text) => {
                 let Ok(placeholders) = template::placeholders(text) else {
                     return self.template(text, scope, &known.not_null, at, "");
@@ -1609,6 +1612,12 @@ impl<'a> Walk<'a> {
     }
 
     fn template(&mut self, text: &str, scope: &Scope, guarded: &BTreeSet<String>, at: &str, key: &str) {
+        if !TEXT.contains(&key) && crate::length::arithmetic(text) {
+            return self.findings.add(
+                at,
+                &format!("{text} is arithmetic, and a node never computes: {}", crate::length::ONLY_A_LOOK),
+            );
+        }
         let placeholders = match template::placeholders(text) {
             Ok(placeholders) => placeholders,
             Err(problem) => return self.findings.add(at, &problem),

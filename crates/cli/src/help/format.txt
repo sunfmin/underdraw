@@ -213,7 +213,21 @@ EXPRESSIONS
                                               type   placeholder, a literal, cases
     a prop a look component lists, untyped    any    as given: a template, a literal
     a look's "if", a look branch's "if"       bool   the grammar over props (LOOKS)
-    a look's lengths, inks, icons, words      each   LOOKS says each key's
+    a look's length key (padding, gap, size,  length a number, a token, or one
+      margin, width, …)                              computed: "{depth} * space.4 + 12"
+    a look's inks, icons, words               each   LOOKS says each key's
+  Only a look's length computes: a length times ints, and lengths added,
+  over whole points, tokens and the look's params typed with both bounds
+  ("depth": "int 0..4"; LOOKS). Nothing else is arithmetic: a value
+  computed from others (a total, a count of what is left) is a derived
+  field of the data, supplied by the fixtures (DATA AND TYPES). check names
+  *, ×, + and / in a condition, in a placeholder, and in a node's prop or
+  "with" over data ("depth": "{level} + 1"): give the look the operands as
+  props and compute the length there. A tree line drawn by its own look,
+  for one, indents by its depth, not by a cases table of one length per
+  depth: "padding": [8, 12, 8, "{depth} * space.4 + 12"]. (The rows of a
+  list nested as a tree need none of it: the list's "indent" steps them
+  in, TREES.)
   A bool position given text that is no use site ("can go back", "n > 0")
   is found at "<id>.<prop>" or "<id>.with.<param>": name the test in
   conditions and give its name. "disabled" is one such prop, of Button
@@ -1011,6 +1025,27 @@ LOOKS
   the ink it reads as: color.primary strong, color.textSecondary muted,
   color.border line, a colour near white in tokens.json paper, else text.
   None is a hue: say a colour in "$comment" (TOKENS.JSON).
+  A length key (gap, padding or any side of it, margin, size, width,
+  height, basis, radius, itemWidth) may compute its length: a length
+  multiplied by ints, and lengths added, over whole points, tokens and the
+  look's own int params in braces. A tree line its look draws (one shown
+  on its own, apart from a list nested as a tree, which TREES indents)
+  indents by its depth:
+    "TreeLine": { "params": { "depth": "int 0..4", "title": "string" },
+                  "look": { "box": "row", "padding": [8, 12, 8, "{depth} * space.4 + 12"],
+                            "children": [ { "text": "{title}" } ] } }
+    { "id": "line-{index}", "component": "TreeLine", "depth": "{item.depth}",
+      "title": "{item.title}" }
+  * multiplies (× too) and + adds, * first; a term of one product holds
+  one length (a token, or else a number of points) and ints. There is no
+  division, no subtraction and no fraction, and a param is read whole:
+  {depth}, no path and no filter. Each param it reads is an int with both
+  bounds, typed in "params" ("int 0..4"), so check proves from them and
+  from tokens.json that the length stays from 0 to 10000 points; it names
+  an operand without bounds, a length times a length, a term of ints
+  alone, a token tokens.json does not name, and a length that can pass
+  either end. render draws it at what it comes to; handoff gives a
+  platform the expression ("lengths"), to compute as written.
   Look placeholders take filters, left to right: or:v (when missing),
   count, first, last, head, tail (first word / the rest), slashes
   (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.
