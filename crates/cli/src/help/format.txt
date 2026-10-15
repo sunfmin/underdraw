@@ -528,7 +528,10 @@ COMPONENTS
   - It holds no view state: check refuses a param marked "view". A flag
     such as a menu's open state is the screen's, in data marked "view":
     true, passed in whole ("{rowMenuOpen}"); a "set" or "toggle" on the
-    param acts on what was passed.
+    param acts on what was passed, and check refuses it where a screen
+    passes domain data. Shown on its own, a shared component holds its
+    params itself, so its set and toggle on them are checked as view
+    state's.
   - It varies only through its params and slots: the instance holds only
     id, component, with, if, only, assumed and the slots it fills; any
     other key reaches inside, and is refused. { "slot": "children" } in
