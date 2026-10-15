@@ -30,7 +30,7 @@ pub const BLINK: Duration = Duration::from_millis(500);
 /// Whether the caret shows `since` the field was last edited, or its caret
 /// moved: at once, for [`BLINK`], then hidden for as long, and so on.
 pub fn caret_shows(since: Duration) -> bool {
-    (since.as_nanos() / BLINK.as_nanos()) % 2 == 0
+    (since.as_nanos() / BLINK.as_nanos()).is_multiple_of(2)
 }
 
 /// How long from `since` the field was last edited until its caret next
