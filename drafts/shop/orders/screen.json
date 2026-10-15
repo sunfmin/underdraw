@@ -9,7 +9,7 @@
   "fixtures": {
     "default": {
       "orders": [
-        { "id": "o-1042", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" },
+        { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" },
         { "id": "o-1041", "number": "#1041", "customer": "Ken Mori", "total": { "amount": 12800, "currency": "JPY" }, "status": "shipped" }
       ]
     }
@@ -21,7 +21,7 @@
       { "id": "list", "kind": "List", "gap": "space.3", "each": "orders",
         "item": {
           "id": "order-{index}", "kind": "Card", "border": "color.border", "radius": "radius.md", "padding": "space.4", "gap": "space.2",
-          "on": { "tap": { "navigate": "ShopOrder" } },
+          "on": { "tap": { "navigate": "ShopOrder", "with": { "orderId": "{item.id}" } } },
           "children": [
             { "id": "order-{index}-number", "kind": "Text", "text": "{item.number} · {item.customer}" },
             { "id": "order-{index}-total", "kind": "Text", "text": "{item.total|money}", "color": "color.textSecondary" },
