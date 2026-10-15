@@ -456,11 +456,7 @@ fn render(
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("cannot create {}", parent.display()))?;
     }
-    let file = File::create(&out).with_context(|| format!("cannot write {}", out.display()))?;
-    let mut encoder = png::Encoder::new(BufWriter::new(file), pixels_wide, pixels_high);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(&pixels)?;
+    write_png(&out, pixels_wide, pixels_high, &pixels)?;
 
     let page = &drawing.page;
     let project = Project::of(&drawing.dir)?;
@@ -476,6 +472,16 @@ fn render(
         "pixels": drawing.pixels,
         "nodes": page.nodes,
     }))
+}
+
+/// `pixels`, RGBA rows `width` × `height`, written to `out` as a PNG.
+fn write_png(out: &Path, width: u32, height: u32, pixels: &[u8]) -> anyhow::Result<()> {
+    let file = File::create(out).with_context(|| format!("cannot write {}", out.display()))?;
+    let mut encoder = png::Encoder::new(BufWriter::new(file), width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header()?.write_image_data(pixels)?;
+    Ok(())
 }
 
 /// The state `--fixture` or `--phase` names, and its name; the first
