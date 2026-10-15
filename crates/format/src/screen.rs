@@ -117,13 +117,22 @@ impl Screen {
 
     /// Its fixtures' names, in the order written.
     pub fn fixture_names(&self) -> Vec<String> {
-        self.fixtures.iter().map(|(name, _)| name.clone()).collect()
+        let mut names = Vec::new();
+        for (name, _) in &self.fixtures {
+            names.push(name.clone());
+        }
+        names
     }
 
     /// Its phases' names, in the order written.
     pub fn phases(&self) -> Vec<String> {
-        let phases = object(&self.description, "phases").into_iter().map(|(name, _)| name);
-        phases.filter(|name| !name.starts_with('$')).cloned().collect()
+        let mut phases = Vec::new();
+        for (name, _) in object(&self.description, "phases") {
+            if !name.starts_with('$') {
+                phases.push(name.clone());
+            }
+        }
+        phases
     }
 
     /// The state named `name`: a fixture of that name, or else a phase.

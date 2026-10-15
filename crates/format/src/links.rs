@@ -79,7 +79,15 @@ impl Undrawn<'_> {
     pub(crate) fn of(&self, on: &Value) -> Option<String> {
         let mut to = BTreeSet::new();
         targets(on, &mut to);
-        let undrawn: Vec<String> = to.into_iter().filter(|screen| !self.drawn.contains(screen)).collect();
-        (!undrawn.is_empty()).then(|| crate::assumption::undrawn(&undrawn, self.lang))
+        let mut undrawn = Vec::new();
+        for screen in to {
+            if !self.drawn.contains(&screen) {
+                undrawn.push(screen);
+            }
+        }
+        match undrawn.is_empty() {
+            true => None,
+            false => Some(crate::assumption::undrawn(&undrawn, self.lang)),
+        }
     }
 }
