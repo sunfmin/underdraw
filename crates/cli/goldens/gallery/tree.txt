@@ -1,0 +1,32 @@
+tree
+  root/
+    → cancel-an-order
+    broken  [2 faults]
+    components/
+      OrderRow
+        pending
+        shipped
+      OrderStatus
+        pending
+        cancelled
+    order
+      open
+      shipped
+      cancelled
+    orders  [1 note]
+      ▸ default  [1 note]
+      loading
+picture
+  page default · 390
+    picked order-0-row: 32, 72 · 326 × 122
+  page default · 1120
+    picked order-0-row: 32, 72 · 1056 × 122
+  pin N1 on page 0: Note
+  pin N1 on page 1: Note, faint
+sidebar
+  Stack
+    calls  nothing
+    ▸ details
+  note N1 · waiting on the agent
+    rename it
+    waiting for the agent

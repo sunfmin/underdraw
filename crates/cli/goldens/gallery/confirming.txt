@@ -1,0 +1,28 @@
+tree
+  root/
+    orders
+      ▸ default
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+picture
+  page default · 390
+    picked nav-export: 334, 8 · 40 × 40
+  page default · 1120
+    picked nav-export: 1064, 8 · 40 × 40
+sidebar
+  ✓ right on nav-export in default at 390
+    written to notes.json in 5s, for the agent
+    undo
+  assumed, for you to answer
+    This navigates to ExportDocuments, which no description under the root declares, so it is guessed that ExportDocuments is a screen not drawn yet
+    or else  it could instead be a misspelt name of a screen that is drawn, or the navigate may not be wanted at all: draw it, or correct the name.
+  IconButton
+    calls  nothing
+    ▸ details
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
