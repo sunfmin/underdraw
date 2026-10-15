@@ -2077,11 +2077,9 @@ impl Gallery {
             }
             On::Journey { .. } => {
                 let wanted = Reference { description: dir.clone(), on: on.clone() };
-                let Some(index) = self
-                    .lines
-                    .iter()
-                    .position(|line| line.journey && journeys::noted(&line.row.dir).as_ref() == Some(&wanted))
-                else {
+                let Some(index) = self.lines.iter().position(|line| {
+                    line.journey && journeys::noted(&line.row.dir).as_ref() == Some(&wanted)
+                }) else {
                     return false;
                 };
                 self.pick(index);
@@ -5745,7 +5743,11 @@ mod tests {
         let line = format!("{} · journey cancel-an-order", root.display());
         assert_eq!(gallery.reference().unwrap().line(), line);
         gallery.chord("c");
-        assert!(gallery.panel().iter().any(|said| said.ends_with(&line)), "⌘C copies it: {:?}", gallery.panel());
+        assert!(
+            gallery.panel().iter().any(|said| said.ends_with(&line)),
+            "⌘C copies it: {:?}",
+            gallery.panel()
+        );
 
         gallery.acted = None;
         type_text(&mut gallery, "cancelling takes four steps; too many");

@@ -280,11 +280,18 @@ fn a_note_on_a_journey_is_listed_answered_and_counted() {
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
     assert_eq!((code, &answer["waiting"]), (0, &json!(3)), "{answer}");
     let note = &answer["notes"][0];
-    assert_eq!((&note["description"], &note["journey"]), (&json!("shop"), &json!("cancel-an-order")), "{answer}");
+    assert_eq!(
+        (&note["description"], &note["journey"]),
+        (&json!("shop"), &json!("cancel-an-order")),
+        "{answer}"
+    );
     assert_eq!(note["reference"], format!("{} · journey cancel-an-order", shop.display()));
     let (counted, _) = underdraw(&["check", root.to_str().unwrap()]);
     assert_eq!(counted["notes"], json!({ "waiting": 3, "answered": 0 }), "{counted}");
-    assert_eq!(counted["directories"], json!([{ "directory": "shop", "notes": { "waiting": 1, "answered": 0 } }]));
+    assert_eq!(
+        counted["directories"],
+        json!([{ "directory": "shop", "notes": { "waiting": 1, "answered": 0 } }])
+    );
 
     let (answered, code) =
         underdraw(&["notes", shop.to_str().unwrap(), "--answer", "N1", "--reply", "two steps now"]);
