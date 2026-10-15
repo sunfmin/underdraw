@@ -4,6 +4,10 @@
   "tokens": "tokens.json",
   "$comment": "A journey picked in the tree plays from its first step. Over the pictures, the journey as a route: every step, where the person is, what it is about. The sidebar says, in plain words, the one thing to act on next and where it leads; → and ← step it.",
   "data": {
+    "bar": {
+      "type": "Bar",
+      "view": true
+    },
     "lines": "TreeRow[]",
     "journeys": "TreeJourney[]",
     "journey": "Journey",
@@ -47,22 +51,6 @@
       "id": "string 1..",
       "component": "string 1..",
       "calls": "string"
-    },
-    "Note": {
-      "id": "string 1..",
-      "stands": "NoteStands",
-      "messages": "Message[] 1.."
-    },
-    "NoteStands": "enum(waiting, answered)",
-    "Message": {
-      "who": "Who",
-      "text": "string 1.."
-    },
-    "Who": "enum(person, agent)",
-    "Fault": {
-      "at": "string 1..",
-      "problem": "string 1..",
-      "file": "string 1.."
     },
     "TreeJourney": {
       "journey": "Journey",
@@ -110,10 +98,6 @@
       "when": "step.answer != \"\"",
       "label": "The act answers an outcome"
     },
-    "Message.mine": {
-      "when": "who == \"person\"",
-      "label": "Said by the person"
-    },
     "labelled": {
       "when": "!atLast && step.label != null",
       "label": "The step acts on a labelled node"
@@ -121,10 +105,20 @@
     "showState": {
       "when": "walks && noPicked",
       "label": "The whole state's card"
+    },
+    "sidebarShown": {
+      "when": "bar.sidebarShown",
+      "label": "The sidebar shown"
     }
   },
   "fixtures": {
     "first": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › → cancel-an-order",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -279,6 +273,12 @@
       "fault": null
     },
     "middle": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › → cancel-an-order",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -434,6 +434,12 @@
       "fault": null
     },
     "last": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › → cancel-an-order",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -590,6 +596,12 @@
       "fault": null
     },
     "node-picked": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › → cancel-an-order",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -749,6 +761,12 @@
       "fault": null
     },
     "talked-about": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › → cancel-an-order",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -1067,6 +1085,14 @@
         "at": "steps.1.state",
         "problem": "refunded is not a state of order: name a fixture or a phase (open, shipped, cancelled)",
         "file": "shop/journeys/refund-a-cancelled-order.json"
+      },
+      "bar": {
+        "forward": true,
+        "crumbs": "drafts › shop › → cancel-an-order",
+        "mode": "play",
+        "agent": "away",
+        "waitingOnYou": 0,
+        "sidebar": false
       }
     }
   },
@@ -1108,443 +1134,461 @@
     }
   ],
   "root": {
-    "id": "window",
-    "component": "Window",
+    "id": "screen",
+    "component": "Screen",
+    "gap": 0,
     "children": [
       {
-        "id": "tree",
-        "component": "Stack",
-        "gap": 0,
-        "padding": [
-          8,
-          0
-        ],
-        "border": "color.border",
-        "only": "regular",
-        "children": [
-          {
-            "id": "lines",
-            "component": "List",
-            "gap": 0,
-            "each": "lines",
-            "item": {
-              "id": "line-{index}",
-              "component": "TreeLine",
-              "name": "{item.name}",
-              "depth": "{item.depth}",
-              "heading": "{item.heading}",
-              "phase": "{item.phase}",
-              "meta": "{item.meta}",
-              "picked": false
-            }
-          },
-          {
-            "id": "journeys-heading",
-            "component": "TreeLine",
-            "name": "journeys/",
-            "depth": 2,
-            "heading": true,
-            "phase": false,
-            "meta": "paths through shop",
-            "picked": false
-          },
-          {
-            "id": "journeys",
-            "component": "List",
-            "gap": 0,
-            "each": "journeys",
-            "item": {
-              "id": "journey-{index}",
-              "component": "JourneyEntry",
-              "with": {
-                "journey": "{item.journey}",
-                "picked": "{item.played}"
-              }
-            }
-          }
-        ]
+        "id": "toolbar",
+        "component": "Toolbar",
+        "with": {
+          "bar": "{bar}"
+        }
       },
       {
-        "id": "pictures",
-        "component": "Stack",
-        "gap": 20,
-        "padding": 24,
+        "id": "window",
+        "component": "Window",
         "children": [
           {
-            "id": "route-head",
+            "id": "tree",
             "component": "Stack",
-            "gap": 10,
-            "children": [
-              {
-                "id": "route-title",
-                "component": "Row",
-                "gap": 8,
-                "children": [
-                  {
-                    "id": "route-icon",
-                    "component": "Glyph",
-                    "icon": "route",
-                    "size": 18
-                  },
-                  {
-                    "id": "route-name",
-                    "component": "Text",
-                    "text": "{journey.name}",
-                    "font": "font.heading"
-                  },
-                  {
-                    "id": "route-steps",
-                    "component": "Text",
-                    "text": "{journey.steps} steps",
-                    "font": "font.caption",
-                    "color": "color.textSecondary"
-                  }
-                ]
-              },
-              {
-                "id": "route-about",
-                "component": "Text",
-                "if": "journey.told",
-                "text": "{journey.about}",
-                "color": "color.textSecondary"
-              },
-              {
-                "id": "route",
-                "component": "RouteStrip",
-                "with": {
-                  "journey": "{journey}"
-                }
-              }
-            ]
-          },
-          {
-            "id": "step-pictures",
-            "component": "Columns",
-            "if": "walks",
-            "gap": 24,
-            "columns": {
-              "compact": [
-                "1fr"
-              ],
-              "regular": [
-                "2fr",
-                "5fr"
-              ]
-            },
-            "children": [
-              {
-                "id": "picture-1",
-                "component": "StepPicture",
-                "caption": "{step.state} · 390",
-                "aspect": "9:14",
-                "next": {
-                  "cases": [
-                    {
-                      "if": "labelled",
-                      "then": "{step.label}"
-                    },
-                    {
-                      "else": ""
-                    }
-                  ]
-                },
-                "tall": true,
-                "on": {
-                  "tap": {
-                    "set": "picked",
-                    "to": null
-                  }
-                }
-              },
-              {
-                "id": "picture-2",
-                "component": "StepPicture",
-                "caption": "{step.state} · 1120",
-                "aspect": "16:9",
-                "next": {
-                  "cases": [
-                    {
-                      "if": "labelled",
-                      "then": "{step.label}"
-                    },
-                    {
-                      "else": ""
-                    }
-                  ]
-                },
-                "tall": false,
-                "on": {
-                  "tap": {
-                    "set": "picked",
-                    "to": null
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "id": "fault",
-            "component": "Card",
-            "if": "broken",
-            "gap": 8,
-            "padding": 16,
+            "gap": 0,
+            "padding": [
+              8,
+              0
+            ],
             "border": "color.border",
+            "only": "regular",
             "children": [
               {
-                "id": "fault-title",
-                "component": "Text",
-                "text": "Step {step.number} cannot be played",
-                "font": "font.subhead"
-              },
-              {
-                "id": "fault-problem",
-                "component": "Text",
-                "text": "{fault.problem}"
-              },
-              {
-                "id": "fault-where",
-                "component": "Text",
-                "text": "{fault.at} in {fault.file}",
-                "font": "font.caption",
-                "color": "color.textSecondary"
-              },
-              {
-                "id": "fault-fix",
-                "component": "Text",
-                "text": "Fix the file and the journey plays again, from the step shown.",
-                "font": "font.caption",
-                "color": "color.textSecondary"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "id": "sidebar",
-        "component": "Stack",
-        "gap": 12,
-        "padding": 12,
-        "border": "color.border",
-        "children": [
-          {
-            "id": "journey-card",
-            "component": "Card",
-            "gap": 8,
-            "padding": 12,
-            "border": "color.primary",
-            "children": [
-              {
-                "id": "jc-where",
-                "component": "Text",
-                "text": "Step {step.number} of {journey.steps} · {step.screen} · {step.state}",
-                "font": "font.caption",
-                "color": "color.textSecondary"
-              },
-              {
-                "id": "jc-next",
-                "component": "Stack",
-                "if": "acting",
-                "gap": 4,
-                "children": [
-                  {
-                    "id": "jc-next-label",
-                    "component": "Text",
-                    "text": "Next",
-                    "font": "font.caption",
-                    "color": "color.textSecondary"
-                  },
-                  {
-                    "id": "jc-next-act",
-                    "component": "Text",
-                    "text": "{step.act}",
-                    "font": "font.heading"
-                  },
-                  {
-                    "id": "jc-next-answer",
-                    "component": "Text",
-                    "if": "answers",
-                    "text": "{step.answer}, then",
-                    "font": "font.caption",
-                    "color": "color.textSecondary"
-                  },
-                  {
-                    "id": "jc-next-leads",
-                    "component": "Text",
-                    "text": "leads to {step.leadsTo}",
-                    "font": "font.caption",
-                    "color": "color.textSecondary"
-                  }
-                ]
-              },
-              {
-                "id": "jc-end",
-                "component": "Text",
-                "if": "ending",
-                "text": "The journey ends here.",
-                "font": "font.heading"
-              },
-              {
-                "id": "jc-broken",
-                "component": "Text",
-                "if": "broken",
-                "text": "Not played until check finds it walks.",
-                "font": "font.heading"
-              },
-              {
-                "id": "jc-buttons",
-                "component": "Row",
-                "if": "walks",
-                "gap": 8,
-                "children": [
-                  {
-                    "id": "back",
-                    "component": "Button",
-                    "variant": "secondary",
-                    "size": "small",
-                    "text": "← Back",
-                    "disabled": "atFirst",
-                    "on": {
-                      "tap": {
-                        "set": "picked",
-                        "to": null
-                      }
-                    }
-                  },
-                  {
-                    "id": "next",
-                    "component": "Button",
-                    "variant": "primary",
-                    "size": "small",
-                    "text": "Next →",
-                    "if": "!atLast",
-                    "on": {
-                      "tap": {
-                        "set": "picked",
-                        "to": null
-                      }
-                    }
-                  },
-                  {
-                    "id": "again",
-                    "component": "Button",
-                    "variant": "secondary",
-                    "size": "small",
-                    "text": "Play again",
-                    "if": "atLast",
-                    "on": {
-                      "tap": {
-                        "set": "picked",
-                        "to": null
-                      }
-                    }
-                  },
-                  {
-                    "id": "keys",
-                    "component": "Text",
-                    "text": "or ← →",
-                    "font": "font.caption",
-                    "color": "color.textSecondary"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "id": "journey-note",
-            "component": "Card",
-            "gap": 8,
-            "padding": 12,
-            "border": "color.border",
-            "children": [
-              {
-                "id": "jn-title",
-                "component": "Text",
-                "text": "→ {journey.name} · the whole journey",
-                "font": "font.subhead"
-              },
-              {
-                "id": "jn-empty",
-                "component": "Text",
-                "if": "!talked",
-                "text": "Say something about the whole path: how long it is, a step it should not need.",
-                "font": "font.caption",
-                "color": "color.textSecondary"
-              },
-              {
-                "id": "jn-messages",
+                "id": "lines",
                 "component": "List",
-                "if": "talked",
-                "gap": 6,
-                "each": "note.messages",
+                "gap": 0,
+                "each": "lines",
                 "item": {
-                  "id": "jn-message-{index}",
-                  "component": "Bubble",
-                  "text": "{item.text}",
-                  "mine": "{item.mine}"
+                  "id": "line-{index}",
+                  "component": "TreeLine",
+                  "name": "{item.name}",
+                  "depth": "{item.depth}",
+                  "heading": "{item.heading}",
+                  "phase": "{item.phase}",
+                  "meta": "{item.meta}",
+                  "picked": false
+                }
+              },
+              {
+                "id": "journeys-heading",
+                "component": "TreeLine",
+                "name": "journeys/",
+                "depth": 2,
+                "heading": true,
+                "phase": false,
+                "meta": "paths through shop",
+                "picked": false
+              },
+              {
+                "id": "journeys",
+                "component": "List",
+                "gap": 0,
+                "each": "journeys",
+                "item": {
+                  "id": "journey-{index}",
+                  "component": "JourneyEntry",
+                  "with": {
+                    "journey": "{item.journey}",
+                    "picked": "{item.played}"
+                  }
                 }
               }
             ]
           },
           {
-            "id": "node-card",
-            "component": "Card",
-            "if": "hasPicked",
-            "gap": 6,
-            "padding": 12,
-            "border": "color.border",
+            "id": "pictures",
+            "component": "Stack",
+            "gap": 20,
+            "padding": 24,
             "children": [
               {
-                "id": "nc-title",
-                "component": "Text",
-                "text": "{picked.component}",
-                "font": "font.subhead"
+                "id": "route-head",
+                "component": "Stack",
+                "gap": 10,
+                "children": [
+                  {
+                    "id": "route-title",
+                    "component": "Row",
+                    "gap": 8,
+                    "children": [
+                      {
+                        "id": "route-icon",
+                        "component": "Glyph",
+                        "icon": "route",
+                        "size": 18
+                      },
+                      {
+                        "id": "route-name",
+                        "component": "Text",
+                        "text": "{journey.name}",
+                        "font": "font.heading"
+                      },
+                      {
+                        "id": "route-steps",
+                        "component": "Text",
+                        "text": "{journey.steps} steps",
+                        "font": "font.caption",
+                        "color": "color.textSecondary"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "route-about",
+                    "component": "Text",
+                    "if": "journey.told",
+                    "text": "{journey.about}",
+                    "color": "color.textSecondary"
+                  },
+                  {
+                    "id": "route",
+                    "component": "RouteStrip",
+                    "with": {
+                      "journey": "{journey}"
+                    }
+                  }
+                ]
               },
               {
-                "id": "nc-calls",
-                "component": "Text",
-                "text": "calls {picked.calls}",
-                "font": "font.caption",
-                "color": "color.textSecondary"
-              }
-            ]
-          },
-          {
-            "id": "state-card",
-            "component": "Card",
-            "if": "showState",
-            "padding": 12,
-            "border": "color.border",
-            "children": [
+                "id": "step-pictures",
+                "component": "Columns",
+                "if": "walks",
+                "gap": 24,
+                "columns": {
+                  "compact": [
+                    "1fr"
+                  ],
+                  "regular": [
+                    "2fr",
+                    "5fr"
+                  ]
+                },
+                "children": [
+                  {
+                    "id": "picture-1",
+                    "component": "StepPicture",
+                    "caption": "{step.state} · 390",
+                    "aspect": "9:14",
+                    "next": {
+                      "cases": [
+                        {
+                          "if": "labelled",
+                          "then": "{step.label}"
+                        },
+                        {
+                          "else": ""
+                        }
+                      ]
+                    },
+                    "tall": true,
+                    "on": {
+                      "tap": {
+                        "set": "picked",
+                        "to": null
+                      }
+                    }
+                  },
+                  {
+                    "id": "picture-2",
+                    "component": "StepPicture",
+                    "caption": "{step.state} · 1120",
+                    "aspect": "16:9",
+                    "next": {
+                      "cases": [
+                        {
+                          "if": "labelled",
+                          "then": "{step.label}"
+                        },
+                        {
+                          "else": ""
+                        }
+                      ]
+                    },
+                    "tall": false,
+                    "on": {
+                      "tap": {
+                        "set": "picked",
+                        "to": null
+                      }
+                    }
+                  }
+                ]
+              },
               {
-                "id": "sc-title",
-                "component": "Text",
-                "text": "{step.state} · the whole state",
-                "font": "font.subhead"
-              }
-            ]
-          },
-          {
-            "id": "talk",
-            "component": "Stack",
-            "gap": 8,
-            "children": [
-              {
-                "id": "talk-box",
+                "id": "fault",
                 "component": "Card",
-                "padding": 10,
+                "if": "broken",
+                "gap": 8,
+                "padding": 16,
                 "border": "color.border",
                 "children": [
                   {
-                    "id": "talk-hint",
+                    "id": "fault-title",
                     "component": "Text",
-                    "text": "say something about this…",
+                    "text": "Step {step.number} cannot be played",
+                    "font": "font.subhead"
+                  },
+                  {
+                    "id": "fault-problem",
+                    "component": "Text",
+                    "text": "{fault.problem}"
+                  },
+                  {
+                    "id": "fault-where",
+                    "component": "Text",
+                    "text": "{fault.at} in {fault.file}",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  },
+                  {
+                    "id": "fault-fix",
+                    "component": "Text",
+                    "text": "Fix the file and the journey plays again, from the step shown.",
+                    "font": "font.caption",
                     "color": "color.textSecondary"
                   }
                 ]
               }
             ]
+          },
+          {
+            "id": "sidebar",
+            "component": "Stack",
+            "gap": 12,
+            "padding": 12,
+            "border": "color.border",
+            "children": [
+              {
+                "id": "journey-card",
+                "component": "Card",
+                "gap": 8,
+                "padding": 12,
+                "border": "color.primary",
+                "children": [
+                  {
+                    "id": "jc-where",
+                    "component": "Text",
+                    "text": "Step {step.number} of {journey.steps} · {step.screen} · {step.state}",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  },
+                  {
+                    "id": "jc-next",
+                    "component": "Stack",
+                    "if": "acting",
+                    "gap": 4,
+                    "children": [
+                      {
+                        "id": "jc-next-label",
+                        "component": "Text",
+                        "text": "Next",
+                        "font": "font.caption",
+                        "color": "color.textSecondary"
+                      },
+                      {
+                        "id": "jc-next-act",
+                        "component": "Text",
+                        "text": "{step.act}",
+                        "font": "font.heading"
+                      },
+                      {
+                        "id": "jc-next-answer",
+                        "component": "Text",
+                        "if": "answers",
+                        "text": "{step.answer}, then",
+                        "font": "font.caption",
+                        "color": "color.textSecondary"
+                      },
+                      {
+                        "id": "jc-next-leads",
+                        "component": "Text",
+                        "text": "leads to {step.leadsTo}",
+                        "font": "font.caption",
+                        "color": "color.textSecondary"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "jc-end",
+                    "component": "Text",
+                    "if": "ending",
+                    "text": "The journey ends here.",
+                    "font": "font.heading"
+                  },
+                  {
+                    "id": "jc-broken",
+                    "component": "Text",
+                    "if": "broken",
+                    "text": "Not played until check finds it walks.",
+                    "font": "font.heading"
+                  },
+                  {
+                    "id": "jc-buttons",
+                    "component": "Row",
+                    "if": "walks",
+                    "gap": 8,
+                    "children": [
+                      {
+                        "id": "back",
+                        "component": "Button",
+                        "variant": "secondary",
+                        "size": "small",
+                        "text": "← Back",
+                        "disabled": "atFirst",
+                        "on": {
+                          "tap": {
+                            "set": "picked",
+                            "to": null
+                          }
+                        }
+                      },
+                      {
+                        "id": "next",
+                        "component": "Button",
+                        "variant": "primary",
+                        "size": "small",
+                        "text": "Next →",
+                        "if": "!atLast",
+                        "on": {
+                          "tap": {
+                            "set": "picked",
+                            "to": null
+                          }
+                        }
+                      },
+                      {
+                        "id": "again",
+                        "component": "Button",
+                        "variant": "secondary",
+                        "size": "small",
+                        "text": "Play again",
+                        "if": "atLast",
+                        "on": {
+                          "tap": {
+                            "set": "picked",
+                            "to": null
+                          }
+                        }
+                      },
+                      {
+                        "id": "keys",
+                        "component": "Text",
+                        "text": "or ← →",
+                        "font": "font.caption",
+                        "color": "color.textSecondary"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "journey-note",
+                "component": "Card",
+                "gap": 8,
+                "padding": 12,
+                "border": "color.border",
+                "children": [
+                  {
+                    "id": "jn-title",
+                    "component": "Text",
+                    "text": "→ {journey.name} · the whole journey",
+                    "font": "font.subhead"
+                  },
+                  {
+                    "id": "jn-empty",
+                    "component": "Text",
+                    "if": "!talked",
+                    "text": "Say something about the whole path: how long it is, a step it should not need.",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  },
+                  {
+                    "id": "jn-messages",
+                    "component": "List",
+                    "if": "talked",
+                    "gap": 6,
+                    "each": "note.messages",
+                    "item": {
+                      "id": "jn-message-{index}",
+                      "component": "Bubble",
+                      "text": "{item.text}",
+                      "mine": "{item.mine}"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "node-card",
+                "component": "Card",
+                "if": "hasPicked",
+                "gap": 6,
+                "padding": 12,
+                "border": "color.border",
+                "children": [
+                  {
+                    "id": "nc-title",
+                    "component": "Text",
+                    "text": "{picked.component}",
+                    "font": "font.subhead"
+                  },
+                  {
+                    "id": "nc-calls",
+                    "component": "Text",
+                    "text": "calls {picked.calls}",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  }
+                ]
+              },
+              {
+                "id": "state-card",
+                "component": "Card",
+                "if": "showState",
+                "padding": 12,
+                "border": "color.border",
+                "children": [
+                  {
+                    "id": "sc-title",
+                    "component": "Text",
+                    "text": "{step.state} · the whole state",
+                    "font": "font.subhead"
+                  }
+                ]
+              },
+              {
+                "id": "talk",
+                "component": "Stack",
+                "gap": 8,
+                "children": [
+                  {
+                    "id": "talk-box",
+                    "component": "Card",
+                    "padding": 10,
+                    "border": "color.border",
+                    "children": [
+                      {
+                        "id": "talk-hint",
+                        "component": "Text",
+                        "text": "say something about this…",
+                        "color": "color.textSecondary"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "if": "sidebarShown"
           }
-        ]
+        ],
+        "with": {
+          "sidebar": "{sidebarShown}"
+        }
       }
     ]
   },
@@ -1594,107 +1638,6 @@
                 ]
               }
             ]
-          }
-        ]
-      }
-    },
-    "Bubble": {
-      "doc": "A message of a note: the person's on the right, filled; the agent's on the left, outlined.",
-      "params": [
-        "text",
-        "mine"
-      ],
-      "look": {
-        "cases": [
-          {
-            "if": "mine",
-            "then": {
-              "box": "row",
-              "justify": "end",
-              "children": [
-                {
-                  "box": "column",
-                  "padding": [
-                    6,
-                    10
-                  ],
-                  "radius": 10,
-                  "width": "85%",
-                  "fill": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": "fill"
-                      },
-                      {
-                        "else": null
-                      }
-                    ]
-                  },
-                  "stroke": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": null
-                      },
-                      {
-                        "else": "line"
-                      }
-                    ]
-                  },
-                  "children": [
-                    {
-                      "text": "{text}",
-                      "font": "font.caption"
-                    }
-                  ]
-                }
-              ]
-            }
-          },
-          {
-            "else": {
-              "box": "row",
-              "children": [
-                {
-                  "box": "column",
-                  "padding": [
-                    6,
-                    10
-                  ],
-                  "radius": 10,
-                  "width": "85%",
-                  "fill": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": "fill"
-                      },
-                      {
-                        "else": null
-                      }
-                    ]
-                  },
-                  "stroke": {
-                    "cases": [
-                      {
-                        "if": "mine",
-                        "then": null
-                      },
-                      {
-                        "else": "line"
-                      }
-                    ]
-                  },
-                  "children": [
-                    {
-                      "text": "{text}",
-                      "font": "font.caption"
-                    }
-                  ]
-                }
-              ]
-            }
           }
         ]
       }

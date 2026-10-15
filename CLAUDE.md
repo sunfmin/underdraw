@@ -19,6 +19,7 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 When asked to design a mockup (a screen, a draft) with the built underdraw tool, work only from the tool itself:
 
 - Do not read the source to learn how to use it: no `crates/`, no `docs/`, no ADRs, and no other draft's files. Learn the tool only from its help: `underdraw --help`, `underdraw <command> --help`, and the answers and findings its commands print.
+- Whenever something in underdraw gets in the way while designing (the CLI, the description format, the help, render, the gallery), file a GitHub issue for it at once, before carrying on: first search the open issues, and comment on one that already covers it instead.
 - If the help does not say what you need, stop designing and improve the help first: add or fix it in `crates/cli/src/help.txt` / `crates/cli/src/help/*.txt`, commit that change on its own, rebuild, and then carry on from the new help. A gap in the help is a bug in underdraw, not a reason to read the code.
 
 ## Opening the gallery

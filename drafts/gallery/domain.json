@@ -56,7 +56,70 @@
       "meta": "string = \"\"",
       "picked": "bool = false"
     },
-    "RowKind": "enum(directory, description, state, phase)"
+    "RowKind": "enum(directory, description, state, phase)",
+    "Note": {
+      "id": "string 1..",
+      "stands": "NoteStands",
+      "messages": "Message[] 1..",
+      "handed": {
+        "type": "bool = false",
+        "doc": "The agent waiting with `notes --wait` has taken it"
+      },
+      "seconds": {
+        "type": "int 0.. = 0",
+        "doc": "How long the agent has had it, counting up each second the window is open"
+      }
+    },
+    "NoteStands": "enum(waiting, answered)",
+    "Message": {
+      "who": "Who",
+      "text": "string 1.."
+    },
+    "Who": "enum(person, agent)",
+    "Fault": {
+      "at": "string 1..",
+      "problem": "string 1..",
+      "file": "string 1.."
+    },
+    "Bar": {
+      "back": {
+        "type": "bool = false",
+        "doc": "The window has shown something before this: ← back goes there"
+      },
+      "forward": {
+        "type": "bool = false",
+        "doc": "The person went back: → forward returns"
+      },
+      "crumbs": {
+        "type": "string 1..",
+        "doc": "Where the window is, from the root: drafts › shop › order › cancel-dialog"
+      },
+      "mode": {
+        "type": "Mode = \"inspect\"",
+        "view": true,
+        "doc": "What a plain click on a picture does"
+      },
+      "agent": {
+        "type": "Agent",
+        "doc": "Whether an agent is waiting on this root with `underdraw notes --wait` now"
+      },
+      "waitingOnYou": {
+        "type": "int 0..",
+        "doc": "Assumptions not answered and agent answers not read, under the root"
+      },
+      "inboxOpen": {
+        "type": "bool = false",
+        "doc": "The inbox shown in the sidebar, whatever is picked",
+        "view": true
+      },
+      "sidebar": {
+        "type": "bool = true",
+        "doc": "The sidebar shown; ⌘\\ hides it",
+        "view": true
+      }
+    },
+    "Mode": "enum(inspect, play)",
+    "Agent": "enum(listening, away)"
   },
   "conditions": {
     "Journey.broken": {
@@ -67,6 +130,10 @@
       "when": "about != \"\"",
       "label": "Says what it is about"
     },
+    "Message.mine": {
+      "when": "who == \"person\"",
+      "label": "Said by the person"
+    },
     "TreeRow.heading": {
       "when": "kind == \"directory\" || kind == \"description\"",
       "label": "A directory or a description"
@@ -74,6 +141,38 @@
     "TreeRow.phase": {
       "when": "kind == \"phase\"",
       "label": "A phase"
+    },
+    "TreeRow.metered": {
+      "when": "meta != \"\"",
+      "label": "Says how many"
+    },
+    "Bar.canBack": {
+      "when": "back == true",
+      "label": "Somewhere to go back to"
+    },
+    "Bar.canForward": {
+      "when": "forward == true",
+      "label": "Somewhere to go forward to"
+    },
+    "Bar.inspecting": {
+      "when": "mode == \"inspect\"",
+      "label": "A click inspects"
+    },
+    "Bar.playing": {
+      "when": "mode == \"play\"",
+      "label": "A click acts, as in the app"
+    },
+    "Bar.listening": {
+      "when": "agent == \"listening\"",
+      "label": "An agent is listening"
+    },
+    "Bar.owed": {
+      "when": "waitingOnYou > 0",
+      "label": "Something waits on the person"
+    },
+    "Bar.sidebarShown": {
+      "when": "sidebar == true",
+      "label": "The sidebar shown"
     }
   }
 }
