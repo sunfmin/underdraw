@@ -10,9 +10,10 @@
 //! the look is the point (the chrome, the scrollbars, the pictures at half
 //! size) does [`drawn`] render the window's real frame headless on the GPU
 //! `render` uses, one pixel a point, and hold it to the golden
-//! `<name>.png`; those draw a fixture root of their own ([`fixture`]), not
-//! the drafts, so a draft changed never moves a pixel golden; the
-//! journey's surfaces draw a frozen shop of their own ([`frozen_shop`]).
+//! `<name>.png`; those never draw the drafts, so a draft added or changed
+//! never moves a pixel golden: they draw a fixture root of their own
+//! ([`fixture`]) or a frozen copy of a draft ([`frozen`]), as the journey's
+//! surfaces draw the frozen shop.
 //! `UNDERDRAW_GOLDENS=rewrite cargo nextest run -p underdraw frames`
 //! rewrites every golden from what is shown instead; look at each before
 //! committing it.
@@ -38,6 +39,10 @@ const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airb
 /// The shop the journey goldens draw: a copy of the shop draft frozen for
 /// the tests, its journey walkable, with a broken journey of its own.
 const SHOP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/shop");
+
+/// The orders the offers golden draws: a copy of the orders draft frozen
+/// for the tests.
+const ORDERS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/orders");
 
 /// The window this size by default, as it opens.
 const WINDOW: (f64, f64) = (1440.0, 900.0);
@@ -72,8 +77,11 @@ fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Galler
 }
 
 /// The gallery over `root`, `size` points, after `acts`: its frame
-/// rendered on the GPU and held to the golden PNG named `name`.
+/// rendered on the GPU and held to the golden PNG named `name`. `root`
+/// is never the drafts: a draft added lengthens their tree, and its
+/// scrollbar would move the golden's pixels.
 fn drawn(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
+    assert_ne!(root, drafts(), "the pixel golden {name} draws a root of its own, not the drafts");
     let mut gallery = acted(root, size, acts);
     let scene = gallery.drawn();
     let (width, height) = (size.0 as u32, size.1 as u32);
@@ -96,9 +104,9 @@ fn fixture(name: &str, at: &str) -> PathBuf {
     root
 }
 
-/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
-/// its directory `shop`.
-fn frozen_shop(name: &str) -> PathBuf {
+/// A root of its own named `name`, holding the frozen directory `from`
+/// (such as [`SHOP`]) as its directory `at`.
+fn frozen(name: &str, from: &str, at: &str) -> PathBuf {
     fn copy(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
@@ -109,8 +117,14 @@ fn frozen_shop(name: &str) -> PathBuf {
     }
     let root = std::env::temp_dir().join(format!("underdraw-window-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    copy(Path::new(SHOP), &root.join("shop"));
+    copy(Path::new(from), &root.join(at));
     root
+}
+
+/// A root of its own named `name`, holding the frozen shop ([`SHOP`]) as
+/// its directory `shop`.
+fn frozen_shop(name: &str) -> PathBuf {
+    frozen(name, SHOP, "shop")
 }
 
 /// What the window shows, as text, a heading for each part: the tree's
@@ -352,15 +366,20 @@ fn a_state_at_both_widths_with_its_labels() {
 
 #[test]
 fn a_state_and_an_overview_with_their_marks_hidden() {
-    drawn("state-bare", drafts(), WINDOW, |gallery| {
+    let root = fixture("frame-state-bare", "airbnb-listing");
+    drawn("state-bare", &root, WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
         gallery.use_tool(Tool::Marks);
     });
-    drawn("overview-bare", drafts(), WINDOW, |gallery| {
-        let order = description_in(gallery, "shop/order");
-        showing(gallery, order);
+    std::fs::remove_dir_all(root).unwrap();
+    let root = frozen_shop("frame-overview-bare");
+    let order = root.join("shop").join("order");
+    drawn("overview-bare", &root, WINDOW, |gallery| {
+        let line = gallery.lines.iter().position(|line| line.row.dir == order && line.state.is_none());
+        showing(gallery, line.unwrap());
         gallery.use_tool(Tool::Marks);
     });
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -804,11 +823,13 @@ fn the_journey_playing_in_a_narrow_window() {
 
 #[test]
 fn a_node_picked_offers_where_acting_on_it_goes_in_buttons_floating_beside_it() {
-    let mut gallery = drawn("offers", drafts(), WINDOW, |gallery| {
+    let root = frozen("frame-offers", ORDERS, "orders");
+    let mut gallery = drawn("offers", &root, WINDOW, |gallery| {
         show(gallery, "orders", "cancel-ready");
         gallery.press_at(on_node(gallery, 0, "cd-confirm"));
     });
     fits(&mut gallery);
     assert_eq!(picked_node(&gallery), Some("cd-confirm"));
     assert_eq!(gallery.seen().offers.len(), 2, "one for each outcome");
+    std::fs::remove_dir_all(root).unwrap();
 }
