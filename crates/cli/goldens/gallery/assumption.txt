@@ -1,0 +1,30 @@
+tree
+  root/
+    checkout
+      default
+      express-alipay
+      promo-applied
+      promo-invalid
+      ▸ no-address-new-card
+      out-of-stock
+      loading
+      error
+picture
+  page no-address-new-card · 390
+    picked card-number: 16, 996 · 358 × 70
+    ↗ nav-back, address-add
+  page no-address-new-card · 1120
+    picked card-number: 16, 996 · 675 × 70
+    ↗ nav-back, address-add
+sidebar
+  assumed, for you to answer
+    Card fields are drawn here
+    or else  the real build may use the payment provider's hosted fields
+    ✓ right, keep it
+    ✗ wrong…
+    ✓: the agent takes the guess out · ✗: say what is right
+  TextField
+    calls  nothing
+    ▸ details
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.

@@ -1,0 +1,722 @@
+{
+  "screen": "Flow",
+  "title": "The flow, with a journey's path drawn on it",
+  "tokens": "tokens.json",
+  "$comment": "Today a journey is not drawn on the flow at all. Picking a directory shows its flow, and above it the journeys under it: picking one draws its path over the screens, each box on it numbered with its steps and the arrows it takes in the strong ink; the others fade.",
+  "data": {
+    "lines": "TreeRow[]",
+    "journeys": "TreeJourney[]",
+    "shown": {
+      "type": "Journey[] ..1",
+      "view": true,
+      "doc": "The journey whose path is drawn: none, or one (a list, as a component's \"with\" does not take a nullable value under its \"if\")"
+    },
+    "boxes": "FlowBox[]",
+    "shownCount": {
+      "type": "int 0..1",
+      "derived": {
+        "app": "shown's length"
+      }
+    }
+  },
+  "types": {
+    "TreeJourney": {
+      "journey": "Journey",
+      "played": "bool = false",
+      "drawn": {
+        "type": "bool = false",
+        "doc": "Its path drawn on the flow"
+      }
+    },
+    "FlowBox": {
+      "name": "string 1..",
+      "steps": {
+        "type": "string = \"\"",
+        "doc": "The journey's steps on this screen, \"2 · 3\"; empty off its path"
+      },
+      "arrow": {
+        "type": "string = \"\"",
+        "doc": "The navigate leaving it to the next box, by the node's id"
+      },
+      "onPath": "bool = false"
+    }
+  },
+  "conditions": {
+    "showing": {
+      "when": "shownCount > 0",
+      "label": "A journey's path drawn"
+    },
+    "FlowBox.stepped": {
+      "when": "steps != \"\"",
+      "label": "On the journey's path"
+    },
+    "FlowBox.leaves": {
+      "when": "arrow != \"\"",
+      "label": "Navigates on"
+    }
+  },
+  "fixtures": {
+    "no-journey": {
+      "lines": [
+        {
+          "name": "shop/",
+          "depth": 1,
+          "kind": "directory",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "order",
+          "depth": 2,
+          "kind": "description",
+          "meta": "3 states",
+          "picked": false
+        },
+        {
+          "name": "open",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "shipped",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "cancelled",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "orders",
+          "depth": 2,
+          "kind": "description",
+          "meta": "2 states",
+          "picked": false
+        },
+        {
+          "name": "default",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "loading",
+          "depth": 3,
+          "kind": "phase",
+          "meta": "",
+          "picked": false
+        }
+      ],
+      "journeys": [
+        {
+          "journey": {
+            "name": "cancel-an-order",
+            "about": "The person opens an order from the list and cancels it before it ships.",
+            "steps": 3,
+            "route": "orders › order",
+            "brokenAt": null,
+            "stops": [
+              {
+                "number": 1,
+                "screen": "orders",
+                "state": "default"
+              },
+              {
+                "number": 2,
+                "screen": "order",
+                "state": "open"
+              },
+              {
+                "number": 3,
+                "screen": "order",
+                "state": "cancelled",
+                "last": true
+              }
+            ]
+          }
+        },
+        {
+          "journey": {
+            "name": "refund-a-cancelled-order",
+            "about": "",
+            "steps": 2,
+            "route": "order",
+            "brokenAt": 2,
+            "stops": [
+              {
+                "number": 1,
+                "screen": "order",
+                "state": "cancelled"
+              },
+              {
+                "number": 2,
+                "screen": "order",
+                "state": "refunded",
+                "last": true,
+                "broken": true
+              }
+            ]
+          }
+        }
+      ],
+      "shown": [],
+      "boxes": [
+        {
+          "name": "orders",
+          "arrow": "order-{index}"
+        },
+        {
+          "name": "order"
+        },
+        {
+          "name": "checkout ?"
+        }
+      ],
+      "shownCount": 0
+    },
+    "journey-shown": {
+      "lines": [
+        {
+          "name": "shop/",
+          "depth": 1,
+          "kind": "directory",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "order",
+          "depth": 2,
+          "kind": "description",
+          "meta": "3 states",
+          "picked": false
+        },
+        {
+          "name": "open",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "shipped",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "cancelled",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "orders",
+          "depth": 2,
+          "kind": "description",
+          "meta": "2 states",
+          "picked": false
+        },
+        {
+          "name": "default",
+          "depth": 3,
+          "kind": "state",
+          "meta": "",
+          "picked": false
+        },
+        {
+          "name": "loading",
+          "depth": 3,
+          "kind": "phase",
+          "meta": "",
+          "picked": false
+        }
+      ],
+      "journeys": [
+        {
+          "journey": {
+            "name": "cancel-an-order",
+            "about": "The person opens an order from the list and cancels it before it ships.",
+            "steps": 3,
+            "route": "orders › order",
+            "brokenAt": null,
+            "stops": [
+              {
+                "number": 1,
+                "screen": "orders",
+                "state": "default"
+              },
+              {
+                "number": 2,
+                "screen": "order",
+                "state": "open"
+              },
+              {
+                "number": 3,
+                "screen": "order",
+                "state": "cancelled",
+                "last": true
+              }
+            ]
+          },
+          "drawn": true
+        },
+        {
+          "journey": {
+            "name": "refund-a-cancelled-order",
+            "about": "",
+            "steps": 2,
+            "route": "order",
+            "brokenAt": 2,
+            "stops": [
+              {
+                "number": 1,
+                "screen": "order",
+                "state": "cancelled"
+              },
+              {
+                "number": 2,
+                "screen": "order",
+                "state": "refunded",
+                "last": true,
+                "broken": true
+              }
+            ]
+          }
+        }
+      ],
+      "shown": [
+        {
+          "name": "cancel-an-order",
+          "about": "The person opens an order from the list and cancels it before it ships.",
+          "steps": 3,
+          "route": "orders › order",
+          "brokenAt": null,
+          "stops": [
+            {
+              "number": 1,
+              "screen": "orders",
+              "state": "default"
+            },
+            {
+              "number": 2,
+              "screen": "order",
+              "state": "open"
+            },
+            {
+              "number": 3,
+              "screen": "order",
+              "state": "cancelled",
+              "last": true
+            }
+          ]
+        }
+      ],
+      "boxes": [
+        {
+          "name": "orders",
+          "steps": "1",
+          "arrow": "order-{index}",
+          "onPath": true
+        },
+        {
+          "name": "order",
+          "steps": "2 · 3",
+          "onPath": true
+        },
+        {
+          "name": "checkout ?"
+        }
+      ],
+      "shownCount": 1
+    }
+  },
+  "transitions": [
+    {
+      "from": "no-journey",
+      "on": "pick-journey-{index}.tap",
+      "to": "journey-shown"
+    },
+    {
+      "from": "journey-shown",
+      "on": "pick-journey-{index}.tap",
+      "to": "no-journey"
+    }
+  ],
+  "root": {
+    "id": "window",
+    "component": "Window",
+    "children": [
+      {
+        "id": "tree",
+        "component": "Stack",
+        "gap": 0,
+        "padding": [
+          8,
+          0
+        ],
+        "border": "color.border",
+        "only": "regular",
+        "children": [
+          {
+            "id": "lines",
+            "component": "List",
+            "gap": 0,
+            "each": "lines",
+            "item": {
+              "id": "line-{index}",
+              "component": "TreeLine",
+              "name": "{item.name}",
+              "depth": "{item.depth}",
+              "heading": "{item.heading}",
+              "phase": "{item.phase}",
+              "meta": "{item.meta}",
+              "picked": false
+            }
+          },
+          {
+            "id": "journeys-heading",
+            "component": "TreeLine",
+            "name": "journeys/",
+            "depth": 2,
+            "heading": true,
+            "phase": false,
+            "meta": "paths through shop",
+            "picked": false
+          },
+          {
+            "id": "journeys",
+            "component": "List",
+            "gap": 0,
+            "each": "journeys",
+            "item": {
+              "id": "journey-{index}",
+              "component": "JourneyEntry",
+              "with": {
+                "journey": "{item.journey}",
+                "picked": "{item.played}"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "pictures",
+        "component": "Stack",
+        "gap": 16,
+        "padding": 24,
+        "children": [
+          {
+            "id": "title",
+            "component": "Text",
+            "text": "shop/",
+            "font": "font.heading"
+          },
+          {
+            "id": "pick-journeys",
+            "component": "Row",
+            "gap": 8,
+            "children": [
+              {
+                "id": "pick-say",
+                "component": "Text",
+                "text": "Draw a journey's path:",
+                "font": "font.caption",
+                "color": "color.textSecondary"
+              },
+              {
+                "id": "pick-journey",
+                "component": "Row",
+                "gap": 8,
+                "each": "journeys",
+                "item": {
+                  "id": "pick-journey-{index}",
+                  "component": "Chip",
+                  "text": "{item.journey.name}",
+                  "selected": "{item.drawn}",
+                  "on": {
+                    "tap": {
+                      "set": "shown",
+                      "to": []
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "path",
+            "component": "List",
+            "each": "shown",
+            "item": {
+              "id": "path-route",
+              "component": "RouteStrip",
+              "with": {
+                "journey": "{item}"
+              }
+            }
+          },
+          {
+            "id": "boxes",
+            "component": "Row",
+            "gap": 0,
+            "each": "boxes",
+            "item": {
+              "id": "box-{index}",
+              "component": "FlowBox",
+              "name": "{item.name}",
+              "steps": "{item.steps}",
+              "arrow": "{item.arrow}",
+              "onPath": "{item.onPath}",
+              "dim": {
+                "cases": [
+                  {
+                    "if": "showing",
+                    "then": true
+                  },
+                  {
+                    "else": false
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "sidebar",
+        "component": "Stack",
+        "gap": 12,
+        "padding": 12,
+        "border": "color.border",
+        "children": [
+          {
+            "id": "guide",
+            "component": "Card",
+            "gap": 6,
+            "padding": 12,
+            "border": "color.border",
+            "children": [
+              {
+                "id": "guide-title",
+                "component": "Text",
+                "text": "Nothing picked",
+                "font": "font.subhead"
+              },
+              {
+                "id": "guide-click",
+                "component": "Text",
+                "text": "Click a state, an arrow or a journey's mark.",
+                "font": "font.caption",
+                "color": "color.textSecondary"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "Chip": {
+      "doc": "A journey to draw: filled while drawn.",
+      "params": [
+        "text",
+        "selected"
+      ],
+      "look": {
+        "box": "row",
+        "gap": 4,
+        "padding": [
+          4,
+          10
+        ],
+        "radius": 999,
+        "items": "center",
+        "fill": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": "strong"
+            },
+            {
+              "else": null
+            }
+          ]
+        },
+        "stroke": {
+          "cases": [
+            {
+              "if": "selected",
+              "then": null
+            },
+            {
+              "else": "line"
+            }
+          ]
+        },
+        "children": [
+          {
+            "component": "Glyph",
+            "icon": "route",
+            "size": 12
+          },
+          {
+            "text": "{text}",
+            "font": "font.caption",
+            "ink": {
+              "cases": [
+                {
+                  "if": "selected",
+                  "then": "paper"
+                },
+                {
+                  "else": "text"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "FlowBox": {
+      "doc": "A screen of the flow; on the journey's path it is outlined strong and numbered with its steps; off it, faint while a path is drawn. The arrow it leaves by follows it.",
+      "params": [
+        "name",
+        "steps",
+        "arrow",
+        "onPath",
+        "dim"
+      ],
+      "look": {
+        "box": "row",
+        "items": "center",
+        "children": [
+          {
+            "box": "column",
+            "width": 170,
+            "gap": 6,
+            "padding": 10,
+            "radius": 8,
+            "stroke": {
+              "cases": [
+                {
+                  "if": "onPath",
+                  "then": "strong"
+                },
+                {
+                  "else": "line"
+                }
+              ]
+            },
+            "children": [
+              {
+                "box": "row",
+                "gap": 6,
+                "items": "center",
+                "children": [
+                  {
+                    "if": "steps != \"\"",
+                    "box": "row",
+                    "padding": [
+                      2,
+                      8
+                    ],
+                    "radius": 999,
+                    "fill": "strong",
+                    "children": [
+                      {
+                        "text": "{steps}",
+                        "font": "font.caption",
+                        "ink": "paper"
+                      }
+                    ]
+                  },
+                  {
+                    "text": "{name}",
+                    "font": "font.subhead",
+                    "ink": {
+                      "cases": [
+                        {
+                          "if": "dim && !onPath",
+                          "then": "muted"
+                        },
+                        {
+                          "else": "text"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "box": "column",
+                "aspect": "9:12",
+                "stroke": "line",
+                "cross": "line"
+              }
+            ]
+          },
+          {
+            "if": "arrow != \"\"",
+            "box": "column",
+            "width": 110,
+            "gap": 2,
+            "items": "center",
+            "children": [
+              {
+                "text": "{arrow}",
+                "font": "font.caption",
+                "ink": {
+                  "cases": [
+                    {
+                      "if": "onPath",
+                      "then": "text"
+                    },
+                    {
+                      "else": "muted"
+                    }
+                  ]
+                }
+              },
+              {
+                "box": "row",
+                "width": "90%",
+                "height": {
+                  "cases": [
+                    {
+                      "if": "onPath",
+                      "then": 3
+                    },
+                    {
+                      "else": 1
+                    }
+                  ]
+                },
+                "fill": {
+                  "cases": [
+                    {
+                      "if": "onPath",
+                      "then": "strong"
+                    },
+                    {
+                      "else": "line"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
