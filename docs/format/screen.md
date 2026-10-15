@@ -11,7 +11,7 @@
 | `data`, `types` | The view model: see [data](data.md). |
 | `fixtures` | Sample view models, one state each: see [data](data.md#fixtures). |
 | `conditions` | The named yes/no tests: see [expressions](expressions.md). |
-| `components` | The screen's own components, each a look with its `params` (see [components](kinds.md)), or `nodes` with typed `params`, used by name with `"with"` (ADR 0021). |
+| `components` | The screen's own components, each a look with its `params` (see [components](kinds.md)), or `nodes` with typed `params`, used by name with `"with"` (ADR 0021). Those the project shares are in `components/<Name>.json` at its root; a screen's own never takes one of their names. |
 | `root` | The node tree shown once data is present. |
 | `phases` | Trees shown before data arrives, such as `loading`: see [data](data.md#phases). |
 

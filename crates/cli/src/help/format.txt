@@ -8,6 +8,9 @@ FILES
   domain.json         optional: the types, conditions and operations every
                       screen of the project shares; its directory is the
                       project root (DOMAIN.JSON below)
+  components/<Name>.json
+                      optional: a component every screen of the project
+                      shares, at the project root (COMPONENTS below)
   tokens.json         design tokens; read by name, always this file name,
                       from the nearest directory at or above <dir> that
                       has one (beside screen.json, or shared above it)
@@ -29,7 +32,8 @@ SCREEN.JSON
     "conditions": {…},                 every yes/no the screen decides, named
     "operations": {…},                 the queries and commands it calls (OPERATIONS, PAGING)
     "components": {"Name": component, …}
-                                       the screen's own components (COMPONENTS)
+                                       the screen's own components, beside the
+                                       project's components/ (COMPONENTS)
     "root":       node,                the screen once data has arrived
     "phases":     {"loading": node, "error": node}
                                        trees shown before data; they read no data
@@ -527,8 +531,30 @@ COMPONENTS
     leading, trailing, action or overlay): the screen's own nodes, read
     where the instance is, under their own ids. check refuses a slot the
     component places nowhere.
-  - A component may use another; check refuses one that uses itself.
+  - A component may use another; check refuses one that uses itself, at
+    any depth: a node of OrderRow that is an OrderRow, or a look that
+    nests the component it draws.
   - check refuses "ref", the old way to repeat a node: use the component.
+
+  A component used by many screens is the project's: written once in
+  components/<Name>.json at the project root (the directory holding
+  domain.json; FILES), its file holding what "components" would hold
+  under its name, either body:
+    components/OrderRow.json     { "params": { "order": "Order" }, "nodes": { … } }
+    components/OrderStatus.json  { "params": ["status"], "look": { … } }
+  Every screen of the project uses it by name as if it declared it in its
+  own "components": the domain's types type its params, and its nodes call
+  the domain's operations, so the same OrderRow, cancel button and all, is
+  on the order list and on one order's page, and an edit to the file
+  changes both. Shared components may use each other and underdraw's; one
+  that uses a screen's own is defined only on the screens declaring it,
+  so share that one too.
+  A screen may add its own beside them, never one of a name the project
+  shares: check names the screen's at "components.<Name>", says it shadows
+  the project's, and uses the project's in its place. A finding inside a
+  shared component is at "components/<Name>.json …" and fixed in the file;
+  a node inside it is named as any instance's (summary-cancel), and the
+  gallery's ⌘C names it "at /nodes/… in components/<Name>.json".
 
 POPUPS
   underdraw has no dialog, sheet or menu component. A popup is a state like any

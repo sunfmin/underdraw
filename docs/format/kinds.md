@@ -6,8 +6,11 @@ and declares the `params` its look reads; a node gives them as props.
 underdraw ships its components in
 [`crates/format/components.json`](../../crates/format/components.json). A
 screen's own are in its `screen.json` `"components"`, beside those whose body
-is nodes, and replace one of underdraw's by name. A component has a look or
-nodes, never both. There is no `kinds.json`. Why:
+is nodes, and replace one of underdraw's by name. One the project shares is
+in `components/<Name>.json` at the project root, its file holding what
+`"components"` would hold under its name, either body; every screen of the
+project uses it as its own, and a screen's own of the same name is a
+finding. A component has a look or nodes, never both. There is no `kinds.json`. Why:
 [ADR 0021](../adr/0021-kinds-become-components-one-screens-or-the-projects.md),
 and [ADR 0007](../adr/0007-kinds-are-data.md) for the look vocabulary.
 
