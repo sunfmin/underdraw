@@ -1,8 +1,10 @@
 picture
   page default · 390
     picked nav-save: 334, 8 · 40 × 40
+    ↗ nav-back, photos-carousel, map-view, reserve-button
   page default · 1120
     picked nav-save: 1064, 8 · 40 × 40
+    ↗ nav-back, reserve-button, map-view, photos-show-all
 sidebar
   IconButton
     calls  toggleSaved

@@ -19,8 +19,10 @@ tree
 picture
   page default · 390
     picked order-0-row: 32, 72 · 326 × 122
+    ↗ order-0, order-1
   page default · 1120
     picked order-0-row: 32, 72 · 1056 × 122
+    ↗ order-0, order-1
   pin N1 on page 0: Note
   pin N1 on page 1: Note, faint
 sidebar

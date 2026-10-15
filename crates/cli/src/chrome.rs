@@ -51,6 +51,10 @@ pub fn colour(ink: Ink) -> Color {
 pub const INTERACTION: Color = Color::from_rgb8(0x8B, 0x3D, 0xF0);
 pub const INTERACTION_FILL: Color = Color::from_rgba8(0x8B, 0x3D, 0xF0, 0x2E);
 pub const PICKED_STROKE: f64 = 3.0;
+/// The badge of a node that acting on goes somewhere: ↗ or → on a disc of
+/// the interaction ink, this wide in window points at any scale, smaller
+/// than a label's so it reads as a mark on the node and not its name.
+pub const BADGE: f64 = 16.0;
 
 /// The chrome's type, one family (the system's) in four sizes: what is
 /// read, the tree's lines; a caption over a picture; a mark

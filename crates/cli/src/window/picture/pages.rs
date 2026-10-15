@@ -1,21 +1,25 @@
 //! A state's pages: the state drawn at each width, side by side, scaled
 //! down together to fit the pane, never below [`SMALLEST`]: past that they
 //! scroll across. Each is captioned, its nodes tagged with their labels at
-//! their own size, and the node picked and the node a
-//! journey acts on next marked over it.
+//! their own size, each node that acting on goes somewhere marked in the
+//! interaction ink, and the node picked and the node a journey acts on next
+//! marked over it.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use underdraw_layout::{Draw, Ink, Placed, Rect};
 use vello::Scene;
-use vello::kurbo::{Affine, Rect as Area};
+use vello::kurbo::{Affine, Rect as Area, Stroke, Vec2};
+use vello::peniko::{Color, Fill};
 
 use super::{Desk, Pin, Seen, Shows, Target};
+use crate::act::Leads;
 use crate::area::{over, rect};
-use crate::chrome::{self, CAPTION, DOT, MARGIN, PIN};
+use crate::chrome::{self, BADGE, CAPTION, DOT, MARGIN, PIN};
 use crate::draw::{Handlers, Origin, Shown as State};
 use crate::notes::Note;
+use crate::paint;
 use crate::reference::{On, Pointed, Reference};
 use crate::text::Typesetter;
 use crate::window::{SMALLEST, caption, picked, sheet};
@@ -26,6 +30,19 @@ pub(crate) struct Pages {
     /// The state drawn; none where the description has none.
     pub state: Option<State>,
     pub pages: Vec<Page>,
+}
+
+/// A node that acting on goes somewhere, as a page shows it, in window
+/// points.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Leading {
+    pub id: String,
+    /// The page it is on, by its place among them.
+    pub page: usize,
+    pub node: Area,
+    pub leads: Leads,
+    /// Its badge, ↗ or →, [`BADGE`] wide at any scale.
+    pub badge: Area,
 }
 
 /// One state drawn at one width, at one pixel per point.
@@ -46,6 +63,9 @@ pub(crate) struct Page {
     pub handlers: BTreeMap<String, Handlers>,
     /// Where each node is written in the description, by id.
     pub origins: BTreeMap<String, Origin>,
+    /// Where acting on each node that goes somewhere leads, from the state
+    /// shown, by id: every instance of a repeat apart.
+    pub leads: BTreeMap<String, Leads>,
 }
 
 impl Page {
@@ -133,6 +153,51 @@ impl Pages {
             .collect()
     }
 
+    /// Each node, on each page, that acting on goes somewhere, in the
+    /// order drawn. Its badge sits over its top-right corner, moved right
+    /// past its label and its "?" where it would cover either.
+    pub fn leading(&self, pane: &Desk) -> Vec<Leading> {
+        let zoom = self.zoom(pane.width);
+        let mut leading = Vec::new();
+        for (index, (page, at)) in self.pages.iter().zip(self.origins(pane)).enumerate() {
+            for node in &page.nodes {
+                let Some(&leads) = page.leads.get(&node.id) else { continue };
+                let (x, y, w, h) = Self::spot(node.rect, at, zoom);
+                let label = node.label.and_then(|label| {
+                    page.tags.iter().find_map(|tag| match tag {
+                        Draw::Tag { rect, text, ink: Ink::Label } if *text == label.to_string() => {
+                            Some(*rect)
+                        }
+                        _ => None,
+                    })
+                });
+                let mut covered: Vec<Area> =
+                    label.into_iter().chain(node.guess_tag).map(|r| Self::tag_spot(r, at, zoom)).collect();
+                covered.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+                let (right, top) = (x + w - 2.0, y + 2.0);
+                let mut badge =
+                    Area::new(right - BADGE / 2.0, top - BADGE / 2.0, right + BADGE / 2.0, top + BADGE / 2.0);
+                for tag in covered {
+                    if !badge.intersect(tag.inflate(1.0, 1.0)).is_zero_area() {
+                        badge = badge + Vec2::new(tag.x1 + 2.0 - badge.x0, 0.0);
+                    }
+                }
+                let (id, node) = (node.id.clone(), Area::new(x, y, x + w, y + h));
+                leading.push(Leading { id, page: index, node, leads, badge });
+            }
+        }
+        leading
+    }
+
+    /// A tag at `r`, in the page at `at` drawn at `zoom`, in window points:
+    /// where the page puts it, scaled with it, but at its own size.
+    fn tag_spot(r: Rect, (left, top): (f64, f64), zoom: f64) -> Area {
+        let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
+        let (x, y) = (left + middle.0 * zoom, top + middle.1 * zoom);
+        let (w, h) = (f64::from(r.width), f64::from(r.height));
+        Area::new(x - w / 2.0, y - h / 2.0, x + w / 2.0, y + h / 2.0)
+    }
+
     /// `r`, in the page at `at` drawn at `zoom`, in window points: its
     /// left, top, width and height.
     fn spot(r: Rect, (left, top): (f64, f64), zoom: f64) -> (f64, f64, f64, f64) {
@@ -150,11 +215,9 @@ impl Pages {
         for (page, (left, top)) in self.pages.iter().zip(self.origins(pane)) {
             for tag in &page.tags {
                 let Draw::Tag { rect: r, text, ink } = tag else { continue };
-                let middle = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
-                let (x, y) = (left + middle.0 * zoom, top + middle.1 * zoom);
-                let (w, h) = (f64::from(r.width), f64::from(r.height));
+                let at = Self::tag_spot(*r, (left, top), zoom);
                 labels.push(Draw::Tag {
-                    rect: rect(x - w / 2.0, y - h / 2.0, w, h),
+                    rect: rect(at.x0, at.y0, at.width(), at.height()),
                     text: text.clone(),
                     ink: *ink,
                 });
@@ -196,10 +259,11 @@ impl Shows for Pages {
         on_caption.then_some(Target::Caption)
     }
 
-    /// Each page on a sheet under its caption, the node picked marked in
-    /// the interaction ink on each page that shows it; over them, the node
-    /// a journey acts on next ringed twice in the notes' ink.
-    fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
+    /// Each page on a sheet under its caption, each node that acting on
+    /// goes somewhere and the node picked marked in the interaction ink on
+    /// each page that shows it; over them, the node a journey acts on next
+    /// ringed twice in the notes' ink.
+    fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
         let (zoom, origins) = (self.zoom(pane.width), self.origins(pane));
         let mut over = self.labels(pane);
         for (page, &(x, y)) in self.pages.iter().zip(&origins) {
@@ -208,6 +272,9 @@ impl Shows for Pages {
         }
         for (page, &(x, y)) in self.pages.iter().zip(&origins) {
             scene.append(&page.scene, Some(Affine::translate((x, y)) * Affine::scale(zoom)));
+        }
+        for leading in self.leading(pane) {
+            lead(scene, &leading, seen.lit, typesetter);
         }
         // No wireframe draws in the notes' ink.
         let marked = seen.marked.as_deref().map(|written| self.marked(written)).unwrap_or_default();
@@ -296,6 +363,37 @@ impl Shows for Pages {
     }
 }
 
+/// A node that acting on goes somewhere, marked in the interaction ink: a
+/// thin dashed outline round it and its badge; washed and outlined solid
+/// instead while `lit`, ⌘ held or a flash. In window points, so it reads
+/// at any scale.
+fn lead(scene: &mut Scene, leading: &Leading, lit: bool, typesetter: &mut Typesetter) {
+    let at = Affine::IDENTITY;
+    let around = leading.node.inflate(1.5, 1.5).to_rounded_rect(2.0);
+    if lit {
+        scene.fill(Fill::NonZero, at, chrome::INTERACTION_FILL, None, &around);
+        scene.stroke(&Stroke::new(2.0), at, chrome::INTERACTION, None, &around);
+    } else {
+        scene.stroke(&Stroke::new(1.0).with_dashes(0.0, [3.0, 2.0]), at, chrome::INTERACTION, None, &around);
+    }
+    let b = leading.badge;
+    let badge = Draw::Tag {
+        rect: rect(b.x0, b.y0, b.width(), b.height()),
+        text: leading.leads.badge().to_string(),
+        ink: Ink::Label,
+    };
+    paint::draws(scene, at, &[badge], interaction, typesetter);
+}
+
+/// The interaction ink for a badge's ground, and the paper for its ring
+/// and its arrow.
+fn interaction(ink: Ink) -> Color {
+    match ink {
+        Ink::Paper => chrome::colour(Ink::Paper),
+        _ => chrome::INTERACTION,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::tests::{PANE, seen};
@@ -332,6 +430,7 @@ mod tests {
             calls: BTreeMap::new(),
             handlers: BTreeMap::new(),
             origins,
+            leads: BTreeMap::from([("buy".to_string(), Leads::State)]),
         };
         let state = Some(State::Fixture("default".to_string()));
         Pages { dir: PathBuf::from("shop"), state, pages: vec![page] }
@@ -381,5 +480,40 @@ mod tests {
             "the button, on the page that shows it"
         );
         assert!(pages.picked("gone", &PANE).is_empty());
+    }
+
+    #[test]
+    fn a_node_that_goes_somewhere_is_badged_at_its_top_right_clear_of_its_label_and_its_guess() {
+        let mut pages = pages();
+        let (left, top) = (PANE.left + MARGIN, MARGIN + CAPTION);
+        let leading = pages.leading(&PANE);
+        assert_eq!(leading.len(), 1, "only the button goes somewhere");
+        let buy = &leading[0];
+        assert_eq!((buy.id.as_str(), buy.page, buy.leads), ("buy", 0, Leads::State));
+        assert_eq!(buy.node, Area::new(left + 20.0, top + 20.0, left + 70.0, top + 50.0));
+        let corner = (left + 68.0, top + 22.0);
+        assert_eq!(buy.badge.center(), corner.into(), "over its top-right corner");
+        assert_eq!(buy.badge.width(), BADGE, "at its own size");
+
+        // Its "?" where the badge would go, and its label too in a node so
+        // narrow its label reaches its right: the badge moved right of both.
+        let page = &mut pages.pages[0];
+        let tag = Rect { x: 58.0, y: 14.0, width: 18.0, height: 18.0 };
+        page.nodes[1].guess_tag = Some(tag);
+        let leading = pages.leading(&PANE);
+        let badge = leading[0].badge;
+        assert_eq!(badge.x0, left + 76.0 + 2.0, "right of the \"?\"");
+        assert_eq!(badge.center().y, corner.1, "at the same height");
+        let page = &mut pages.pages[0];
+        page.nodes[1].guess_tag = None;
+        page.nodes[1].rect.width = 10.0;
+        page.nodes[1].label = Some(1);
+        page.tags.push(Draw::Tag {
+            rect: Rect { x: 14.0, y: 14.0, width: 18.0, height: 18.0 },
+            text: "1".to_string(),
+            ink: Ink::Label,
+        });
+        let badge = pages.leading(&PANE)[0].badge;
+        assert_eq!(badge.x0, left + 32.0 + 2.0, "right of the label");
     }
 }

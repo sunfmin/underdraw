@@ -145,6 +145,7 @@ sentences! {
     could_not_copy,
     hint_click,
     hint_act,
+    hint_marks,
     hint_keys,
     whole_state,
     whole_screen,

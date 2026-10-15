@@ -28,6 +28,37 @@ pub enum Act {
     Nothing,
 }
 
+impl Act {
+    /// Where it leads, as the gallery marks the node in purple: none where
+    /// acting goes nowhere.
+    pub fn leads(&self) -> Option<Leads> {
+        match self {
+            Act::Go { .. } | Act::Choose(_) => Some(Leads::State),
+            Act::Navigate(_) | Act::Back => Some(Leads::Screen),
+            Act::Nothing => None,
+        }
+    }
+}
+
+/// Where acting on a node leads, from the state shown: off the screen (a
+/// navigate, or back), or to another of its states (a transition).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Leads {
+    Screen,
+    State,
+}
+
+impl Leads {
+    /// The badge the gallery marks the node with: ↗ for another screen, →
+    /// for another state.
+    pub fn badge(self) -> &'static str {
+        match self {
+            Leads::Screen => "↗",
+            Leads::State => "→",
+        }
+    }
+}
+
 /// The event a click raises on a node whose handlers are `events`.
 pub fn event(events: &Map<String, Value>) -> &str {
     if events.contains_key(CLICK) {
@@ -115,6 +146,16 @@ mod tests {
         assert_eq!(act(&transitions(), "list", "row", &on), Act::Navigate("OrderDetail".into()));
         let on = events(json!({ "tap": { "back": true } }));
         assert_eq!(act(&transitions(), "list", "nav-back", &on), Act::Back);
+    }
+
+    #[test]
+    fn a_transition_leads_to_a_state_and_a_navigate_or_back_to_a_screen() {
+        assert_eq!(Act::Go { to: "dialog".into() }.leads(), Some(Leads::State));
+        assert_eq!(Act::Choose(vec![("ok".into(), "list".into())]).leads(), Some(Leads::State));
+        assert_eq!(Act::Navigate("OrderDetail".into()).leads(), Some(Leads::Screen));
+        assert_eq!(Act::Back.leads(), Some(Leads::Screen));
+        assert_eq!(Act::Nothing.leads(), None);
+        assert_eq!((Leads::Screen.badge(), Leads::State.badge()), ("↗", "→"));
     }
 
     #[test]

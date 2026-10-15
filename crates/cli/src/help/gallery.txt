@@ -33,7 +33,7 @@ DOES
   note on what is picked, as a conversation; and, fixed at its foot, a box
   to write in and a Send button, to talk to the agent (below). With nothing picked to talk
   about (an overview or a flow, no arrow picked), it says what a click, a
-  ⌘-click and ⌘C do. ⌘\ (Ctrl+\ on Linux and Windows), or the toolbar's
+  ⌘-click and ⌘C do, and what the purple marks mean (below). ⌘\ (Ctrl+\ on Linux and Windows), or the toolbar's
   button at its right, hides the sidebar and shows it
   again; it is shown when the window opens, and while it is hidden the
   pictures take its width. Scroll the sidebar with the wheel over it.
@@ -169,7 +169,21 @@ DOES
   Click through a design as a prototype: a plain click inspects a node, as
   above; hold ⌘ (Ctrl on Linux and Windows) and click to act on it. Acting
   raises the node's tap (or its first event, when it has no tap) and
-  follows what the description says happens there:
+  follows what the description says happens there. In a state's
+  pictures every node that acting on goes somewhere is marked in purple,
+  the interaction ink, so a person sees where to click without trying: a
+  thin dashed purple outline round it and a purple badge at its top right,
+  ↗ when it navigates to another screen or goes back, → when a transition
+  is declared from the state shown on its event. Each instance of a
+  repeat is marked apart. A label does not say this: it marks every node a
+  person can act on in the real app, most with no transition declared.
+  The marks stay their size at half size, and a badge moves right, past
+  the node's label and its orange "?", rather than cover either. The
+  pointer turns into a hand over a marked node. While ⌘ (Ctrl) is held
+  every marked node is lit up, washed purple with a solid outline; a
+  ⌘-click that goes nowhere lights them up for a moment. Like the node
+  picked, the marks are the gallery's alone, never in `render`'s PNG.
+  Acting:
   - a transition declared from the state shown on that event shows its
     `to` state. Where the event calls an operation and the transitions
     name more than one outcome, the sidebar lists them (`ok → default`,

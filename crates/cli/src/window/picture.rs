@@ -117,6 +117,10 @@ pub(crate) struct Seen {
     pub picked: Option<Target>,
     /// The id, as written, of the node the journey played acts on next.
     pub marked: Option<String>,
+    /// Whether every node that acting on goes somewhere is lit up, not
+    /// only outlined: while ⌘ (Ctrl) is held, and in the flash after a
+    /// ⌘-click that goes nowhere.
+    pub lit: bool,
     pub lang: Lang,
 }
 
@@ -180,7 +184,7 @@ mod tests {
 
     /// What the window marks with `picked` picked, in English.
     pub(super) fn seen(picked: Option<Target>) -> Seen {
-        Seen { picked, marked: None, lang: Lang::En }
+        Seen { picked, marked: None, lit: false, lang: Lang::En }
     }
 
     /// The middle of `r`.

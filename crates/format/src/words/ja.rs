@@ -48,6 +48,7 @@ pub(super) const WORDS: Words = Words {
     could_not_copy: "コピーできませんでした（{e}）：{line}",
     hint_click: "ノード、状態、矢印をクリックすると、それを見て話せます。",
     hint_act: "⌘ を押しながらノードをクリックすると、プロトタイプのように操作できます。",
+    hint_marks: "紫は操作の行き先を示します：↗ 別の画面、→ 別の状態。⌘ を押すとすべて光ります。",
     hint_keys: "⌘C で参照をコピー · ⌘\\ でサイドバーを隠す",
     whole_state: "{state} · 状態全体",
     whole_screen: "{screen} · 画面全体",

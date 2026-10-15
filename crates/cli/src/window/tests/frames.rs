@@ -138,7 +138,8 @@ fn tree_shown(gallery: &mut Gallery) -> Vec<String> {
 }
 
 /// The picture shown, as text: a state's pages by their captions, the node
-/// picked and its box in each page, and the pins; an overview's states,
+/// picked and its box in each page, the nodes marked ↗ and → in each, and
+/// the pins; an overview's states,
 /// its arrows and the journeys marked on it; a flow's words; a
 /// description's faults.
 fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
@@ -152,6 +153,17 @@ fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
                 {
                     let r = node.rect;
                     out.push(format!("  picked {id}: {}, {} · {} × {}", r.x, r.y, r.width, r.height));
+                }
+                for leads in [Leads::Screen, Leads::State] {
+                    let ids: Vec<&str> = page
+                        .nodes
+                        .iter()
+                        .filter(|node| page.leads.get(&node.id) == Some(&leads))
+                        .map(|node| node.id.as_str())
+                        .collect();
+                    if !ids.is_empty() {
+                        out.push(format!("  {} {}", leads.badge(), ids.join(", ")));
+                    }
                 }
             }
             if gallery.playing.is_some() {

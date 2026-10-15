@@ -48,6 +48,7 @@ pub(super) const WORDS: Words = Words {
     could_not_copy: "could not copy ({e}): {line}",
     hint_click: "Click a node, a state or an arrow to see it and talk about it.",
     hint_act: "⌘-click a node to act on it, as a prototype.",
+    hint_marks: "Purple marks where acting goes: ↗ another screen, → another state. Hold ⌘ to light them all.",
     hint_keys: "⌘C copies a reference · ⌘\\ hides this sidebar",
     whole_state: "{state} · the whole state",
     whole_screen: "{screen} · the whole screen",
