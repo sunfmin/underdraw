@@ -11,18 +11,9 @@
     "lines": "TreeRow[]",
     "journeys": "TreeJourney[]",
     "description": "string 1..",
-    "states": "Thumb[]",
-    "journeysOpen": {
-      "type": "bool = true",
-      "view": true,
-      "doc": "The journeys/ heading unfolded"
-    }
+    "states": "Thumb[]"
   },
   "types": {
-    "TreeJourney": {
-      "journey": "Journey",
-      "played": "bool = false"
-    },
     "Thumb": {
       "name": "string 1..",
       "marks": "Mark[]",
@@ -174,79 +165,34 @@
                 "gap": 0,
                 "each": "lines",
                 "item": {
-                  "id": "line-{index}",
-                  "component": "TreeLine",
-                  "name": "{item.name}",
-                  "depth": "{item.depth}",
-                  "heading": "{item.heading}",
-                  "phase": "{item.phase}",
-                  "meta": "{item.meta}",
-                  "picked": false,
+                  "id": "row-{index}",
+                  "component": "Stack",
+                  "gap": 0,
                   "children": [
                     {
-                      "id": "line-{index}-fold",
-                      "component": "Disclosure",
-                      "if": "item.heading",
-                      "open": {
-                        "cases": [
-                          {
-                            "if": "item.unfolded",
-                            "then": true
-                          },
-                          {
-                            "else": false
-                          }
-                        ]
-                      },
-                      "on": {
-                        "tap": {
-                          "toggle": "item.open"
-                        }
-                      }
+                      "id": "line-{index}",
+                      "component": "TreeLine",
+                      "name": "{item.name}",
+                      "heading": "{item.heading}",
+                      "phase": "{item.phase}",
+                      "meta": "{item.meta}",
+                      "picked": false,
+                      "if": "!item.journeyLine"
                     },
                     {
-                      "id": "line-{index}-space",
-                      "component": "FoldSpace",
-                      "if": "!item.heading"
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "journeys-heading",
-                "component": "TreeLine",
-                "name": "journeys/",
-                "depth": 2,
-                "heading": true,
-                "phase": false,
-                "meta": "paths through shop",
-                "picked": false,
-                "children": [
-                  {
-                    "id": "journeys-fold",
-                    "component": "Disclosure",
-                    "open": "{journeysOpen}",
-                    "on": {
-                      "tap": {
-                        "toggle": "journeysOpen"
+                      "id": "journey-{index}",
+                      "component": "JourneyEntry",
+                      "if": "item.journeyLine",
+                      "with": {
+                        "journey": "{item.entry.journey}",
+                        "picked": "{item.entry.played}"
                       }
                     }
-                  }
-                ]
-              },
-              {
-                "id": "journeys",
-                "component": "List",
-                "gap": 0,
-                "each": "journeys",
-                "item": {
-                  "id": "journey-{index}",
-                  "component": "JourneyEntry",
-                  "with": {
-                    "journey": "{item.journey}",
-                    "picked": "{item.played}"
-                  }
-                }
+                  ]
+                },
+                "nest": "children",
+                "fold": "folded",
+                "indent": "space.3"
               }
             ]
           },

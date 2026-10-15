@@ -24,11 +24,6 @@
     "fault": {
       "type": "Fault?",
       "doc": "Where check finds the journey broken"
-    },
-    "journeysOpen": {
-      "type": "bool = true",
-      "view": true,
-      "doc": "The journeys/ heading unfolded"
     }
   },
   "types": {
@@ -56,10 +51,6 @@
       "id": "string 1..",
       "component": "string 1..",
       "calls": "string"
-    },
-    "TreeJourney": {
-      "journey": "Journey",
-      "played": "bool = false"
     }
   },
   "conditions": {
@@ -125,7 +116,7 @@
         "waitingOnYou": 2
       },
       "lines": {
-        "$sample": "shopLines"
+        "$sample": "shopLinesPlaying"
       },
       "journeys": {
         "$sample": "playedJourneys"
@@ -179,7 +170,7 @@
         "waitingOnYou": 2
       },
       "lines": {
-        "$sample": "shopLines"
+        "$sample": "shopLinesPlaying"
       },
       "journeys": {
         "$sample": "playedJourneys"
@@ -264,9 +255,136 @@
       }
     },
     "broken": {
-      "lines": {
-        "$sample": "shopLines"
-      },
+      "lines": [
+        {
+          "name": "shop/",
+          "kind": "directory",
+          "meta": "",
+          "picked": false,
+          "children": [
+            {
+              "name": "order",
+              "kind": "description",
+              "meta": "3 states",
+              "picked": false,
+              "children": [
+                {
+                  "name": "open",
+                  "kind": "state",
+                  "meta": "",
+                  "picked": false,
+                  "children": []
+                },
+                {
+                  "name": "shipped",
+                  "kind": "state",
+                  "meta": "",
+                  "picked": false,
+                  "children": []
+                },
+                {
+                  "name": "cancelled",
+                  "kind": "state",
+                  "meta": "",
+                  "picked": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "orders",
+              "kind": "description",
+              "meta": "2 states",
+              "picked": false,
+              "children": [
+                {
+                  "name": "default",
+                  "kind": "state",
+                  "meta": "",
+                  "picked": false,
+                  "children": []
+                },
+                {
+                  "name": "loading",
+                  "kind": "phase",
+                  "meta": "",
+                  "picked": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "journeys/",
+              "kind": "journeys",
+              "meta": "paths through shop",
+              "children": [
+                {
+                  "name": "cancel-an-order",
+                  "kind": "journey",
+                  "entry": {
+                    "journey": {
+                      "name": "cancel-an-order",
+                      "about": "The person opens an order from the list and cancels it before it ships.",
+                      "steps": 3,
+                      "route": "orders › order",
+                      "brokenAt": null,
+                      "stops": [
+                        {
+                          "number": 1,
+                          "screen": "orders",
+                          "state": "default"
+                        },
+                        {
+                          "number": 2,
+                          "screen": "order",
+                          "state": "open"
+                        },
+                        {
+                          "number": 3,
+                          "screen": "order",
+                          "state": "cancelled",
+                          "last": true
+                        }
+                      ]
+                    },
+                    "played": false
+                  },
+                  "children": []
+                },
+                {
+                  "name": "refund-a-cancelled-order",
+                  "kind": "journey",
+                  "entry": {
+                    "journey": {
+                      "name": "refund-a-cancelled-order",
+                      "about": "",
+                      "steps": 2,
+                      "route": "order",
+                      "brokenAt": 2,
+                      "stops": [
+                        {
+                          "number": 1,
+                          "screen": "order",
+                          "state": "cancelled"
+                        },
+                        {
+                          "number": 2,
+                          "screen": "order",
+                          "state": "refunded",
+                          "last": true,
+                          "broken": true
+                        }
+                      ]
+                    },
+                    "played": true
+                  },
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "journeys": [
         {
           "journey": {
@@ -422,79 +540,34 @@
                 "gap": 0,
                 "each": "lines",
                 "item": {
-                  "id": "line-{index}",
-                  "component": "TreeLine",
-                  "name": "{item.name}",
-                  "depth": "{item.depth}",
-                  "heading": "{item.heading}",
-                  "phase": "{item.phase}",
-                  "meta": "{item.meta}",
-                  "picked": false,
+                  "id": "row-{index}",
+                  "component": "Stack",
+                  "gap": 0,
                   "children": [
                     {
-                      "id": "line-{index}-fold",
-                      "component": "Disclosure",
-                      "if": "item.heading",
-                      "open": {
-                        "cases": [
-                          {
-                            "if": "item.unfolded",
-                            "then": true
-                          },
-                          {
-                            "else": false
-                          }
-                        ]
-                      },
-                      "on": {
-                        "tap": {
-                          "toggle": "item.open"
-                        }
-                      }
+                      "id": "line-{index}",
+                      "component": "TreeLine",
+                      "name": "{item.name}",
+                      "heading": "{item.heading}",
+                      "phase": "{item.phase}",
+                      "meta": "{item.meta}",
+                      "picked": false,
+                      "if": "!item.journeyLine"
                     },
                     {
-                      "id": "line-{index}-space",
-                      "component": "FoldSpace",
-                      "if": "!item.heading"
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "journeys-heading",
-                "component": "TreeLine",
-                "name": "journeys/",
-                "depth": 2,
-                "heading": true,
-                "phase": false,
-                "meta": "paths through shop",
-                "picked": false,
-                "children": [
-                  {
-                    "id": "journeys-fold",
-                    "component": "Disclosure",
-                    "open": "{journeysOpen}",
-                    "on": {
-                      "tap": {
-                        "toggle": "journeysOpen"
+                      "id": "journey-{index}",
+                      "component": "JourneyEntry",
+                      "if": "item.journeyLine",
+                      "with": {
+                        "journey": "{item.entry.journey}",
+                        "picked": "{item.entry.played}"
                       }
                     }
-                  }
-                ]
-              },
-              {
-                "id": "journeys",
-                "component": "List",
-                "gap": 0,
-                "each": "journeys",
-                "item": {
-                  "id": "journey-{index}",
-                  "component": "JourneyEntry",
-                  "with": {
-                    "journey": "{item.journey}",
-                    "picked": "{item.played}"
-                  }
-                }
+                  ]
+                },
+                "nest": "children",
+                "fold": "folded",
+                "indent": "space.3"
               }
             ]
           },

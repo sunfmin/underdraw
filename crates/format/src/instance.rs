@@ -44,6 +44,10 @@ pub struct Node {
     /// `[2]` for the third row; empty outside any.
     #[serde(skip)]
     pub instance: Vec<usize>,
+    /// How many levels in it is drawn, as a row of a tree (`"nest"`): 0 for
+    /// a row at the top and for every node that is no row of one.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub level: usize,
     pub component: String,
     /// Every property other than the node's structure, with templates filled
     /// and cases and responsive values chosen.
@@ -87,7 +91,7 @@ impl Node {
 pub const SLOTS: [&str; 7] = ["children", "leading", "trailing", "item", "action", "overlay", "foot"];
 
 /// Keys that only steer how the tree is built.
-const STRUCTURE: [&str; 12] = [
+const STRUCTURE: [&str; 14] = [
     "id",
     "component",
     "with",
@@ -96,6 +100,8 @@ const STRUCTURE: [&str; 12] = [
     "each",
     "index",
     "limit",
+    "nest",
+    "fold",
     "assumed",
     "platform",
     "$note",
@@ -317,6 +323,7 @@ impl Fill<'_> {
             written_id,
             written_at: at.at.clone(),
             instance: at.instance.clone(),
+            level: 0,
             component,
             props: Map::new(),
             children: Vec::new(),
@@ -329,7 +336,7 @@ impl Fill<'_> {
             interactive: object.contains_key("on") || object.contains_key("bind"),
         };
         let each = match object.get("each") {
-            Some(Value::String(path)) => Some(self.items(path, object.get("limit"), scope)?),
+            Some(Value::String(path)) => Some(self.items(path, object, scope)?),
             _ => None,
         };
         for (key, value) in object {
@@ -338,11 +345,17 @@ impl Fill<'_> {
             }
             if key == "item" {
                 let named = object.get("index").and_then(Value::as_str);
-                for (index, item) in each.iter().flatten().enumerate() {
-                    let scope = with(scope, item, index, named);
+                for row in each.iter().flatten() {
+                    if !row.shown {
+                        continue;
+                    }
+                    let scope = with(scope, &row.item, row.index, named);
                     let mut at = at.under(key, None);
-                    at.instance.push(index);
-                    node.children.append(&mut self.node(value, &scope, "item", &at)?);
+                    at.instance.push(row.index);
+                    for mut built in self.node(value, &scope, "item", &at)? {
+                        built.level = row.level;
+                        node.children.push(built);
+                    }
                 }
             } else if SLOTS.contains(&key.as_str()) {
                 node.children.append(&mut self.slot(value, scope, key, at)?);
@@ -373,29 +386,43 @@ impl Fill<'_> {
             _ => {}
         }
         // `each` with no `item` template shows the items themselves (photos).
-        if let Some(items) = each
+        if let Some(rows) = each
             && !object.contains_key("item")
         {
+            let mut items = Vec::new();
+            for row in rows {
+                if row.shown {
+                    items.push(row.item);
+                }
+            }
             node.props.insert("items".to_string(), Value::Array(items));
         }
         Ok(node)
     }
 
-    /// The elements `path` holds, at most `limit` of them: a count, or one
-    /// per breakpoint.
-    fn items(&self, path: &str, limit: Option<&Value>, scope: &Value) -> Result<Vec<Value>, String> {
+    /// The rows the repeating node `object` makes of the elements `path`
+    /// holds, at most its `limit` of them: a count, or one per breakpoint.
+    /// With `"nest"`, each element is followed by the rows of the list its
+    /// nest field holds, a level further in, at any depth; those of an
+    /// element whose `"fold"` field is true are made but not shown, so
+    /// every row keeps its index whatever is folded above it.
+    fn items(&self, path: &str, object: &Map<String, Value>, scope: &Value) -> Result<Vec<Row>, String> {
         let Some(Value::Array(all)) = lookup(scope, path) else {
             return Err(format!("each: {path} is not an array here"));
         };
-        let limit = limit.map(|limit| breakpoint::at(limit, self.breakpoint));
+        let limit = object.get("limit").map(|limit| breakpoint::at(limit, self.breakpoint));
         let limit = limit.and_then(Value::as_u64).map_or(all.len(), |n| n as usize);
-        let mut items = Vec::new();
+        let mut top = Vec::new();
         for item in all {
-            if items.len() < limit {
-                items.push(item.clone());
+            if top.len() < limit {
+                top.push(item.clone());
             }
         }
-        Ok(items)
+        let nest = object.get("nest").and_then(Value::as_str);
+        let fold = object.get("fold").and_then(Value::as_str);
+        let mut rows = Vec::new();
+        rows_of(&top, nest, fold, 0, true, &mut rows);
+        Ok(rows)
     }
 
     /// A property's value in `scope`: templates filled, `cases` and
@@ -441,15 +468,17 @@ impl Fill<'_> {
     }
 
     /// Whether the use site `used` holds: each of its `&&` terms (`!`, then
-    /// a condition or a Bool path) does.
+    /// a condition or a Bool path) does. One that is no use site never holds.
     fn holds(&self, used: &str, scope: &Value) -> bool {
-        UseSite::parse(used).terms.iter().all(|term| {
-            let holds = if self.conditions.contains(term.name) {
-                self.conditions.holds(term.name, scope)
-            } else {
-                lookup(scope, term.name) == Some(&Value::Bool(true))
-            };
-            holds != term.negated
+        UseSite::parse(used).is_some_and(|site| {
+            site.terms.iter().all(|term| {
+                let holds = if self.conditions.contains(&term.name) {
+                    self.conditions.holds(&term.name, scope)
+                } else {
+                    lookup(scope, &term.name) == Some(&Value::Bool(true))
+                };
+                holds != term.negated
+            })
         })
     }
 
@@ -529,6 +558,40 @@ fn repath<T>(on: &mut Value, instances: &Instances<T>) {
         }
         _ => {}
     }
+}
+
+/// One element an `each` repeats over: the element, its index among every
+/// row the repeat makes, how many levels of a tree in it is, and whether it
+/// is drawn (none folded above it).
+struct Row {
+    item: Value,
+    index: usize,
+    level: usize,
+    shown: bool,
+}
+
+/// `items` added to `rows` at `level`, each followed by the rows its `nest`
+/// field holds, one level in, hidden under one whose `fold` field is true.
+fn rows_of(
+    items: &[Value],
+    nest: Option<&str>,
+    fold: Option<&str>,
+    level: usize,
+    shown: bool,
+    rows: &mut Vec<Row>,
+) {
+    for item in items {
+        rows.push(Row { item: item.clone(), index: rows.len(), level, shown });
+        let Some(Value::Array(inner)) = nest.and_then(|nest| item.get(nest)) else {
+            continue;
+        };
+        let folded = fold.and_then(|fold| item.get(fold)) == Some(&Value::Bool(true));
+        rows_of(inner, nest, fold, level.saturating_add(1), shown && !folded, rows);
+    }
+}
+
+fn is_zero(level: &usize) -> bool {
+    *level == 0
 }
 
 /// `scope` with `item` and `index` added for one element of an `each`,

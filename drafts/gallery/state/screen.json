@@ -375,7 +375,6 @@
                   "id": "line-{index}",
                   "component": "TreeLine",
                   "name": "{item.name}",
-                  "depth": "{item.depth}",
                   "heading": "{item.heading}",
                   "phase": "{item.phase}",
                   "meta": "{item.meta}",
@@ -385,36 +384,11 @@
                       "set": "focus",
                       "to": "{item.name}"
                     }
-                  },
-                  "children": [
-                    {
-                      "id": "line-{index}-fold",
-                      "component": "Disclosure",
-                      "if": "item.heading",
-                      "open": {
-                        "cases": [
-                          {
-                            "if": "item.unfolded",
-                            "then": true
-                          },
-                          {
-                            "else": false
-                          }
-                        ]
-                      },
-                      "on": {
-                        "tap": {
-                          "toggle": "item.open"
-                        }
-                      }
-                    },
-                    {
-                      "id": "line-{index}-space",
-                      "component": "FoldSpace",
-                      "if": "!item.heading"
-                    }
-                  ]
-                }
+                  }
+                },
+                "nest": "children",
+                "fold": "folded",
+                "indent": "space.3"
               }
             ]
           },
@@ -984,41 +958,43 @@
       "lines": [
         {
           "name": "shop/",
-          "depth": 0,
-          "kind": "directory"
-        },
-        {
-          "name": "order",
-          "depth": 1,
-          "kind": "description",
-          "meta": "1 note"
-        },
-        {
-          "name": "open",
-          "depth": 2,
-          "kind": "state",
-          "picked": true
-        },
-        {
-          "name": "cancel-dialog",
-          "depth": 2,
-          "kind": "state"
-        },
-        {
-          "name": "shipped",
-          "depth": 2,
-          "kind": "state"
-        },
-        {
-          "name": "loading",
-          "depth": 2,
-          "kind": "phase"
-        },
-        {
-          "name": "orders",
-          "depth": 1,
-          "kind": "description",
-          "meta": "2 states"
+          "kind": "directory",
+          "children": [
+            {
+              "name": "order",
+              "kind": "description",
+              "meta": "1 note",
+              "children": [
+                {
+                  "name": "open",
+                  "kind": "state",
+                  "picked": true,
+                  "children": []
+                },
+                {
+                  "name": "cancel-dialog",
+                  "kind": "state",
+                  "children": []
+                },
+                {
+                  "name": "shipped",
+                  "kind": "state",
+                  "children": []
+                },
+                {
+                  "name": "loading",
+                  "kind": "phase",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "orders",
+              "kind": "description",
+              "meta": "2 states",
+              "children": []
+            }
+          ]
         }
       ],
       "shown": {

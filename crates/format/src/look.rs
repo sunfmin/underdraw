@@ -1,13 +1,13 @@
 //! The look language, parsed once: what a component is drawn as, read from
 //! its `"look"` into a tree. `check` walks the tree for what it reads, the
 //! filters it applies and the conditions it cannot parse; underdraw-layout
-//! evaluates it and parses nothing. A look's condition is written as a
-//! screen's ([`crate::expr`]), its names placeholders. Why:
+//! evaluates it and parses nothing. A look's condition is read by the one
+//! parser every condition is ([`crate::expr`]), its names placeholders. Why:
 //! [ADR 0007](../../../docs/adr/0007-kinds-are-data.md).
 
 use serde_json::{Map, Value};
 
-use crate::expr::{self, Atom, Expr, Names};
+use crate::expr::{self, Atom, Expr};
 
 /// A look, or any value inside one, parsed.
 #[derive(Clone, Debug, PartialEq)]
@@ -292,8 +292,7 @@ pub struct Condition {
 
 impl Condition {
     pub fn parse(written: &str) -> Condition {
-        let parsed = expr::parse_names(written, Names::Placeholders)
-            .map(|expr| expr.named(&|name: String| Placeholder::parse(&name)));
+        let parsed = expr::parse(written).map(|expr| expr.named(&|name: String| Placeholder::parse(&name)));
         Condition { written: written.to_string(), parsed }
     }
 
