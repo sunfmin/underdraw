@@ -63,6 +63,9 @@ pub enum Ink {
     Note,
     /// A note the agent answered last, for the person to read.
     Answered,
+    /// The circle a label is drawn on: a red no wireframe draws with, so
+    /// that a label is told apart at a glance from what it sits on.
+    Label,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use underdraw_format::{Breakpoint, Lang, Screen, Shared, State};
-use underdraw_layout::{Draw, Page, Placed, layout};
+use underdraw_layout::{Draw, Ink, Page, Placed, layout};
 
 const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
@@ -71,6 +71,23 @@ fn what_a_person_can_act_on_is_numbered_in_order() {
     assert!(placed(&page, "reserve-button").label.is_some());
     let tags = page.draws.iter().filter(|d| matches!(d, Draw::Tag { .. })).count();
     assert!(tags >= labels.len());
+    // Each label in the ink only labels draw with, to stand out from the
+    // wireframe it sits on.
+    let numbers: Vec<Ink> = page
+        .draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Tag { text, ink, .. } if text != "?" => Some(*ink),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(numbers, vec![Ink::Label; labels.len()]);
+    let inks = |d: &Draw| match d {
+        Draw::Box { fill, stroke, .. } => vec![*fill, *stroke],
+        Draw::Text { ink, .. } | Draw::Cross { ink, .. } | Draw::Line { ink, .. } => vec![Some(*ink)],
+        Draw::Clip { .. } | Draw::Tag { .. } => Vec::new(),
+    };
+    assert!(!page.draws.iter().flat_map(inks).any(|ink| ink == Some(Ink::Label)), "no wireframe draws in it");
 }
 
 #[test]
