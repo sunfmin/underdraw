@@ -10,7 +10,7 @@ use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 
-use super::{Pane, Pin, Seen, Shows, Target, arrow_pins};
+use super::{Desk, Pin, Seen, Shows, Target, arrow_pins};
 use crate::area::{over, rect};
 use crate::chrome::{
     self, ARROW_FONT, CAPTION, MARGIN, MARK, MARK_INSET, MARK_TALL, PIN, SPACE, THUMB, THUMB_TALL,
@@ -77,7 +77,7 @@ impl Overview {
 
     /// Where each state's picture is, in window points: its left, top,
     /// width and height, the height no more than `THUMB_TALL`.
-    pub fn cells(&self, pane: &Pane) -> Vec<(f64, f64, f64, f64)> {
+    pub fn cells(&self, pane: &Desk) -> Vec<(f64, f64, f64, f64)> {
         let columns = Self::columns(pane.width);
         self.thumbs
             .iter()
@@ -94,7 +94,7 @@ impl Overview {
     /// The marks of the journeys through each state, in window points,
     /// stacked down from its picture's top left corner, each no wider than
     /// the picture; with the state's line.
-    pub fn passes(&self, pane: &Pane) -> Vec<(Rect, &Pass, usize)> {
+    pub fn passes(&self, pane: &Desk) -> Vec<(Rect, &Pass, usize)> {
         let mut list = Vec::new();
         for (thumb, (x, y, w, _)) in self.thumbs.iter().zip(self.cells(pane)) {
             for (index, pass) in thumb.journeys.iter().enumerate() {
@@ -112,7 +112,7 @@ impl Overview {
     /// that two between the same states, either way, run apart, and is
     /// labelled nearer where it starts, so that their labels do too; one
     /// that stays in its state loops out of its right.
-    pub fn paths(&self, pane: &Pane) -> Vec<(Vec<(f64, f64)>, Rect)> {
+    pub fn paths(&self, pane: &Desk) -> Vec<(Vec<(f64, f64)>, Rect)> {
         let cells = self.cells(pane);
         let mut list = Vec::new();
         for (index, arrow) in self.arrows.iter().enumerate() {
@@ -145,7 +145,7 @@ impl Overview {
 
     /// The arrows and their labels drawn, in window points; the one picked
     /// in the strong ink.
-    fn arrow_draws(&self, pane: &Pane, picked: Option<usize>) -> Vec<Draw> {
+    fn arrow_draws(&self, pane: &Desk, picked: Option<usize>) -> Vec<Draw> {
         let mut list = Vec::new();
         for (index, (arrow, (path, at))) in self.arrows.iter().zip(self.paths(pane)).enumerate() {
             // The arrow picked stands out; the others are drawn quieter
@@ -182,14 +182,14 @@ impl Overview {
 }
 
 impl Shows for Overview {
-    fn size(&self, pane: &Pane, _: &mut Typesetter) -> (f64, f64) {
+    fn size(&self, pane: &Desk, _: &mut Typesetter) -> (f64, f64) {
         let rows = self.thumbs.len().div_ceil(Self::columns(pane.width)) as f64;
         (0.0, MARGIN + rows * (CAPTION + THUMB_TALL + SPACE) - SPACE + MARGIN)
     }
 
     /// An arrow's label, then a journey's mark, then a state's picture or
     /// caption.
-    fn target_at(&self, at: (f64, f64), pane: &Pane) -> Option<Target> {
+    fn target_at(&self, at: (f64, f64), pane: &Desk) -> Option<Target> {
         if let Some(arrow) = self.paths(pane).iter().position(|(_, label)| over(*label, at)) {
             return Some(Target::Arrow(arrow));
         }
@@ -204,7 +204,7 @@ impl Shows for Overview {
     /// Each state on a sheet under its name, a tall one cut at the foot of
     /// its picture; over them the arrows, and the journeys' marks in the
     /// notes' ink, as the node a journey acts on is marked when it plays.
-    fn draw(&self, scene: &mut Scene, pane: &Pane, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
+    fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
         let cells = self.cells(pane);
         let mut list = Vec::new();
         for (thumb, &(x, y, w, h)) in self.thumbs.iter().zip(&cells) {
@@ -258,14 +258,14 @@ impl Shows for Overview {
             Target::State(line) | Target::Pass { state: line, .. } => {
                 On::State { state: self.thumbs.iter().find(|thumb| thumb.line == *line)?.state.clone() }
             }
-            Target::Node { .. } | Target::Region { .. } | Target::Caption | Target::Box(_) => return None,
+            Target::Node { .. } | Target::Caption | Target::Box(_) => return None,
         };
         Some(Reference { description: self.dir.clone(), on })
     }
 
     /// Each note on a state a pin at the right of its caption, and each on
     /// a transition one beside its arrow's label.
-    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Pane) -> Vec<Pin> {
+    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Desk) -> Vec<Pin> {
         let mut pins = Vec::new();
         if let Some(notes) = notes.get(&self.dir) {
             for (thumb, (x, y, w, _)) in self.thumbs.iter().zip(self.cells(pane)) {

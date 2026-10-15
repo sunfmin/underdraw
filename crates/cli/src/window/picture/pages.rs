@@ -1,7 +1,7 @@
 //! A state's pages: the state drawn at each width, side by side, scaled
 //! down together to fit the pane, never below [`SMALLEST`]: past that they
 //! scroll across. Each is captioned, its nodes tagged with their labels at
-//! their own size, and the node picked, the region picked and the node a
+//! their own size, and the node picked and the node a
 //! journey acts on next marked over it.
 
 use std::collections::BTreeMap;
@@ -11,12 +11,12 @@ use underdraw_layout::{Draw, Ink, Placed, Rect};
 use vello::Scene;
 use vello::kurbo::Affine;
 
-use super::{Pane, Pin, Seen, Shows, Target};
+use super::{Desk, Pin, Seen, Shows, Target};
 use crate::area::{over, rect};
 use crate::chrome::{self, CAPTION, DOT, MARGIN, PIN};
 use crate::draw::{Handlers, Origin, Shown as State};
 use crate::notes::Note;
-use crate::reference::{Frame, On, Pointed, Reference, Region};
+use crate::reference::{On, Pointed, Reference};
 use crate::text::Typesetter;
 use crate::window::{SMALLEST, caption, sheet};
 
@@ -72,31 +72,6 @@ impl Page {
         self.nodes.iter().find(|node| &node.id == id)
     }
 
-    /// Where `region` is drawn here: around the nodes it covers that are
-    /// here, as the layout now places them; where none of them is, at its
-    /// box, in a picture of the width it was dragged at; elsewhere, nowhere.
-    pub fn region(&self, region: &Region) -> Option<Rect> {
-        let found: Vec<Rect> =
-            region.nodes.iter().filter_map(|origin| Some(self.placed(origin)?.rect)).collect();
-        let Some(first) = found.first() else {
-            let Frame { x, y, width, height } = region.area;
-            let here = self.width as u32 == region.width;
-            return here.then_some(Rect {
-                x: x as f32,
-                y: y as f32,
-                width: width as f32,
-                height: height as f32,
-            });
-        };
-        let (mut x, mut y) = (first.x, first.y);
-        let (mut right, mut bottom) = (first.x + first.width, first.y + first.height);
-        for r in &found {
-            (x, y) = (x.min(r.x), y.min(r.y));
-            (right, bottom) = (right.max(r.x + r.width), bottom.max(r.y + r.height));
-        }
-        Some(Rect { x, y, width: right - x, height: bottom - y })
-    }
-
     /// The first node written as `written`: the one a journey's step acts
     /// on.
     fn written(&self, written: &str) -> Option<&Placed> {
@@ -114,7 +89,7 @@ impl Pages {
     }
 
     /// Where each page's top-left corner is in the window.
-    pub fn origins(&self, pane: &Pane) -> Vec<(f64, f64)> {
+    pub fn origins(&self, pane: &Desk) -> Vec<(f64, f64)> {
         let zoom = self.zoom(pane.width);
         let mut x = pane.left + MARGIN - pane.across;
         let top = MARGIN - pane.scroll + CAPTION;
@@ -130,7 +105,7 @@ impl Pages {
 
     /// The page under `at`, a point in the window, with its place among
     /// them and `at` in its points; none off the pages.
-    pub fn on_page(&self, at: (f64, f64), pane: &Pane) -> Option<(usize, &Page, (f64, f64))> {
+    pub fn on_page(&self, at: (f64, f64), pane: &Desk) -> Option<(usize, &Page, (f64, f64))> {
         let zoom = self.zoom(pane.width);
         self.pages.iter().zip(self.origins(pane)).enumerate().find_map(|(index, (page, (left, top)))| {
             let (x, y) = ((at.0 - left) / zoom, (at.1 - top) / zoom);
@@ -151,17 +126,11 @@ impl Pages {
         (x, y, f64::from(r.width) * zoom, f64::from(r.height) * zoom)
     }
 
-    /// `r`, in the page at `at` drawn at `zoom`, in window points.
-    fn window(r: Rect, at: (f64, f64), zoom: f64) -> Rect {
-        let (x, y, w, h) = Self::spot(r, at, zoom);
-        rect(x, y, w, h)
-    }
-
     /// The labels the nodes of each page are tagged with, and the "?" of
     /// each guess, in window points: where the page puts them, scaled with
     /// it, but each at its own size, so that it reads as well at
     /// [`SMALLEST`] as at full size.
-    fn labels(&self, pane: &Pane) -> Vec<Draw> {
+    fn labels(&self, pane: &Desk) -> Vec<Draw> {
         let zoom = self.zoom(pane.width);
         let mut labels = Vec::new();
         for (page, (left, top)) in self.pages.iter().zip(self.origins(pane)) {
@@ -192,7 +161,7 @@ impl Pages {
 }
 
 impl Shows for Pages {
-    fn size(&self, pane: &Pane, _: &mut Typesetter) -> (f64, f64) {
+    fn size(&self, pane: &Desk, _: &mut Typesetter) -> (f64, f64) {
         let zoom = self.zoom(pane.width);
         let wide = self.pages.iter().map(|page| page.width * zoom + MARGIN).sum::<f64>() + MARGIN;
         let tallest = self.pages.iter().map(|p| p.height).fold(0.0, f64::max);
@@ -200,7 +169,7 @@ impl Shows for Pages {
     }
 
     /// The innermost node under `at`, or a page's caption.
-    fn target_at(&self, at: (f64, f64), pane: &Pane) -> Option<Target> {
+    fn target_at(&self, at: (f64, f64), pane: &Desk) -> Option<Target> {
         if let Some((pointed, page, at)) = self.on_page(at, pane) {
             return page.node_at(at).map(|node| Target::Node { id: node.id.clone(), pointed });
         }
@@ -214,9 +183,9 @@ impl Shows for Pages {
     }
 
     /// Each page on a sheet under its caption; over them, the node a
-    /// journey acts on next ringed twice in the notes' ink, the node picked
-    /// outlined, and the region picked and the one being dragged dashed.
-    fn draw(&self, scene: &mut Scene, pane: &Pane, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
+    /// journey acts on next ringed twice in the notes' ink, and the node
+    /// picked outlined.
+    fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
         let (zoom, origins) = (self.zoom(pane.width), self.origins(pane));
         let mut over = self.labels(pane);
         for (page, &(x, y)) in self.pages.iter().zip(&origins) {
@@ -260,30 +229,13 @@ impl Shows for Pages {
                 });
             }
         }
-        let mut regions = Vec::new();
-        if let Some(Target::Region { region, .. }) = &seen.picked {
-            for (page, &at) in self.pages.iter().zip(&origins) {
-                regions.extend(page.region(region).map(|r| Self::window(r, at, zoom)));
-            }
-        }
-        regions.extend(seen.dragged);
-        for around in regions {
-            over.push(Draw::Box {
-                rect: around,
-                radius: 0.0,
-                fill: None,
-                stroke: Some(Ink::Strong),
-                dashed: true,
-            });
-        }
         over
     }
 
-    /// A node at the instance pointed at, a region, or the whole state.
+    /// A node at the instance pointed at, or the whole state.
     fn reference(&self, target: &Target) -> Option<Reference> {
         let state = self.state.clone()?;
         let on = match target {
-            Target::Region { region, .. } => On::Region { state, region: region.clone() },
             Target::Node { id, pointed } => match self.pointed(id, *pointed) {
                 Some(node) => On::Node { state, node },
                 None => On::State { state },
@@ -294,12 +246,11 @@ impl Shows for Pages {
         Some(Reference { description: self.dir.clone(), on })
     }
 
-    /// Each note on a node or a region a numbered pin at the top-right
-    /// corner of its node, or of its region as it now is, in the page of
-    /// the state and width it was written in, and a faint dot there in
-    /// every other that holds the node, or a node the region covers; each
-    /// on the whole state a pin at the right of the first page's caption.
-    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Pane) -> Vec<Pin> {
+    /// Each note on a node a numbered pin at the top-right corner of its
+    /// node, in the page of the state and width it was written in, and a
+    /// faint dot there in every other that holds the node; each on the
+    /// whole state a pin at the right of the first page's caption.
+    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Desk) -> Vec<Pin> {
         let (Some(state), Some(notes)) = (&self.state, notes.get(&self.dir)) else {
             return Vec::new();
         };
@@ -316,10 +267,6 @@ impl Shows for Pages {
                         let Some(placed) = page.placed(&node.origin) else { continue };
                         (written, placed.rect, placed.id.clone(), node.width)
                     }
-                    On::Region { state: written, region } => {
-                        let Some(r) = page.region(region) else { continue };
-                        (written, r, format!("{} {}", r.x + r.width, r.y), region.width)
-                    }
                     On::State { state: written } if written == state && index == 0 => {
                         let right = left + page.width * zoom - PIN / 2.0 - whole as f64 * (PIN + 2.0);
                         whole += 1;
@@ -332,13 +279,11 @@ impl Shows for Pages {
                 let corner = (left + f64::from(r.x + r.width) * zoom, top + f64::from(r.y) * zoom);
                 let before = on.entry(key).or_default();
                 let faint = written != state || page.width as u32 != width;
-                let region = (matches!(note.on, On::Region { .. }) && !faint)
-                    .then(|| Self::window(r, (left, top), zoom));
                 let side = if faint { DOT } else { PIN };
                 let x = corner.0 - side / 2.0 - *before as f64 * (side + 2.0);
                 *before += 1;
                 let at = rect(x, corner.1 - side / 2.0, side, side);
-                pins.push(Pin { region, ..Pin::of(&self.dir, note, at, faint) });
+                pins.push(Pin::of(&self.dir, note, at, faint));
             }
         }
         pins

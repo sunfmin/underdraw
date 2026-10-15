@@ -11,7 +11,7 @@ use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 
-use super::{Pane, Pin, Seen, Shows, Target, arrow_pins};
+use super::{Desk, Pin, Seen, Shows, Target, arrow_pins};
 use crate::area::{over, rect};
 use crate::chrome::{self, ARROWS, MARGIN, MARK, PIN};
 use crate::flow::{self, Map, Screen};
@@ -46,7 +46,7 @@ impl Flow {
     }
 
     /// Where its top-left corner is in the window.
-    pub fn origin(pane: &Pane) -> (f64, f64) {
+    pub fn origin(pane: &Desk) -> (f64, f64) {
         (pane.left + MARGIN, MARGIN - pane.scroll)
     }
 
@@ -83,7 +83,7 @@ impl Flow {
 
     /// Where each arrow is named, in window points, and where its notes'
     /// pins start: under it, where it leaves its box.
-    pub fn spots(&self, pane: &Pane) -> Vec<(Rect, (f64, f64))> {
+    pub fn spots(&self, pane: &Desk) -> Vec<(Rect, (f64, f64))> {
         let ((left, top), zoom) = (Self::origin(pane), self.zoom(pane.width));
         let window = |(x, y): (f64, f64)| (left + x * zoom, top + y * zoom);
         self.arrows()
@@ -177,12 +177,12 @@ impl Flow {
 }
 
 impl Shows for Flow {
-    fn size(&self, pane: &Pane, _: &mut Typesetter) -> (f64, f64) {
+    fn size(&self, pane: &Desk, _: &mut Typesetter) -> (f64, f64) {
         (0.0, MARGIN + self.map.height * self.zoom(pane.width) + MARGIN)
     }
 
     /// An arrow's label, then the box of a description drawn.
-    fn target_at(&self, at: (f64, f64), pane: &Pane) -> Option<Target> {
+    fn target_at(&self, at: (f64, f64), pane: &Desk) -> Option<Target> {
         if let Some(arrow) = self.spots(pane).iter().position(|(label, _)| over(*label, at)) {
             return Some(Target::Arrow(arrow));
         }
@@ -197,7 +197,7 @@ impl Shows for Flow {
     /// Each box of a description on a sheet, its picture cut at its foot;
     /// then the boxes' names and the arrows, all in the flow's own points
     /// scaled to the pane.
-    fn draw(&self, scene: &mut Scene, pane: &Pane, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
+    fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
         let at = Affine::translate(Self::origin(pane)) * Affine::scale(self.zoom(pane.width));
         for (place, tile) in self.map.places.iter().zip(&self.tiles) {
             if !matches!(tile, Tile::Undrawn) {
@@ -232,7 +232,7 @@ impl Shows for Flow {
 
     /// Each note on a navigate a pin under its arrow, where it leaves its
     /// box.
-    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Pane) -> Vec<Pin> {
+    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Desk) -> Vec<Pin> {
         let references = (0..self.map.arrows.len()).filter_map(|arrow| self.reference(&Target::Arrow(arrow)));
         let spots = self.spots(pane).into_iter().map(|(_, pin)| pin);
         arrow_pins(references.zip(spots), notes)

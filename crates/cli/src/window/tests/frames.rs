@@ -2,7 +2,7 @@
 //! show it, and held to a golden PNG kept in `crates/cli/goldens/gallery`.
 //!
 //! [`held`] is the glue: a test gives it a root, a window size and its acts
-//! on the gallery (pick a line, click a node, drag a region, press keys),
+//! on the gallery (pick a line, click a node, press keys),
 //! and the window's real frame is rendered headless on the GPU `render`
 //! uses, one pixel a point. A frame that strays from its golden fails the
 //! test, and is written beside the path the failure names to be looked at.
@@ -93,23 +93,15 @@ fn hold(name: &str, width: u32, height: u32, pixels: &[u8]) {
     }
 }
 
-/// Note `text` written with N on node `id` of the phone's picture.
-fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
-    press_keys(gallery, &["n"]);
-    gallery.press_at(on_node(gallery, 0, id));
-    gallery.let_go();
-    type_text(gallery, text);
-    press_keys(gallery, &["Enter"]);
-}
-
 /// That every text of the sidebar fits the box it is set in, inside the
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
-    let cards = gallery.sidebar_cards();
-    let (left, width) = (gallery.pane_right(), gallery.side);
-    let laid = sidebar::lay_out(&cards, (left, width), -gallery.side_scroll, &mut gallery.typesetter);
+    let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
+    let (left, width) = (gallery.panes.pictures().x1, gallery.panes.side_width());
+    let at = (-gallery.panes.scrolled(Scrolls::Side), gallery.panes.window().1);
+    let laid = sidebar::lay_out(&cards, foot.as_ref(), (left, width), at, &mut gallery.typesetter);
     let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
-    for draw in &laid.draws {
+    for draw in laid.draws.iter().chain(&laid.foot_draws) {
         let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
         let (x, right) = (f64::from(rect.x), f64::from(rect.x + rect.width));
         assert!(x >= inside && right <= outside, "{text:?} set outside the sidebar's gutters");
@@ -142,7 +134,7 @@ fn the_tree_lists_directories_descriptions_states_phases_journeys_and_counts_fau
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
     let gallery = held("tree", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        note_on(gallery, "order-0", "rename it");
+        say_on(gallery, 0, "order-0", "rename it");
     });
     let line = |name: &str| gallery.lines.iter().find(|l| l.row.name == name).unwrap();
     assert!(!line("broken").row.faults.is_empty(), "a description with faults");
@@ -178,9 +170,9 @@ fn the_inbox_of_the_root_grouped_by_description() {
     let dir = root.join("orders");
     let whole =
         Reference { description: dir.clone(), on: On::State { state: State::Fixture("default".into()) } };
-    notes::add(&whole, "too dense").unwrap();
-    notes::add(&whole, "a bigger title").unwrap();
-    notes::answer(&dir, "N2", "the title is a heading now").unwrap();
+    notes::say(&whole, "too dense").unwrap();
+    notes::say(&whole, "a bigger title").unwrap();
+    notes::answer(&dir, "N1", "the title is a heading now").unwrap();
     let mut gallery = held("inbox", &root, WINDOW, |gallery| gallery.pick(0));
     let card = gallery.inbox_card().expect("the inbox of everything under the root");
     assert_eq!(card.title, "waits on you · 6");
@@ -240,15 +232,26 @@ fn a_prototype_act_and_its_outcomes() {
 }
 
 #[test]
-fn a_region_dragged_for_a_note() {
-    let root = root_of("frame-region", &[("orders", "orders")]);
-    let mut gallery = held("region", &root, WINDOW, |gallery| {
+fn the_whole_state_talked_about_with_more_typed_in_the_box() {
+    let root = root_of("frame-talk", &[("orders", "orders")]);
+    let mut gallery = held("talk", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        press_keys(gallery, &["n"]);
-        drag(gallery, 0, (10.0, 145.0), (380.0, 175.0));
+        type_text(gallery, "the list is too dense");
+        press_keys(gallery, &["Enter"]);
+        notes::answer(
+            &root.join("orders"),
+            "N1",
+            "gave each row more room; should the filters fold away too?",
+        )
+        .unwrap();
+        gallery.reload();
+        type_text(gallery, "yes, behind a button");
+        press_keys(gallery, &["⇧Enter"]);
+        type_text(gallery, "named Filters");
     });
     fits(&mut gallery);
-    assert!(strong(&mut gallery, true) > 0, "drawn dashed");
+    assert_eq!(talk_shown(&gallery)[0], "note N1 · answered");
+    assert_eq!(gallery.foot().map(|foot| foot.does), Some(Some(Do::Send)), "Send can send what is typed");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -267,8 +270,8 @@ fn note_pins_open_and_answered_with_its_reply() {
     let root = root_of("frame-notes", &[("orders", "orders")]);
     let mut gallery = held("notes", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        note_on(gallery, "nav-export", "rename it");
-        note_on(gallery, "order-0-cancel", "too red");
+        say_on(gallery, 0, "nav-export", "rename it");
+        say_on(gallery, 0, "order-0-cancel", "too red");
         notes::answer(&root.join("orders"), "N1", "renamed it Export").unwrap();
         gallery.reload();
         gallery.move_to(on_pin(gallery, "N1"));
@@ -294,7 +297,7 @@ fn an_assumption_picked_by_its_question_mark() {
             offset += 1;
         }
         // Scrolled to it, as a person scrolls before clicking.
-        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
         gallery.wheel_by(0.0, on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
         gallery.press_at(on_guess(gallery, 0, "card-number"));
     });
@@ -308,7 +311,7 @@ fn a_note_read_as_a_conversation() {
     let root = root_of("frame-conversation", &[("orders", "orders")]);
     let mut gallery = held("conversation", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        note_on(gallery, "nav-export", "rename it, and say what it exports");
+        say_on(gallery, 0, "nav-export", "rename it, and say what it exports");
         notes::answer(&root.join("orders"), "N1", "renamed it Export orders").unwrap();
         gallery.reload();
         gallery.press_at(on_pin(gallery, "N1"));
@@ -318,12 +321,8 @@ fn a_note_read_as_a_conversation() {
     });
     fits(&mut gallery);
     assert_eq!(
-        gallery.panel()[..3],
-        [
-            "N1 · answered · on nav-export in default at 390",
-            "rename it, and say what it exports",
-            "renamed it Export orders"
-        ]
+        talk_shown(&gallery),
+        ["note N1 · answered", "rename it, and say what it exports", "renamed it Export orders"]
     );
     assert!(!gallery.panel().iter().any(|line| line == "not yet…" || line == "close"), "never closed");
     std::fs::remove_dir_all(root).unwrap();
@@ -340,7 +339,7 @@ fn a_wrong_assumption_written_with_an_input_method() {
         gallery.compose(Ime::Preedit("dui hua kuang".to_string(), None));
     });
     fits(&mut gallery);
-    assert!(gallery.draft().is_some_and(|draft| draft.text.is_composing()));
+    assert!(gallery.draft.as_ref().is_some_and(|draft| draft.text.is_composing()));
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -382,14 +381,14 @@ fn the_sidebar_hidden_the_pictures_take_its_width() {
         show(gallery, "airbnb-listing", "default");
         gallery.chord("\\");
     });
-    assert_eq!(gallery.pane_right(), WINDOW.0);
+    assert_eq!(gallery.panes.pictures().x1, WINDOW.0);
 }
 
 #[test]
 fn a_narrow_window_at_half_size_scrolled_across() {
     let gallery = held("narrow", drafts(), (1000.0, 900.0), |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
         gallery.wheel_by(1e6, 0.0);
         gallery.press_at(on_node(gallery, 1, "nav-save"));
     });
@@ -401,11 +400,11 @@ fn a_narrow_window_at_half_size_scrolled_across() {
 fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
     let gallery = held("tree-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.press_at((gallery.tree, MARGIN));
+        gallery.press_at((gallery.panes.pictures().x0, MARGIN));
         gallery.move_to((0.0, MARGIN));
         gallery.let_go();
     });
-    assert_eq!(gallery.tree, TREE_LEAST);
+    assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
 }
 
 #[test]
@@ -414,11 +413,11 @@ fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
         show(gallery, "airbnb-listing", "default");
         gallery.press_at(on_node(gallery, 1, "nav-save"));
         gallery.let_go();
-        gallery.press_at((gallery.pane_right(), MARGIN));
+        gallery.press_at((gallery.panes.pictures().x1, MARGIN));
         gallery.move_to((WINDOW.0, MARGIN));
         gallery.let_go();
     });
-    assert_eq!(gallery.side, SIDEBAR_LEAST);
+    assert_eq!(gallery.panes.side_width(), SIDEBAR_LEAST);
     fits(&mut gallery);
 }
 

@@ -24,7 +24,7 @@ pub(crate) use self::pages::{Page, Pages};
 use crate::area::rect;
 use crate::chrome::PIN;
 use crate::notes::Note;
-use crate::reference::{Reference, Region};
+use crate::reference::Reference;
 use crate::text::Typesetter;
 
 /// What the picked line shows in the pictures' pane.
@@ -61,16 +61,16 @@ impl Picture {
 pub(crate) trait Shows {
     /// How wide and tall it is drawn in `pane`, the space around it
     /// included; a width of nothing when it never scrolls across.
-    fn size(&self, pane: &Pane, typesetter: &mut Typesetter) -> (f64, f64);
+    fn size(&self, pane: &Desk, typesetter: &mut Typesetter) -> (f64, f64);
 
     /// What is at `at`, a point in the window, drawn in `pane`: the one on
     /// top where several are; none where nothing a press picks is.
-    fn target_at(&self, at: (f64, f64), pane: &Pane) -> Option<Target>;
+    fn target_at(&self, at: (f64, f64), pane: &Desk) -> Option<Target>;
 
     /// It drawn in `pane`, as `seen` says: its pictures into `scene`, and
     /// what goes over them, in window points, handed back to be drawn above
     /// the pane's scrollbars.
-    fn draw(&self, scene: &mut Scene, pane: &Pane, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw>;
+    fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw>;
 
     /// What a note on `target` is on, or ⌘C copies of it; none where it
     /// names nothing here. [`Target::Caption`] is the whole of what is shown.
@@ -78,13 +78,13 @@ pub(crate) trait Shows {
 
     /// The pins of `notes`, by their descriptions' directories, on it drawn
     /// in `pane`.
-    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Pane) -> Vec<Pin>;
+    fn pins(&self, notes: &BTreeMap<PathBuf, Vec<Note>>, pane: &Desk) -> Vec<Pin>;
 }
 
-/// Where the pictures' pane is, and how far it is scrolled, in window
-/// points.
+/// The desk the pictures lie on, the pictures' pane: where it is, and how
+/// far it is scrolled, in window points.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Pane {
+pub(crate) struct Desk {
     /// Its left edge.
     pub left: f64,
     pub width: f64,
@@ -98,8 +98,6 @@ pub(crate) struct Pane {
 pub(crate) enum Target {
     /// A node of a state's page `pointed`, by its id.
     Node { id: String, pointed: usize },
-    /// A region dragged over a state's page `pointed`: picked, never pressed.
-    Region { region: Region, pointed: usize },
     /// A page's caption: the whole state shown.
     Caption,
     /// An arrow's label, by its place among the arrows shown.
@@ -117,16 +115,13 @@ pub(crate) enum Target {
 pub(crate) struct Seen {
     /// What is picked, as a target.
     pub picked: Option<Target>,
-    /// The box being dragged, in window points, while one is.
-    pub dragged: Option<Rect>,
     /// The id, as written, of the node the journey played acts on next.
     pub marked: Option<String>,
     pub lang: Lang,
 }
 
 /// One note drawn on a picture: its pin, numbered, where it was written, or
-/// a faint dot, in another state or width that holds its node, or the
-/// nodes its region covers.
+/// a faint dot, in another state or width that holds its node.
 pub(crate) struct Pin {
     /// The directory of the description that keeps it.
     pub dir: PathBuf,
@@ -135,9 +130,6 @@ pub(crate) struct Pin {
     pub rect: Rect,
     pub ink: Ink,
     pub faint: bool,
-    /// For a pin on a region, where it was written: the region, as it is
-    /// now drawn, in window points.
-    pub region: Option<Rect>,
 }
 
 impl Pin {
@@ -145,7 +137,7 @@ impl Pin {
     /// its pin.
     fn of(dir: &Path, note: &Note, rect: Rect, faint: bool) -> Pin {
         let ink = if note.waits() { Ink::Note } else { Ink::Answered };
-        Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint, region: None }
+        Pin { dir: dir.to_path_buf(), id: note.id.clone(), rect, ink, faint }
     }
 }
 
@@ -178,11 +170,11 @@ mod tests {
 
     /// A pane 1000 wide right of a tree 100 wide, unscrolled: each kind's
     /// tests draw in it.
-    pub(super) const PANE: Pane = Pane { left: 100.0, width: 1000.0, scroll: 0.0, across: 0.0 };
+    pub(super) const PANE: Desk = Desk { left: 100.0, width: 1000.0, scroll: 0.0, across: 0.0 };
 
     /// What the window marks with `picked` picked, in English.
     pub(super) fn seen(picked: Option<Target>) -> Seen {
-        Seen { picked, dragged: None, marked: None, lang: Lang::En }
+        Seen { picked, marked: None, lang: Lang::En }
     }
 
     /// The middle of `r`.

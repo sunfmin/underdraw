@@ -9,7 +9,7 @@ use underdraw_format::{Finding, Lang, say};
 use underdraw_layout::{Draw, Ink, Measure};
 use vello::Scene;
 
-use super::{Pane, Pin, Seen, Shows, Target};
+use super::{Desk, Pin, Seen, Shows, Target};
 use crate::area::rect;
 use crate::chrome::{self, CAPTION, GAP, MARGIN};
 use crate::notes::Note;
@@ -57,16 +57,16 @@ impl Faults {
 }
 
 impl Shows for Faults {
-    fn size(&self, pane: &Pane, typesetter: &mut Typesetter) -> (f64, f64) {
+    fn size(&self, pane: &Desk, typesetter: &mut Typesetter) -> (f64, f64) {
         // The heading is the same height in every language.
         (0.0, self.list(pane.width, Lang::default(), typesetter).1 + MARGIN)
     }
 
-    fn target_at(&self, _: (f64, f64), _: &Pane) -> Option<Target> {
+    fn target_at(&self, _: (f64, f64), _: &Desk) -> Option<Target> {
         None
     }
 
-    fn draw(&self, _: &mut Scene, pane: &Pane, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
+    fn draw(&self, _: &mut Scene, pane: &Desk, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
         let (list, _) = self.list(pane.width, seen.lang, typesetter);
         list.into_iter().map(|draw| moved(draw, pane.left + MARGIN, -pane.scroll)).collect()
     }
@@ -75,7 +75,7 @@ impl Shows for Faults {
         None
     }
 
-    fn pins(&self, _: &BTreeMap<PathBuf, Vec<Note>>, _: &Pane) -> Vec<Pin> {
+    fn pins(&self, _: &BTreeMap<PathBuf, Vec<Note>>, _: &Desk) -> Vec<Pin> {
         Vec::new()
     }
 }
