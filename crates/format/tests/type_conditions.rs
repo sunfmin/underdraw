@@ -187,11 +187,19 @@ fn a_condition_on_a_type_must_vary_only_where_the_screen_reads_it() {
     let note = json!({ "id": "order-{index}-note", "component": "Text", "if": "item.hasNote", "text": "{item.note}" });
 
     let unread = check(&pending(vec![id]));
-    assert!(unread.ok, "a screen that never reads a condition on Order is not held to it: {:#?}", unread.findings);
+    assert!(
+        unread.ok,
+        "a screen that never reads a condition on Order is not held to it: {:#?}",
+        unread.findings
+    );
 
     let read = check(&pending(vec![cancel.clone()]));
     assert!(
-        found(&read, "conditions.Order.cancellable", "is true of every Order in the fixtures, so a state it marks cannot be rendered; add one it is not"),
+        found(
+            &read,
+            "conditions.Order.cancellable",
+            "is true of every Order in the fixtures, so a state it marks cannot be rendered; add one it is not"
+        ),
         "{:#?}",
         read.findings
     );
@@ -199,7 +207,11 @@ fn a_condition_on_a_type_must_vary_only_where_the_screen_reads_it() {
 
     let never = check(&pending(vec![cancel.clone(), note]));
     assert!(
-        found(&never, "conditions.Order.hasNote", "is false of every Order in the fixtures, so a state it marks cannot be rendered; add one it is"),
+        found(
+            &never,
+            "conditions.Order.hasNote",
+            "is false of every Order in the fixtures, so a state it marks cannot be rendered; add one it is"
+        ),
         "{:#?}",
         never.findings
     );
