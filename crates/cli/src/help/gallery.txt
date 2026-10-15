@@ -27,6 +27,14 @@ DOES
   lists each finding as `underdraw check` names it (where, then what is
   wrong) instead of a picture. Fix them and check it again.
 
+  The window watches <root> and is drawn from the files as they now stand:
+  edit a description's screen.json, tokens.json or kinds.json and the state
+  shown is drawn again within a moment, where it is, without the window
+  coming forward; a description that gains faults shows them, and its
+  picture again once they are fixed. A description directory added under
+  <root> comes into the tree, and one removed leaves it. When the state
+  shown goes, its description's first state is shown instead.
+
 ANSWERS
   {
     "root":         the directory searched
