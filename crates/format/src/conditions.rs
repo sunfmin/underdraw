@@ -138,7 +138,7 @@ impl Conditions {
             match (&condition.on, &other.on) {
                 (Some(on), None) => findings.add(
                     at,
-                    &format!("{name} is a condition over the screen's data, and one on {on} reads only an {on}'s fields"),
+                    &format!("{name} is a condition over the screen's data, and one on {on} reads only the fields of {on}"),
                 ),
                 (None, Some(other_on)) => findings.add(
                     at,

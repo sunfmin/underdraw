@@ -23,14 +23,6 @@
     }
   },
   "types": {
-    "TreeRow": {
-      "name": "string 1..",
-      "depth": "int 0..4",
-      "kind": "RowKind",
-      "meta": "string = \"\"",
-      "picked": "bool = false"
-    },
-    "RowKind": "enum(directory, description, state, phase)",
     "PlayStep": {
       "number": "int 1..",
       "screen": "string 1..",
@@ -121,14 +113,6 @@
     "Message.mine": {
       "when": "who == \"person\"",
       "label": "Said by the person"
-    },
-    "TreeRow.heading": {
-      "when": "kind == \"directory\" || kind == \"description\"",
-      "label": "A directory or a description"
-    },
-    "TreeRow.phase": {
-      "when": "kind == \"phase\"",
-      "label": "A phase"
     },
     "labelled": {
       "when": "!atLast && step.label != null",
