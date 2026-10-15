@@ -21,6 +21,10 @@ When asked to design a mockup (a screen, a draft) with the built underdraw tool,
 - Do not read the source to learn how to use it: no `crates/`, no `docs/`, no ADRs, and no other draft's files. Learn the tool only from its help: `underdraw --help`, `underdraw <command> --help`, and the answers and findings its commands print.
 - If the help does not say what you need, stop designing and improve the help first: add or fix it in `crates/cli/src/help.txt` / `crates/cli/src/help/*.txt`, commit that change on its own, rebuild, and then carry on from the new help. A gap in the help is a bug in underdraw, not a reason to read the code.
 
+## Opening the gallery
+
+Whenever you open the gallery for the person (`underdraw gallery <root>`), also start `underdraw notes <root> --wait` in the background (Bash with `run_in_background`) and keep it running: when it answers, act on each open note, answer every one with `--answer`, then start `--wait` again. Stop it only when the person says they are done.
+
 ## Merging pull requests
 
 In this repo, merge your own PR without waiting to be asked once you judge it OK and `./gate.sh` passes. This overrides the global rule to only open PRs. All of these must hold:
