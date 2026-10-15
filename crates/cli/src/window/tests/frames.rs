@@ -106,8 +106,13 @@ fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
     let cards = gallery.sidebar_cards();
-    let (left, width) = (gallery.pane_right(), gallery.side);
-    let laid = sidebar::lay_out(&cards, (left, width), -gallery.side_scroll, &mut gallery.typesetter);
+    let (left, width) = (gallery.panes.pictures().x1, gallery.panes.side_width());
+    let laid = sidebar::lay_out(
+        &cards,
+        (left, width),
+        -gallery.panes.scrolled(Scrolls::Side),
+        &mut gallery.typesetter,
+    );
     let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
     for draw in &laid.draws {
         let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
@@ -288,7 +293,7 @@ fn an_assumption_picked_by_its_question_mark() {
             offset += 1;
         }
         // Scrolled to it, as a person scrolls before clicking.
-        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
         gallery.wheel_by(0.0, on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
         gallery.press_at(on_guess(gallery, 0, "card-number"));
     });
@@ -376,18 +381,18 @@ fn the_sidebar_hidden_the_pictures_take_its_width() {
         show(gallery, "airbnb-listing", "default");
         gallery.chord("\\");
     });
-    assert_eq!(gallery.pane_right(), WINDOW.0);
+    assert_eq!(gallery.panes.pictures().x1, WINDOW.0);
 }
 
 #[test]
 fn a_narrow_window_at_half_size_scrolled_across() {
     let gallery = held("narrow", drafts(), (1000.0, 900.0), |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.move_to((gallery.panes.pictures().x0 + MARGIN, MARGIN));
         gallery.wheel_by(1e6, 0.0);
         gallery.press_at(on_node(gallery, 1, "nav-save"));
     });
-    assert_eq!(gallery.zoom(gallery.pane()), SMALLEST);
+    assert_eq!(gallery.zoom(gallery.panes.pictures().width()), SMALLEST);
     assert_eq!(gallery.node.as_deref(), Some("nav-save"), "picked, scaled and scrolled");
 }
 
@@ -395,11 +400,11 @@ fn a_narrow_window_at_half_size_scrolled_across() {
 fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
     let gallery = held("tree-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.press_at((gallery.tree, MARGIN));
+        gallery.press_at((gallery.panes.pictures().x0, MARGIN));
         gallery.move_to((0.0, MARGIN));
         gallery.let_go();
     });
-    assert_eq!(gallery.tree, TREE_LEAST);
+    assert_eq!(gallery.panes.pictures().x0, TREE_LEAST);
 }
 
 #[test]
@@ -408,11 +413,11 @@ fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
         show(gallery, "airbnb-listing", "default");
         gallery.press_at(on_node(gallery, 1, "nav-save"));
         gallery.let_go();
-        gallery.press_at((gallery.pane_right(), MARGIN));
+        gallery.press_at((gallery.panes.pictures().x1, MARGIN));
         gallery.move_to((WINDOW.0, MARGIN));
         gallery.let_go();
     });
-    assert_eq!(gallery.side, SIDEBAR_LEAST);
+    assert_eq!(gallery.panes.side_width(), SIDEBAR_LEAST);
     fits(&mut gallery);
 }
 

@@ -20,3 +20,6 @@ underdraw-handoff = { path = "../handoff" }
 underdraw-compare = { path = "../compare" }
 winit = "0.30"
 arboard = { version = "3", default-features = false }
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
