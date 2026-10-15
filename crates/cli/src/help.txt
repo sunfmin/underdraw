@@ -13,6 +13,10 @@ NEEDS
 
 START HERE
   underdraw check <dir>      read the description and name every fault
+  underdraw check <root>     every description under <root>, and where each
+                             navigate goes: one to a screen none of them
+                             declares is an assumption, a screen not drawn
+                             yet, not a fault
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
   underdraw handoff <dir> --platform ios
@@ -32,7 +36,9 @@ WHAT A COMMAND ANSWERS
 
 COMMANDS
   For the agent writing a description:
-    underdraw check <dir>    every fault, and which fixtures each condition holds in
+    underdraw check <dir>    every fault, and which fixtures each condition holds in;
+                             given a directory of descriptions, every one of them,
+                             and each navigate resolved to the screen it names
     underdraw gallery <root> a window for the person: every description under
                              <root>, each drawn at a phone and a desktop width
     underdraw render <dir>   a wireframe PNG of one state, and where each node went,

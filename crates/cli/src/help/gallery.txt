@@ -22,7 +22,9 @@ DOES
   gray), each in the order written. Picking a state draws it as a wireframe
   at 390 (a phone) and 1120 (a desktop) side by side, labelled as `render`
   labels them; picking a description picks its first state. Scroll a tall
-  page with the mouse wheel or trackpad. A description with faults stays in
+  page with the mouse wheel or trackpad. A node that navigates to a screen
+  no description under <root> declares is drawn with the orange "?": a
+  screen not drawn yet, as `underdraw check <root>` reports it. A description with faults stays in
   the tree, marked with how many it has; picking it, or any of its states,
   lists each finding as `underdraw check` names it (where, then what is
   wrong) instead of a picture. Fix them and check it again.
