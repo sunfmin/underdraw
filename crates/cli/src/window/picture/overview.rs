@@ -37,6 +37,8 @@ pub(crate) struct Thumb {
     /// The tree's line of the state.
     pub line: usize,
     pub scene: Scene,
+    /// Its marks, drawn over `scene` while they are shown.
+    pub marks: Scene,
     pub width: f64,
     pub height: f64,
     /// The journeys that pass through the state, one mark for each step of
@@ -202,7 +204,8 @@ impl Shows for Overview {
     }
 
     /// Each state on a sheet under its name, a tall one cut at the foot of
-    /// its picture; over them the arrows, and the journeys' marks in the
+    /// its picture, and its marks while they are shown; over them the
+    /// arrows, and, while the marks are shown, the journeys' marks in the
     /// notes' ink, as the node a journey acts on is marked when it plays.
     fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, _: &mut Typesetter) -> Vec<Draw> {
         let cells = self.cells(pane);
@@ -219,7 +222,11 @@ impl Shows for Overview {
         }
         for (thumb, &(x, y, w, h)) in self.thumbs.iter().zip(&cells) {
             scene.push_clip_layer(Fill::NonZero, Affine::IDENTITY, &Area::new(x, y, x + w, y + h));
-            scene.append(&thumb.scene, Some(Affine::translate((x, y)) * Affine::scale(w / thumb.width)));
+            let small = Affine::translate((x, y)) * Affine::scale(w / thumb.width);
+            scene.append(&thumb.scene, Some(small));
+            if seen.marks {
+                scene.append(&thumb.marks, Some(small));
+            }
             scene.pop_layer();
         }
         let picked = match seen.picked {
@@ -227,7 +234,8 @@ impl Shows for Overview {
             _ => None,
         };
         list.extend(self.arrow_draws(pane, picked));
-        for (at, pass, _) in self.passes(pane) {
+        let passes = if seen.marks { self.passes(pane) } else { Vec::new() };
+        for (at, pass, _) in passes {
             list.push(Draw::Box {
                 rect: at,
                 radius: chrome::MARK_RADIUS,
@@ -299,7 +307,7 @@ mod tests {
     /// A thumb of `state`, on the tree's line `line`, as tall as a page
     /// 390 wide and 780 tall drawn small.
     fn thumb(state: State, line: usize, journeys: Vec<Pass>) -> Thumb {
-        Thumb { state, line, scene: Scene::new(), width: 390.0, height: 780.0, journeys }
+        Thumb { state, line, scene: Scene::new(), marks: Scene::new(), width: 390.0, height: 780.0, journeys }
     }
 
     /// Two states, `ready` (line 2, a journey's first step marked on it)

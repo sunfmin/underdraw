@@ -442,8 +442,9 @@ fn render(
     };
     let laid = draw::lay_out(path, wanted, drawn.as_ref(), lang)?;
     let mut gpu = gpu::Gpu::open()?;
-    let drawing = laid.draw(wanted.scale, gpu.max_side);
+    let mut drawing = laid.draw(wanted.scale, gpu.max_side);
     let [pixels_wide, pixels_high] = drawing.pixels;
+    drawing.scene.append(&drawing.marks, None);
     let pixels = gpu.render(&drawing.scene, pixels_wide, pixels_high)?;
 
     let name = drawing.shown.name();

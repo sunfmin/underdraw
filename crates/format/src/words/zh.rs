@@ -42,6 +42,8 @@ pub(super) const WORDS: Words = Words {
     go_forward: "→ 前进",
     hide_sidebar: "隐藏侧栏",
     show_sidebar: "显示侧栏",
+    hide_marks: "隐藏标记 {keys}",
+    show_marks: "显示标记 {keys}",
     journey_mark: "→ {name} · 第 {number} 步",
     nothing_to_copy: "没有可复制的：先选中一个状态、其中的节点，或一个箭头",
     no_clipboard: "没有剪贴板可复制到",

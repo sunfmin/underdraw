@@ -200,6 +200,7 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
     }
     mark(&mut out);
     let mut draws = out.draws;
+    let marks = out.tags.len();
     draws.append(&mut out.tags);
     let mut cut = Vec::new();
     for (id, rect) in out.floated {
@@ -207,7 +208,7 @@ pub(crate) fn place(root: &Elem, width: f32, measure: &mut dyn Measure) -> Resul
             cut.push(id);
         }
     }
-    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut })
+    Ok(Page { width: size.width, height: size.height, draws, nodes: out.nodes, cut, marks })
 }
 
 fn add<'e>(

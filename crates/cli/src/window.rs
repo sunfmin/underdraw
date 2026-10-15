@@ -259,6 +259,10 @@ struct Gallery {
     /// Whether a click acts on the node under it, rather than picks it: ⌘,
     /// or Ctrl, is held.
     acting: bool,
+    /// Whether the marks over the pictures are shown ([`Seen::marks`]), and
+    /// the pins of the notes: so when the window opens, until the toolbar
+    /// or ⌘. hides them.
+    marks: bool,
     /// Until when every node that acting on goes somewhere is lit up, after
     /// a ⌘-click that went nowhere.
     flashed: Option<Instant>,
@@ -535,6 +539,7 @@ impl Gallery {
             details: false,
             cursor: (0.0, 0.0),
             acting: false,
+            marks: true,
             flashed: None,
             path: Vec::new(),
             history: History::new(),
@@ -694,7 +699,8 @@ impl Gallery {
     /// A key pressed: with ⌘ (or Ctrl) held, ⌘V pastes into the note being
     /// written, ⌘A selects all of it, ⌘X cuts what is selected in it, ⌘C
     /// copies that, or with nothing selected the reference to what is
-    /// picked, ⌘\ hides or shows the sidebar, and ⌘[ and ⌘] go back and
+    /// picked, ⌘\ hides or shows the sidebar, ⌘. the marks over the
+    /// pictures, and ⌘[ and ⌘] go back and
     /// forward through what the window has shown; without, what
     /// [`Gallery::key`] says. Each letter on any keyboard layout, or where
     /// the layout has no such letter, on the key where it is. Whether that
@@ -725,6 +731,8 @@ impl Gallery {
             self.select_all()
         } else if chord("\\", KeyCode::Backslash) {
             self.use_tool(Tool::Sidebar)
+        } else if chord(".", KeyCode::Period) {
+            self.use_tool(Tool::Marks)
         } else if chord("[", KeyCode::BracketLeft) {
             self.use_tool(Tool::Back)
         } else if chord("]", KeyCode::BracketRight) {
@@ -767,12 +775,17 @@ impl Gallery {
     }
 
     /// What a button of the toolbar does, done: back or forward through
-    /// what the window has shown, or the sidebar hidden or shown, its width
-    /// given to the pictures. Whether that changed what is shown.
+    /// what the window has shown, the marks over the pictures hidden or
+    /// shown, or the sidebar hidden or shown, its width given to the
+    /// pictures. Whether that changed what is shown.
     fn use_tool(&mut self, tool: Tool) -> bool {
         match tool {
             Tool::Back => self.go_through(History::back, History::forward),
             Tool::Forward => self.go_through(History::forward, History::back),
+            Tool::Marks => {
+                self.marks = !self.marks;
+                true
+            }
             Tool::Sidebar => {
                 self.panes.toggle_side();
                 self.clamp();
@@ -831,7 +844,9 @@ impl Gallery {
         ];
         let sidebar =
             if self.panes.side().is_some() { say!(lang, hide_sidebar) } else { say!(lang, show_sidebar) };
-        let right = vec![(Tool::Sidebar, sidebar, true)];
+        let keys = if cfg!(target_os = "macos") { "⌘." } else { "Ctrl+." };
+        let marks = if self.marks { say!(lang, hide_marks, keys) } else { say!(lang, show_marks, keys) };
+        let right = vec![(Tool::Marks, marks, true), (Tool::Sidebar, sidebar, true)];
         toolbar::lay_out(&mut self.typesetter, self.panes.window().0, left, right)
     }
 
@@ -843,9 +858,13 @@ impl Gallery {
         Desk { left: pictures.x0, width: pictures.width(), scroll, across }
     }
 
-    /// What is at `at`, a point in the window, on the picture shown.
+    /// What is at `at`, a point in the window, on the picture shown: with
+    /// the marks hidden, the state under a journey's mark, not the mark.
     fn target_at(&self, at: (f64, f64)) -> Option<Target> {
-        self.picture.shows().target_at(at, &self.desk())
+        match self.picture.shows().target_at(at, &self.desk()) {
+            Some(Target::Pass { state, .. }) if !self.marks => Some(Target::State(state)),
+            target => target,
+        }
     }
 
     /// `findings` shown as the faults of the line shown.
@@ -1396,12 +1415,9 @@ impl Gallery {
                                 None => Wanted { fixture: None, phase: None, width, scale: 1 },
                             };
                             let mut laid = description.lay_out(&wanted, Some(drawn), lang)?;
-                            // The labels, drawn by the window at their own
-                            // size over a picture scaled down.
-                            let (tags, draws) = std::mem::take(&mut laid.page.draws)
-                                .into_iter()
-                                .partition(|draw| matches!(draw, Draw::Tag { .. }));
-                            laid.page.draws = draws;
+                            // The marks, drawn by the window, the labels at
+                            // their own size, over a picture scaled down.
+                            let tags = laid.page.take_marks();
                             let drawing = laid.draw(1, u32::MAX);
                             Ok(Page {
                                 tags,
@@ -1622,6 +1638,7 @@ impl Gallery {
                 width: f64::from(drawing.page.width),
                 height: f64::from(drawing.page.height),
                 scene: drawing.scene,
+                marks: drawing.marks,
                 journeys: Vec::new(),
             });
         }
@@ -1718,7 +1735,8 @@ impl Gallery {
         {
             Ok(laid) => {
                 let drawing = laid.draw(1, u32::MAX);
-                Tile::Picture { scene: Box::new(drawing.scene), width: f64::from(drawing.page.width) }
+                let width = f64::from(drawing.page.width);
+                Tile::Picture { scene: Box::new(drawing.scene), marks: Box::new(drawing.marks), width }
             }
             Err(_) => Tile::Faulty(1),
         }
@@ -2520,8 +2538,12 @@ impl Gallery {
 
     /// The notes on what is shown, drawn on it where its picture says
     /// ([`picture::Shows::pins`]); blue while waiting on the agent, green
-    /// while its answer is unread, faint gray once read.
+    /// while its answer is unread, faint gray once read. None while the
+    /// marks are hidden.
     fn pins(&self) -> Vec<Pin> {
+        if !self.marks {
+            return Vec::new();
+        }
         self.picture.shows().pins(&self.notes, &self.desk())
     }
 
@@ -2743,7 +2765,8 @@ impl Gallery {
         };
         let lit = self.acting || self.flash_ends(Instant::now()).is_some();
         let offers = self.ways().iter().map(|way| self.offer(way)).collect();
-        Seen { picked, marked: self.written_marked().map(str::to_string), offers, lit, lang: self.lang }
+        let marked = self.written_marked().map(str::to_string);
+        Seen { picked, marked, offers, lit, marks: self.marks, lang: self.lang }
     }
 
     /// The tree's lines, in window points, top to bottom: for each, the
@@ -3377,6 +3400,7 @@ mod tests {
                 "v" => KeyCode::KeyV,
                 "x" => KeyCode::KeyX,
                 "\\" => KeyCode::Backslash,
+                "." => KeyCode::Period,
                 "[" => KeyCode::BracketLeft,
                 "]" => KeyCode::BracketRight,
                 _ => panic!("no chord on {letter:?}"),
@@ -4460,7 +4484,11 @@ mod tests {
         let mut gallery = gallery();
         show(&mut gallery, "orders", "default");
         let said = |gallery: &mut Gallery| gallery.tools().into_iter().map(|b| b.said).collect::<Vec<_>>();
-        assert_eq!(said(&mut gallery), ["← back", "→ forward", "hide sidebar"]);
+        let keys = if cfg!(target_os = "macos") { "⌘." } else { "Ctrl+." };
+        assert_eq!(
+            said(&mut gallery),
+            ["← back", "→ forward", "hide sidebar", &format!("hide marks {keys}")]
+        );
         let (sidebar, _) = tool_button(&mut gallery, Tool::Sidebar);
         assert!(sidebar.0 > gallery.panes.pictures().x1, "at the right end, over the sidebar");
         assert!(gallery.press_at(sidebar));
@@ -4473,9 +4501,75 @@ mod tests {
         assert_eq!(said(&mut gallery)[2], "show sidebar");
 
         gallery.speak(Lang::Zh).unwrap();
-        assert_eq!(said(&mut gallery), ["← 后退", "→ 前进", "显示侧栏"]);
+        assert_eq!(said(&mut gallery), ["← 后退", "→ 前进", "显示侧栏", &format!("隐藏标记 {keys}")]);
         gallery.speak(Lang::Ja).unwrap();
-        assert_eq!(said(&mut gallery), ["← 戻る", "→ 進む", "サイドバーを表示"]);
+        assert_eq!(
+            said(&mut gallery),
+            ["← 戻る", "→ 進む", "サイドバーを表示", &format!("マークを隠す {keys}")]
+        );
+    }
+
+    /// The labels and "?"s drawn over the pictures shown.
+    fn tags_drawn(gallery: &mut Gallery) -> usize {
+        overlays(gallery).iter().filter(|draw| matches!(draw, Draw::Tag { .. })).count()
+    }
+
+    /// The nodes marked as going somewhere on the pages shown.
+    fn leads_drawn(gallery: &Gallery) -> usize {
+        let Picture::Pages(pages) = &gallery.picture else { return 0 };
+        pages.leads_shown(&gallery.desk(), &gallery.seen()).len()
+    }
+
+    /// Whether a journey's mark is drawn over the overview shown.
+    fn passes_drawn(gallery: &mut Gallery) -> bool {
+        overlays(gallery).iter().any(|draw| matches!(draw, Draw::Box { fill: Some(Ink::Note), .. }))
+    }
+
+    #[test]
+    fn the_toolbars_marks_button_hides_and_shows_every_mark_over_the_pictures() {
+        let keys = if cfg!(target_os = "macos") { "⌘." } else { "Ctrl+." };
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        assert!(gallery.seen().marks, "shown when the window opens");
+        assert!(tags_drawn(&mut gallery) > 0 && leads_drawn(&gallery) > 0, "labels and purple marks");
+        let (marks, _) = tool_button(&mut gallery, Tool::Marks);
+        assert!(gallery.press_at(marks));
+        assert!(!gallery.seen().marks);
+        assert_eq!(gallery.tools()[3].said, format!("show marks {keys}"));
+        assert_eq!(tags_drawn(&mut gallery), 0, "no label, no \"?\"");
+        assert_eq!(leads_drawn(&gallery), 0, "no purple mark");
+
+        // Hidden: a click still picks, drawn as picked with its offers.
+        assert!(gallery.press_at(on_node(&gallery, 0, "order-0-cancel")));
+        assert_eq!(picked_node(&gallery), Some("order-0-cancel"));
+        assert!(!gallery.seen().offers.is_empty(), "its go-to button still offered");
+        assert!(!overlays(&mut gallery).is_empty(), "and drawn");
+        // ⌘ held: the purple marks, for as long as it is.
+        gallery.feed([Input::Modifiers(ModifiersState::SUPER)]);
+        assert!(leads_drawn(&gallery) > 0, "lit while ⌘ is held");
+        assert_eq!(tags_drawn(&mut gallery), 0, "but not the labels");
+        gallery.feed([Input::Modifiers(ModifiersState::empty())]);
+        assert_eq!(leads_drawn(&gallery), 0, "hidden again once it is let go");
+        // ⌘-click still acts.
+        assert!(act_on(&mut gallery, "order-0-cancel"));
+        assert_ne!(shown(&gallery), "orders · default", "acted on");
+        assert!(!gallery.seen().marks, "the choice holds as states change");
+
+        // An overview: no journey's mark, and a press there picks the state.
+        let order = description_in(&gallery, "shop/order");
+        showing(&mut gallery, order);
+        assert!(!gallery.seen().marks, "and screens");
+        assert!(!passes_drawn(&mut gallery));
+        let Picture::Overview(overview) = &gallery.picture else { panic!("no overview is shown") };
+        let open = overview.passes(&gallery.desk())[0].0;
+        assert!(gallery.press_at((f64::from(open.x) + 4.0, f64::from(open.y) + 4.0)));
+        assert!(gallery.playing.is_none(), "no journey played");
+        assert_eq!(gallery.lines[gallery.line.unwrap()].row.name, "open", "its state picked");
+
+        assert!(gallery.chord("."), "⌘. shows them again");
+        assert!(gallery.seen().marks);
+        showing(&mut gallery, order);
+        assert!(passes_drawn(&mut gallery), "the journeys' marks");
     }
     #[test]
     fn a_navigate_to_a_screen_not_drawn_yet_says_so() {
@@ -5419,6 +5513,8 @@ mod tests {
         showing(&mut gallery, orders);
         let pins: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
         assert_eq!(pins, ["N1"], "pinned on its state in the overview too");
+        assert!(gallery.chord(".") && gallery.pins().is_empty(), "no pin while the marks are hidden");
+        assert!(gallery.chord(".") && gallery.pins().len() == 1, "and back once shown");
         assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the whole screen's, not the state's");
         std::fs::remove_dir_all(root).unwrap();
     }

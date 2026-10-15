@@ -42,6 +42,8 @@ pub(super) const WORDS: Words = Words {
     go_forward: "→ forward",
     hide_sidebar: "hide sidebar",
     show_sidebar: "show sidebar",
+    hide_marks: "hide marks {keys}",
+    show_marks: "show marks {keys}",
     journey_mark: "→ {name} · step {number}",
     nothing_to_copy: "nothing to copy: pick a state, a node in it, or an arrow, first",
     no_clipboard: "there is no clipboard to copy to",
