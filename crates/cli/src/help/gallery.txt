@@ -45,6 +45,16 @@ DOES
   as wide as it was dragged. The widths are not kept once the window
   closes.
 
+  Each pane that scrolls shows a scrollbar while what it holds is larger
+  than it, and none while it fits: the tree and the sidebar on their right
+  edge, the pictures on their right edge and, when they scroll sideways,
+  along their foot. It stays shown while it is needed, not faded out. Its
+  thumb's length is the share in view and its place how far the pane is
+  scrolled, and it follows at once as you scroll, resize the window or
+  pick something else. It runs clear of the tree's names and the
+  sidebar's buttons, and under a picture's labels and orange "?". It is
+  drawn only: scroll with the wheel or trackpad.
+
   The tree holds the directories and descriptions as they are arranged on disk, under
   a first line for <root> itself when it holds no description (picked, it
   shows the flow and the inbox of everything under it), each

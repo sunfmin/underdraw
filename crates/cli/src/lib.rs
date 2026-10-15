@@ -18,6 +18,7 @@ mod notes;
 mod paint;
 mod project;
 mod reference;
+mod scrollbar;
 mod sidebar;
 mod text;
 mod window;

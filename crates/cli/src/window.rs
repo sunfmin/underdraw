@@ -47,6 +47,7 @@ use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
+use crate::scrollbar::{self, Axis};
 use crate::sidebar::Item as Listed;
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
@@ -3464,13 +3465,45 @@ impl Gallery {
         self.across = self.across.clamp(0.0, beyond);
         let below = (self.sidebar_height() - height).max(0.0);
         self.side_scroll = self.side_scroll.clamp(0.0, below);
-        let below = (self.lines.len() as f64 * ROW + MARGIN - height).max(0.0);
+        let below = (self.tree_height() - height).max(0.0);
         self.tree_scroll = self.tree_scroll.clamp(0.0, below);
+    }
+
+    /// How tall the tree's lines are, all of them, unscrolled.
+    fn tree_height(&self) -> f64 {
+        self.lines.len() as f64 * ROW + MARGIN
+    }
+
+    /// The thumb of each pane's scrollbar, in window points, where what
+    /// it holds is larger than it ([`scrollbar`]): the pictures', down then
+    /// across, drawn under their labels so that none covers an orange "?";
+    /// and the tree's then the sidebar's, drawn over the rest in the space
+    /// right of the tree's names and of the sidebar's cards. Where the
+    /// pictures scroll both ways, the bar across stops short of the one
+    /// down.
+    fn scrollbars(&mut self) -> (Vec<Area>, Vec<Area>) {
+        let (width, height) = self.size;
+        let (tree, right) = (self.tree, self.pane_right());
+        let pictures = Area::new(tree, 0.0, right, height);
+        let down = scrollbar::bar(pictures, Axis::Down, self.pictures_height(self.pane()), self.scroll, 0.0);
+        let corner = if down.is_some() { chrome::SCROLLBAR_WIDE + chrome::SCROLLBAR_INSET } else { 0.0 };
+        let wide = self.pictures_width(self.pane());
+        let across = scrollbar::bar(pictures, Axis::Across, wide, self.across, corner);
+        let side = Area::new(right, 0.0, width, height);
+        let side = if self.sidebar {
+            scrollbar::bar(side, Axis::Down, self.sidebar_height(), self.side_scroll, 0.0)
+        } else {
+            None
+        };
+        let lines = Area::new(0.0, 0.0, tree, height);
+        let tree = scrollbar::bar(lines, Axis::Down, self.tree_height(), self.tree_scroll, 0.0);
+        (down.into_iter().chain(across).collect(), tree.into_iter().chain(side).collect())
     }
 
     /// The whole window, in points.
     fn frame(&mut self) -> Scene {
         let (width, height) = self.size;
+        let (pictures_bars, side_bars) = self.scrollbars();
         let tree = self.tree;
         let mut list = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
@@ -3684,6 +3717,9 @@ impl Gallery {
         }
         // The labels under what the window draws over the pictures: the
         // outline, the pins.
+        for bar in pictures_bars {
+            thumb(&mut scene, bar);
+        }
         let mut over = labels;
         over.extend(pane);
         paint::draws(&mut scene, at, &over, chrome::colour, &mut self.typesetter);
@@ -3696,6 +3732,9 @@ impl Gallery {
         let edge =
             [Draw::Line { from: [tree as f32, 0.0], to: [tree as f32, height as f32], ink: Ink::Line }];
         paint::draws(&mut scene, at, &edge, chrome::colour, &mut self.typesetter);
+        for bar in side_bars {
+            thumb(&mut scene, bar);
+        }
         scene
     }
 
@@ -3953,6 +3992,12 @@ fn sheet(scene: &mut Scene, at: Affine, around: Rect, radius: f32) {
     scene.fill(Fill::NonZero, at, chrome::colour(Ink::Paper), None, &paper);
     let edge = vello::kurbo::RoundedRect::new(x - 0.5, y - 0.5, x + w + 0.5, y + h + 0.5, r);
     scene.stroke(&vello::kurbo::Stroke::new(1.0), at, chrome::colour(Ink::Line), None, &edge);
+}
+
+/// A scrollbar's thumb at `bar`, in window points, in the chrome's look.
+fn thumb(scene: &mut Scene, bar: Area) {
+    let round = vello::kurbo::RoundedRect::from_rect(bar, chrome::SCROLLBAR_WIDE / 2.0);
+    scene.fill(Fill::NonZero, Affine::IDENTITY, chrome::SCROLLBAR, None, &round);
 }
 
 /// `text`, a picture's caption, in `rect`.
@@ -4398,6 +4443,43 @@ mod tests {
         gallery.wheel(0.0, 1e6);
         let end = gallery.lines.len() as f64 * ROW + MARGIN - 900.0;
         assert_eq!(gallery.tree_scroll, end, "as far as its last line");
+    }
+
+    #[test]
+    fn a_pane_shows_a_scrollbar_while_it_overflows_and_follows_its_scroll() {
+        let mut gallery = gallery();
+        let listing = line_of(&gallery, "airbnb-listing");
+        over_row(&mut gallery, listing + 1);
+        gallery.press();
+        let (pictures, _) = gallery.scrollbars();
+        assert_eq!(pictures.len(), 2, "the listing overflows down, and at half size across: {pictures:?}");
+        let (top, across) = (pictures[0], pictures[1]);
+        assert!(across.x1 < top.x0, "the bar across stops short of the one down");
+        assert_eq!(across.x0, gallery.tree + chrome::SCROLLBAR_INSET, "unscrolled across, at its start");
+        assert_eq!(top.y0, chrome::SCROLLBAR_INSET, "unscrolled, at the very top");
+        let share = 900.0 / gallery.pictures_height(gallery.pane());
+        assert!((top.height() - (900.0 - 2.0 * chrome::SCROLLBAR_INSET) * share).abs() < 1e-9);
+        gallery.cursor = (gallery.tree + 100.0, 400.0);
+        gallery.wheel(0.0, 1e6);
+        let (pictures, _) = gallery.scrollbars();
+        assert_eq!(
+            pictures[0].y1,
+            900.0 - chrome::SCROLLBAR_INSET,
+            "scrolled to the end, at the very bottom"
+        );
+        assert_eq!(pictures[0].height(), top.height());
+
+        let (_, others) = gallery.scrollbars();
+        let tree = gallery.tree_height() > 900.0;
+        assert_eq!(others.iter().any(|bar| bar.x1 <= gallery.tree), tree, "the tree's while it overflows");
+        for bar in &others {
+            assert!(bar.x0 >= gallery.tree - 14.0 || bar.x0 >= gallery.pane_right(), "clear of the names");
+        }
+
+        gallery.size = (4000.0, 1e5);
+        gallery.clamp();
+        let (pictures, others) = gallery.scrollbars();
+        assert!(pictures.is_empty() && others.is_empty(), "a window large enough for all of it has none");
     }
 
     /// The point in the window at the middle of node `id` in picture `page`.
