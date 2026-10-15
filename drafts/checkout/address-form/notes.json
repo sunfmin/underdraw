@@ -1,0 +1,29 @@
+{
+  "notes": [
+    {
+      "id": "N1",
+      "state": {
+        "fixture": "new"
+      },
+      "node": {
+        "id": "save",
+        "at": "/root/children/2/children/0",
+        "instance": [],
+        "label": 6,
+        "width": 390
+      },
+      "messages": [
+        {
+          "by": "person",
+          "says": "和上面的线没什么空间呀。",
+          "taken": 1792064384
+        },
+        {
+          "by": "agent",
+          "says": "改好了：底部栏加了内边距（上下 12、左右 16，和确认订单的底栏一样），「保存」离上面的线留出 12 的空，也不再贴左边。地址簿的「新增收货地址」底栏同样改了。",
+          "unread": true
+        }
+      ]
+    }
+  ]
+}
