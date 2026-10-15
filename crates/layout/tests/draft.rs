@@ -241,7 +241,7 @@ fn text_fields(value: &str) -> Page {
     layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed).unwrap()
 }
 
-fn ink_of<'a>(page: &'a Page, shown: &str) -> Vec<Ink> {
+fn ink_of(page: &Page, shown: &str) -> Vec<Ink> {
     page.draws
         .iter()
         .filter_map(|d| match d {
