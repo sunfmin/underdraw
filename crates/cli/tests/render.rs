@@ -79,3 +79,30 @@ fn refuses_what_it_cannot_draw_and_says_why() {
     assert!(answer["error"].as_str().unwrap().contains("underdraw check"), "{answer}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn given_its_root_a_navigate_to_a_screen_not_drawn_yet_is_assumed() {
+    let drafts = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts");
+    let orders = format!("{drafts}/orders");
+    let assumed = |answer: &Value, id: &str| {
+        let node = answer["nodes"].as_array().unwrap().iter().find(|n| n["id"] == id).unwrap();
+        node["assumed"].as_str().map(str::to_string)
+    };
+    let (answer, code) = underdraw(&[
+        "render",
+        &orders,
+        "--width",
+        "1120",
+        "--root",
+        drafts,
+        "--out",
+        &out("orders-root.png"),
+    ]);
+    assert_eq!(code, 0, "{answer}");
+    assert!(assumed(&answer, "order-0").is_some_and(|why| why.contains("OrderDetail")), "{answer:#}");
+    assert_eq!(assumed(&answer, "nav-export"), None, "ExportDocuments is drawn");
+
+    let (answer, code) = underdraw(&["render", &orders, "--width", "1120", "--out", &out("orders.png")]);
+    assert_eq!(code, 0, "{answer}");
+    assert_eq!(assumed(&answer, "order-0"), None, "without its root, navigates are not resolved");
+}
