@@ -96,14 +96,14 @@ impl On {
     }
 
     /// Whether `other` names the same thing a note is held on (ADR 0023):
-    /// the same node as written, in the same state, whichever instance of
-    /// it was pointed at; the same whole state; the same arrow.
+    /// the same node as written, by its id, in the same state, whichever
+    /// instance of it was pointed at and wherever it is written now, as
+    /// nodes are added and moved around it; the same whole state; the same
+    /// arrow.
     pub fn same(&self, other: &On) -> bool {
         match (self, other) {
             (On::Node { state, node }, On::Node { state: other, node: pointed }) => {
-                state == other
-                    && node.origin.written == pointed.origin.written
-                    && node.origin.at == pointed.origin.at
+                state == other && node.origin.written == pointed.origin.written
             }
             _ => self == other,
         }
