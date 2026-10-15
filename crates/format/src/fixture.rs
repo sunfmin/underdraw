@@ -1,6 +1,7 @@
 //! Fixtures (docs/format/data.md): each one a value of the view model, with
-//! `$patch` starting from another. Read whole: merged, defaults filled, and
-//! every field checked against its type.
+//! `$patch` starting from another and `$sample` starting a value from a
+//! sample the domain shares. Read whole: merged, defaults filled, and every
+//! field checked against its type.
 
 use serde_json::{Map, Value};
 
@@ -49,6 +50,14 @@ pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(St
         };
         let mut own = written.clone();
         let base = own.remove("$patch");
+        let mut used = Vec::new();
+        let Some(own) = sampled(screen, Value::Object(own), &at, &mut used, findings) else {
+            continue;
+        };
+        let Value::Object(own) = own else {
+            findings.add(&at, "a fixture's $sample is an object: it is a value of data");
+            continue;
+        };
         let value = match &base {
             None => Value::Object(own),
             Some(Value::String(base)) => match merged.iter().find(|(n, _)| n == base) {
@@ -70,7 +79,10 @@ pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(St
         };
         // A fault inherited from the base fixture is the base's to report.
         let base_at = base.as_ref().and_then(Value::as_str).map(|b| format!("fixtures.{b}"));
-        for finding in own.0 {
+        for mut finding in own.0 {
+            if let Some((_, sample)) = used.iter().rev().find(|(path, _)| within(&finding.at, path)) {
+                finding.problem = format!("{}: the fixture starts it from sample {sample}", finding.problem);
+            }
             let as_base: Option<Finding> = base_at.as_ref().map(|b| finding.renamed(&at, b));
             if !as_base.is_some_and(|as_base| findings.0.contains(&as_base)) {
                 findings.push(finding);
@@ -80,6 +92,68 @@ pub fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> Vec<(St
         read.push((name.clone(), checked));
     }
     read
+}
+
+/// `value` with each object in it that names a `"$sample"` started from that
+/// sample of the domain's, its own fields merged over it; each path started
+/// from one added to `used`, with the sample's name. None, with a finding,
+/// when one names no sample.
+fn sampled(
+    screen: &Value,
+    value: Value,
+    at: &str,
+    used: &mut Vec<(String, String)>,
+    findings: &mut Findings,
+) -> Option<Value> {
+    match value {
+        Value::Object(mut fields) => {
+            let sample = fields.remove("$sample");
+            let mut own = Map::new();
+            for (key, value) in fields {
+                let value = sampled(screen, value, &format!("{at}.{key}"), used, findings)?;
+                own.insert(key, value);
+            }
+            let Some(sample) = sample else {
+                return Some(Value::Object(own));
+            };
+            let Some(name) = sample.as_str() else {
+                findings.add(at, "$sample names a sample the domain shares");
+                return None;
+            };
+            let Some(from) = screen.get("samples").and_then(|samples| samples.get(name)) else {
+                findings.add(
+                    at,
+                    &format!("$sample names {name}, which is no sample in domain.json's \"samples\""),
+                );
+                return None;
+            };
+            used.push((at.to_string(), name.to_string()));
+            if own.is_empty() {
+                return Some(from.clone());
+            }
+            if !from.is_object() {
+                findings.add(
+                    at,
+                    &format!("sample {name} is not an object, so no field merges over it: write {{\"$sample\": \"{name}\"}} alone"),
+                );
+                return None;
+            }
+            Some(merge(from.clone(), Value::Object(own)))
+        }
+        Value::Array(items) => {
+            let mut checked = Vec::new();
+            for (i, item) in items.into_iter().enumerate() {
+                checked.push(sampled(screen, item, &format!("{at}[{i}]"), used, findings)?);
+            }
+            Some(Value::Array(checked))
+        }
+        value => Some(value),
+    }
+}
+
+/// Whether the path `at` is `path` or inside it.
+fn within(at: &str, path: &str) -> bool {
+    at.strip_prefix(path).is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
 }
 
 /// `over` laid on `under`: objects merge key by key, anything else replaces.
