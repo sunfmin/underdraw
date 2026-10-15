@@ -1,0 +1,35 @@
+{
+  "$comment": "A journey drawn as the path it is: its stops in order on one line, the step shown filled. Over the pictures while it plays, and at the head of the flow it is drawn on.",
+  "params": {
+    "journey": "Journey"
+  },
+  "nodes": {
+    "component": "Row",
+    "gap": 0,
+    "each": "journey.stops",
+    "item": {
+      "id": "stop-{index}",
+      "component": "RouteStop",
+      "number": "{item.number}",
+      "screen": "{item.screen}",
+      "state": "{item.state}",
+      "here": "{item.here}",
+      "passed": "{item.passed}",
+      "broken": "{item.broken}",
+      "last": "{item.last}"
+    }
+  },
+  "fixtures": {
+    "playing": {
+      "journey": {
+        "$sample": "cancelAnOrderAtStep2"
+      }
+    },
+    "broken": {
+      "journey": {
+        "$sample": "refundACancelledOrder"
+      }
+    }
+  },
+  "$note": "Clicking a stop should show its step; a shared component cannot set the screen's view state it is passed (see the issue opened for it), so the screens say it in their transitions instead."
+}
