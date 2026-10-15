@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use underdraw_format::{Finding, Lang};
@@ -27,7 +28,7 @@ use vello::Scene;
 use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
@@ -39,11 +40,12 @@ use crate::chrome::{
     THUMB, THUMB_TALL, TREE,
 };
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
+use crate::field::{Edit, Field};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
 use crate::inbox::{Guessed, Inbox, Item};
 use crate::journeys::{self, Step};
-use crate::notes::{self, Answer, Answers, By, Goes, Guess, Note, Proposal, Status};
+use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Status};
 use crate::reference::{self, Frame, Navigate, On, Pointed, Reference, Region};
 use crate::sidebar::{self, Block, Card};
 use crate::{chrome, gpu, links, paint, text};
@@ -77,6 +79,8 @@ const SMALLEST: f64 = 0.5;
 /// How far the pointer moves, held down, before a press is a drag over a
 /// region rather than a click.
 const DRAG: f64 = 6.0;
+/// How long a ✓ on an assumption can be undone before it is written.
+const UNDO: Duration = Duration::from_secs(5);
 
 /// What the window is told from other threads.
 enum Told {
@@ -186,6 +190,11 @@ struct Gallery {
     noting: bool,
     /// The note being written, while it is.
     draft: Option<Draft>,
+    /// A ✓ on an assumption waiting to be written, while it can be undone.
+    confirming: Option<Confirming>,
+    /// Where the caret of the note being written was last drawn, in window
+    /// points: an input method shows what it offers beside it.
+    caret: Option<Rect>,
     /// The arrow picked in the overview or the flow shown, by its place
     /// among their arrows.
     arrow: Option<usize>,
@@ -210,10 +219,26 @@ struct Gallery {
     waiting: bool,
 }
 
-/// A note being written: what it is for, and what has been typed.
+/// A note being written: what it is for, and the field it is typed in.
 struct Draft {
     on: Writing,
-    text: String,
+    text: Field,
+}
+
+impl Draft {
+    fn new(on: Writing) -> Draft {
+        Draft { on, text: Field::default() }
+    }
+}
+
+/// A ✓ on an assumption, not yet written: notes.json gets it once
+/// [`UNDO`] has passed without the person undoing it, so an agent waiting
+/// on the notes never acts on an answer taken back.
+struct Confirming {
+    on: Reference,
+    answers: Answers,
+    /// When it is written.
+    at: Instant,
 }
 
 /// What a note being written is for.
@@ -244,9 +269,11 @@ enum Do {
     Reopen(PathBuf, String),
     /// Picks the note named so: one of a description's closed notes.
     Show(PathBuf, String),
-    /// Answers the assumption on the node picked: ✓ writes the note at
-    /// once; ✗ starts writing what is right.
+    /// Answers the assumption on the node picked: ✓ is written once it can
+    /// no longer be undone; ✗ starts writing what is right.
     Judge(Answer),
+    /// Takes back the ✓ waiting to be written.
+    Undo,
     /// Shows the step of this place in the journey played.
     Step(usize),
     /// Folds or unfolds the details of the node picked.
@@ -605,6 +632,8 @@ impl Gallery {
             clipboard: None,
             noting: false,
             draft: None,
+            confirming: None,
+            caret: None,
             arrow: None,
             note: None,
             hovered: None,
@@ -1028,7 +1057,7 @@ impl Gallery {
                 true
             }
             Do::Reopen(dir, id) => {
-                self.draft = Some(Draft { on: Writing::Reopening(dir, id), text: String::new() });
+                self.draft = Some(Draft::new(Writing::Reopening(dir, id)));
                 true
             }
             Do::Show(dir, id) => {
@@ -1037,7 +1066,12 @@ impl Gallery {
                 true
             }
             Do::Judge(answer) => {
-                self.judge(answer);
+                self.judge(answer, Instant::now());
+                true
+            }
+            Do::Undo => {
+                self.confirming = None;
+                self.say(chrome!(self.lang, "✓ undone: nothing was written", "已撤销 ✓：什么都没写"));
                 true
             }
             Do::Step(at) => self.step(at),
@@ -1965,7 +1999,7 @@ impl Gallery {
         self.cards()
             .into_iter()
             .flat_map(|card| {
-                let blocks = card.blocks.iter().map(|block| block.says().to_string()).collect::<Vec<_>>();
+                let blocks = card.blocks.iter().flat_map(Block::says).map(str::to_string).collect::<Vec<_>>();
                 std::iter::once(card.title).chain(blocks)
             })
             .collect()
@@ -1974,10 +2008,11 @@ impl Gallery {
     /// The sidebar's cards, top to bottom, with a button for each thing a
     /// click does: the journey played, its step and the steps beside it;
     /// what the last act on a node came to, and any outcomes to choose
-    /// from; then the note being written, or how to start one; then the
-    /// note picked; then the node picked (what it is, what it calls, what
-    /// was assumed there, and, folded into "details", its id and its label
-    /// and box at each width), the region or the arrow picked, with a button
+    /// from; a ✓ waiting to be written, to undo; then a new note being
+    /// written, or how to start one; then the note picked, as a
+    /// conversation; then the assumption on the node picked, to answer;
+    /// then the node picked (what it is, what it calls, and, folded into
+    /// "details", its id and its label and box at each width), the region or the arrow picked, with a button
     /// to write a note on it; then a description's closed notes. None when
     /// none of these is there.
     fn cards(&self) -> Vec<Card<Do>> {
@@ -1988,26 +2023,10 @@ impl Gallery {
                 choices.iter().map(|(said, does)| Block::Button(said.clone(), does.clone())).collect();
             cards.push(Card::new(says.clone(), buttons));
         }
-        if let Some(draft) = &self.draft {
-            let title = match &draft.on {
-                Writing::On(on) => chrome!(lang, "note {}", "便签：{}", on.on.said(lang)),
-                Writing::Reopening(_, id) => {
-                    chrome!(lang, "reopening {id}: say what is still to do", "重开 {id}：说说还有什么要做")
-                }
-                Writing::Rejecting(on, _) => chrome!(
-                    lang,
-                    "✗ wrong {}: say what is right, for the agent",
-                    "✗ 不对 {}：告诉代理什么是对的",
-                    on.on.said(lang)
-                ),
-            };
-            let keys = chrome!(
-                lang,
-                "Enter saves, Shift+Enter breaks a line, Esc cancels",
-                "回车保存，Shift+回车换行，Esc 放弃"
-            );
-            let blocks = vec![Block::Text(format!("{}▏", draft.text)), Block::Muted(keys)];
-            cards.push(Card { ink: Ink::Note, ..Card::new(title, blocks) });
+        cards.extend(self.confirming_card(Instant::now()));
+        if let Some(Draft { on: Writing::On(on), .. }) = &self.draft {
+            let title = chrome!(lang, "note {}", "便签：{}", on.on.said(lang));
+            cards.push(Card { ink: Ink::Note, ..Card::new(title, self.field_blocks()) });
         } else if self.noting {
             let click = match (&self.picture, lang) {
                 (Picture::Overview(_), Lang::En) => "click a transition's arrow, or a state, it is on",
@@ -2028,10 +2047,13 @@ impl Gallery {
             });
         }
         cards.extend(self.note_card());
+        let writing = self.noting || matches!(&self.draft, Some(Draft { on: Writing::On(_), .. }));
+        if !writing {
+            cards.extend(self.assumption_card());
+        }
         let picked = self.node_card().or_else(|| self.region_card()).or_else(|| self.arrow_card());
         if let Some(mut card) = picked {
             if self.draft.is_none() && !self.noting {
-                card.blocks.extend(self.assumption_blocks());
                 card.blocks.push(Block::Button(
                     chrome!(lang, "write a note on it  (N)", "在这里写便签  (N)"),
                     Do::Write,
@@ -2351,16 +2373,24 @@ impl Gallery {
         Some(Card::new(said.strip_prefix("on ").unwrap_or(&said).to_string(), Vec::new()))
     }
 
-    /// What the node's card says of the assumption on the node picked, past
-    /// what was guessed and what else it could be (its own blocks say
-    /// those): the notes that already answer it, then ✓ and ✗, each saying
-    /// what it means. Nothing when the node picked has none.
-    fn assumption_blocks(&self) -> Vec<Block<Do>> {
-        let Some((on, _)) = self.assumption() else {
-            return Vec::new();
-        };
+    /// The card of the assumption on the node picked, for the person to
+    /// answer: what was guessed, in large type, what else it could be, the
+    /// notes that already answer it, then ✓ and ✗; or, once ✗ is clicked,
+    /// the field for what is right, in their place. None when the node
+    /// picked has none.
+    fn assumption_card(&self) -> Option<Card<Do>> {
+        let (on, assumed) = self.assumption()?;
         let lang = self.lang;
-        let mut blocks = Vec::new();
+        let (guessed, other) = parts(&assumed);
+        let mut blocks = vec![
+            Block::Big(guessed.to_string()),
+            Block::Muted(match other {
+                Some(other) => chrome!(lang, "or else  {other}", "也可能  {other}"),
+                None => {
+                    chrome!(lang, "or else  not said: ✗ says what it is", "也可能  没说：用 ✗ 说明是什么")
+                }
+            }),
+        ];
         if let (On::Node { node, .. }, Some(notes)) = (&on.on, self.notes.get(&on.description)) {
             for note in notes.iter().filter(|note| note.status != Status::Closed) {
                 let (Some(answers), On::Node { node: on, .. }) = (&note.answers, &note.on) else { continue };
@@ -2375,23 +2405,23 @@ impl Gallery {
                 }
             }
         }
-        blocks.push(Block::Button(
-            chrome!(
+        if matches!(&self.draft, Some(Draft { on: Writing::Rejecting(..), .. })) {
+            blocks.extend(self.field_blocks());
+        } else if self.confirming.as_ref().is_some_and(|confirming| confirming.on == on) {
+            // Its ✓ waits, to be undone, in the card above.
+        } else {
+            blocks.push(Block::Row(vec![
+                (chrome!(lang, "✓ right, keep it", "✓ 对，保留"), Do::Judge(Answer::Right)),
+                (chrome!(lang, "✗ wrong…", "✗ 不对…"), Do::Judge(Answer::Wrong)),
+            ]));
+            blocks.push(Block::Muted(chrome!(
                 lang,
-                "✓ right, keep it: the agent takes the guess out, and the note closes itself",
-                "✓ 对，保留：代理去掉这个猜测，便签自动关闭"
-            ),
-            Do::Judge(Answer::Right),
-        ));
-        blocks.push(Block::Button(
-            chrome!(
-                lang,
-                "✗ wrong, tell the agent what is right: write it, for the agent to change and answer",
-                "✗ 不对，告诉代理什么是对的：写下来，由代理修改并回答"
-            ),
-            Do::Judge(Answer::Wrong),
-        ));
-        blocks
+                "✓: the agent takes the guess out, and the note closes itself · ✗: say what is right",
+                "✓：代理去掉这个猜测，便签自动关闭 · ✗：说明什么是对的"
+            )));
+        }
+        let title = chrome!(lang, "assumed, for you to answer", "假定，等你回答");
+        Some(Card { ink: Ink::Assumed, ..Card::new(title, blocks) })
     }
 
     /// The node picked, as a note on it references it, and what was assumed
@@ -2406,10 +2436,11 @@ impl Gallery {
         Some((on, assumed))
     }
 
-    /// The assumption on the node picked answered `answer`: ✓ writes its
-    /// note at once; ✗ starts writing what is right. The window writes the
-    /// note only, never the description.
-    fn judge(&mut self, answer: Answer) {
+    /// The assumption on the node picked answered `answer`: ✓ waits
+    /// [`UNDO`] to be written, from `now`, while it can be undone; ✗ opens
+    /// a field, in place, for what is right. The window writes the note
+    /// only, never the description.
+    fn judge(&mut self, answer: Answer, now: Instant) {
         let Some((on, assumed)) = self.assumption() else {
             return self.say(chrome!(
                 self.lang,
@@ -2431,25 +2462,69 @@ impl Gallery {
             &links::drawn(&self.root),
         );
         let answers = Answers { assumed, guess, answer };
+        self.acted = None;
+        self.note = None;
         match answer {
-            Answer::Right => match notes::judge(&on, answers, "") {
-                Ok(id) => {
-                    self.notes = notes_of(&self.root, &self.lines);
-                    self.say(chrome!(
-                        self.lang,
-                        "{id} saved ✓, for the agent to take the guess out: the note then closes itself",
-                        "{id} 已保存 ✓，由代理去掉这个猜测：之后便签自动关闭"
-                    ));
-                    self.note = Some((on.description, id));
+            Answer::Right => {
+                // One ✓ waits at a time: the one before it is written now.
+                if let Some(at) = self.confirming.as_ref().map(|before| before.at) {
+                    self.confirm(at);
                 }
-                Err(e) => self.say(chrome!(self.lang, "not saved: {e:#}", "没有保存：{e:#}")),
-            },
-            Answer::Wrong => {
-                self.acted = None;
-                self.note = None;
-                self.draft = Some(Draft { on: Writing::Rejecting(on, answers), text: String::new() });
+                self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
+            Answer::Wrong => self.draft = Some(Draft::new(Writing::Rejecting(on, answers))),
         }
+    }
+
+    /// The ✓ waiting to be written written, once it is time at `now`:
+    /// notes.json gets it, and the sidebar says so. Whether it was.
+    fn confirm(&mut self, now: Instant) -> bool {
+        if self.confirming.as_ref().is_none_or(|confirming| now < confirming.at) {
+            return false;
+        }
+        let Some(Confirming { on, answers, .. }) = self.confirming.take() else {
+            return false;
+        };
+        match notes::judge(&on, answers, "") {
+            Ok(id) => {
+                self.notes = notes_of(&self.root, &self.lines);
+                self.say(chrome!(
+                    self.lang,
+                    "{id} saved ✓, for the agent to take the guess out: the note then closes itself",
+                    "{id} 已保存 ✓，由代理去掉这个猜测：之后便签自动关闭"
+                ));
+            }
+            Err(e) => self.say(chrome!(self.lang, "not saved: {e:#}", "没有保存：{e:#}")),
+        }
+        true
+    }
+
+    /// The window closing: a ✓ still to be written is the person's answer
+    /// all the same, and is written now.
+    fn leave(&mut self) {
+        if let Some(at) = self.confirming.as_ref().map(|confirming| confirming.at) {
+            self.confirm(at);
+        }
+    }
+
+    /// The card of the ✓ waiting to be written, at `now`: on what, how long
+    /// until it is, and a button that takes it back.
+    fn confirming_card(&self, now: Instant) -> Option<Card<Do>> {
+        let confirming = self.confirming.as_ref()?;
+        let lang = self.lang;
+        let left = confirming.at.saturating_duration_since(now).as_secs_f64().ceil();
+        let on = confirming.on.on.said(lang);
+        let blocks = vec![
+            Block::Muted(chrome!(
+                lang,
+                "written to notes.json in {left}s, for the agent",
+                "{left} 秒后写入 notes.json，交给代理"
+            )),
+            Block::Button(chrome!(lang, "undo", "撤销"), Do::Undo),
+        ];
+        Some(Card {
+            ink: Ink::Answered, ..Card::new(chrome!(lang, "✓ right {on}", "✓ 对 {on}"), blocks)
+        })
     }
 
     /// The card of the closed notes of the description whose overview is
@@ -2488,14 +2563,17 @@ impl Gallery {
         self.notes.get(dir)?.iter().find(|note| &note.id == id)
     }
 
-    /// The card of the note picked: where it is, its thread, and what the
-    /// person can do with it. None when none is.
+    /// The card of the note picked, read as a conversation: where it is in
+    /// its life (and why it closed) and where it is, what the person and the
+    /// agent said, each in a bubble, and what the person can do with it:
+    /// close it, or say it is not done yet; reopen it once closed. The
+    /// field of the line that reopens it, in place, while it is written.
+    /// None when no note is picked.
     fn note_card(&self) -> Option<Card<Do>> {
         let (Some(note), Some((dir, _))) = (self.picked_note(), &self.note) else {
             return None;
         };
         let lang = self.lang;
-        let status = note_status(note, lang);
         let answers = match &note.answers {
             Some(answers) => {
                 let mark = answered(answers.answer, lang);
@@ -2503,43 +2581,55 @@ impl Gallery {
             }
             None => String::new(),
         };
-        let title = format!("{} · {status} · {}{answers}", note.id, note.on.said(lang));
-        let mut blocks: Vec<Block<Do>> = note
-            .thread
-            .iter()
-            .map(|said| {
-                let who = match (said.by, lang) {
-                    (By::Person, Lang::En) => "you",
-                    (By::Person, Lang::Zh) => "你",
-                    (By::Agent, Lang::En) => "agent",
-                    (By::Agent, Lang::Zh) => "代理",
-                };
-                Block::Text(format!("{who}: {}", said.says))
-            })
-            .collect();
+        let title = format!("{} · {} · {}{answers}", note.id, note_status(note, lang), note.on.said(lang));
+        let mut blocks: Vec<Block<Do>> = Vec::new();
+        blocks.extend(note.thread.iter().map(|said| Block::Bubble(said.by, said.says.clone())));
         let (dir, id) = (dir.clone(), note.id.clone());
-        let reopen = chrome!(lang, "reopen it, saying what is still to do", "重开，说说还有什么要做");
-        match note.status {
-            Status::Open => blocks.push(Block::Button(chrome!(lang, "close it", "关闭"), Do::Close(dir, id))),
-            Status::Answered => {
-                blocks.push(Block::Button(
-                    chrome!(lang, "close it: the answer did it", "关闭：回答解决了"),
-                    Do::Close(dir.clone(), id.clone()),
-                ));
-                blocks.push(Block::Button(reopen, Do::Reopen(dir, id)));
-            }
-            Status::Closed if note.closed_because.is_some() => blocks.push(Block::Button(
-                chrome!(
-                    lang,
-                    "reopen it on the whole state, saying what is still to do",
-                    "在整个状态上重开，说说还有什么要做"
-                ),
-                Do::Reopen(dir, id),
-            )),
-            Status::Closed => blocks.push(Block::Button(reopen, Do::Reopen(dir, id))),
+        let reopening = matches!(&self.draft, Some(Draft { on: Writing::Reopening(at, of), .. }) if *at == dir && *of == id);
+        if reopening {
+            blocks.extend(self.field_blocks());
+        } else {
+            let close = (chrome!(lang, "close", "关闭"), Do::Close(dir.clone(), id.clone()));
+            let reopen = Do::Reopen(dir, id);
+            blocks.push(Block::Row(match note.status {
+                Status::Open => vec![close],
+                Status::Answered => vec![close, (chrome!(lang, "not yet…", "还没好…"), reopen)],
+                Status::Closed if note.closed_because.is_some() => {
+                    vec![(chrome!(lang, "reopen on the whole state…", "在整个状态上重开…"), reopen)]
+                }
+                Status::Closed => vec![(chrome!(lang, "reopen…", "重开…"), reopen)],
+            }));
         }
         let ink = if note.status == Status::Answered { Ink::Answered } else { Ink::Note };
         Some(Card { ink, ..Card::new(title, blocks) })
+    }
+
+    /// The field of the note being written, and what its keys do: Enter
+    /// sends what it holds, except a ✗ or a reopening with nothing in it.
+    fn field_blocks(&self) -> Vec<Block<Do>> {
+        let Some(draft) = &self.draft else {
+            return Vec::new();
+        };
+        let lang = self.lang;
+        let empty = match &draft.on {
+            Writing::On(_) => chrome!(lang, "what should change here?", "这里要改什么？"),
+            Writing::Reopening(..) => chrome!(lang, "what is still to do?", "还有什么要做？"),
+            Writing::Rejecting(..) => chrome!(lang, "what is right?", "什么是对的？"),
+        };
+        let keys = if draft.text.is_blank() && !matches!(draft.on, Writing::On(_)) {
+            chrome!(
+                lang,
+                "not sent empty: write it first · Esc drops it",
+                "不能空着发送：先写下来 · Esc 放弃"
+            )
+        } else {
+            chrome!(
+                lang,
+                "Enter sends · Shift+Enter new line · Esc drops it",
+                "回车发送 · Shift+回车换行 · Esc 放弃"
+            )
+        };
+        vec![Block::Field(draft.text.shown(), empty), Block::Muted(keys)]
     }
 
     /// The next click on a node, a state's caption or an arrow starts a note
@@ -2638,7 +2728,7 @@ impl Gallery {
     fn draft_on(&mut self, on: Reference) {
         self.acted = None;
         self.note = None;
-        self.draft = Some(Draft { on: Writing::On(on), text: String::new() });
+        self.draft = Some(Draft::new(Writing::On(on)));
     }
 
     /// The note being written saved to notes.json, and its pin drawn; or,
@@ -2647,13 +2737,18 @@ impl Gallery {
         let Some(draft) = self.draft.take() else {
             return;
         };
+        if draft.text.is_blank() && !matches!(draft.on, Writing::On(_)) {
+            // Its field says it is not sent empty.
+            self.draft = Some(draft);
+            return;
+        }
         let lang = self.lang;
         let saved = match &draft.on {
-            Writing::On(on) => notes::add(on, &draft.text)
+            Writing::On(on) => notes::add(on, draft.text.text())
                 .map(|id| (on.description.clone(), id, chrome!(lang, "saved", "已保存"))),
-            Writing::Reopening(dir, id) => notes::reopen(dir, id, &draft.text)
+            Writing::Reopening(dir, id) => notes::reopen(dir, id, draft.text.text())
                 .map(|()| (dir.clone(), id.clone(), chrome!(lang, "reopened", "已重开"))),
-            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), &draft.text)
+            Writing::Rejecting(on, answers) => notes::judge(on, answers.clone(), draft.text.text())
                 .map(|id| (on.description.clone(), id, chrome!(lang, "saved ✗", "已保存 ✗"))),
         };
         match saved {
@@ -2686,24 +2781,40 @@ impl Gallery {
     }
 
     /// A key pressed, ⌘ not held, as `key` names it and with the `text` it
-    /// types: while a note is written, typed into it, Enter saving it,
-    /// Shift+Enter breaking a line and Esc dropping it; otherwise N starts
+    /// types: while a note is written, an edit of its field, Enter sending
+    /// it, Shift+Enter breaking a line and Esc dropping it, the keys an
+    /// input method takes while it composes left to it; otherwise N starts
     /// a note and Esc stops one. Whether that changed what is shown.
     fn key(&mut self, key: &Key, text: Option<&str>) -> bool {
         if let Some(draft) = &mut self.draft {
-            match key {
-                Key::Named(NamedKey::Enter) if self.shift => draft.text.push('\n'),
-                Key::Named(NamedKey::Enter) => self.save(),
-                Key::Named(NamedKey::Escape) => self.draft = None,
-                Key::Named(NamedKey::Backspace) => {
-                    draft.text.pop();
-                }
-                _ => match text {
-                    Some(text) if !text.chars().any(char::is_control) => draft.text.push_str(text),
-                    _ => return false,
-                },
+            if draft.text.is_composing() {
+                return false;
             }
-            return true;
+            return match key {
+                Key::Named(NamedKey::Enter) if self.shift => {
+                    draft.text.type_in("\n");
+                    true
+                }
+                Key::Named(NamedKey::Enter) => {
+                    self.save();
+                    true
+                }
+                Key::Named(NamedKey::Escape) => {
+                    self.draft = None;
+                    true
+                }
+                Key::Named(NamedKey::ArrowLeft) => draft.text.edit(Edit::Left),
+                Key::Named(NamedKey::ArrowRight) => draft.text.edit(Edit::Right),
+                Key::Named(NamedKey::Backspace) => draft.text.edit(Edit::Back),
+                Key::Named(NamedKey::Delete) => draft.text.edit(Edit::Delete),
+                _ => match text {
+                    Some(text) if !text.chars().any(char::is_control) => {
+                        draft.text.type_in(text);
+                        true
+                    }
+                    _ => false,
+                },
+            };
         }
         match key {
             Key::Named(NamedKey::Escape) if self.noting || self.note.is_some() || self.region.is_some() => {
@@ -2725,14 +2836,34 @@ impl Gallery {
         }
     }
 
-    /// `text` typed into the note being written: what the input method
-    /// composed, or what was pasted. Whether there was one.
+    /// `text` typed into the note being written at its caret: what an
+    /// input method committed, or what was pasted. Whether one is written.
     fn type_in(&mut self, text: &str) -> bool {
         let Some(draft) = &mut self.draft else {
             return false;
         };
-        draft.text.push_str(text);
+        draft.text.type_in(text);
         true
+    }
+
+    /// What an input method says while a note is written: what it is
+    /// composing, shown at the caret, then what it commits, typed there.
+    /// Whether one is written.
+    fn ime(&mut self, ime: Ime) -> bool {
+        let Some(draft) = &mut self.draft else {
+            return false;
+        };
+        match ime {
+            Ime::Preedit(composing, _) => draft.text.compose(&composing),
+            Ime::Commit(text) => draft.text.type_in(&text),
+            Ime::Enabled | Ime::Disabled => draft.text.compose(""),
+        }
+        true
+    }
+
+    /// ⌘A in the note being written: all of it selected. Whether one is.
+    fn select_all(&mut self) -> bool {
+        self.draft.as_mut().is_some_and(|draft| draft.text.edit(Edit::All))
     }
 
     /// The notes on what is shown, not closed, drawn on it; blue while open,
@@ -2907,16 +3038,6 @@ impl Gallery {
             }
             None => chrome!(lang, "calls  nothing", "调用  无"),
         })];
-        if let Some(assumed) = node.assumed.as_deref() {
-            let (guessed, other) = parts(assumed);
-            blocks.push(Block::Text(chrome!(lang, "assumed  {guessed}", "假定  {guessed}")));
-            blocks.push(Block::Muted(match other {
-                Some(other) => chrome!(lang, "or else  {other}", "也可能  {other}"),
-                None => {
-                    chrome!(lang, "or else  not said: ✗ says what it is", "也可能  没说：用 ✗ 说明是什么")
-                }
-            }));
-        }
         let (fold, details) = match lang {
             Lang::En => (if self.details { "▾" } else { "▸" }, "details"),
             Lang::Zh => (if self.details { "▾" } else { "▸" }, "详情"),
@@ -3301,9 +3422,12 @@ impl Gallery {
                 to: [right as f32, height as f32],
                 ink: Ink::Line,
             }];
-            side.extend(sidebar::lay_out(&cards, right, -self.side_scroll, &mut self.typesetter).draws);
+            let laid = sidebar::lay_out(&cards, right, -self.side_scroll, &mut self.typesetter);
+            self.caret = laid.caret;
+            side.extend(laid.draws);
             side
         } else {
+            self.caret = None;
             Vec::new()
         };
 
@@ -3703,6 +3827,24 @@ impl ApplicationHandler<Told> for Gallery {
         }
     }
 
+    /// While a ✓ waits to be written: written once its time comes, the
+    /// window woken each second until then to count down.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        let written = self.confirm(now);
+        let wake = self.confirming.as_ref().map(|confirming| {
+            let left = confirming.at.saturating_duration_since(now);
+            let tick = Duration::from_nanos((left.as_nanos() % 1_000_000_000) as u64);
+            now + if tick.is_zero() { Duration::from_secs(1).min(left) } else { tick }
+        });
+        if let Some(shown) = &self.shown
+            && (written || wake.is_some())
+        {
+            shown.window.request_redraw();
+        }
+        event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    }
+
     fn user_event(&mut self, _: &ActiveEventLoop, told: Told) {
         match told {
             Told::ComeForward => {
@@ -3728,7 +3870,10 @@ impl ApplicationHandler<Told> for Gallery {
         };
         let scale = shown.window.scale_factor();
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.leave();
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 if size.width > 0 && size.height > 0 {
                     shown.gpu.resize(&mut shown.surface, size.width, size.height);
@@ -3757,6 +3902,12 @@ impl ApplicationHandler<Told> for Gallery {
                     window.request_redraw();
                 }
             }
+            WindowEvent::KeyboardInput { event, .. } if self.acting && is_key(&event, "a", KeyCode::KeyA) => {
+                let window = shown.window.clone();
+                if self.select_all() {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. }
                 if self.acting && is_key(&event, "\\", KeyCode::Backslash) =>
             {
@@ -3777,9 +3928,9 @@ impl ApplicationHandler<Told> for Gallery {
                     window.request_redraw();
                 }
             }
-            WindowEvent::Ime(Ime::Commit(text)) => {
+            WindowEvent::Ime(ime) => {
                 let window = shown.window.clone();
-                if self.type_in(&text) {
+                if self.ime(ime) {
                     window.request_redraw();
                 }
             }
@@ -3811,9 +3962,15 @@ impl ApplicationHandler<Told> for Gallery {
             WindowEvent::RedrawRequested => self.redraw(),
             _ => {}
         }
-        // What an input method composes goes into a note, and only there.
+        // What an input method composes goes into a note, and only there,
+        // what it offers shown beside the caret.
         if let Some(shown) = &self.shown {
             shown.window.set_ime_allowed(self.draft.is_some());
+            if let (Some(caret), Some(_)) = (self.caret, &self.draft) {
+                let at = LogicalPosition::new(f64::from(caret.x), f64::from(caret.y));
+                let size = LogicalSize::new(1.0, f64::from(caret.height));
+                shown.window.set_ime_cursor_area(at, size);
+            }
         }
     }
 }
@@ -4153,7 +4310,7 @@ mod tests {
         assert!(shown.is_some(), "a state of checkout shows the card form");
         gallery.cursor = on_node(&gallery, 0, "card-number");
         gallery.press();
-        assert!(gallery.panel().iter().any(|line| line.starts_with("assumed  Card fields are drawn here")));
+        assert!(gallery.panel().iter().any(|line| line == "Card fields are drawn here"));
     }
 
     #[test]
@@ -4845,6 +5002,7 @@ mod tests {
             let (pressed, text) = match *key {
                 "Enter" | "⇧Enter" => (named(NamedKey::Enter), Some("\r")),
                 "Backspace" => (named(NamedKey::Backspace), None),
+                "Delete" => (named(NamedKey::Delete), None),
                 "Esc" => (named(NamedKey::Escape), None),
                 " " => (named(NamedKey::Space), Some(" ")),
                 "→" => (named(NamedKey::ArrowRight), None),
@@ -4891,15 +5049,11 @@ mod tests {
     /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
         let cards = gallery.sidebar_cards();
-        let buttons =
-            cards.iter().flat_map(|card| &card.blocks).filter(|block| matches!(block, Block::Button(..)));
-        let index = buttons
-            .clone()
-            .position(|block| block.says() == text)
-            .unwrap_or_else(|| panic!("no button {text:?}: {:?}", gallery.panel()));
         let laid =
             sidebar::lay_out(&cards, gallery.pane_right(), -gallery.side_scroll, &mut gallery.typesetter);
-        let r = laid.buttons[index].0;
+        let Some(r) = laid.buttons.iter().find(|(_, says, _)| *says == text).map(|(r, _, _)| *r) else {
+            panic!("no button {text:?}: {:?}", gallery.panel())
+        };
         gallery.cursor = (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0));
         gallery.press()
     }
@@ -4927,7 +5081,7 @@ mod tests {
         assert_eq!(gallery.panel()[0], "note on order-{index}-cancel in default at 1120");
         type_text(&mut gallery, "价格太长");
         press_keys(&mut gallery, &["⇧Enter", "a", "x", "Backspace", " ", "b"]);
-        assert_eq!(gallery.panel()[1], "价格太长\na b▏", "Shift+Enter breaks a line");
+        assert_eq!(gallery.panel()[1], "价格太长\na b", "Shift+Enter breaks a line");
         assert!(!root.join("orders").join(notes::NOTES).exists(), "nothing is written while typing");
         press_keys(&mut gallery, &["Enter"]);
         assert!(gallery.draft.is_none(), "Enter saves");
@@ -5024,8 +5178,12 @@ mod tests {
         assert!(gallery.press(), "clicking a pin picks its note");
         let panel = gallery.panel();
         assert_eq!(panel[0], "N1 · answered · on nav-export in default at 390");
-        assert_eq!(panel[1..3], ["you: rename it", "agent: renamed it Export"]);
-        assert!(click_panel_line(&mut gallery, "reopen it, saying what is still to do"));
+        assert_eq!(
+            panel[1..3],
+            ["rename it", "renamed it Export"],
+            "the person's words, then the agent's reply"
+        );
+        assert!(click_panel_line(&mut gallery, "not yet…"));
         type_text(&mut gallery, "and the icon");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&dir).unwrap().remove(0);
@@ -5034,7 +5192,7 @@ mod tests {
 
         gallery.cursor = on_pin(&gallery, "N2");
         gallery.press();
-        assert!(click_panel_line(&mut gallery, "close it"));
+        assert!(click_panel_line(&mut gallery, "close"));
         assert_eq!(notes::read(&dir).unwrap()[1].status, Status::Closed);
         let left: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
         assert!(left.iter().all(|id| id == "N1"), "a closed note is drawn no more: {left:?}");
@@ -5094,7 +5252,7 @@ mod tests {
             gallery.panel()[0],
             "N1 · closed: nav-export is gone (removed or renamed) · on nav-export in default at 390"
         );
-        assert!(click_panel_line(&mut gallery, "reopen it on the whole state, saying what is still to do"));
+        assert!(click_panel_line(&mut gallery, "reopen on the whole state…"));
         type_text(&mut gallery, "the download link then");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&dir).unwrap().remove(0);
@@ -5134,24 +5292,26 @@ mod tests {
         assert_eq!(gallery.node.as_deref(), Some("card-number"), "a click on its \"?\" picks it");
         let panel = gallery.panel();
         for part in [
-            "assumed  Card fields are drawn here",
+            "Card fields are drawn here",
             "or else  the real build may use the payment provider's hosted fields",
-            "✓ right, keep it: the agent takes the guess out, and the note closes itself",
-            "✗ wrong, tell the agent what is right: write it, for the agent to change and answer",
+            "✓ right, keep it",
+            "✗ wrong…",
         ] {
             assert!(panel.iter().any(|line| line == part), "{part:?} in {panel:?}");
         }
 
-        assert!(click_panel_line(
-            &mut gallery,
-            "✗ wrong, tell the agent what is right: write it, for the agent to change and answer"
-        ));
-        press_keys(&mut gallery, &["Enter"]);
-        assert!(gallery.panel()[0].starts_with("not saved: ✗ says what is right"), "{:?}", gallery.panel());
-        assert!(gallery.draft.is_some(), "the ✗ stays to write");
+        assert!(click_panel_line(&mut gallery, "✗ wrong…"));
+        let panel = gallery.panel();
+        assert!(panel.iter().any(|line| line == "what is right?"), "a field in place: {panel:?}");
+        assert!(!panel.iter().any(|line| line == "✓ right, keep it"), "in place of the buttons");
+        press_keys(&mut gallery, &["Enter", " ", "Enter"]);
+        assert!(gallery.draft.is_some(), "the ✗ is not sent empty");
+        assert!(gallery.panel().iter().any(|line| line.starts_with("not sent empty")));
+        let dir = root.join("checkout");
+        assert!(!dir.join(notes::NOTES).exists(), "nothing written");
+        press_keys(&mut gallery, &["Backspace"]);
         type_text(&mut gallery, "use the hosted fields");
         press_keys(&mut gallery, &["Enter"]);
-        let dir = root.join("checkout");
         let wrong = notes::read(&dir).unwrap().remove(0);
         assert_eq!(wrong.status, Status::Open);
         assert_eq!(wrong.thread[0].says, "use the hosted fields");
@@ -5160,10 +5320,18 @@ mod tests {
         assert!(answers.assumed.starts_with("Card fields are drawn here;"));
 
         gallery.note = None;
-        assert!(click_panel_line(
-            &mut gallery,
-            "✓ right, keep it: the agent takes the guess out, and the note closes itself"
-        ));
+        assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
+        assert!(gallery.panel()[0].starts_with("✓ right on card-number in "), "{:?}", gallery.panel());
+        assert!(!gallery.panel().iter().any(|line| line == "✓ right, keep it"), "one ✓ at a time");
+        assert!(click_panel_line(&mut gallery, "undo"));
+        assert!(!gallery.confirm(Instant::now() + UNDO * 2), "undone: nothing waits");
+        assert_eq!(notes::read(&dir).unwrap().len(), 1, "an undone ✓ leaves notes.json as it was");
+
+        assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
+        assert!(!gallery.confirm(Instant::now() + UNDO - Duration::from_secs(1)), "it can still be undone");
+        assert_eq!(notes::read(&dir).unwrap().len(), 1, "not written while it can be undone");
+        assert!(gallery.confirm(Instant::now() + UNDO));
+        assert!(!gallery.confirm(Instant::now() + UNDO * 2), "written once");
         let right = notes::read(&dir).unwrap().remove(1);
         assert_eq!(right.answers.as_ref().map(|answers| answers.answer), Some(Answer::Right));
         assert_eq!(right.thread[0].says, notes::RIGHT, "✓ needs no line");
@@ -5194,6 +5362,61 @@ mod tests {
     }
 
     #[test]
+    fn a_note_typed_with_an_input_method_shows_what_it_composes_and_saves_what_it_committed() {
+        let root = root_of("notes-ime", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        gallery.press();
+        assert!(click_panel_line(&mut gallery, "write a note on it  (N)"));
+        type_text(&mut gallery, "ab");
+        press_keys(&mut gallery, &["←"]);
+        assert!(gallery.ime(Ime::Preedit("ni hao".to_string(), Some((6, 6)))));
+        let shown = gallery.draft.as_ref().unwrap().text.shown();
+        assert_eq!(shown.text, "ani haob", "composed at the caret");
+        assert_eq!(&shown.text[shown.composing.clone()], "ni hao", "drawn underlined");
+        let cards = gallery.cards();
+        let laid = sidebar::lay_out(&cards, gallery.pane_right(), 0.0, &mut gallery.typesetter);
+        let underlined =
+            laid.draws.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
+        assert_eq!(underlined, 1, "one line under what is composed");
+        assert!(laid.caret.is_some(), "the input method is shown where the caret is");
+        press_keys(&mut gallery, &["Enter", "Backspace"]);
+        assert!(gallery.draft.is_some(), "while it composes, its keys are its own");
+        assert!(gallery.ime(Ime::Commit("你好".to_string())));
+        press_keys(&mut gallery, &["→", "Delete", "Backspace", "←"]);
+        type_text(&mut gallery, "!");
+        assert_eq!(gallery.panel()[1], "a你!好", "the caret moved, deleting where it is");
+        assert!(gallery.select_all());
+        type_text(&mut gallery, "价格");
+        assert!(gallery.ime(Ime::Preedit("tai".to_string(), None)));
+        assert!(gallery.ime(Ime::Commit("太".to_string())));
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&root.join("orders")).unwrap().remove(0);
+        assert_eq!(note.thread[0].says, "价格太", "what was committed, never what was composing");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_confirmation_waiting_is_written_when_the_window_closes() {
+        let root = root_of("assume-close", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        gallery.cursor = on_guess(&gallery, 0, "nav-export");
+        gallery.press();
+        assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
+        let dir = root.join("orders");
+        assert!(!dir.join(notes::NOTES).exists(), "it can still be undone");
+        gallery.leave();
+        let notes = notes::read(&dir).unwrap();
+        assert_eq!(notes.len(), 1, "closing the window writes it");
+        assert_eq!(notes[0].answers.as_ref().map(|answers| answers.answer), Some(Answer::Right));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_confirmed_screen_not_drawn_yet_closes_once_it_is_drawn() {
         let root = root_of("assume-undrawn", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
@@ -5202,18 +5425,13 @@ mod tests {
         gallery.cursor = on_guess(&gallery, 0, "nav-export");
         gallery.press();
         let panel = gallery.panel();
-        assert!(
-            panel.iter().any(|line| line.starts_with("assumed  This navigates to ExportDocuments")),
-            "{panel:?}"
-        );
+        assert!(panel.iter().any(|line| line.starts_with("This navigates to ExportDocuments")), "{panel:?}");
         assert!(
             panel.iter().any(|line| line.starts_with("or else  it could instead be a misspelt name")),
             "{panel:?}"
         );
-        assert!(click_panel_line(
-            &mut gallery,
-            "✓ right, keep it: the agent takes the guess out, and the note closes itself"
-        ));
+        assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
+        assert!(gallery.confirm(Instant::now() + UNDO));
         let dir = root.join("orders");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.answers.unwrap().guess, Guess::Undrawn(vec!["ExportDocuments".into()]));
@@ -5285,7 +5503,11 @@ mod tests {
         assert!(gallery.press());
         assert_eq!(
             gallery.panel()[..3],
-            ["note on the whole of default", "▏", "Enter saves, Shift+Enter breaks a line, Esc cancels"]
+            [
+                "note on the whole of default",
+                "what should change here?",
+                "Enter sends · Shift+Enter new line · Esc drops it"
+            ]
         );
         type_text(&mut gallery, "too busy");
         press_keys(&mut gallery, &["Enter"]);
@@ -5770,7 +5992,7 @@ mod tests {
             .inbox_card()
             .into_iter()
             .flat_map(|card| {
-                let blocks = card.blocks.iter().map(|block| block.says().to_string()).collect::<Vec<_>>();
+                let blocks = card.blocks.iter().flat_map(Block::says).map(str::to_string).collect::<Vec<_>>();
                 std::iter::once(card.title).chain(blocks)
             })
             .collect()
@@ -5792,7 +6014,8 @@ mod tests {
         assert!(click_panel_line(&mut gallery, guesses[0]));
         assert_eq!(shown(&gallery), "orders · default", "clicking an item shows its state");
         assert_eq!(gallery.node.as_deref(), Some("nav-export"), "with its node picked");
-        assert_eq!(gallery.panel()[0], "IconButton", "and its card");
+        assert_eq!(gallery.panel()[0], "assumed, for you to answer", "its assumption, to answer");
+        assert!(gallery.panel().iter().any(|line| line == "IconButton"), "and its card");
         assert!(inbox(&gallery).is_empty(), "a node picked: the inbox gives way to its card");
 
         let dir = root.join("orders");
