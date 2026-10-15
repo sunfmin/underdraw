@@ -3541,7 +3541,8 @@ impl Gallery {
         scene.push_clip_layer(Fill::NonZero, at, &Area::new(0.0, 0.0, tree, height));
         paint::draws(&mut scene, at, &list, chrome::colour, &mut self.typesetter);
         scene.pop_layer();
-        let edge = [Draw::Line { from: [tree as f32, 0.0], to: [tree as f32, height as f32], ink: Ink::Line }];
+        let edge =
+            [Draw::Line { from: [tree as f32, 0.0], to: [tree as f32, height as f32], ink: Ink::Line }];
         paint::draws(&mut scene, at, &edge, chrome::colour, &mut self.typesetter);
         scene
     }
@@ -3937,7 +3938,11 @@ impl ApplicationHandler<Told> for Gallery {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
                 let window = shown.window.clone();
-                let grip = if self.resizing || self.on_tree_line() { CursorIcon::EwResize } else { CursorIcon::Default };
+                let grip = if self.resizing || self.on_tree_line() {
+                    CursorIcon::EwResize
+                } else {
+                    CursorIcon::Default
+                };
                 window.set_cursor(grip);
                 let resized = self.resize_tree();
                 if resized || self.hover() || self.held.is_some() {
