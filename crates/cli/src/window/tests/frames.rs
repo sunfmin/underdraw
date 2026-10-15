@@ -35,11 +35,18 @@ fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Galler
     let mut gallery = Gallery::new(root, text::Typesetter::new(None).unwrap());
     gallery.size = size;
     // A root of a test's own is named for its process: its line is named
-    // the same in every run, for the frame to hold.
-    if let Some(line) = gallery.lines.first_mut().filter(|line| line.row.dir == root && !line.row.described) {
-        line.row.name = "root".to_string();
-    }
+    // the same in every run, for the frame to hold, and again after acts
+    // that reload the tree.
+    let named = |gallery: &mut Gallery| {
+        if let Some(line) =
+            gallery.lines.first_mut().filter(|line| line.row.dir == root && !line.row.described)
+        {
+            line.row.name = "root".to_string();
+        }
+    };
+    named(&mut gallery);
     acts(&mut gallery);
+    named(&mut gallery);
     gallery.clamp();
     let scene = gallery.frame();
     let (width, height) = (size.0 as u32, size.1 as u32);
