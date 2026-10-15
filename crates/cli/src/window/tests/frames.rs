@@ -2,7 +2,7 @@
 //! show it, and held to a golden PNG kept in `crates/cli/goldens/gallery`.
 //!
 //! [`held`] is the glue: a test gives it a root, a window size and its acts
-//! on the gallery (pick a line, click a node, drag a region, press keys),
+//! on the gallery (pick a line, click a node, press keys),
 //! and the window's real frame is rendered headless on the GPU `render`
 //! uses, one pixel a point. A frame that strays from its golden fails the
 //! test, and is written beside the path the failure names to be looked at.
@@ -95,24 +95,15 @@ fn hold(name: &str, width: u32, height: u32, pixels: &[u8]) {
     }
 }
 
-/// Note `text` written with N on node `id` of the phone's picture.
-fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
-    press_keys(gallery, &["n"]);
-    gallery.cursor = on_node(gallery, 0, id);
-    gallery.press();
-    gallery.release();
-    type_text(gallery, text);
-    press_keys(gallery, &["Enter"]);
-}
-
 /// That every text of the sidebar fits the box it is set in, inside the
 /// sidebar's gutters: none is cut, in English or in Chinese.
 fn fits(gallery: &mut Gallery) {
-    let cards = gallery.sidebar_cards();
+    let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
     let (left, width) = (gallery.pane_right(), gallery.side);
-    let laid = sidebar::lay_out(&cards, (left, width), -gallery.side_scroll, &mut gallery.typesetter);
+    let at = (-gallery.side_scroll, gallery.size.1);
+    let laid = sidebar::lay_out(&cards, foot.as_ref(), (left, width), at, &mut gallery.typesetter);
     let (inside, outside) = (left + chrome::GUTTER, left + width - chrome::GUTTER);
-    for draw in &laid.draws {
+    for draw in laid.draws.iter().chain(&laid.foot_draws) {
         let Draw::Text { rect, text, font, max_lines, .. } = draw else { continue };
         let (x, right) = (f64::from(rect.x), f64::from(rect.x + rect.width));
         assert!(x >= inside && right <= outside, "{text:?} set outside the sidebar's gutters");
@@ -145,7 +136,7 @@ fn the_tree_lists_directories_descriptions_states_phases_journeys_and_counts_fau
     std::fs::write(root.join("broken").join(crate::SCREEN), "{}").unwrap();
     let gallery = held("tree", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        note_on(gallery, "order-0", "rename it");
+        say_on(gallery, 0, "order-0", "rename it");
     });
     let line = |name: &str| gallery.lines.iter().find(|l| l.row.name == name).unwrap();
     assert!(!line("broken").row.faults.is_empty(), "a description with faults");
@@ -238,15 +229,26 @@ fn a_prototype_act_and_its_outcomes() {
 }
 
 #[test]
-fn a_region_dragged_for_a_note() {
-    let root = root_of("frame-region", &[("orders", "orders")]);
-    let mut gallery = held("region", &root, WINDOW, |gallery| {
+fn the_whole_state_talked_about_with_more_typed_in_the_box() {
+    let root = root_of("frame-talk", &[("orders", "orders")]);
+    let mut gallery = held("talk", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        press_keys(gallery, &["n"]);
-        drag(gallery, 0, (10.0, 145.0), (380.0, 175.0));
+        type_text(gallery, "the list is too dense");
+        press_keys(gallery, &["Enter"]);
+        notes::answer(
+            &root.join("orders"),
+            "N1",
+            "gave each row more room; should the filters fold away too?",
+        )
+        .unwrap();
+        gallery.reload();
+        type_text(gallery, "yes, behind a button");
+        press_keys(gallery, &["⇧Enter"]);
+        type_text(gallery, "named Filters");
     });
     fits(&mut gallery);
-    assert!(!gallery.regions().is_empty(), "drawn dashed");
+    assert_eq!(talk_shown(&gallery)[0], "note N1 · answered");
+    assert_eq!(gallery.foot().map(|foot| foot.does), Some(Some(Do::Send)), "Send can send what is typed");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -266,8 +268,8 @@ fn note_pins_open_and_answered_with_its_reply() {
     let root = root_of("frame-notes", &[("orders", "orders")]);
     let mut gallery = held("notes", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        note_on(gallery, "nav-export", "rename it");
-        note_on(gallery, "order-0-cancel", "too red");
+        say_on(gallery, 0, "nav-export", "rename it");
+        say_on(gallery, 0, "order-0-cancel", "too red");
         notes::answer(&root.join("orders"), "N1", "renamed it Export").unwrap();
         gallery.reload();
         gallery.cursor = on_pin(gallery, "N1");
@@ -308,7 +310,7 @@ fn a_note_read_as_a_conversation() {
     let root = root_of("frame-conversation", &[("orders", "orders")]);
     let mut gallery = held("conversation", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        note_on(gallery, "nav-export", "rename it, and say what it exports");
+        say_on(gallery, 0, "nav-export", "rename it, and say what it exports");
         notes::answer(&root.join("orders"), "N1", "renamed it Export orders").unwrap();
         gallery.reload();
         gallery.cursor = on_pin(gallery, "N1");
@@ -316,12 +318,8 @@ fn a_note_read_as_a_conversation() {
     });
     fits(&mut gallery);
     assert_eq!(
-        gallery.panel()[..3],
-        [
-            "N1 · answered · on nav-export in default at 390",
-            "rename it, and say what it exports",
-            "renamed it Export orders"
-        ]
+        talk_shown(&gallery),
+        ["note N1 · answered", "rename it, and say what it exports", "renamed it Export orders"]
     );
     assert!(!gallery.panel().iter().any(|line| line == "not yet…" || line == "close"), "never closed");
     std::fs::remove_dir_all(root).unwrap();

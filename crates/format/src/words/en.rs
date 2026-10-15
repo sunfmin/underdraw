@@ -68,7 +68,6 @@ pub(super) const WORDS: Words = Words {
     confirming_in: "written to notes.json in {left}s, for the agent",
     undo: "undo",
     confirming_title: "✓ right {on}",
-    answers_assumption: " · answers the assumption {mark}",
     ask_right: "what is right?",
     not_sent_empty: "not sent empty: write it first · Esc drops it",
     enter_sends: "Enter sends · Shift+Enter new line · Esc drops it",

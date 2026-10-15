@@ -529,7 +529,8 @@ mod tests {
         let dir = dir("life");
         assert_eq!(read(&dir).unwrap(), [], "no notes.json: no notes");
         assert_eq!(say(&on(&dir), "  the price is cut  ").unwrap(), "N1");
-        let whole = Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
+        let whole =
+            Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
         assert_eq!(say(&whole, "and the date").unwrap(), "N2", "numbered after the last");
         let notes = read(&dir).unwrap();
         assert_eq!(notes[0].stands(), Stands::Waiting, "the person spoke last");
@@ -693,7 +694,8 @@ mod tests {
             (node.origin.instance, node.label, node.width) = (vec![0], Some(9), 1120);
         }
         assert_eq!(say(&other, "  and the date  ").unwrap(), "N1", "another instance of the node: its note");
-        let state = Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
+        let state =
+            Reference { description: dir.clone(), on: On::State { state: Shown::Fixture("default".into()) } };
         assert_eq!(say(&state, "too busy").unwrap(), "N2", "the whole state: a note of its own");
         answer(&dir, "N1", "made it wrap").unwrap();
         assert_eq!(say(&on(&dir), "better").unwrap(), "N1");

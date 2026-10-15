@@ -165,7 +165,6 @@ sentences! {
     confirming_in,
     undo,
     confirming_title,
-    answers_assumption,
     ask_right,
     not_sent_empty,
     enter_sends,

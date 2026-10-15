@@ -1837,7 +1837,8 @@ impl Gallery {
         let (cards, foot) = (self.sidebar_cards(), self.foot());
         let (right, bottom) = (self.pane_right(), self.size.1);
         let top = -self.side_scroll;
-        let laid = sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), (top, bottom), &mut self.typesetter);
+        let laid =
+            sidebar::lay_out(&cards, foot.as_ref(), (right, self.side), (top, bottom), &mut self.typesetter);
         laid.at(at).cloned()
     }
 
@@ -2382,9 +2383,6 @@ impl Gallery {
         let title = say!(lang, talk_title, id = ids, status = note_status(last, lang));
         let mut blocks = Vec::new();
         for note in &notes {
-            if let Some(answers) = &note.answers {
-                blocks.push(Block::Muted(say!(lang, answers_assumption, mark = answered(answers.answer, lang))));
-            }
             blocks.extend(note.messages.iter().map(|said| Block::Bubble(said.by, said.says.clone())));
         }
         let ink = if last.waits() { Ink::Note } else { Ink::Answered };
@@ -4109,7 +4107,6 @@ mod tests {
         assert!(!gallery.drag_thumb(), "let go, the pane stays");
         assert_eq!(gallery.scroll, 0.0);
         assert_eq!((gallery.picked, &gallery.node), (picked, &node), "nothing picked by any of it");
-        assert!(gallery.region.is_none(), "nor a region");
 
         let across = bar_of(&mut gallery, Scrolls::Across).thumb().unwrap();
         gallery.cursor = (across.center().x, across.center().y);
@@ -4165,14 +4162,11 @@ mod tests {
                 gallery.press();
                 assert_eq!(gallery.picked, picked, "{scrolls:?}: no line of the tree picked");
                 assert_eq!(gallery.node, node, "{scrolls:?}: no node picked");
-                assert!(
-                    gallery.held.is_none() && gallery.resizing.is_none(),
-                    "{scrolls:?}: no region, no line"
-                );
+                assert!(gallery.resizing.is_none(), "{scrolls:?}: no line");
                 assert!(gallery.draft.is_none() && gallery.acted.is_none(), "{scrolls:?}: no button pressed");
                 gallery.cursor.1 += 5.0;
                 gallery.release();
-                assert!(gallery.region.is_none(), "{scrolls:?}: no region dragged");
+                assert!(gallery.selecting.is_none(), "{scrolls:?}: no text selected");
             }
         }
     }
@@ -4230,8 +4224,14 @@ mod tests {
         assert_eq!(gallery.node.as_deref(), Some("nav-save"), "the innermost, not the bar it sits in");
         assert_eq!(
             gallery.panel(),
-            ["IconButton", "calls  toggleSaved", "▸ details", "write a note on it  (N)"],
-            "what it is and what it calls; its id, label and boxes folded away"
+            [
+                "IconButton",
+                "calls  toggleSaved",
+                "▸ details",
+                "note · nothing said yet",
+                "Say below what should change: Enter sends, Shift+Enter breaks the line."
+            ],
+            "what it is and what it calls, its id, label and boxes folded away; then its conversation"
         );
         assert!(!gallery.press(), "picking it again changes nothing");
         assert_eq!(gallery.outlines().len(), 2, "it is outlined at both widths");
@@ -4293,10 +4293,7 @@ mod tests {
         let orders = line_of(&gallery, "orders");
         assert!(gallery.reference().is_none(), "an overview is no state");
         gallery.copy();
-        assert_eq!(
-            gallery.panel()[0],
-            "nothing to copy: pick a state, a node or region in it, or an arrow, first"
-        );
+        assert_eq!(gallery.panel()[0], "nothing to copy: pick a state, a node in it, or an arrow, first");
         let loading = state_of_in(&gallery, orders, "loading");
         showing(&mut gallery, loading);
         let Picture::Pages(_) = &gallery.picture else { panic!("no picture") };
@@ -4350,7 +4347,7 @@ mod tests {
         gallery.press();
         showing(&mut gallery, listing + 1);
         assert_eq!(gallery.node, None, "the data has no skeleton");
-        assert!(gallery.panel().is_empty());
+        assert_eq!(gallery.panel()[0], "default · the whole state", "the state's card in its place");
     }
 
     #[test]
@@ -4364,21 +4361,22 @@ mod tests {
         gallery.cursor = (left - MARGIN / 2.0, top + 10.0);
         assert!(gallery.press(), "between the pictures");
         assert_eq!(gallery.node, None);
-        assert!(gallery.panel().is_empty(), "the panel is gone");
+        assert_eq!(gallery.panel()[0], "default · the whole state", "the node's card is gone");
     }
 
     #[test]
     fn the_sidebar_is_on_the_right_and_command_backslash_gives_its_width_to_the_pictures() {
         let mut gallery = gallery();
         let listing = line_of(&gallery, "airbnb-listing");
-        showing(&mut gallery, listing + 1);
+        showing(&mut gallery, listing);
         assert_eq!(gallery.pane_right(), 1440.0 - SIDEBAR, "the sidebar is shown by default");
         let shown = gallery.sidebar_cards();
         assert_eq!(
             shown.last().map(|card| card.title.as_str()),
             Some("Nothing picked"),
-            "with nothing picked, it says what can be done, under the inbox"
+            "with nothing picked to talk about, it says what can be done, under the inbox"
         );
+        showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
         let narrow = gallery.zoom(gallery.pane());
@@ -4443,7 +4441,6 @@ mod tests {
         gallery.cursor = (TREE + 2.0, 300.0);
         assert!(!gallery.press(), "a press on the line changes nothing shown");
         assert_eq!(gallery.picked, picked, "and picks no line of the tree");
-        assert!(gallery.held.is_none(), "nor starts a region");
         gallery.cursor = (400.0, 320.0);
         assert!(gallery.resize(), "the drag moves the line");
         assert_eq!(gallery.tree, 400.0, "to where the pointer is");
@@ -4451,7 +4448,6 @@ mod tests {
         assert!(gallery.zoom(gallery.pane()) < wide, "and fit the width left");
         assert!(!gallery.release(), "letting go picks nothing");
         assert_eq!(gallery.picked, picked);
-        assert!(gallery.region.is_none());
         gallery.cursor = (500.0, 320.0);
         assert!(!gallery.resize(), "let go, the line stays");
         assert_eq!(gallery.tree, 400.0);
@@ -4496,7 +4492,6 @@ mod tests {
         assert_eq!(gallery.edge_at(), Some(Edge::Side), "the pointer takes hold of the line");
         assert!(!gallery.press(), "a press on the line changes nothing shown");
         assert_eq!(gallery.node.as_deref(), Some("nav-save"), "and leaves the node picked");
-        assert!(gallery.held.is_none(), "nor starts a region");
         assert!(!gallery.details, "nor presses a button");
         gallery.cursor = (line - 400.0, 320.0);
         assert!(gallery.resize(), "the drag moves the line");
@@ -4506,7 +4501,6 @@ mod tests {
         assert!(!gallery.release(), "letting go picks nothing");
         assert_eq!(gallery.node.as_deref(), Some("nav-save"));
         assert!(click_panel_line(&mut gallery, "▸ details"), "the details unfolded, wide");
-        assert!(gallery.region.is_none());
 
         gallery.cursor = (line - 400.0, 300.0);
         gallery.press();
@@ -4514,9 +4508,9 @@ mod tests {
         gallery.resize();
         gallery.release();
         assert_eq!(gallery.side, SIDEBAR_LEAST, "no narrower than 280pt");
-        let cards = gallery.sidebar_cards();
-        let laid =
-            sidebar::lay_out(&cards, (gallery.pane_right(), gallery.side), 0.0, &mut gallery.typesetter);
+        let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
+        let (at, bottom) = ((gallery.pane_right(), gallery.side), gallery.size.1);
+        let laid = sidebar::lay_out(&cards, foot.as_ref(), at, (0.0, bottom), &mut gallery.typesetter);
         let inside = |r: &Rect| f64::from(r.x) > gallery.pane_right() && f64::from(r.x + r.width) < width;
         assert!(laid.buttons.iter().all(|(r, _, _)| inside(r)), "its buttons inside it");
         assert!(click_panel_line(&mut gallery, "▾ details"), "each still clicked by its own box");
@@ -4559,12 +4553,16 @@ mod tests {
         showing(&mut gallery, listing + 1);
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
-        assert_eq!(gallery.panel(), ["IconButton", "调用  toggleSaved", "▸ 详情", "在这里写便签  (N)"]);
+        assert_eq!(
+            gallery.panel()[..4],
+            ["IconButton", "调用  toggleSaved", "▸ 详情", "便签 · 还没说过什么"]
+        );
+        assert_eq!(
+            gallery.foot().map(|foot| (foot.empty, foot.send)),
+            Some(("就这里说点什么…".into(), "发送".into()))
+        );
         assert!(click_panel_line(&mut gallery, "▸ 详情"));
         assert_eq!(gallery.panel()[3..5], ["标识  nav-save", "宽 390  编号 3 · 框 334, 8 · 40 × 40"]);
-        press_keys(&mut gallery, &["n"]);
-        assert_eq!(gallery.panel()[0], "写便签");
-        press_keys(&mut gallery, &["Esc"]);
         gallery.copy();
         assert!(gallery.panel()[0].starts_with("已复制  "), "{:?}", gallery.panel());
         // Nothing the window says itself is in English: what is left is the
@@ -4594,14 +4592,12 @@ mod tests {
         gallery.cursor = on_node(&gallery, 0, "nav-save");
         gallery.press();
         assert_eq!(
-            gallery.panel(),
-            ["IconButton", "呼び出し  toggleSaved", "▸ 詳細", "ここにメモを書く  (N)"]
+            gallery.panel()[..4],
+            ["IconButton", "呼び出し  toggleSaved", "▸ 詳細", "メモ · まだ何も話していません"]
         );
+        assert_eq!(gallery.foot().map(|foot| foot.send), Some("送信".into()));
         assert!(click_panel_line(&mut gallery, "▸ 詳細"));
         assert_eq!(gallery.panel()[3..5], ["ID  nav-save", "幅 390  番号 3 · 枠 334, 8 · 40 × 40"]);
-        press_keys(&mut gallery, &["n"]);
-        assert_eq!(gallery.panel()[0], "メモを書く");
-        press_keys(&mut gallery, &["Esc"]);
         gallery.copy();
         assert!(gallery.panel()[0].starts_with("コピーしました  "), "{:?}", gallery.panel());
     }
@@ -5223,13 +5219,9 @@ mod tests {
     /// The sidebar's button that reads `text`, clicked in the middle of
     /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
-        let cards = gallery.sidebar_cards();
-        let laid = sidebar::lay_out(
-            &cards,
-            (gallery.pane_right(), gallery.side),
-            -gallery.side_scroll,
-            &mut gallery.typesetter,
-        );
+        let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
+        let (at, scrolled) = ((gallery.pane_right(), gallery.side), (-gallery.side_scroll, gallery.size.1));
+        let laid = sidebar::lay_out(&cards, foot.as_ref(), at, scrolled, &mut gallery.typesetter);
         let Some(r) = laid.buttons.iter().find(|(_, says, _)| *says == text).map(|(r, _, _)| *r) else {
             panic!("no button {text:?}: {:?}", gallery.panel())
         };
@@ -5237,46 +5229,77 @@ mod tests {
         gallery.press()
     }
 
+    /// What the conversation card says: its title, then each message.
+    fn talk_shown(gallery: &Gallery) -> Vec<String> {
+        let card = gallery.conversation_card().expect("a conversation is shown");
+        std::iter::once(card.title).chain(card.blocks.iter().flat_map(Block::says)).collect()
+    }
+
+    /// Node `id` in picture `page` picked, and `says` written about it in
+    /// the box at the sidebar's foot, Enter sending it.
+    fn say_on(gallery: &mut Gallery, page: usize, id: &str, says: &str) {
+        gallery.cursor = on_node(gallery, page, id);
+        gallery.press();
+        gallery.release();
+        type_text(gallery, says);
+        press_keys(gallery, &["Enter"]);
+    }
+
     #[test]
-    fn a_note_written_on_a_node_is_kept_in_notes_json_and_pinned_where_it_was_written() {
+    fn talking_on_a_node_writes_its_note_and_shows_it_at_once() {
         let root = root_of("notes-write", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
-        press_keys(&mut gallery, &["n"]);
-        assert_eq!(
-            gallery.panel()[..3],
-            [
-                "write a note",
-                "click the node it is on or a picture's caption, or drag over the region",
-                "Esc cancels"
-            ]
-        );
+        let dir = root.join("orders");
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
         let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
         gallery.cursor = on_node(&gallery, 1, &id);
         gallery.press();
-        assert!(gallery.release(), "the node clicked is the one the note is on");
-        assert_eq!(gallery.panel()[0], "note on order-{index}-cancel in default at 1120");
+        assert_eq!(
+            talk_shown(&gallery),
+            [
+                "note · nothing said yet",
+                "Say below what should change: Enter sends, Shift+Enter breaks the line."
+            ]
+        );
+        let foot = gallery.foot().expect("a box at the sidebar's foot");
+        assert_eq!((foot.empty.as_str(), foot.send.as_str()), ("say something about this…", "Send"));
+        assert_eq!(foot.does, None, "Send cannot send while the box is empty");
+        press_keys(&mut gallery, &["Enter", " ", "Enter"]);
+        assert!(!dir.join(notes::NOTES).exists(), "Enter sends nothing from an empty box");
+        press_keys(&mut gallery, &["Backspace"]);
         type_text(&mut gallery, "价格太长");
         press_keys(&mut gallery, &["⇧Enter", "a", "x", "Backspace", " ", "b"]);
-        assert_eq!(gallery.panel()[1], "价格太长\na b", "Shift+Enter breaks a line");
-        assert!(!root.join("orders").join(notes::NOTES).exists(), "nothing is written while typing");
+        assert_eq!(gallery.talk.text(), "价格太长\na b", "Shift+Enter breaks a line");
+        assert_eq!(gallery.foot().unwrap().does, Some(Do::Send));
+        assert!(!dir.join(notes::NOTES).exists(), "nothing is written while typing");
         press_keys(&mut gallery, &["Enter"]);
-        assert!(gallery.draft.is_none(), "Enter saves");
-        assert!(gallery.panel()[0].starts_with("N1 saved"), "{:?}", gallery.panel());
+        assert!(gallery.talk.is_blank(), "Enter sends, and empties the box");
+        assert_eq!(
+            talk_shown(&gallery),
+            ["note N1 · waiting on the agent", "价格太长\na b"],
+            "shown at once"
+        );
 
-        let written = notes::read(&root.join("orders")).unwrap();
+        let written = notes::read(&dir).unwrap();
         assert_eq!(written.len(), 1);
         let note = &written[0];
         assert_eq!((note.id.as_str(), note.stands()), ("N1", Stands::Waiting));
-        assert_eq!(note.messages[0].says, "价格太长\na b");
         let On::Node { state, node } = &note.on else { panic!("not on a node: {note:?}") };
         assert_eq!(*state, State::Fixture("default".into()));
         let reference = gallery.reference().unwrap();
-        assert_eq!(note.reference(&root.join("orders")), reference, "pinned as ⌘C references it");
+        assert_eq!(note.reference(&dir), reference, "pinned as ⌘C references it");
         assert_eq!(node.origin.written, "order-{index}-cancel");
         assert_eq!(node.width, 1120);
+
+        type_text(&mut gallery, "and the date");
+        assert!(click_panel_line(&mut gallery, "Send"), "Send sends too");
+        let written = notes::read(&dir).unwrap();
+        assert_eq!(written.len(), 1, "the node has one note, said more in");
+        let said: Vec<&str> = written[0].messages.iter().map(|said| said.says.as_str()).collect();
+        assert_eq!(said, ["价格太长\na b", "and the date"]);
+        assert_eq!(talk_shown(&gallery)[1..], ["价格太长\na b", "and the date"], "newest at the bottom");
 
         assert_eq!(
             pins_shown(&gallery),
@@ -5295,28 +5318,30 @@ mod tests {
     }
 
     #[test]
-    fn esc_drops_a_note_and_writing_one_from_the_panel_needs_no_n() {
-        let root = root_of("notes-esc", &[("orders", "orders")]);
+    fn no_key_needs_holding_to_speak_and_no_drag_picks_a_region() {
+        let root = root_of("notes-no-mode", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
-        gallery.cursor = on_node(&gallery, 0, "nav-export");
-        gallery.press();
-        assert!(click_panel_line(&mut gallery, "write a note on it  (N)"), "the node's panel starts one");
-        assert!(gallery.panel()[0].starts_with("note on nav-export in default at 390"));
-        type_text(&mut gallery, "x");
-        press_keys(&mut gallery, &["Esc"]);
-        assert!(gallery.draft.is_none());
-        assert!(!root.join("orders").join(notes::NOTES).exists(), "Esc writes nothing");
-        press_keys(&mut gallery, &["n", "Esc"]);
-        assert!(!gallery.noting, "Esc stops N too");
-        gallery.cursor = on_node(&gallery, 0, "nav-export");
         press_keys(&mut gallery, &["n"]);
+        assert_eq!(gallery.talk.text(), "n", "N is a letter typed in the box, no mode");
+        assert!(!gallery.panel().iter().any(|line| line.contains("write a note")), "{:?}", gallery.panel());
+        press_keys(&mut gallery, &["Backspace"]);
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
         gallery.press();
-        gallery.release();
-        press_keys(&mut gallery, &["Enter"]);
-        assert!(gallery.panel()[0].starts_with("not saved: a note says something"), "{:?}", gallery.panel());
-        assert!(gallery.draft.is_some(), "an empty note stays to be written");
+        let picked = gallery.reference();
+        gallery.cursor.0 += 200.0;
+        gallery.cursor.1 += 120.0;
+        assert!(!gallery.release(), "a drag over the picture picks nothing more");
+        assert_eq!(gallery.reference(), picked, "the node pressed stays picked");
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(gallery.node, None, "Esc lets it go");
+        assert_eq!(
+            gallery.reference().map(|on| on.on),
+            Some(On::State { state: State::Fixture("default".into()) }),
+            "and the conversation is the state's"
+        );
+        assert!(!root.join("orders").join(notes::NOTES).exists(), "nothing written");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5327,12 +5352,7 @@ mod tests {
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
         for (id, says) in [("nav-export", "rename it"), ("order-0-cancel", "too red")] {
-            press_keys(&mut gallery, &["n"]);
-            gallery.cursor = on_node(&gallery, 0, id);
-            gallery.press();
-            gallery.release();
-            type_text(&mut gallery, says);
-            press_keys(&mut gallery, &["Enter"]);
+            say_on(&mut gallery, 0, id, says);
         }
         let dir = root.join("orders");
         notes::answer(&dir, "N1", "renamed it Export").unwrap();
@@ -5356,13 +5376,13 @@ mod tests {
             "a note waiting on the agent has no reply to show"
         );
 
+        press_keys(&mut gallery, &["Esc"]);
         gallery.cursor = on_pin(&gallery, "N1");
-        assert!(gallery.press(), "clicking a pin picks its note");
-        let panel = gallery.panel();
-        assert_eq!(panel[0], "N1 · answered · on nav-export in default at 390");
+        assert!(gallery.press(), "clicking a pin picks what its note is on");
+        assert_eq!(gallery.node.as_deref(), Some("nav-export"));
         assert_eq!(
-            panel[1..3],
-            ["rename it", "renamed it Export"],
+            talk_shown(&gallery),
+            ["note N1 · answered", "rename it", "renamed it Export"],
             "the person's words, then the agent's reply"
         );
         let panel = gallery.panel();
@@ -5374,10 +5394,7 @@ mod tests {
         }
         gallery.cursor = on_pin(&gallery, "N2");
         gallery.press();
-        assert_eq!(
-            gallery.panel()[0],
-            "N2 · waiting on the agent · on order-{index}-cancel in default at 390"
-        );
+        assert_eq!(talk_shown(&gallery), ["note N2 · waiting on the agent", "too red"]);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5387,12 +5404,7 @@ mod tests {
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
-        press_keys(&mut gallery, &["n"]);
-        gallery.cursor = on_node(&gallery, 0, "nav-export");
-        gallery.press();
-        gallery.release();
-        type_text(&mut gallery, "say export what");
-        press_keys(&mut gallery, &["Enter"]);
+        say_on(&mut gallery, 0, "nav-export", "say export what");
         let dir = root.join("orders");
         notes::answer(&dir, "N1", "it says Export").unwrap();
         let before = std::fs::read_to_string(dir.join(notes::NOTES)).unwrap();
@@ -5464,7 +5476,6 @@ mod tests {
         assert_eq!((answers.answer, answers.guess), (Answer::Wrong, Guess::Author));
         assert!(answers.assumed.starts_with("Card fields are drawn here;"));
 
-        gallery.note = None;
         assert!(click_panel_line(&mut gallery, "✓ right, keep it"));
         assert!(gallery.panel()[0].starts_with("✓ right on card-number in "), "{:?}", gallery.panel());
         assert!(!gallery.panel().iter().any(|line| line == "✓ right, keep it"), "one ✓ at a time");
@@ -5507,15 +5518,13 @@ mod tests {
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
-        let on = On::State { state: State::Fixture("default".into()) };
-        gallery.draft_on(Reference { description: root.join("orders"), on });
-        let written = |gallery: &Gallery| gallery.draft.as_ref().unwrap().text.text();
+        let written = |gallery: &Gallery| gallery.talk.text();
         type_text(&mut gallery, "ac");
         press_keys(&mut gallery, &["←", "b", "Home", ">", "End", "!"]);
         assert_eq!(written(&gallery), ">abc!", "typed where the caret is");
         type_text(&mut gallery, " too red");
         press_keys(&mut gallery, &["⇧←", "⇧←", "⇧←"]);
-        let selected = gallery.draft.as_ref().unwrap().text.shown().selected;
+        let selected = gallery.talk.shown().selected;
         assert_eq!(selected.len(), 3, "the selection is drawn");
         type_text(&mut gallery, "blue");
         assert_eq!(written(&gallery), ">abc! too blue", "typing replaces what is selected");
@@ -5523,7 +5532,7 @@ mod tests {
         assert!(gallery.type_in("abc"), "⌘V pastes in place of what is selected");
         assert_eq!(written(&gallery), "abc too blue");
 
-        let field = gallery.field_rect().expect("the note's field is in the sidebar");
+        let field = gallery.field_rect().expect("the box is at the sidebar's foot");
         let middle = f64::from(field.y) + f64::from(field.height) / 2.0;
         gallery.cursor = (f64::from(field.x) + 1.0, middle);
         assert!(gallery.press(), "a press on the field's text puts the caret there");
@@ -5531,7 +5540,7 @@ mod tests {
         assert!(gallery.drag_field(), "a drag selects");
         gallery.release();
         assert!(!gallery.drag_field(), "released, the pointer selects no more");
-        assert_eq!(gallery.draft.as_ref().unwrap().text.selected(), Some("abc too blue"));
+        assert_eq!(gallery.talk.selected(), Some("abc too blue"));
         type_text(&mut gallery, "x");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&root.join("orders")).unwrap().remove(0);
@@ -5547,26 +5556,26 @@ mod tests {
         show(&mut gallery, "orders", "default");
         gallery.cursor = on_node(&gallery, 0, "nav-export");
         gallery.press();
-        assert!(click_panel_line(&mut gallery, "write a note on it  (N)"));
         type_text(&mut gallery, "ab");
         press_keys(&mut gallery, &["←"]);
         assert!(gallery.ime(Ime::Preedit("ni hao".to_string(), Some((6, 6)))));
-        let shown = gallery.draft.as_ref().unwrap().text.shown();
+        let shown = gallery.talk.shown();
         assert_eq!(shown.text, "ani haob", "composed at the caret");
         assert_eq!(&shown.text[shown.composing.clone()], "ni hao", "drawn underlined");
-        let cards = gallery.cards();
-        let laid =
-            sidebar::lay_out(&cards, (gallery.pane_right(), gallery.side), 0.0, &mut gallery.typesetter);
+        let foot = gallery.foot();
+        let (at, bottom) = ((gallery.pane_right(), gallery.side), gallery.size.1);
+        let laid = sidebar::lay_out(&[], foot.as_ref(), at, (0.0, bottom), &mut gallery.typesetter);
         let underlined =
-            laid.draws.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
+            laid.foot_draws.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
         assert_eq!(underlined, 1, "one line under what is composed");
         assert!(laid.caret.is_some(), "the input method is shown where the caret is");
         press_keys(&mut gallery, &["Enter", "Backspace"]);
-        assert!(gallery.draft.is_some(), "while it composes, its keys are its own");
+        assert_eq!(gallery.talk.shown().text, "ani haob", "while it composes, its keys are its own");
+        assert!(!root.join("orders").join(notes::NOTES).exists(), "the Enter that confirms it sends nothing");
         assert!(gallery.ime(Ime::Commit("你好".to_string())));
         press_keys(&mut gallery, &["→", "Delete", "Backspace", "←"]);
         type_text(&mut gallery, "!");
-        assert_eq!(gallery.panel()[1], "a你!好", "the caret moved, deleting where it is");
+        assert_eq!(gallery.talk.text(), "a你!好", "the caret moved, deleting where it is");
         assert!(gallery.select_all());
         type_text(&mut gallery, "价格");
         assert!(gallery.ime(Ime::Preedit("tai".to_string(), None)));
@@ -5630,12 +5639,7 @@ mod tests {
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
-        press_keys(&mut gallery, &["n"]);
-        gallery.cursor = on_node(&gallery, 0, "order-0-cancel");
-        gallery.press();
-        gallery.release();
-        type_text(&mut gallery, "too red");
-        press_keys(&mut gallery, &["Enter"]);
+        say_on(&mut gallery, 0, "order-0-cancel", "too red");
         show(&mut gallery, "orders", "cancel-dialog");
         let shown = pins_shown(&gallery);
         assert!(!shown.is_empty() && shown.iter().all(|(_, _, _, faint)| *faint), "{shown:?}");
@@ -5655,9 +5659,9 @@ mod tests {
         (f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0))
     }
 
-    /// Note `text` written with N, then a click at `at`, then Enter.
-    fn note_at(gallery: &mut Gallery, at: (f64, f64), text: &str) {
-        press_keys(gallery, &["n"]);
+    /// What is at `at` picked with a click, and `text` written about it in
+    /// the box at the sidebar's foot, Enter sending it.
+    fn say_at(gallery: &mut Gallery, at: (f64, f64), text: &str) {
         gallery.cursor = at;
         gallery.press();
         type_text(gallery, text);
@@ -5665,34 +5669,29 @@ mod tests {
     }
 
     #[test]
-    fn a_note_on_a_whole_state_is_written_from_a_caption_and_pinned_there() {
+    fn with_nothing_picked_the_conversation_is_the_whole_states() {
         let root = root_of("notes-state", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         show(&mut gallery, "orders", "default");
-        press_keys(&mut gallery, &["n"]);
+        let panel = gallery.panel();
+        assert!(panel.iter().any(|line| line == "default · the whole state"), "the card names it: {panel:?}");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet");
         let (left, top) = gallery.origins()[1];
-        gallery.cursor = (left + 4.0, top - CAPTION / 2.0);
-        assert!(gallery.press());
-        assert_eq!(
-            gallery.panel()[..3],
-            [
-                "note on the whole of default",
-                "what should change here?",
-                "Enter sends · Shift+Enter new line · Esc drops it"
-            ]
-        );
-        type_text(&mut gallery, "too busy");
-        press_keys(&mut gallery, &["Enter"]);
+        say_at(&mut gallery, (left + 4.0, top - CAPTION / 2.0), "too busy");
         let dir = root.join("orders");
         let note = notes::read(&dir).unwrap().remove(0);
         assert_eq!(note.on, On::State { state: State::Fixture("default".into()) });
+        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "too busy"], "shown at once");
         let pins = pins_shown(&gallery);
         assert_eq!(pins, [("N1".to_string(), 0, Ink::Note, false)], "one pin, by the first caption");
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        gallery.press();
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the node's own conversation");
         gallery.cursor = on_pin(&gallery, "N1");
-        gallery.note = None;
-        assert!(gallery.press(), "clicking it picks its note");
-        assert_eq!(gallery.panel()[0], "N1 · waiting on the agent · on the whole of default");
+        assert!(gallery.press(), "clicking its pin picks the whole state");
+        assert_eq!(gallery.node, None);
+        assert_eq!(talk_shown(&gallery)[0], "note N1 · waiting on the agent");
         let orders = line_of(&gallery, "orders");
         let default = state_of_in(&gallery, orders, "default");
         let Line { row, state, .. } = &gallery.lines[default];
@@ -5701,11 +5700,12 @@ mod tests {
         showing(&mut gallery, orders);
         let pins: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
         assert_eq!(pins, ["N1"], "pinned on its state in the overview too");
+        assert!(gallery.foot().is_none() && gallery.conversation_card().is_none(), "nothing to talk about");
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn a_transition_arrow_is_picked_copied_and_noted_in_the_overview() {
+    fn a_transition_arrow_is_picked_copied_and_talked_about_in_the_overview() {
         let root = root_of("notes-transition", &[("orders", "orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
@@ -5724,34 +5724,34 @@ mod tests {
         assert_eq!(serde_json::to_value(transition).unwrap(), declared[0], "as screen.json writes it");
         let line = reference.line();
         assert!(line.starts_with(&format!("{} · transition from ", dir.display())), "{line}");
-        assert!(
-            gallery.panel().iter().any(|row| row.trim() == "write a note on it  (N)"),
-            "{:?}",
-            gallery.panel()
-        );
+        assert!(gallery.foot().is_some(), "a box to talk about it");
         gallery.copy();
         assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
 
         let last = declared.len() - 1;
         let at = on_arrow(&gallery, last);
-        note_at(&mut gallery, at, "should it say why?");
+        say_at(&mut gallery, at, "should it say why?");
         let note = notes::read(&dir).unwrap().remove(0);
         let On::Transition { transition } = &note.on else { panic!("not a transition: {note:?}") };
         assert_eq!(serde_json::to_value(transition).unwrap(), declared[last]);
+        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "should it say why?"]);
         assert_eq!(gallery.pins().len(), 1, "a pin beside its arrow");
-        gallery.note = None;
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(gallery.arrow, None);
         gallery.cursor = on_pin(&gallery, "N1");
         assert!(gallery.press());
-        assert!(gallery.panel()[0].starts_with("N1 · waiting on the agent · on transition from "));
+        assert_eq!(gallery.arrow, Some(last), "its pin picks its arrow");
+        assert_eq!(talk_shown(&gallery)[0], "note N1 · waiting on the agent");
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn a_navigate_arrow_is_picked_copied_and_noted_in_the_flow() {
+    fn a_navigate_arrow_is_picked_copied_and_talked_about_in_the_flow() {
         let root = root_of("notes-navigate", &[("orders", "app/orders")]);
         let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
         gallery.size = (1440.0, 900.0);
         showing(&mut gallery, 0);
+        assert!(gallery.foot().is_none(), "nothing picked in a flow: nothing to talk about");
         let dir = root.join("app/orders");
         let link = flow_shown(&gallery).map.arrows[0].link.clone();
 
@@ -5766,7 +5766,7 @@ mod tests {
         assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
 
         let at = on_arrow(&gallery, 0);
-        note_at(&mut gallery, at, "is this the right screen?");
+        say_at(&mut gallery, at, "is this the right screen?");
         let file: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join(notes::NOTES)).unwrap()).unwrap();
         assert_eq!(
@@ -5774,157 +5774,12 @@ mod tests {
             json!({ "from": link.from, "node": link.node, "to": link.to }),
             "kept by the description it is written in"
         );
+        assert_eq!(talk_shown(&gallery), ["note N1 · waiting on the agent", "is this the right screen?"]);
         assert_eq!(gallery.pins().len(), 1, "a pin under its arrow");
-        gallery.note = None;
         gallery.cursor = on_pin(&gallery, "N1");
-        assert!(gallery.press());
-        assert_eq!(
-            gallery.panel()[0],
-            format!(
-                "N1 · waiting on the agent · on navigate from {} on {} to {}",
-                link.from, link.node, link.to
-            )
-        );
+        assert!(!gallery.press() || gallery.arrow == Some(0), "its pin keeps its arrow picked");
         let Line { row, state, .. } = &gallery.lines[line_of(&gallery, "orders")];
         assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its description");
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    /// `at`, a point in picture `page`'s points, in the window.
-    fn on_page(gallery: &Gallery, page: usize, at: (f64, f64)) -> (f64, f64) {
-        let (left, top) = gallery.origins()[page];
-        let zoom = gallery.zoom(gallery.pane());
-        (left + at.0 * zoom, top + at.1 * zoom)
-    }
-
-    /// Whether two points in the window are the same, but for rounding.
-    fn near(a: (f64, f64), b: (f64, f64)) -> bool {
-        (a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01
-    }
-
-    /// The left button pressed at `from` and let go at `to`, points in
-    /// picture `page`'s points. Whether letting go changed what is shown.
-    fn drag(gallery: &mut Gallery, page: usize, from: (f64, f64), to: (f64, f64)) -> bool {
-        gallery.cursor = on_page(gallery, page, from);
-        gallery.press();
-        gallery.cursor = on_page(gallery, page, to);
-        gallery.release()
-    }
-
-    #[test]
-    fn dragging_in_note_mode_writes_a_region_note_with_its_box_and_the_nodes_it_covered() {
-        let root = root_of("notes-region", &[("orders", "orders")]);
-        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
-        gallery.size = (1440.0, 900.0);
-        show(&mut gallery, "orders", "default");
-        press_keys(&mut gallery, &["n"]);
-        assert!(drag(&mut gallery, 0, (10.0, 145.0), (380.0, 175.0)), "a drag picks a region");
-        assert!(!gallery.regions().is_empty() && gallery.node.is_none(), "drawn dashed, and no node picked");
-        assert!(
-            gallery.panel()[0]
-                .starts_with("note on region 10, 145 · 370 × 30 covering 1 node in default at 390"),
-            "{:?}",
-            gallery.panel()
-        );
-        type_text(&mut gallery, "too much air");
-        press_keys(&mut gallery, &["Enter"]);
-        let dir = root.join("orders");
-        let note = notes::read(&dir).unwrap().remove(0);
-        let On::Region { region, .. } = &note.on else { panic!("not on a region: {:?}", note.on) };
-        assert_eq!(region.area, Frame { x: 10, y: 145, width: 370, height: 30 });
-        assert_eq!(region.width, 390);
-        let covered: Vec<&str> = region.nodes.iter().map(|origin| origin.written.as_str()).collect();
-        assert_eq!(covered, ["match-count"], "only the node wholly inside");
-        assert_eq!(region.nodes[0].at, "/root/children/1/children/2");
-        let shown = pins_shown(&gallery);
-        assert_eq!(
-            shown,
-            [("N1".to_string(), 0, Ink::Note, false), ("N1".to_string(), 1, Ink::Note, true)],
-            "a pin where it was dragged, and a faint dot over its node at 1120"
-        );
-        let pin = gallery.pins().into_iter().find(|pin| !pin.faint).unwrap();
-        let around = pin.region.expect("its region is outlined where it was written");
-        let at = on_page(&gallery, 0, (16.0, 152.0));
-        assert!(near((f64::from(around.x), f64::from(around.y)), at), "around the node it covered");
-        gallery.cursor = on_pin(&gallery, "N1");
-        assert!(gallery.press(), "its pin picks it");
-        assert_eq!(
-            gallery.panel()[0],
-            "N1 · waiting on the agent · on region 10, 145 · 370 × 30 covering 1 node in default at 390"
-        );
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn after_a_relayout_a_region_follows_its_nodes_and_one_over_nothing_stays_put() {
-        let root = root_of("notes-region-move", &[("orders", "orders")]);
-        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
-        gallery.size = (1440.0, 900.0);
-        show(&mut gallery, "orders", "default");
-        for (from, to, says) in
-            [((10.0, 145.0), (380.0, 175.0), "too much air"), ((2.0, 575.0), (12.0, 590.0), "too empty")]
-        {
-            press_keys(&mut gallery, &["n"]);
-            drag(&mut gallery, 0, from, to);
-            type_text(&mut gallery, says);
-            press_keys(&mut gallery, &["Enter"]);
-        }
-        let dir = root.join("orders");
-        let empty = &notes::read(&dir).unwrap()[1];
-        let On::Region { region, .. } = &empty.on else { panic!("not on a region") };
-        assert!(region.nodes.is_empty(), "over nothing: {:?}", region.nodes);
-        let corner = |gallery: &Gallery, id: &str| {
-            let pin = gallery.pins().into_iter().find(|pin| pin.id == id && !pin.faint).unwrap();
-            let r = pin.region.unwrap();
-            (f64::from(r.x), f64::from(r.y))
-        };
-        let (before, still) = (corner(&gallery, "N1"), corner(&gallery, "N2"));
-        assert!(near(still, on_page(&gallery, 0, (2.0, 575.0))), "at its box");
-
-        // The search field taken out: what was under it moves up.
-        let file = dir.join(crate::SCREEN);
-        let mut screen: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-        screen.pointer_mut("/root/children/1/children").unwrap().as_array_mut().unwrap().remove(0);
-        std::fs::write(&file, screen.to_string()).unwrap();
-        gallery.reload();
-        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture: {:?}", gallery.panel()) };
-        let count = pages[0].nodes.iter().find(|node| node.id == "match-count").unwrap().rect;
-        let after = corner(&gallery, "N1");
-        assert!(after.1 < before.1, "the region moved up with its node: {before:?} → {after:?}");
-        assert!(near(after, on_page(&gallery, 0, (f64::from(count.x), f64::from(count.y)))));
-        assert_eq!(corner(&gallery, "N2"), still, "a region over nothing stays at its box");
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_region_dragged_is_picked_and_copied_as_its_reference() {
-        let root = root_of("region-copy", &[("orders", "orders")]);
-        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
-        gallery.size = (1440.0, 900.0);
-        show(&mut gallery, "orders", "default");
-        gallery.cursor = on_node(&gallery, 0, "nav-export");
-        gallery.press();
-        assert!(!gallery.release(), "a click is no drag");
-        assert_eq!(gallery.node.as_deref(), Some("nav-export"));
-        assert!(drag(&mut gallery, 0, (0.0, 0.0), (390.0, 56.0)));
-        assert_eq!(gallery.node, None, "a region is picked in place of the node");
-        let Some(Reference { on: On::Region { region, .. }, .. }) = gallery.reference() else {
-            panic!("no region referenced")
-        };
-        let covered: Vec<&str> = region.nodes.iter().map(|origin| origin.written.as_str()).collect();
-        assert_eq!(covered, ["nav"], "the outermost: the nodes in it are in it already");
-        assert!(gallery.panel().contains(&"covers  nav".to_string()), "{:?}", gallery.panel());
-        gallery.copy();
-        let line = gallery.reference().unwrap().line();
-        assert!(
-            line.ends_with("· region 0, 0 · 390 × 56 at width 390 · covering nav at /components/Nav/nodes"),
-            "{line}"
-        );
-        assert!(gallery.panel()[0].ends_with(&line), "⌘C copies it: {:?}", gallery.panel());
-        assert!(click_panel_line(&mut gallery, "write a note on it  (N)"), "and a note can be written on it");
-        assert!(gallery.panel()[0].starts_with("note on region 0, 0 · 390 × 56 covering 1 node"));
-        press_keys(&mut gallery, &["Esc", "Esc"]);
-        assert!(gallery.region.is_none() && gallery.regions().is_empty(), "Esc lets it go");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -5981,13 +5836,15 @@ mod tests {
 
         press_keys(&mut gallery, &["←", "←"]);
         assert_eq!(played(&gallery).0, 1, "back to the first step");
-        let orders = drafts().join("shop").join("orders");
-        let on = On::State { state: State::Fixture("default".into()) };
-        gallery.draft_on(Reference { description: orders, on });
         press_keys(&mut gallery, &["a", "→", "←", "b"]);
-        assert_eq!(played(&gallery).0, 1, "while a note is written, → and ← move its caret, not the journey");
-        assert_eq!(gallery.draft.as_ref().unwrap().text.text(), "ba");
-        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(
+            played(&gallery).0,
+            1,
+            "while the box holds something, → and ← move its caret, not the journey"
+        );
+        assert_eq!(gallery.talk.text(), "ba");
+        assert!(gallery.select_all());
+        press_keys(&mut gallery, &["Backspace"]);
         assert!(click_panel_line(&mut gallery, "→ next step"));
         assert_eq!(played(&gallery).0, 2);
         assert!(click_panel_line(&mut gallery, "← previous step"));
@@ -6105,17 +5962,7 @@ mod tests {
         assert_eq!(captions(&gallery), ["cancelled · 390", "cancelled · 1120"]);
 
         show(&mut gallery, "OrderRow", "pending");
-        press_keys(&mut gallery, &["n"]);
-        gallery.cursor = on_node(&gallery, 0, "order-row-cancel");
-        gallery.press();
-        gallery.release();
-        assert!(
-            gallery.panel()[0].starts_with("note on order-row-cancel in pending at 390"),
-            "{:?}",
-            gallery.panel()
-        );
-        type_text(&mut gallery, "say which order");
-        press_keys(&mut gallery, &["Enter"]);
+        say_on(&mut gallery, 0, "order-row-cancel", "say which order");
         let dir = root.join("components/OrderRow");
         let note = notes::read(&dir).unwrap().remove(0);
         let On::Node { node, .. } = &note.on else { panic!("not on a node: {note:?}") };
@@ -6200,11 +6047,11 @@ mod tests {
 
         let dir = root.join("orders");
         let on_export = gallery.reference().unwrap();
-        notes::add(&on_export, "say Export").unwrap();
+        notes::say(&on_export, "say Export").unwrap();
         notes::answer(&dir, "N1", "it says Export now").unwrap();
         let whole =
             Reference { description: dir.clone(), on: On::State { state: State::Fixture("default".into()) } };
-        notes::add(&whole, "too dense").unwrap();
+        notes::say(&whole, "too dense").unwrap();
         gallery.reload();
         gallery.pick(orders);
         let answered = ["N1 on nav-export in default at 390", "agent: it says Export now"];
@@ -6219,11 +6066,7 @@ mod tests {
         assert!(click_panel_line(&mut gallery, "on nav-export in default at 390"));
         assert_eq!(shown(&gallery), "orders · default");
         assert_eq!(gallery.node.as_deref(), Some("nav-export"), "the note's node picked");
-        assert_eq!(
-            gallery.panel()[0],
-            "N1 · answered · on nav-export in default at 390",
-            "with the note's card"
-        );
+        assert_eq!(talk_shown(&gallery)[0], "note N1 · answered", "with its conversation");
 
         let top = gallery.lines.iter().position(|line| line.row.dir == root).unwrap();
         assert_eq!(top, 0, "the root is the tree's first line");

@@ -68,7 +68,6 @@ pub(super) const WORDS: Words = Words {
     confirming_in: "{left} 秒后写入 notes.json，交给代理",
     undo: "撤销",
     confirming_title: "✓ 对 {on}",
-    answers_assumption: " · 回答假定 {mark}",
     ask_right: "什么是对的？",
     not_sent_empty: "不能空着发送：先写下来 · Esc 放弃",
     enter_sends: "回车发送 · Shift+回车换行 · Esc 放弃",

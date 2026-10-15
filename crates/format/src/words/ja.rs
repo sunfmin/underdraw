@@ -68,7 +68,6 @@ pub(super) const WORDS: Words = Words {
     confirming_in: "{left} 秒後に notes.json に書き込み、エージェントに渡します",
     undo: "取り消す",
     confirming_title: "✓ 正しい：{on}",
-    answers_assumption: " · 推測 {mark} への回答",
     ask_right: "何が正しいですか？",
     not_sent_empty: "空では送れません：先に書いてください · Esc で取り消し",
     enter_sends: "Enter で送信 · Shift+Enter で改行 · Esc で取り消し",

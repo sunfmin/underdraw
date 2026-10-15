@@ -124,7 +124,10 @@ pub struct Laid<'a, A> {
     /// Where the box at the foot starts, from the window's top: where the
     /// cards are cut; the sidebar's bottom when there is none.
     pub foot: f64,
+    /// The cards' buttons, then the box's at the foot.
     pub buttons: Vec<(Rect, &'a str, &'a A)>,
+    /// How many of [`Laid::buttons`] are the cards'.
+    cards: usize,
     /// The caret of the field being written in, for an input method to put
     /// what it offers beside.
     pub caret: Option<Rect>,
@@ -140,11 +143,9 @@ impl<A> Laid<'_, A> {
     /// the box at the foot there, else one of the cards above it, never a
     /// card's under the box.
     pub fn at(&self, at: (f64, f64)) -> Option<&A> {
-        let below = at.1 >= self.foot;
-        self.buttons
-            .iter()
-            .find(|(r, _, _)| (f64::from(r.y) >= self.foot) == below && over(*r, at))
-            .map(|(_, _, does)| *does)
+        let (cards, foot) = self.buttons.split_at(self.cards);
+        let buttons = if at.1 >= self.foot { foot } else { cards };
+        buttons.iter().find(|(r, _, _)| over(*r, at)).map(|(_, _, does)| *does)
     }
 }
 
@@ -178,6 +179,7 @@ pub fn lay_out<'a, A>(
         foot_draws: Vec::new(),
         foot: bottom,
         buttons: Vec::new(),
+        cards: 0,
         caret: None,
         field: None,
         height: 0.0,
@@ -257,6 +259,7 @@ pub fn lay_out<'a, A>(
         y += GUTTER;
     }
     laid.height = y - top;
+    laid.cards = laid.buttons.len();
     if let Some(foot) = foot {
         self::foot(&mut laid, typesetter, (left, width), bottom, foot);
     }
@@ -289,9 +292,14 @@ fn foot<'a, A>(
             stroke: None,
             dashed: false,
         },
-        Draw::Line { from: [left as f32, top as f32], to: [(left + width) as f32, top as f32], ink: Ink::Line },
+        Draw::Line {
+            from: [left as f32, top as f32],
+            to: [(left + width) as f32, top as f32],
+            ink: Ink::Line,
+        },
     ];
-    let (_, caret, words) = field(&mut draws, typesetter, (x, top + PADDING, inner), &foot.field, &foot.empty);
+    let (_, caret, words) =
+        field(&mut draws, typesetter, (x, top + PADDING, inner), &foot.field, &foot.empty);
     (laid.caret, laid.field) = (Some(caret), Some(words));
     let at = rect(x + inner - send_wide, top + PADDING + field_tall + BETWEEN, send_wide, send_tall);
     match &foot.does {
@@ -303,7 +311,8 @@ fn foot<'a, A>(
                 stroke: None,
                 dashed: false,
             });
-            let inside = rect(f64::from(at.x), f64::from(at.y) + BUTTON_PAD, send_wide, f64::from(BUTTON.line_height));
+            let inside =
+                rect(f64::from(at.x), f64::from(at.y) + BUTTON_PAD, send_wide, f64::from(BUTTON.line_height));
             draws.push(centred(inside, foot.send.clone(), Ink::Paper));
             laid.buttons.push((at, &foot.send, does));
         }
@@ -315,7 +324,8 @@ fn foot<'a, A>(
                 stroke: Some(Ink::Line),
                 dashed: false,
             });
-            let inside = rect(f64::from(at.x), f64::from(at.y) + BUTTON_PAD, send_wide, f64::from(BUTTON.line_height));
+            let inside =
+                rect(f64::from(at.x), f64::from(at.y) + BUTTON_PAD, send_wide, f64::from(BUTTON.line_height));
             draws.push(centred(inside, foot.send.clone(), Ink::Muted));
         }
     }
@@ -631,12 +641,21 @@ mod tests {
         for scrolled in [0.0, -500.0] {
             let laid = lay_out(&cards, Some(&full), (1000.0, 360.0), (scrolled, 800.0), &mut typesetter);
             let send = laid.buttons.iter().find(|(_, said, _)| *said == "Send").unwrap().0;
-            assert!(f64::from(send.y) > laid.foot && f64::from(send.y + send.height) <= 800.0, "fixed at the foot");
+            assert!(
+                f64::from(send.y) > laid.foot && f64::from(send.y + send.height) <= 800.0,
+                "fixed at the foot"
+            );
             let middle = (f64::from(send.x + send.width / 2.0), f64::from(send.y + send.height / 2.0));
             assert_eq!(laid.at(middle), Some(&2));
         }
         let card_button = |laid: &Laid<u8>| laid.buttons.iter().find(|(_, _, does)| **does == 1).unwrap().0;
-        let laid = lay_out(&cards, Some(&full), (1000.0, 360.0), (laid_under(&cards, &mut typesetter), 800.0), &mut typesetter);
+        let laid = lay_out(
+            &cards,
+            Some(&full),
+            (1000.0, 360.0),
+            (laid_under(&cards, &mut typesetter), 800.0),
+            &mut typesetter,
+        );
         let under = card_button(&laid);
         let middle = (f64::from(under.x + under.width / 2.0), f64::from(under.y + under.height / 2.0));
         assert!(middle.1 > laid.foot, "scrolled under the box");
