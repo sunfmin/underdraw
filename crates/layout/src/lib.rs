@@ -58,6 +58,11 @@ pub enum Ink {
     Assumed,
     /// The see-through dark a dialog's backdrop lays over the page.
     Scrim,
+    /// A note the person wrote, open: never part of a wireframe, only of
+    /// the gallery drawn around it.
+    Note,
+    /// A note the agent answered, for the person to close or reopen.
+    Answered,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

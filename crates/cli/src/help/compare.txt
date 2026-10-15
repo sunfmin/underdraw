@@ -10,7 +10,8 @@ WHO
   tests.
 
 READS
-  <path>/screen.json, tokens.json, platforms/<platform>.json, and the capture
+  <path>/screen.json, its tokens.json (the nearest at or above <path>, as
+  `underdraw --help` says), platforms/<platform>.json, and the capture
   file. Writes nothing. Refuses a description `check` finds faults in.
   A capture holding "exit" is a CLI's, and needs no --platform.
 

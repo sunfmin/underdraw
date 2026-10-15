@@ -3,10 +3,12 @@
 //! picture drawn at a phone and a desktop width side by side, where a node
 //! can be picked to read what it is, or acted on to follow what the
 //! description says happens, as a prototype; for a directory picked, the
-//! flow between the screens under it. The tree and panels are drawn by hand,
-//! in the inks a wireframe is drawn in. The window is drawn from the files
-//! as they now stand: as they change under its root, the tree and the state
-//! shown follow.
+//! flow between the screens under it. The person writes notes on its nodes
+//! (ADR 0019), each drawn as a numbered pin where it was written; the
+//! window writes nothing else. The tree and panels are drawn by hand, in
+//! the inks a wireframe is drawn in. The window is drawn from the files as
+//! they now stand: as they change under its root, the tree, the state shown
+//! and its notes follow.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -21,15 +23,16 @@ use vello::kurbo::{Affine, Rect as Area};
 use vello::peniko::Fill;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::keyboard::{Key, KeyCode, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::draw::{self, Handlers, Origin, Shown as State, Wanted};
 use crate::flow::{self, Map, Screen};
 use crate::gallery::{self, Answering, Row};
+use crate::notes::{self, By, Note, Status};
 use crate::reference::{Pointed, Reference};
 use crate::{gpu, links, paint, text};
 
@@ -61,6 +64,10 @@ const THUMB_TALL: f64 = 320.0;
 const SPACE: f64 = 72.0;
 /// How far apart the arrows leaving, or reaching, one box of the flow are.
 const ARROWS: f64 = 24.0;
+/// A note's pin, where it was written, and the faint dot of it elsewhere:
+/// how wide each is.
+const PIN: f64 = 22.0;
+const DOT: f64 = 8.0;
 
 /// What the window is told from other threads.
 enum Told {
@@ -148,6 +155,68 @@ struct Gallery {
     /// The clipboard ⌘C copies to, kept open once opened: on Linux what
     /// was copied goes with it.
     clipboard: Option<arboard::Clipboard>,
+    /// Every description's notes, by its directory, as notes.json now
+    /// holds them.
+    notes: BTreeMap<PathBuf, Vec<Note>>,
+    /// Whether the next click on a node starts a note on it: N was pressed.
+    noting: bool,
+    /// The note being written, while it is.
+    draft: Option<Draft>,
+    /// The note whose pin was clicked: its description, and its id.
+    note: Option<(PathBuf, String)>,
+    /// The answered note whose pin the pointer is over: its reply is shown.
+    hovered: Option<String>,
+    /// Whether Shift is held: Enter then breaks a line of a note.
+    shift: bool,
+}
+
+/// A note being written: what it is for, and what has been typed.
+struct Draft {
+    on: Writing,
+    text: String,
+}
+
+/// What a note being written is for.
+enum Writing {
+    /// A new note, on the node this references.
+    On(Reference),
+    /// The line that reopens the note of this id, in the state shown's
+    /// description.
+    Reopening(String),
+}
+
+/// What a click on a line of the panel does.
+#[derive(Clone, Debug, PartialEq)]
+enum Do {
+    /// Chooses the outcome at this place among the last act's.
+    Choose(usize),
+    /// Starts writing a note on the node picked.
+    Write,
+    /// Closes the note picked, of this id.
+    Close(String),
+    /// Starts writing the line that reopens the note picked, of this id.
+    Reopen(String),
+}
+
+/// One note drawn on a picture: its pin, numbered, where it was written, or
+/// a faint dot, in another state or width that holds its node.
+struct Pin {
+    id: String,
+    /// Where it is, in window points.
+    rect: Rect,
+    ink: Ink,
+    faint: bool,
+}
+
+/// Every description's notes on the lines of the tree, by its directory;
+/// one whose notes.json cannot be read has none (`check` says why).
+fn notes_of(lines: &[Line]) -> BTreeMap<PathBuf, Vec<Note>> {
+    lines
+        .iter()
+        .filter(|line| line.state.is_none())
+        .filter_map(|line| line.row.description())
+        .map(|dir| (dir.to_path_buf(), notes::read(dir).unwrap_or_default()))
+        .collect()
 }
 
 /// One line of the tree: a directory, a description, or one of a
@@ -298,10 +367,12 @@ impl Page {
 impl Gallery {
     /// The tree of `root`, nothing picked and no window open yet.
     fn new(root: &Path, typesetter: text::Typesetter) -> Gallery {
+        let lines = lines(root);
         Gallery {
             root: root.to_path_buf(),
             lang: Lang::default(),
-            lines: lines(root),
+            notes: notes_of(&lines),
+            lines,
             picked: None,
             wanted: None,
             picture: Picture::Faults(Vec::new()),
@@ -320,6 +391,11 @@ impl Gallery {
             proxy: None,
             answering: None,
             clipboard: None,
+            noting: false,
+            draft: None,
+            note: None,
+            hovered: None,
+            shift: false,
         }
     }
 
@@ -355,7 +431,7 @@ impl Gallery {
         }
         if self.cursor.0 >= TREE {
             if let Some(line) = self.panel_line(self.cursor.1) {
-                return self.choose(line);
+                return self.click_panel(line);
             }
             if let Picture::Overview(_) = self.picture {
                 let Some(line) = self.state_at(self.cursor) else {
@@ -366,17 +442,29 @@ impl Gallery {
                 self.pick(line);
                 return true;
             }
+            if self.noting {
+                return self.note_where_pressed();
+            }
             if self.acting {
                 return self.act();
+            }
+            if let Some(id) = self.pin_at(self.cursor) {
+                let note = self.wanted.as_ref().map(|wanted| (wanted.dir.clone(), id));
+                let changed = note != self.note || self.acted.is_some();
+                self.note = note;
+                self.acted = None;
+                return changed;
             }
             let (node, pointed) = match self.hit(self.cursor) {
                 Some((pointed, _, node)) => (Some(node.id.clone()), pointed),
                 None => (None, 0),
             };
-            let changed = node != self.node || pointed != self.pointed || self.acted.is_some();
+            let changed =
+                node != self.node || pointed != self.pointed || self.acted.is_some() || self.note.is_some();
             self.node = node;
             self.pointed = pointed;
             self.acted = None;
+            self.note = None;
             return changed;
         }
         let line = ((self.cursor.1 + self.tree_scroll - MARGIN / 2.0) / ROW).floor();
@@ -406,10 +494,10 @@ impl Gallery {
     /// that state went, its description's overview is shown; where its
     /// description went too, the first description's.
     fn reload(&mut self) {
-        let (wanted, scroll) = (self.wanted.take(), self.scroll);
+        let (wanted, scroll, acted) = (self.wanted.take(), self.scroll, self.acted.take());
         self.lines = lines(&self.root);
+        self.notes = notes_of(&self.lines);
         self.picked = None;
-        self.acted = None;
         self.picture = Picture::Faults(Vec::new());
         let again = wanted.as_ref().and_then(|wanted| self.line_named(wanted));
         let description = wanted.as_ref().and_then(|wanted| {
@@ -420,7 +508,10 @@ impl Gallery {
             self.pick(index);
         }
         if again.is_some() {
+            // What the panel said stands while the same state is shown: the
+            // window's own note, written, comes back as a change.
             self.scroll = scroll;
+            self.acted = acted;
         } else if description.is_some() {
             self.wanted = wanted;
         }
@@ -498,10 +589,31 @@ impl Gallery {
         true
     }
 
-    /// The outcome on line `line` of the panel chosen: the state it goes
-    /// to shown. Whether there was one there.
-    fn choose(&mut self, line: usize) -> bool {
-        let chosen = self.acted.as_ref().and_then(|acted| acted.choices.get(line.checked_sub(1)?)).cloned();
+    /// What line `line` of the panel does, done. Whether there was anything
+    /// to do there.
+    fn click_panel(&mut self, line: usize) -> bool {
+        match self.panel_rows().into_iter().nth(line).and_then(|(_, does)| does) {
+            Some(Do::Choose(at)) => self.choose(at),
+            Some(Do::Write) => {
+                self.write();
+                true
+            }
+            Some(Do::Close(id)) => {
+                self.close(&id);
+                true
+            }
+            Some(Do::Reopen(id)) => {
+                self.draft = Some(Draft { on: Writing::Reopening(id), text: String::new() });
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The outcome at place `at` among the last act's chosen: the state it
+    /// goes to shown. Whether there was one there.
+    fn choose(&mut self, at: usize) -> bool {
+        let chosen = self.acted.as_ref().and_then(|acted| acted.choices.get(at)).cloned();
         let (Some((outcome, to)), Some(here)) = (chosen, self.wanted.clone()) else {
             return false;
         };
@@ -555,6 +667,9 @@ impl Gallery {
         let (dir, described) = (line.row.dir.clone(), line.row.description().is_some());
         let (state, faults) = (line.state.clone(), line.row.faults.clone());
         self.picked = Some(index);
+        if self.note.as_ref().is_some_and(|(of, _)| *of != dir) {
+            self.note = None;
+        }
         let name = state.as_ref().map(|state| state.name().to_string());
         self.wanted = Some(Picked { dir: dir.clone(), state: name });
         self.scroll = 0.0;
@@ -910,10 +1025,7 @@ impl Gallery {
             return self.say("nothing to copy: pick a state, or a node in it, first".to_string());
         };
         let line = reference.line();
-        if self.clipboard.is_none() {
-            self.clipboard = arboard::Clipboard::new().ok();
-        }
-        let copied = match &mut self.clipboard {
+        let copied = match self.clipboard() {
             Some(clipboard) => clipboard.set_text(line.clone()).map_err(|e| e.to_string()),
             None => Err("there is no clipboard to copy to".to_string()),
         };
@@ -921,6 +1033,28 @@ impl Gallery {
             Ok(()) => self.say(format!("copied  {line}")),
             Err(e) => self.say(format!("could not copy ({e}): {line}")),
         }
+    }
+
+    /// The clipboard, opened the first time it is asked for.
+    fn clipboard(&mut self) -> Option<&mut arboard::Clipboard> {
+        if self.clipboard.is_none() {
+            self.clipboard = arboard::Clipboard::new().ok();
+        }
+        self.clipboard.as_mut()
+    }
+
+    /// The answered note whose pin the pointer is now over, kept to show
+    /// its reply. Whether that changed.
+    fn hover(&mut self) -> bool {
+        let over = self.pin_at(self.cursor).filter(|id| {
+            let notes = self.wanted.as_ref().and_then(|wanted| self.notes.get(&wanted.dir));
+            notes.is_some_and(|notes| {
+                notes.iter().any(|note| &note.id == id && note.status == Status::Answered)
+            })
+        });
+        let changed = over != self.hovered;
+        self.hovered = over;
+        changed
     }
 
     /// The line of the panel at `y`, a height in the window; none off the
@@ -950,21 +1084,289 @@ impl Gallery {
             .collect()
     }
 
-    /// What the panel says, one line each: what the last act on a node
-    /// came to, and any outcomes to choose from, each on a line of its own;
-    /// then, of the node picked, its id, component, the operation it calls, what
-    /// was assumed there, then its label and box at each width. Nothing
-    /// when no node is picked and nothing was acted on.
+    /// What the panel says, one line each.
     fn panel(&self) -> Vec<String> {
-        let mut lines = Vec::new();
+        self.panel_rows().into_iter().map(|(line, _)| line).collect()
+    }
+
+    /// What the panel says, one line each, with what a click on each line
+    /// does: what the last act on a node came to, and any outcomes to
+    /// choose from, each on a line of its own; then the note being written,
+    /// or how to start one; then the note picked; then, of the node picked,
+    /// its id, component, the operation it calls, what was assumed there, its
+    /// label and box at each width, and a line to write a note on it.
+    /// Nothing when none of these is there.
+    fn panel_rows(&self) -> Vec<(String, Option<Do>)> {
+        let mut rows = Vec::new();
         if let Some(Acted { says, choices }) = &self.acted {
-            lines.push(says.clone());
-            for (outcome, to) in choices {
-                lines.push(format!("    {outcome} → {to}"));
+            rows.push((says.clone(), None));
+            for (at, (outcome, to)) in choices.iter().enumerate() {
+                rows.push((format!("    {outcome} → {to}"), Some(Do::Choose(at))));
             }
         }
-        lines.extend(self.node_panel());
-        lines
+        if let Some(draft) = &self.draft {
+            let keys = "Enter saves, Shift+Enter breaks a line, Esc cancels";
+            rows.push((
+                match &draft.on {
+                    Writing::On(on) => match &on.node {
+                        Some(Pointed { origin, width, .. }) => {
+                            format!("note on {} in {} at {width} · {keys}", origin.written, on.state.name())
+                        }
+                        None => format!("note · {keys}"),
+                    },
+                    Writing::Reopening(id) => format!("reopening {id}: say what is still to do · {keys}"),
+                },
+                None,
+            ));
+            let lines: Vec<&str> = draft.text.split('\n').collect();
+            for (index, line) in lines.iter().enumerate() {
+                let caret = if index + 1 == lines.len() { "▏" } else { "" };
+                rows.push((format!("    {line}{caret}"), None));
+            }
+        } else if self.noting {
+            rows.push(("write a note: click the node it is on · Esc cancels".to_string(), None));
+        }
+        rows.extend(self.note_panel());
+        let node = self.node_panel();
+        let writable = !node.is_empty() && self.draft.is_none() && !self.noting;
+        rows.extend(node.into_iter().map(|line| (line, None)));
+        if writable {
+            rows.push(("    write a note on it  (N)".to_string(), Some(Do::Write)));
+        }
+        rows
+    }
+
+    /// The note picked, if the state shown's description has it.
+    fn picked_note(&self) -> Option<&Note> {
+        let (dir, id) = self.note.as_ref()?;
+        self.notes.get(dir)?.iter().find(|note| &note.id == id)
+    }
+
+    /// What the panel says of the note picked: where it is, its thread,
+    /// and what the person can do with it. Nothing when none is.
+    fn note_panel(&self) -> Vec<(String, Option<Do>)> {
+        let Some(note) = self.picked_note() else {
+            return Vec::new();
+        };
+        let status = match note.status {
+            Status::Open => "open, for the agent to answer",
+            Status::Answered => "answered",
+            Status::Closed => "closed",
+        };
+        let node = &note.node;
+        let mut rows = vec![(
+            format!(
+                "{} · {status} · on {} in {} at {}",
+                note.id,
+                node.origin.written,
+                note.state.name(),
+                node.width
+            ),
+            None,
+        )];
+        for said in &note.thread {
+            let who = match said.by {
+                By::Person => "you",
+                By::Agent => "agent",
+            };
+            for (index, line) in said.says.lines().enumerate() {
+                let who = if index == 0 { who } else { "" };
+                rows.push((format!("    {who:<6}{line}"), None));
+            }
+        }
+        let id = note.id.clone();
+        match note.status {
+            Status::Open => rows.push(("    close it".to_string(), Some(Do::Close(id)))),
+            Status::Answered => {
+                rows.push(("    close it: the answer did it".to_string(), Some(Do::Close(id.clone()))));
+                rows.push(("    reopen it, saying what is still to do".to_string(), Some(Do::Reopen(id))));
+            }
+            Status::Closed => {}
+        }
+        rows
+    }
+
+    /// The next click on a node starts a note on it; the panel says so.
+    /// Only where a state is shown. Whether that changed what is shown.
+    fn start_noting(&mut self) -> bool {
+        if !matches!(self.picture, Picture::Pages(_)) {
+            self.say("a note is written on a state: pick one in the tree, then press N".to_string());
+            return true;
+        }
+        self.noting = true;
+        self.note = None;
+        self.acted = None;
+        true
+    }
+
+    /// The node under the pointer picked, and a note started on it; or,
+    /// where no node is, the panel says so. Whether that changed what is
+    /// shown.
+    fn note_where_pressed(&mut self) -> bool {
+        self.noting = false;
+        match self.hit(self.cursor).map(|(pointed, _, node)| (pointed, node.id.clone())) {
+            Some((pointed, id)) => {
+                self.node = Some(id);
+                self.pointed = pointed;
+                self.write();
+            }
+            None => self.say("no node there: press N, then click the node the note is on".to_string()),
+        }
+        true
+    }
+
+    /// A note started on the node picked, at the instance pointed at.
+    fn write(&mut self) {
+        match self.reference() {
+            Some(on) if on.node.is_some() => {
+                self.acted = None;
+                self.note = None;
+                self.draft = Some(Draft { on: Writing::On(on), text: String::new() });
+            }
+            _ => self.say("a note is on a node: click one first".to_string()),
+        }
+    }
+
+    /// The note being written saved to notes.json, and its pin drawn; or,
+    /// where it cannot be, the panel says why and the note stays to edit.
+    fn save(&mut self) {
+        let Some(draft) = self.draft.take() else {
+            return;
+        };
+        let dir = self.wanted.as_ref().map(|wanted| wanted.dir.clone()).unwrap_or_default();
+        let saved = match &draft.on {
+            Writing::On(on) => notes::add(on, &draft.text).map(|id| (on.description.clone(), id, "saved")),
+            Writing::Reopening(id) => {
+                notes::reopen(&dir, id, &draft.text).map(|()| (dir, id.clone(), "reopened"))
+            }
+        };
+        match saved {
+            Ok((dir, id, done)) => {
+                self.notes = notes_of(&self.lines);
+                self.say(format!("{id} {done}, for the agent: `underdraw notes` lists it"));
+                self.note = Some((dir, id));
+            }
+            Err(e) => {
+                self.say(format!("not saved: {e:#}"));
+                self.draft = Some(draft);
+            }
+        }
+    }
+
+    /// The note of id `id`, in the state shown's description, closed.
+    fn close(&mut self, id: &str) {
+        let Some(dir) = self.wanted.as_ref().map(|wanted| wanted.dir.clone()) else {
+            return;
+        };
+        match notes::close(&dir, id) {
+            Ok(()) => {
+                self.notes = notes_of(&self.lines);
+                self.note = None;
+                self.say(format!("{id} closed"));
+            }
+            Err(e) => self.say(format!("not closed: {e:#}")),
+        }
+    }
+
+    /// A key pressed, ⌘ not held, as `key` names it and with the `text` it
+    /// types: while a note is written, typed into it, Enter saving it,
+    /// Shift+Enter breaking a line and Esc dropping it; otherwise N starts
+    /// a note and Esc stops one. Whether that changed what is shown.
+    fn key(&mut self, key: &Key, text: Option<&str>) -> bool {
+        if let Some(draft) = &mut self.draft {
+            match key {
+                Key::Named(NamedKey::Enter) if self.shift => draft.text.push('\n'),
+                Key::Named(NamedKey::Enter) => self.save(),
+                Key::Named(NamedKey::Escape) => self.draft = None,
+                Key::Named(NamedKey::Backspace) => {
+                    draft.text.pop();
+                }
+                _ => match text {
+                    Some(text) if !text.chars().any(char::is_control) => draft.text.push_str(text),
+                    _ => return false,
+                },
+            }
+            return true;
+        }
+        match key {
+            Key::Named(NamedKey::Escape) if self.noting || self.note.is_some() => {
+                self.noting = false;
+                self.note = None;
+                true
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("n") => self.start_noting(),
+            _ => false,
+        }
+    }
+
+    /// `text` typed into the note being written: what the input method
+    /// composed, or what was pasted. Whether there was one.
+    fn type_in(&mut self, text: &str) -> bool {
+        let Some(draft) = &mut self.draft else {
+            return false;
+        };
+        draft.text.push_str(text);
+        true
+    }
+
+    /// The notes on the state shown, drawn on its pictures: each, not
+    /// closed, a numbered pin at the top-right corner of its node in the
+    /// picture of the state and width it was written in, and a faint dot
+    /// on that node in every other that holds it; blue while open, green
+    /// once answered.
+    fn pins(&self) -> Vec<Pin> {
+        let (Picture::Pages(pages), Some(wanted)) = (&self.picture, &self.wanted) else {
+            return Vec::new();
+        };
+        let Some(state) = self.picked.and_then(|index| self.lines.get(index)?.state.clone()) else {
+            return Vec::new();
+        };
+        let Some(notes) = self.notes.get(&wanted.dir) else {
+            return Vec::new();
+        };
+        let zoom = self.zoom(self.size.0 - TREE);
+        let mut pins: Vec<Pin> = Vec::new();
+        for (page, (left, top)) in pages.iter().zip(self.origins()) {
+            // How many pins and dots each node has had so far, to set the
+            // next one beside them.
+            let mut on: BTreeMap<&str, usize> = BTreeMap::new();
+            for note in notes.iter().filter(|note| note.status != Status::Closed) {
+                let written = &note.node.origin;
+                let Some(id) = page.origins.iter().find_map(|(id, origin)| {
+                    (origin.written == written.written && origin.instance == written.instance).then_some(id)
+                }) else {
+                    continue;
+                };
+                let Some(placed) = page.nodes.iter().find(|node| &node.id == id) else { continue };
+                let r = placed.rect;
+                let corner = (left + f64::from(r.x + r.width) * zoom, top + f64::from(r.y) * zoom);
+                let before = on.entry(id.as_str()).or_default();
+                let faint = note.state != state || page.width as u32 != note.node.width;
+                let side = if faint { DOT } else { PIN };
+                let x = corner.0 - side / 2.0 - *before as f64 * (side + 2.0);
+                *before += 1;
+                let ink = if note.status == Status::Answered { Ink::Answered } else { Ink::Note };
+                pins.push(Pin {
+                    id: note.id.clone(),
+                    rect: rect(x, corner.1 - side / 2.0, side, side),
+                    ink,
+                    faint,
+                });
+            }
+        }
+        pins
+    }
+
+    /// The note whose pin, not a faint dot, is under `at`, a point in the
+    /// window.
+    fn pin_at(&self, at: (f64, f64)) -> Option<String> {
+        self.pins().into_iter().rev().find_map(|pin| {
+            let r = pin.rect;
+            let (x, y) = (f64::from(r.x), f64::from(r.y));
+            let over =
+                (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1);
+            (over && !pin.faint).then_some(pin.id)
+        })
     }
 
     /// What the panel says of the node picked: nothing when none is.
@@ -999,6 +1401,90 @@ impl Gallery {
             });
         }
         lines
+    }
+
+    /// How many notes are open on the tree's line of `row` and `state`: on
+    /// the whole description, or on that state of it.
+    fn open_notes(&self, row: &Row, state: Option<&State>) -> usize {
+        let Some(notes) = row.description().and_then(|dir| self.notes.get(dir)) else {
+            return 0;
+        };
+        let open = notes.iter().filter(|note| note.status == Status::Open);
+        match state {
+            Some(state) => open.filter(|note| &note.state == state).count(),
+            None => open.count(),
+        }
+    }
+
+    /// The pins drawn: each numbered, the one picked ringed; each faint dot
+    /// a small ring.
+    fn pin_draws(&self) -> Vec<Draw> {
+        let picked = self.picked_note().map(|note| note.id.as_str());
+        let mut list = Vec::new();
+        for pin in self.pins() {
+            if pin.faint {
+                let radius = pin.rect.width / 2.0;
+                list.push(Draw::Box {
+                    rect: pin.rect,
+                    radius,
+                    fill: Some(Ink::Paper),
+                    stroke: Some(pin.ink),
+                    dashed: false,
+                });
+                continue;
+            }
+            if picked == Some(pin.id.as_str()) {
+                let r = pin.rect;
+                let around = rect(f64::from(r.x) - 3.0, f64::from(r.y) - 3.0, PIN + 6.0, PIN + 6.0);
+                let radius = around.width / 2.0;
+                list.push(Draw::Box {
+                    rect: around,
+                    radius,
+                    fill: None,
+                    stroke: Some(pin.ink),
+                    dashed: false,
+                });
+            }
+            list.push(Draw::Tag { rect: pin.rect, text: pin.id, ink: pin.ink });
+        }
+        list
+    }
+
+    /// The reply of the answered note whose pin the pointer is over, under
+    /// its pin: nothing when it is over none.
+    fn reply_shown(&mut self) -> Vec<Draw> {
+        let Some(id) = self.hovered.clone() else {
+            return Vec::new();
+        };
+        let Some(pin) = self.pins().into_iter().find(|pin| pin.id == id && !pin.faint) else {
+            return Vec::new();
+        };
+        let reply = self
+            .wanted
+            .as_ref()
+            .and_then(|wanted| self.notes.get(&wanted.dir)?.iter().find(|note| note.id == id)?.reply())
+            .map(|reply| format!("{id} answered: {reply}"));
+        let Some(said) = reply else {
+            return Vec::new();
+        };
+        let font = Font { size: 13.0, weight: 400, line_height: 16.0 };
+        let set = self.typesetter.text(&said, font, Some(320.0));
+        let (wide, tall) = (f64::from(set.width) + 1.0, f64::from(set.height));
+        let (x, y) = (f64::from(pin.rect.x), f64::from(pin.rect.y) + PIN + 4.0);
+        let mut text = words(rect(x + 8.0, y + 6.0, wide, tall), said, Ink::Text, 400);
+        if let Draw::Text { max_lines, .. } = &mut text {
+            *max_lines = None;
+        }
+        vec![
+            Draw::Box {
+                rect: rect(x, y, wide + 16.0, tall + 12.0),
+                radius: 4.0,
+                fill: Some(Ink::Paper),
+                stroke: Some(Ink::Answered),
+                dashed: false,
+            },
+            text,
+        ]
     }
 
     /// How tall the panel is, at the foot of the pictures' pane.
@@ -1103,6 +1589,19 @@ impl Gallery {
                 (Some(_), Some(State::Phase(_))) => (row.name.clone(), Ink::Muted, 400),
             };
             let mut right = TREE - 8.0;
+            let open = self.open_notes(row, state.as_ref());
+            if open > 0 {
+                let mark = match open {
+                    1 => "1 note".to_string(),
+                    n => format!("{n} notes"),
+                };
+                let mut tag = words(rect(x, y + 5.0, right - 4.0 - x, 16.0), mark, Ink::Note, 600);
+                if let Draw::Text { align, .. } = &mut tag {
+                    *align = Align::End;
+                }
+                list.push(tag);
+                right -= 60.0;
+            }
             if state.is_none() && !row.faults.is_empty() {
                 let mark = match row.faults.len() {
                     1 => "1 fault".to_string(),
@@ -1124,6 +1623,7 @@ impl Gallery {
         let mut pages = Vec::new();
         let mut thumbs = Vec::new();
         let (origins, outlines, panel) = (self.origins(), self.outlines(), self.panel());
+        let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let (cells, arrows) = (self.cells(), self.arrows());
         match &self.picture {
             Picture::Pages(shots) => {
@@ -1152,6 +1652,7 @@ impl Gallery {
                         dashed: false,
                     });
                 }
+                pane.extend(pins);
                 if !panel.is_empty() {
                     let tall = self.panel_height();
                     let top = height - tall;
@@ -1173,6 +1674,7 @@ impl Gallery {
                         ));
                     }
                 }
+                pane.extend(reply);
             }
             Picture::Overview(overview) => {
                 for (thumb, (x, y, w, h)) in overview.thumbs.iter().zip(cells) {
@@ -1471,15 +1973,41 @@ impl ApplicationHandler<Told> for Gallery {
             WindowEvent::CursorMoved { position, .. } => {
                 let at = position.to_logical::<f64>(scale);
                 self.cursor = (at.x, at.y);
+                let window = shown.window.clone();
+                if self.hover() {
+                    window.request_redraw();
+                }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let held = modifiers.state();
                 self.acting = held.super_key() || held.control_key();
+                self.shift = held.shift_key();
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.acting && is_key(&event, "v", KeyCode::KeyV) => {
+                let window = shown.window.clone();
+                let pasted = self.clipboard().and_then(|clipboard| clipboard.get_text().ok());
+                if pasted.is_some_and(|text| self.type_in(&text)) {
+                    window.request_redraw();
+                }
             }
             WindowEvent::KeyboardInput { event, .. } if self.acting && copies(&event) => {
                 let window = shown.window.clone();
                 self.copy();
                 window.request_redraw();
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if !self.acting && event.state == ElementState::Pressed =>
+            {
+                let window = shown.window.clone();
+                if self.key(&event.logical_key, event.text.as_deref()) {
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::Ime(Ime::Commit(text)) => {
+                let window = shown.window.clone();
+                if self.type_in(&text) {
+                    window.request_redraw();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let down = match delta {
@@ -1498,18 +2026,29 @@ impl ApplicationHandler<Told> for Gallery {
             WindowEvent::RedrawRequested => self.redraw(),
             _ => {}
         }
+        // What an input method composes goes into a note, and only there.
+        if let Some(shown) = &self.shown {
+            shown.window.set_ime_allowed(self.draft.is_some());
+        }
     }
 }
 
 /// Whether `event` is the C key pressed: ⌘C (Ctrl+C) copies, on any
 /// keyboard layout, or where the layout has no C, on the key where C is.
 fn copies(event: &KeyEvent) -> bool {
+    is_key(event, "c", KeyCode::KeyC)
+}
+
+/// Whether `event` is the key of the letter `letter` pressed, on any
+/// keyboard layout, or where the layout has no such letter, on the key
+/// `code`, where it is.
+fn is_key(event: &KeyEvent, letter: &str, code: KeyCode) -> bool {
     if event.state != ElementState::Pressed || event.repeat {
         return false;
     }
     match &event.logical_key {
-        Key::Character(c) if c.chars().all(|c| c.is_ascii_alphabetic()) => c.eq_ignore_ascii_case("c"),
-        _ => event.physical_key == PhysicalKey::Code(KeyCode::KeyC),
+        Key::Character(c) if c.chars().all(|c| c.is_ascii_alphabetic()) => c.eq_ignore_ascii_case(letter),
+        _ => event.physical_key == PhysicalKey::Code(code),
     }
 }
 
@@ -2335,6 +2874,216 @@ mod tests {
         gallery.reload();
         assert_eq!(gallery.picked, Some(0), "the directory is still picked");
         assert_eq!(undrawn(&gallery), 1, "ExportDocuments is drawn now");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Keys pressed in the window, ⌘ not held: each a letter, or one of
+    /// Enter, Shift+Enter (written "⇧Enter"), Backspace and Esc.
+    fn press_keys(gallery: &mut Gallery, keys: &[&str]) {
+        for key in keys {
+            let named = |named| Key::Named(named);
+            gallery.shift = *key == "⇧Enter";
+            let (pressed, text) = match *key {
+                "Enter" | "⇧Enter" => (named(NamedKey::Enter), Some("\r")),
+                "Backspace" => (named(NamedKey::Backspace), None),
+                "Esc" => (named(NamedKey::Escape), None),
+                " " => (named(NamedKey::Space), Some(" ")),
+                letter => (Key::Character(letter.into()), Some(letter)),
+            };
+            gallery.key(&pressed, text);
+            gallery.shift = false;
+        }
+    }
+
+    /// The text typed, a key for each character.
+    fn typed(text: &str) -> Vec<String> {
+        text.chars().map(String::from).collect()
+    }
+
+    fn type_text(gallery: &mut Gallery, text: &str) {
+        let keys = typed(text);
+        press_keys(gallery, &keys.iter().map(String::as_str).collect::<Vec<_>>());
+    }
+
+    /// The pins drawn, as (id, picture, ink, faint), the picture by its
+    /// place among the pictures.
+    fn pins_shown(gallery: &Gallery) -> Vec<(String, usize, Ink, bool)> {
+        let origins = gallery.origins();
+        gallery
+            .pins()
+            .into_iter()
+            .map(|pin| {
+                let x = f64::from(pin.rect.x);
+                let picture = origins.iter().rposition(|(left, _)| *left <= x + PIN).unwrap_or(0);
+                (pin.id, picture, pin.ink, pin.faint)
+            })
+            .collect()
+    }
+
+    /// The middle of the pin of note `id`, in the window.
+    fn on_pin(gallery: &Gallery, id: &str) -> (f64, f64) {
+        let pin = gallery.pins().into_iter().find(|pin| pin.id == id && !pin.faint).unwrap();
+        (f64::from(pin.rect.x) + PIN / 2.0, f64::from(pin.rect.y) + PIN / 2.0)
+    }
+
+    /// The panel line that reads `text`, clicked.
+    fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
+        let panel = gallery.panel();
+        let line = panel.iter().position(|line| line.trim() == text).unwrap_or_else(|| panic!("{panel:?}"));
+        let top = gallery.size.1 - gallery.panel_height();
+        gallery.cursor = (TREE + 100.0, top + MARGIN / 2.0 + (line as f64 + 0.5) * PANEL_LINE);
+        gallery.press()
+    }
+
+    #[test]
+    fn a_note_written_on_a_node_is_kept_in_notes_json_and_pinned_where_it_was_written() {
+        let root = root_of("notes-write", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        press_keys(&mut gallery, &["n"]);
+        assert_eq!(gallery.panel()[0], "write a note: click the node it is on · Esc cancels");
+        let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
+        let id = pages[1].nodes.iter().map(|n| &n.id).find(|id| id.ends_with("-cancel")).unwrap().clone();
+        gallery.cursor = on_node(&gallery, 1, &id);
+        assert!(gallery.press(), "the node clicked is the one the note is on");
+        assert_eq!(
+            gallery.panel()[0],
+            "note on order-{index}-cancel in default at 1120 · Enter saves, Shift+Enter breaks a line, Esc cancels"
+        );
+        type_text(&mut gallery, "价格太长");
+        press_keys(&mut gallery, &["⇧Enter", "a", "x", "Backspace", " ", "b"]);
+        assert_eq!(gallery.panel()[1..3], ["    价格太长", "    a b▏"], "Shift+Enter breaks a line");
+        assert!(!root.join("orders").join(notes::NOTES).exists(), "nothing is written while typing");
+        press_keys(&mut gallery, &["Enter"]);
+        assert!(gallery.draft.is_none(), "Enter saves");
+        assert!(gallery.panel()[0].starts_with("N1 saved"), "{:?}", gallery.panel());
+
+        let written = notes::read(&root.join("orders")).unwrap();
+        assert_eq!(written.len(), 1);
+        let note = &written[0];
+        assert_eq!((note.id.as_str(), note.status), ("N1", Status::Open));
+        assert_eq!(note.thread[0].says, "价格太长\na b");
+        assert_eq!(note.state, State::Fixture("default".into()));
+        let reference = gallery.reference().unwrap();
+        assert_eq!(note.reference(&root.join("orders")), reference, "pinned as ⌘C references it");
+        assert_eq!(note.node.origin.written, "order-{index}-cancel");
+        assert_eq!(note.node.width, 1120);
+
+        assert_eq!(
+            pins_shown(&gallery),
+            [("N1".to_string(), 0, Ink::Note, true), ("N1".to_string(), 1, Ink::Note, false)],
+            "a pin where it was written, at 1120, and a faint dot on the node at 390"
+        );
+        let orders = line_of(&gallery, "orders");
+        let default = state_of_in(&gallery, orders, "default");
+        let loading = state_of_in(&gallery, orders, "loading");
+        let count = |gallery: &Gallery, line: usize| {
+            let Line { row, state } = &gallery.lines[line];
+            gallery.open_notes(row, state.as_ref())
+        };
+        assert_eq!((count(&gallery, orders), count(&gallery, default), count(&gallery, loading)), (1, 1, 0));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn esc_drops_a_note_and_writing_one_from_the_panel_needs_no_n() {
+        let root = root_of("notes-esc", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        gallery.press();
+        assert!(click_panel_line(&mut gallery, "write a note on it  (N)"), "the node's panel starts one");
+        assert!(gallery.panel()[0].starts_with("note on nav-export in default at 390"));
+        type_text(&mut gallery, "x");
+        press_keys(&mut gallery, &["Esc"]);
+        assert!(gallery.draft.is_none());
+        assert!(!root.join("orders").join(notes::NOTES).exists(), "Esc writes nothing");
+        press_keys(&mut gallery, &["n", "Esc"]);
+        assert!(!gallery.noting, "Esc stops N too");
+        gallery.cursor = on_node(&gallery, 0, "nav-export");
+        press_keys(&mut gallery, &["n"]);
+        gallery.press();
+        press_keys(&mut gallery, &["Enter"]);
+        assert!(gallery.panel()[0].starts_with("not saved: a note says something"), "{:?}", gallery.panel());
+        assert!(gallery.draft.is_some(), "an empty note stays to be written");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_answered_note_turns_green_shows_its_reply_and_is_closed_or_reopened_by_the_person() {
+        let root = root_of("notes-answered", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        for (id, says) in [("nav-export", "rename it"), ("order-0-cancel", "too red")] {
+            press_keys(&mut gallery, &["n"]);
+            gallery.cursor = on_node(&gallery, 0, id);
+            gallery.press();
+            type_text(&mut gallery, says);
+            press_keys(&mut gallery, &["Enter"]);
+        }
+        let dir = root.join("orders");
+        notes::answer(&dir, "N1", "renamed it Export").unwrap();
+        gallery.reload();
+        let inks: Vec<(String, Ink)> =
+            gallery.pins().into_iter().filter(|pin| !pin.faint).map(|pin| (pin.id, pin.ink)).collect();
+        assert_eq!(inks, [("N1".to_string(), Ink::Answered), ("N2".to_string(), Ink::Note)], "drawn again");
+
+        gallery.cursor = on_pin(&gallery, "N1");
+        assert!(gallery.hover(), "the pointer over an answered pin");
+        let texts: Vec<String> = gallery
+            .reply_shown()
+            .into_iter()
+            .filter_map(|d| if let Draw::Text { text, .. } = d { Some(text) } else { None })
+            .collect();
+        assert_eq!(texts, ["N1 answered: renamed it Export"]);
+        assert!(!gallery.hover(), "still over it: nothing changed");
+        gallery.cursor = on_pin(&gallery, "N2");
+        assert!(gallery.hover() && gallery.reply_shown().is_empty(), "an open note has no reply to show");
+
+        gallery.cursor = on_pin(&gallery, "N1");
+        assert!(gallery.press(), "clicking a pin picks its note");
+        let panel = gallery.panel();
+        assert_eq!(panel[0], "N1 · answered · on nav-export in default at 390");
+        assert_eq!(panel[1..3], ["    you   rename it", "    agent renamed it Export"]);
+        assert!(click_panel_line(&mut gallery, "reopen it, saying what is still to do"));
+        type_text(&mut gallery, "and the icon");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&dir).unwrap().remove(0);
+        assert_eq!(note.status, Status::Open, "reopened");
+        assert_eq!(note.thread.last().unwrap().says, "and the icon");
+
+        gallery.cursor = on_pin(&gallery, "N2");
+        gallery.press();
+        assert!(click_panel_line(&mut gallery, "close it"));
+        assert_eq!(notes::read(&dir).unwrap()[1].status, Status::Closed);
+        let left: Vec<String> = gallery.pins().into_iter().map(|pin| pin.id).collect();
+        assert!(left.iter().all(|id| id == "N1"), "a closed note is drawn no more: {left:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_note_shows_as_a_faint_dot_in_another_state_that_holds_its_node() {
+        let root = root_of("notes-dot", &[("orders", "orders")]);
+        let mut gallery = Gallery::new(&root, text::Typesetter::new(None).unwrap());
+        gallery.size = (1440.0, 900.0);
+        show(&mut gallery, "orders", "default");
+        press_keys(&mut gallery, &["n"]);
+        gallery.cursor = on_node(&gallery, 0, "order-0-cancel");
+        gallery.press();
+        type_text(&mut gallery, "too red");
+        press_keys(&mut gallery, &["Enter"]);
+        show(&mut gallery, "orders", "cancel-dialog");
+        let shown = pins_shown(&gallery);
+        assert!(!shown.is_empty() && shown.iter().all(|(_, _, _, faint)| *faint), "{shown:?}");
+        let orders = line_of(&gallery, "orders");
+        let dialog = state_of_in(&gallery, orders, "cancel-dialog");
+        let Line { row, state } = &gallery.lines[dialog];
+        assert_eq!(gallery.open_notes(row, state.as_ref()), 0, "a state counts the notes written in it");
+        show(&mut gallery, "orders", "loading");
+        assert!(pins_shown(&gallery).is_empty(), "loading has no rows");
         std::fs::remove_dir_all(root).unwrap();
     }
 }

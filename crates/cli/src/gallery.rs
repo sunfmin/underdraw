@@ -16,6 +16,7 @@ use anyhow::{Context, bail};
 use serde_json::{Value, json};
 use underdraw_format::{Checked, Finding, Lang};
 
+use crate::notes::NOTES;
 use crate::{KINDS, SCREEN, TOKENS, check_at};
 
 /// Directories a description keeps beside it that hold no description.
@@ -30,8 +31,9 @@ const ANSWERING: Duration = Duration::from_secs(2);
 /// How often the window looks at its root for files changed.
 const WATCHING: Duration = Duration::from_millis(250);
 
-/// The files of a description the window draws from.
-const DRAWN_FROM: [&str; 3] = [SCREEN, TOKENS, KINDS];
+/// The files of a description the window draws from: the person's notes
+/// among them, which the agent answers.
+const DRAWN_FROM: [&str; 4] = [SCREEN, TOKENS, KINDS, NOTES];
 
 /// One row of the tree: a directory, or a description.
 #[derive(Debug, PartialEq)]
@@ -454,6 +456,24 @@ mod tests {
     }
 
     #[test]
+    fn screens_sharing_tokens_one_directory_above_have_no_faults() {
+        let draft = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/todo"));
+        let root = std::env::temp_dir().join(format!("underdraw-gallery-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for dir in ["one", "two"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+            for file in [SCREEN, KINDS] {
+                std::fs::copy(draft.join(file), root.join(dir).join(file)).unwrap();
+            }
+        }
+        std::fs::copy(draft.join(TOKENS), root.join(TOKENS)).unwrap();
+        let rows = tree(&root);
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| row.faults.is_empty()), "{:?}", rows);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn the_stamp_changes_with_what_the_window_is_drawn_from_and_nothing_else() {
         let root = std::env::temp_dir().join(format!("underdraw-gallery-stamp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -471,7 +491,9 @@ mod tests {
         step("the description edited", &|| std::fs::write(dir.join(SCREEN), "{ }").unwrap(), true);
         step("its tokens written", &|| std::fs::write(dir.join(TOKENS), "{}").unwrap(), true);
         step("its kinds written", &|| std::fs::write(dir.join(KINDS), "{}").unwrap(), true);
+        step("a note written or answered", &|| std::fs::write(dir.join(NOTES), "{}").unwrap(), true);
         step("its tokens removed", &|| std::fs::remove_file(dir.join(TOKENS)).unwrap(), true);
+        step("tokens above it written", &|| std::fs::write(root.join(TOKENS), "{}").unwrap(), true);
         step("a directory added", &|| std::fs::create_dir_all(root.join("a/b")).unwrap(), true);
         step("a directory removed", &|| std::fs::remove_dir_all(root.join("a")).unwrap(), true);
         step(

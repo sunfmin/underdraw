@@ -9,7 +9,8 @@ READS
   <path>/screen.json, or <path> when it is a file, and kinds.json beside it
   when there is one: every node's component must be defined there or
   by underdraw, and its looks are checked too (LOOKS below). Once the
-  description has no other fault, tokens.json too: every fixture and phase
+  description has no other fault, its tokens.json too (the nearest at or
+  above the screen, as `underdraw --help` says): every fixture and phase
   is laid out at widths 390 and 1120, in the system's fonts as `render`
   does, and an overlay that runs off the page is a finding. Writes nothing.
 
@@ -34,6 +35,11 @@ ANSWERS
                   never varies: then the table shows which fixtures to add
     "findings":   [{"at": where — a dotted path or a node id,
                     "problem": what is wrong, and what is allowed instead}, …]
+    "notes":      {"open", "answered"}: how many of the person's notes on
+                  it (notes.json, written in the gallery) are open, for the
+                  agent to act on and answer, and how many answered, for
+                  the person to close; with "error" when notes.json cannot
+                  be read. Never a finding: `underdraw notes <dir>` reads them
   }
   Given a root:
   {
@@ -42,7 +48,7 @@ ANSWERS
                     navigate does not count
     "descriptions": [{"description": its directory, relative to root,
                       then everything above: "screen", "ok", "fixtures",
-                      "phases", "conditions", "findings"}, …]
+                      "phases", "conditions", "findings", "notes"}, …]
                     one that cannot be read has its one finding at screen.json
     "links":        [{"description": the directory it is in,
                       "from": the screen it is on, "node": the node's id,
@@ -53,12 +59,14 @@ ANSWERS
                       "assumed": when not resolved, that assumption said
                         in a whole sentence, in --lang (en or zh; en by
                         default), or null}, …]
+    "notes":        {"open", "answered"}, over every description
   }
 
 EXIT
   0 when "ok" is true, 1 when there are findings (the answer above is still
   printed in full), 2 when the description could not be read or parsed, or
-  a root holds no description. Unresolved navigates alone exit 0.
+  a root holds no description. Unresolved navigates alone exit 0, and so do
+  notes, open or answered.
 
 WHAT TRIPS YOU UP
   - "assumed" says what was guessed and what else it could be, in a

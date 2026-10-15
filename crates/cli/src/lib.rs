@@ -10,7 +10,9 @@ mod flow;
 mod gallery;
 mod gpu;
 mod links;
+mod notes;
 mod paint;
+mod project;
 mod reference;
 mod text;
 mod window;
@@ -28,14 +30,14 @@ use draw::{Shown, Wanted};
 use serde_json::{Value, json};
 use underdraw_format::{Lang, State};
 
+use crate::project::{Project, TOKENS};
+
 /// What this binary was built from, as `--version` says it: stamped by
 /// `build.rs`.
 pub const VERSION: &str = env!("UNDERDRAW_VERSION");
 
 /// The file a screen's directory holds its description in.
 const SCREEN: &str = "screen.json";
-/// The design tokens beside it.
-const TOKENS: &str = "tokens.json";
 /// What the project's own components look like, beside the description; optional.
 const KINDS: &str = "kinds.json";
 
@@ -99,6 +101,30 @@ enum Command {
         /// Run the window itself, in this process: what the command starts
         #[arg(long, hide = true)]
         window: bool,
+    },
+    /// The person's open notes on the descriptions under a directory, each with where it is pinned; or one answered
+    #[command(after_long_help = include_str!("help/notes.txt"))]
+    Notes {
+        /// A description's directory, or a directory of them at any depth
+        path: PathBuf,
+        /// The note to answer, by its id (N3), in the description at <path>
+        #[arg(long, value_name = "ID", requires = "reply")]
+        answer: Option<String>,
+        /// The answer: one line saying what was done, or why not
+        #[arg(long, value_name = "LINE")]
+        reply: Option<String>,
+        /// Block until a note is open, then answer as without it: at once when one is open already
+        #[arg(long)]
+        wait: bool,
+        /// Refused: the person writes notes, in the gallery
+        #[arg(long, hide = true, alias = "add", num_args = 0..=1, default_missing_value = "")]
+        create: Option<String>,
+        /// Refused: the person closes a note, in the gallery
+        #[arg(long, hide = true, num_args = 0..=1, default_missing_value = "")]
+        close: Option<String>,
+        /// Refused: the person reopens a note, in the gallery
+        #[arg(long, hide = true, num_args = 0..=1, default_missing_value = "")]
+        reopen: Option<String>,
     },
     /// The view model as a JSON Schema, to validate API responses and other data against
     #[command(after_long_help = include_str!("help/schema.txt"))]
@@ -171,6 +197,12 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Command::Gallery { root, lang, window: false } => gallery::gallery(&root, lang),
+        Command::Notes { create: Some(_), .. }
+        | Command::Notes { close: Some(_), .. }
+        | Command::Notes { reopen: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
+        Command::Notes { path, answer, reply, wait, .. } => {
+            notes::notes(&path, answer.as_deref(), reply.as_deref(), wait)
+        }
         Command::Check { path, lang } => check(&path, lang),
         Command::Render { path, fixture, phase, width, scale, out, root, lang } => {
             render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref(), lang)
@@ -203,7 +235,10 @@ fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
     if path.is_dir() && !path.join(SCREEN).is_file() {
         return links::check_root(path, lang);
     }
-    Ok(serde_json::to_value(check_at(path)?)?)
+    let mut answer = serde_json::to_value(check_at(path)?)?;
+    let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
+    answer["notes"] = notes::counted(dir);
+    Ok(answer)
 }
 
 /// What `check` says of the description at `path` (a directory or its
@@ -217,7 +252,7 @@ fn check_at(path: &Path) -> anyhow::Result<underdraw_format::Checked> {
 /// Every fault in the description, overlays the picture would cut among
 /// them: laid out in the system's fonts, as `render` does.
 fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<underdraw_format::Checked> {
-    let tokens = read_tokens(dir)?;
+    let tokens = Project::of(dir)?.tokens;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     underdraw_layout::check(screen, &tokens, kinds, &mut typesetter).map_err(anyhow::Error::msg)
@@ -269,7 +304,7 @@ fn derive_cli(path: &Path) -> anyhow::Result<Value> {
 
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
-    let tokens = read_tokens(&dir)?;
+    let tokens = Project::of(&dir)?.tokens;
     let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
     match underdraw_handoff::handoff(&screen, &mapping, &tokens, kinds.as_ref()) {
@@ -323,7 +358,7 @@ fn compare(
             dir.join("platforms").display()
         );
     };
-    let tokens = read_tokens(&dir)?;
+    let tokens = Project::of(&dir)?.tokens;
     let mapping = read_platform(&dir, platform)?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
@@ -364,7 +399,6 @@ fn read_platform(dir: &Path, platform: &str) -> anyhow::Result<Value> {
     serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
 }
 
-/// tokens.json beside the description, or no tokens.
 /// kinds.json beside the description, when the project has one.
 fn read_kinds(dir: &Path) -> anyhow::Result<Option<Value>> {
     match std::fs::read_to_string(dir.join(KINDS)) {
@@ -372,15 +406,6 @@ fn read_kinds(dir: &Path) -> anyhow::Result<Option<Value>> {
             .map(Some)
             .with_context(|| format!("{} is not JSON", dir.join(KINDS).display())),
         Err(_) => Ok(None),
-    }
-}
-
-fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
-    match std::fs::read_to_string(dir.join(TOKENS)) {
-        Ok(text) => {
-            serde_json::from_str(&text).with_context(|| format!("{} is not JSON", dir.join(TOKENS).display()))
-        }
-        Err(_) => Ok(json!({})),
     }
 }
 
@@ -419,8 +444,11 @@ fn render(
     encoder.write_header()?.write_image_data(&pixels)?;
 
     let page = &drawing.page;
+    let project = Project::of(&drawing.dir)?;
     Ok(json!({
         "png": out,
+        "project": project.root,
+        "tokens": project.tokens_file,
         "state": match drawing.shown { Shown::Fixture(_) => json!({ "fixture": name }), Shown::Phase(_) => json!({ "phase": name }) },
         "breakpoint": drawing.breakpoint,
         "width": page.width,

@@ -2,9 +2,19 @@ underdraw — describe a screen once, as JSON, then check it, show it to a
 person, and hand it off to web, iOS and Android.
 
 A screen description is a directory holding screen.json (the screen: its
-view model, fixtures, conditions and node tree), usually beside tokens.json,
+view model, fixtures, conditions and node tree), usually beside
 platforms/*.json and, for components of the project's own, kinds.json. How to
 write each file, every component and every rule: `underdraw check --help`, FORMAT.
+
+A screen is in a project: one app's screens under one directory, sharing
+one design language. Every command finds it the same way:
+  project root  the nearest directory at or above the screen holding
+                domain.json; with none, the screen's own directory
+  tokens        tokens.json in the nearest directory at or above the
+                screen that has one, so a screen's own tokens.json wins
+                over one above it, and screens with none beside them share
+                the one above; with none anywhere, no tokens
+  `underdraw render` answers which root and tokens.json it took.
 
 NEEDS
   System fonts to check a description; to render one or open the gallery,
@@ -19,6 +29,11 @@ START HERE
                              yet, not a fault
   underdraw gallery <root>   then show it to the person: a window over every
                              description under <root>, drawn as it now stands
+  underdraw notes <root>     what the person said there: each open note, pinned
+                             to a node; act on it, then answer it with
+                             `underdraw notes <dir> --answer N1 --reply "…"`;
+                             `underdraw notes <root> --wait` in the background
+                             answers when the person writes the next one
   underdraw handoff <dir> --platform ios
                              once agreed: what to build, and what to test it against
   underdraw compare <dir> --platform ios --capture c.json
@@ -40,7 +55,11 @@ COMMANDS
                              given a directory of descriptions, every one of them,
                              and each navigate resolved to the screen it names
     underdraw gallery <root> a window for the person: every description under
-                             <root>, each drawn at a phone and a desktop width
+                             <root>, each drawn at a phone and a desktop width,
+                             where they write notes on its nodes
+    underdraw notes <root>   the person's open notes, each with where it is pinned;
+                             with --answer <id> --reply "…", one answered;
+                             with --wait, once one is open
     underdraw render <dir>   a wireframe PNG of one state, and where each node went,
                              for the agent to read the node boxes
   For the agent building the screen on a platform:

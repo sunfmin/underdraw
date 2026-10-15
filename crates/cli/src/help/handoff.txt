@@ -7,7 +7,8 @@ WHO
   The agent that builds the real UI, on web, iOS or Android.
 
 READS
-  <path>/screen.json, tokens.json, and platforms/<platform>.json: the
+  <path>/screen.json, its tokens.json (the nearest at or above <path>, as
+  `underdraw --help` says), and platforms/<platform>.json: the
   platform's mapping of each component and action, its test-id form, and its token
   naming ("tokenNaming": {"pattern": "Theme.{group}.{name}"}). Writes nothing.
   Refuses a description `check` finds faults in.

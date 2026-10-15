@@ -5,7 +5,9 @@ FORMAT — how to write a description
 
 FILES
   <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
-  <dir>/tokens.json   design tokens; read by name, always this file name
+  tokens.json         design tokens; read by name, always this file name,
+                      from the nearest directory at or above <dir> that
+                      has one (beside screen.json, or shared above it)
   <dir>/kinds.json    optional: the project's own components (LOOKS below)
   <dir>/platforms/<name>.json
                       how one platform builds it: `underdraw handoff --help`

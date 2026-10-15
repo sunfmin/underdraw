@@ -288,8 +288,10 @@ fn each_fault_in_a_projects_components_is_found() {
     }
     let pinned = checked.findings.iter().any(|f| f.at == "components.Wrong.look.children[6]");
     assert!(!pinned, "a pinned box may have a backdrop: {:#?}", checked.findings);
-    let decided_later =
-        ["components.Wrong.look.children[7].justify.cases[0].then", "components.Wrong.look.children[8].pin.y"];
+    let decided_later = [
+        "components.Wrong.look.children[7].justify.cases[0].then",
+        "components.Wrong.look.children[8].pin.y",
+    ];
     for at in decided_later {
         assert!(!checked.findings.iter().any(|f| f.at == at), "{at} passes: {:#?}", checked.findings);
     }
