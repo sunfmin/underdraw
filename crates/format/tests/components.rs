@@ -241,14 +241,18 @@ fn a_shared_component_shown_on_its_own_sets_the_param_it_is_passed() {
 
     // A screen that passes it domain data is still refused: the set acts
     // on what was passed.
-    let mut description = screen(row(), json!({ "id": "strip", "component": "RouteStrip", "with": { "at": "{count}" } }));
+    let mut description =
+        screen(row(), json!({ "id": "strip", "component": "RouteStrip", "with": { "at": "{count}" } }));
     description["data"]["count"] = json!("int 1..");
     description["fixtures"]["none"]["count"] = json!(1);
     description["components"]["RouteStrip"] = strip.clone();
     description["components"]["RouteStrip"].as_object_mut().unwrap().remove("fixtures");
     let checked = check(&description);
     assert!(
-        checked.findings.iter().any(|f| f.problem.contains("set writes at, and at is given {count}, which is domain data")),
+        checked
+            .findings
+            .iter()
+            .any(|f| f.problem.contains("set writes at, and at is given {count}, which is domain data")),
         "{:#?}",
         checked.findings
     );
