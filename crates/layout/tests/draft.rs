@@ -5,7 +5,7 @@ use serde_json::Value;
 use underdraw_format::{Breakpoint, Lang, State, instantiate};
 use underdraw_layout::{Draw, Page, Placed, layout};
 
-const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
+const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../format/tests/airbnb-listing");
 
 mod fixed;
 use fixed::Fixed;
