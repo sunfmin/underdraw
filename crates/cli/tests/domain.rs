@@ -177,3 +177,60 @@ fn help_documents_domain_json() {
     assert!(help(&["cli", "--help"]).contains("domain.json"));
     assert!(help(&["handoff", "--help"]).contains("domain.json"));
 }
+
+#[test]
+fn a_condition_on_a_type_gates_each_call_that_requires_it() {
+    let domain = read(&Path::new(SHOP).join("domain.json"));
+    assert!(domain["conditions"].get("Order.cancellable").is_some());
+    assert_eq!(domain["operations"]["cancelOrder"]["requires"], "Order.cancellable");
+    let (checked, code) = underdraw(&["check", Path::new(SHOP).join("orders").to_str().unwrap()]);
+    assert_eq!((code, &checked["ok"]), (0, &json!(true)), "{checked}");
+    assert_eq!(checked["conditions"][0]["name"], "Order.cancellable", "{checked}");
+
+    let project = scratch("type-condition");
+    copy_shop(&project, true, &|screen| {
+        let text = screen.to_string();
+        let text = text
+            .replace(r#""if":"item.cancellable","#, "")
+            .replace(r#""if":"order.cancellable","#, r#""if":"order.number.cancellable","#);
+        serde_json::from_str(&text).unwrap()
+    });
+    let problems = |name: &str| {
+        let (checked, code) = underdraw(&["check", project.join(name).to_str().unwrap()]);
+        assert_eq!(code, 1, "{checked}");
+        checked["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["problem"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let ungated = problems("orders");
+    assert!(
+        ungated.iter().any(|p| p.contains("calls cancelOrder, which requires Order.cancellable")
+            && p.contains("\"!item.cancellable\"")),
+        "{ungated:?}"
+    );
+    let misused = problems("order");
+    assert!(
+        misused.iter().any(|p| p.contains("cancellable is a condition on Order, and order.number is")),
+        "{misused:?}"
+    );
+    std::fs::remove_dir_all(project).unwrap();
+}
+
+#[test]
+fn help_documents_conditions_on_types() {
+    let help = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert!(help(&["--help"]).contains("declared on a type"));
+    let check = help(&["check", "--help"]);
+    assert!(
+        check.contains("A condition on a type is named <Type>.<name>")
+            && check.contains("\"requires\": \"Order.cancellable\""),
+        "{check}"
+    );
+    assert!(help(&["cli", "--help"]).contains("Order.cancellable"));
+}

@@ -96,3 +96,69 @@ fn a_mapping_that_misses_a_kind_says_so() {
     assert_eq!(handoff.findings[0].at, "t");
     assert!(handoff.findings[0].problem.contains("kind Text"), "{:?}", handoff.findings);
 }
+
+/// A condition declared on a type is a property of that type, and one of
+/// the screen reads it through a value of the type, here one that may be
+/// null.
+fn on_a_type(language: &str) -> String {
+    let screen = json!({
+        "screen": "Shop",
+        "data": { "order": "Order?" },
+        "types": { "Order": { "status": "Status", "note": "string?" }, "Status": "enum(pending, shipped)" },
+        "conditions": {
+            "Order.cancellable": { "when": "status == \"pending\"", "label": "Not shipped" },
+            "Order.quiet": { "when": "cancellable && note == null", "label": "Quiet" },
+            "canCancel": { "when": "order != null && order.cancellable", "label": "Can cancel" }
+        },
+        "fixtures": {
+            "a": { "order": { "status": "pending", "note": null } },
+            "b": { "order": { "status": "shipped", "note": "x" } },
+            "c": { "order": null }
+        },
+        "root": { "id": "root", "kind": "Screen", "children": [ { "id": "t", "kind": "Text", "text": "x" } ] }
+    });
+    let mapping = json!({
+        "platform": language, "language": language, "testId": "{id}",
+        "tokenNaming": { "pattern": "{group}.{name}" },
+        "kinds": { "Screen": "screen", "Text": "text" }, "actions": {}
+    });
+    let handoff = handoff(&screen, &mapping, &json!({}), None).unwrap_or_else(|c| panic!("{:?}", c.findings));
+    assert!(handoff.ok, "{:?}", handoff.findings);
+    handoff.code.text
+}
+
+#[test]
+fn a_condition_on_a_type_is_a_property_of_it() {
+    let expected = [
+        (
+            "typescript",
+            vec![
+                "export function orderCancellable(m: Order): boolean {\n  return m.status == \"pending\";\n}",
+                "export function orderQuiet(m: Order): boolean {\n  return orderCancellable(m) && m.note == null;\n}",
+                "return m.order != null && (m.order != null && orderCancellable(m.order));",
+            ],
+        ),
+        (
+            "swift",
+            vec![
+                "extension Order {\n    /// Not shipped\n    var cancellable: Bool { status == .pending }",
+                "var quiet: Bool { cancellable && note == nil }",
+                "var canCancel: Bool { order != nil && order?.cancellable == true }",
+            ],
+        ),
+        (
+            "kotlin",
+            vec![
+                "val Order.cancellable: Boolean\n    get() = status == Status.pending",
+                "val Order.quiet: Boolean\n    get() = cancellable && note == null",
+                "get() = order != null && order?.cancellable == true",
+            ],
+        ),
+    ];
+    for (language, lines) in expected {
+        let code = on_a_type(language);
+        for line in lines {
+            assert!(code.contains(line), "{language}: missing {line:?} in\n{code}");
+        }
+    }
+}

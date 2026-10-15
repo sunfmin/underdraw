@@ -118,7 +118,9 @@ _Avoid_: flow, navigation, edge
 
 **Condition**:
 A named yes/no decision the screen makes, such as `hasDates`, declared once and
-used by name.
+used by name; or one declared on a type (`Order.cancellable`) over its own
+fields, used through a value of it (`item.cancellable`), as the domain shares
+one.
 _Avoid_: flag, predicate
 
 **Domain**:
