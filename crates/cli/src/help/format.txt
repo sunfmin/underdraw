@@ -562,19 +562,29 @@ COMPONENTS
   component's body is one of two, never both; check refuses a component
   with both, or with neither:
     a look     drawn as one element, and built by a platform as one:
-                 "Chip": { "params": ["selected", "text"], "look": … }
+                 "Chip": { "params": { "selected": "bool", "text": "string" }, "look": … }
                (LOOKS below). A node is one by its name, and gives it each
                param as a prop: { "id": "chip-direct", "component": "Chip",
                "text": "Direct", "selected": "{filters.direct}" }.
     nodes      a subtree written once and used more than once, with the
-               params it reads typed, and given in "with" (below).
-  A look component lists in "params" every name its look reads, and its
+               params it reads, given in "with" (below).
+  Either body declares its params one way: typed, as fields of data
+  (DATA AND TYPES), { "selected": "bool", "count": "int = 0" }. A look's
+  may instead be a list of the names, ["selected", "text"], each then
+  taking any value. A typed prop is held to its type, as a param in
+  "with" is: check refuses one missing (unless it has a default or is
+  nullable) and one ill-typed, at "<id>.<prop>". A bool prop, typed or
+  listed, may be given a condition of the screen's, "{hasDates}", and
+  holds where it does, in render and the gallery; anything more ("!a",
+  "a && b") is a condition of its own, named in "conditions".
+  A look component declares in "params" every name its look reads, and its
   look reads nothing else: the first step of each placeholder ("{text}",
   "{label.short}" reads label), each name in an "if" or a branch of
   "cases", and, for a box with "frame": true, padding, gap, radius, border
   and elevation. What a repeat binds (n, index, item) is no param. check
   names each name a look reads that its params leave out, at
-  "components.<Name>.look", and refuses "params" that is not a list of names.
+  "components.<Name>.look", and refuses "params" that is neither a list
+  of names nor an object of types.
   underdraw's own components (BUILT-IN COMPONENTS) are look components of
   the same form; a screen's own of the same name replaces one whole.
   There is no kinds.json: check refuses one left beside screen.json. Move
@@ -657,7 +667,7 @@ COMPONENTS
                                                "shipped": { "$patch": "pending", "order": { "status": "shipped" } } }
     components/OrderStatus.json  "fixtures": { "pending": { "status": "pending" } }
   Each fixture gives every param, of its type, and nothing else: a look's
-  params, untyped, take text, a number or true or false, the type the
+  params, listed, take text, a number or true or false, the type the
   first fixture to give one gives. The description that shows it is
   components/<Name> (no file to write: the directory holds only its
   notes.json): `underdraw check <root>/components/OrderRow` checks the
@@ -908,7 +918,7 @@ LOOKS
   still carry one).
     "components": { "Chip": {
         "doc": "A filter as a pill: filled when on.",
-        "params": ["selected", "text"],
+        "params": { "selected": "bool = false", "text": "string" },
         "look": { "box": "row", "gap": 6, "padding": [6, 12], "radius": 999,
                   "fill":  { "cases": [ { "if": "selected", "then": "strong" }, { "else": null } ] },
                   "stroke": { "cases": [ { "if": "selected", "then": null }, { "else": "line" } ] },
@@ -922,11 +932,12 @@ LOOKS
     "pinned":  true    pinned to the screen, out of its siblings' order
                        (StickyBar)
   A node then writes { "id": "chip-direct", "component": "Chip", "text": "Direct",
-  "selected": "{filters.direct}" }. A look's templates read the node's props
-  (after the node's own templates are filled), not data, and only those
-  its params declare. A prop is a path or a literal, never a condition's
-  name ("{hasDates}" is refused): choose with cases, { "cases": [ { "if":
-  "hasDates", "then": true }, { "else": false } ] }.
+  "selected": "{filters.direct}" }, or "selected": "{hasDates}", a
+  condition of the screen's, which holds where it does. A look's templates
+  read the node's props (after the node's own templates are filled), not
+  data, and only those its params declare. A prop is a path, a literal or,
+  for a bool, a condition's name in braces; typed params hold each to its
+  type (COMPONENTS).
   A look is one of:
     {"box": "row"|"column"|"grid" or none, …box keys}    a box
     {"text": "…", …text keys}                            text

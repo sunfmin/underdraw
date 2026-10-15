@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 use serde_json::{Map, Value};
 
 use crate::check::Findings;
+use crate::field::{self, Field};
 use crate::icons;
 use crate::look::{
     Cases, Condition, Filter, Flow, Items, Justify, Look, NOTES, Overflow, SelfAlign, TextAlign,
@@ -45,19 +46,31 @@ pub fn in_shared(at: &str) -> Option<(&str, &str)> {
 }
 
 /// Components whose body is a look, by name: each entry (`look`,
-/// `params`, `scrolls`…) with its look parsed.
+/// `params`, `scrolls`…) with its look parsed, and the params of each that
+/// types them (`{"selected": "bool"}`) rather than listing their names.
 #[derive(Default)]
 struct Looks {
     entries: Map<String, Value>,
     looks: BTreeMap<String, Look>,
+    typed: BTreeMap<String, Vec<(String, Field)>>,
 }
 
 impl Looks {
-    /// `component`, named `name`, when it has a look.
+    /// `component`, named `name`, when it has a look. A typed param that is
+    /// not a field is left out, for `subtrees::check` to name.
     fn add(&mut self, name: &str, component: &Value) {
         if let Some(look) = component.get("look") {
             self.entries.insert(name.to_string(), component.clone());
             self.looks.insert(name.to_string(), Look::parse(look));
+            if let Some(Value::Object(params)) = component.get("params") {
+                let mut typed = Vec::new();
+                for (param, spec) in params {
+                    if let Ok(field) = field::read(spec) {
+                        typed.push((param.clone(), field));
+                    }
+                }
+                self.typed.insert(name.to_string(), typed);
+            }
         }
     }
 }
@@ -360,6 +373,13 @@ impl Components {
         self.with_look(component).and_then(|looks| looks.looks.get(component))
     }
 
+    /// The params of the look component `component`, each with its type,
+    /// when it types them (`{"selected": "bool"}`); none when it lists
+    /// their names, which take any value.
+    pub fn typed(&self, component: &str) -> Option<&[(String, Field)]> {
+        self.with_look(component).and_then(|looks| looks.typed.get(component)).map(Vec::as_slice)
+    }
+
     /// Whether `component` says `"scrolls": true`: its content scrolls or pages
     /// on a platform, so what is in it may lie outside its frame.
     pub fn scrolls(&self, component: &str) -> bool {
@@ -493,10 +513,11 @@ impl Components {
             Some(Value::Array(names)) if names.iter().all(Value::is_string) => {
                 names.iter().filter_map(Value::as_str).collect()
             }
+            Some(Value::Object(typed)) => typed.keys().map(String::as_str).collect(),
             Some(_) => {
                 findings.add(
                     &format!("{at}.params"),
-                    "params is a list of the names the look reads: [\"text\", \"icon\"]",
+                    "params lists the names the look reads, [\"text\", \"icon\"], or types each, {\"text\": \"string\", \"selected\": \"bool\"}",
                 );
                 return;
             }
