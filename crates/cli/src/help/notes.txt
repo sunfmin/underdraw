@@ -1,0 +1,84 @@
+WHEN
+  Whenever the person may have said something in the gallery: before each
+  round of edits, and after `underdraw check` answers "notes" with any
+  open. Each open note is something the person asked for: act on it, then
+  answer it.
+
+WHO
+  The agent that writes descriptions. The person writes the notes, in the
+  gallery (`underdraw gallery --help`); the agent only reads and answers
+  them.
+
+READS
+  notes.json beside each screen.json under <path>: <path> itself, when it
+  is a description's directory, or every description under it at any
+  depth, as the gallery finds them. A description with no notes.json has no
+  notes. Writes nothing, but with --answer.
+
+DOES
+  A note is what the person says of a design, pinned to one node of one
+  state, where they clicked: the node as the description writes it, with
+  the instance they pointed at as context, the same fields ⌘C copies. Each
+  is numbered N1, N2… within its description, and is:
+    open      written by the person, or reopened by them with a line added:
+              for the agent to act on and answer
+    answered  answered by the agent with one line of reply; the person
+              reads it in the gallery and closes the note, or reopens it
+    closed    closed by the person; nothing more to do
+  `underdraw notes <path>` lists the open ones. Edit the node where
+  "node.at" points in that description's screen.json (the id written
+  there is "node.id", a template inside a repeat), then answer:
+
+    underdraw notes <dir> --answer N3 --reply "made the price wrap"
+
+  <dir> is that description's directory: <path>/<"description">. The reply
+  is one line saying what was done, or why not. The note turns green in the
+  window, showing the reply. Answering again with the same reply changes
+  nothing more; with another, it takes the last reply's place. A closed note
+  is not answered.
+
+  The agent cannot create, close or reopen a note: `--create`, `--close`
+  and `--reopen` are refused, saying the person does that in the gallery.
+  To ask the person something, write an assumption (`assumed`) in the
+  description: the gallery shows it, for them to answer.
+
+ANSWERS
+  {
+    "root":     <path>, resolved
+    "notes":    the open notes, description by description in the tree's
+                order, each in the order written:
+                [{"description": its directory, relative to root ("." for
+                                 root itself),
+                  "id":          "N3",
+                  "status":      "open",
+                  "state":       {"fixture": <name>} or {"phase": <name>},
+                                 the state it was written in
+                  "node":        {"id": the id as written, "at": the JSON
+                                 Pointer where it is written in
+                                 screen.json, "instance": the element of
+                                 each repeat around it, outermost first,
+                                 "label": its label or null, "width": the
+                                 width it was drawn at},
+                  "thread":      [{"by": "person" or "agent", "says"}, …],
+                                 what the person wrote, then each reply and
+                                 each line added on reopening, in order
+                  "reference":   the same as one line, as ⌘C copies it}, …]
+    "open":     how many notes are open
+    "answered": how many are answered, waiting for the person
+  }
+  With --answer:
+  {
+    "note":    the note answered, as above
+    "changed": false when it already had that reply
+  }
+  Exits 2 with {"error"} when <path> is not a directory, notes.json is
+  not notes as the gallery writes them, --answer names no note there, or
+  the note is closed.
+
+WHAT TRIPS YOU UP
+  - --answer takes the description's directory, not the root: ids are
+    numbered within each description, so two can each have an N1.
+  - notes.json is the person's: commit it with the description, and never
+    edit it by hand.
+  - A note is not a fault: `underdraw check` counts the open and answered
+    ("notes": {"open", "answered"}) and exits as it would without them.
