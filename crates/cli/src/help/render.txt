@@ -1,7 +1,7 @@
 WHEN
   After `underdraw check` answers "ok": true, to read the node boxes and
   know where each part went, at a phone width (390) and a desktop width
-  (1120). What a person looks at is the gallery (`underdraw gallery`), not
+  (1120); with --all, every state at both at once. What a person looks at is the gallery (`underdraw gallery`), not
   these PNGs.
 
 WHO
@@ -20,6 +20,11 @@ READS
 WRITES
   One PNG: --out, or <dir>/renders/<fixture or phase>-<width>.png. Running
   it again overwrites the same file.
+  With --all, one sheet instead: --out, or <dir>/renders/all.png. A row
+  for each state, the fixtures then the phases in the order written (as
+  `check` lists them), each drawn at 390 and at 1120 side by side, each
+  page captioned with its state and width ("default · 390"). --all takes
+  no --fixture, --phase or --width.
 
 ANSWERS
   {
@@ -40,6 +45,20 @@ ANSWERS
                       underdraw assumes itself is a whole sentence in
                       --lang, en, zh or ja, en by default}, …]
   }
+
+ANSWERS, WITH --all
+  {
+    "png", "project", "tokens", "scale", "pixels": as above, for the sheet
+    "width", "height": the sheet in points
+    "states": [{"state", "breakpoint", "width", "height", "nodes": each as
+                  one render of that state at that width answers it, its
+                  node boxes in that page's own points,
+                "at": {"x", "y"}, where the page's top left sits on the
+                  sheet, in points}, …], each state at 390, then at 1120
+  }
+  A node's place on the sheet is "at" plus its box, times "scale" in
+  pixels. A long sheet is drawn at a lower scale, so its pages are
+  smaller than one render's; render the one state to read it closely.
 
 WHAT YOU SEE
   A wireframe, in grays: boxes, text in the system font, crossed boxes for
