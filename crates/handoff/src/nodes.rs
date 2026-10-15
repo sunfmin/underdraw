@@ -61,7 +61,7 @@ pub struct Hidden {
 }
 
 /// Keys that decide whether and how often a node is shown.
-const SHOWN: [&str; 5] = ["if", "only", "each", "index", "limit"];
+const SHOWN: [&str; 7] = ["if", "only", "each", "index", "limit", "nest", "fold"];
 /// Keys said of the node elsewhere in a spec, or not at all.
 const OTHER: [&str; 8] = ["id", "component", "with", "assumed", "platform", "on", "$note", "$why"];
 
