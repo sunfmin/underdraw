@@ -48,6 +48,7 @@ fn faithful(state: State, width: f32) -> Value {
         width,
         Lang::default(),
         &mut Fixed,
+        &underdraw_layout::NoPictures,
     )
     .unwrap();
     let mut elements = Vec::new();

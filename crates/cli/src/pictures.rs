@@ -13,6 +13,10 @@ use underdraw_layout::{Page, Pictures};
 use crate::draw::{Description, Shown};
 use crate::links;
 
+/// A state of a screen, by the screen's name and the state's (none for
+/// its first fixture).
+type Wanted = (String, Option<String>);
+
 /// The descriptions under one project's root, drawn on demand, for the
 /// description at the end of `drawing`.
 pub struct Album {
@@ -26,7 +30,7 @@ pub struct Album {
     /// when first needed.
     declared: RefCell<Option<BTreeMap<String, PathBuf>>>,
     /// Each state already drawn, or why it cannot be, by screen and state.
-    drawn: RefCell<BTreeMap<(String, Option<String>), Result<Page, String>>>,
+    drawn: RefCell<BTreeMap<Wanted, Result<Page, String>>>,
 }
 
 impl Album {
