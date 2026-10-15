@@ -32,8 +32,7 @@ const WINDOW: (f64, f64) = (1440.0, 900.0);
 /// on the GPU and held to the golden named `name`. The gallery is handed
 /// back for what the test asserts of it.
 fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Gallery)) -> Gallery {
-    let mut gallery = Gallery::new(root, text::Typesetter::new(None).unwrap());
-    gallery.size = size;
+    let mut gallery = opened(root, size);
     // A root of a test's own is named for its process: its line is named
     // the same in every run, for the frame to hold, and again after acts
     // that reload the tree.
@@ -47,8 +46,7 @@ fn held(name: &str, root: &Path, size: (f64, f64), acts: impl FnOnce(&mut Galler
     named(&mut gallery);
     acts(&mut gallery);
     named(&mut gallery);
-    gallery.clamp();
-    let scene = gallery.frame();
+    let scene = gallery.drawn();
     let (width, height) = (size.0 as u32, size.1 as u32);
     let mut gpu = gpu::Gpu::open().expect("drawing the window needs a GPU");
     let pixels = gpu.render(&scene, width, height).unwrap();
@@ -98,9 +96,8 @@ fn hold(name: &str, width: u32, height: u32, pixels: &[u8]) {
 /// Note `text` written with N on node `id` of the phone's picture.
 fn note_on(gallery: &mut Gallery, id: &str, text: &str) {
     press_keys(gallery, &["n"]);
-    gallery.cursor = on_node(gallery, 0, id);
-    gallery.press();
-    gallery.release();
+    gallery.press_at(on_node(gallery, 0, id));
+    gallery.let_go();
     type_text(gallery, text);
     press_keys(gallery, &["Enter"]);
 }
@@ -255,8 +252,7 @@ fn an_arrow_picked_in_the_overview() {
     let gallery = held("arrow", drafts(), WINDOW, |gallery| {
         let orders = line_of(gallery, "orders");
         showing(gallery, orders);
-        gallery.cursor = on_arrow(gallery, 0);
-        gallery.press();
+        gallery.press_at(on_arrow(gallery, 0));
     });
     assert_eq!(gallery.arrow, Some(0));
 }
@@ -270,8 +266,7 @@ fn note_pins_open_and_answered_with_its_reply() {
         note_on(gallery, "order-0-cancel", "too red");
         notes::answer(&root.join("orders"), "N1", "renamed it Export").unwrap();
         gallery.reload();
-        gallery.cursor = on_pin(gallery, "N1");
-        gallery.hover();
+        gallery.move_to(on_pin(gallery, "N1"));
     });
     let inks: Vec<Ink> = gallery.pins().into_iter().filter(|pin| !pin.faint).map(|pin| pin.ink).collect();
     assert_eq!(inks, [Ink::Answered, Ink::Note]);
@@ -293,10 +288,9 @@ fn an_assumption_picked_by_its_question_mark() {
             offset += 1;
         }
         // Scrolled to it, as a person scrolls before clicking.
-        gallery.cursor = (gallery.tree + MARGIN, MARGIN);
-        gallery.wheel(0.0, on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
-        gallery.cursor = on_guess(gallery, 0, "card-number");
-        gallery.press();
+        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.wheel_by(0.0, on_guess(gallery, 0, "card-number").1 - WINDOW.1 / 3.0);
+        gallery.press_at(on_guess(gallery, 0, "card-number"));
     });
     fits(&mut gallery);
     assert_eq!(gallery.node.as_deref(), Some("card-number"));
@@ -311,8 +305,10 @@ fn a_note_read_as_a_conversation() {
         note_on(gallery, "nav-export", "rename it, and say what it exports");
         notes::answer(&root.join("orders"), "N1", "renamed it Export orders").unwrap();
         gallery.reload();
-        gallery.cursor = on_pin(gallery, "N1");
-        gallery.press();
+        gallery.press_at(on_pin(gallery, "N1"));
+        // The pointer moved off the pin: its reply is not drawn over the
+        // conversation read in the sidebar.
+        gallery.move_to((0.0, 0.0));
     });
     fits(&mut gallery);
     assert_eq!(
@@ -332,11 +328,10 @@ fn a_wrong_assumption_written_with_an_input_method() {
     let root = root_of("frame-rejecting", &[("orders", "orders")]);
     let mut gallery = held("rejecting", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        gallery.cursor = on_guess(gallery, 0, "nav-export");
-        gallery.press();
+        gallery.press_at(on_guess(gallery, 0, "nav-export"));
         assert!(click_panel_line(gallery, "✗ wrong…"));
         type_text(gallery, "导出是");
-        gallery.ime(Ime::Preedit("dui hua kuang".to_string(), None));
+        gallery.compose(Ime::Preedit("dui hua kuang".to_string(), None));
     });
     fits(&mut gallery);
     assert!(gallery.draft.as_ref().is_some_and(|draft| draft.text.is_composing()));
@@ -348,8 +343,7 @@ fn a_confirmation_waiting_to_be_undone() {
     let root = root_of("frame-confirming", &[("orders", "orders")]);
     let mut gallery = held("confirming", &root, WINDOW, |gallery| {
         show(gallery, "orders", "default");
-        gallery.cursor = on_guess(gallery, 0, "nav-export");
-        gallery.press();
+        gallery.press_at(on_guess(gallery, 0, "nav-export"));
         assert!(click_panel_line(gallery, "✓ right, keep it"));
     });
     fits(&mut gallery);
@@ -369,8 +363,7 @@ fn a_shared_component_in_the_components_section() {
 fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
     let mut gallery = held("node", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.cursor = on_node(gallery, 0, "nav-save");
-        gallery.press();
+        gallery.press_at(on_node(gallery, 0, "nav-save"));
         gallery.details = true;
     });
     fits(&mut gallery);
@@ -381,7 +374,7 @@ fn a_node_picked_its_card_in_the_sidebar_with_its_details_unfolded() {
 fn the_sidebar_hidden_the_pictures_take_its_width() {
     let gallery = held("sidebar-hidden", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.toggle_sidebar();
+        gallery.chord("\\");
     });
     assert_eq!(gallery.pane_right(), WINDOW.0);
 }
@@ -390,10 +383,9 @@ fn the_sidebar_hidden_the_pictures_take_its_width() {
 fn a_narrow_window_at_half_size_scrolled_across() {
     let gallery = held("narrow", drafts(), (1000.0, 900.0), |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.cursor = (gallery.tree + MARGIN, MARGIN);
-        gallery.wheel(1e6, 0.0);
-        gallery.cursor = on_node(gallery, 1, "nav-save");
-        gallery.press();
+        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        gallery.wheel_by(1e6, 0.0);
+        gallery.press_at(on_node(gallery, 1, "nav-save"));
     });
     assert_eq!(gallery.zoom(gallery.pane()), SMALLEST);
     assert_eq!(gallery.node.as_deref(), Some("nav-save"), "picked, scaled and scrolled");
@@ -403,11 +395,9 @@ fn a_narrow_window_at_half_size_scrolled_across() {
 fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
     let gallery = held("tree-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.cursor = (gallery.tree, MARGIN);
-        gallery.press();
-        gallery.cursor = (0.0, MARGIN);
-        gallery.resize();
-        gallery.release();
+        gallery.press_at((gallery.tree, MARGIN));
+        gallery.move_to((0.0, MARGIN));
+        gallery.let_go();
     });
     assert_eq!(gallery.tree, TREE_LEAST);
 }
@@ -416,14 +406,11 @@ fn the_tree_dragged_narrow_its_names_cut_at_its_edge() {
 fn the_sidebar_dragged_narrow_its_cards_rewrapped() {
     let mut gallery = held("sidebar-narrow", drafts(), WINDOW, |gallery| {
         show(gallery, "airbnb-listing", "default");
-        gallery.cursor = on_node(gallery, 1, "nav-save");
-        gallery.press();
-        gallery.release();
-        gallery.cursor = (gallery.pane_right(), MARGIN);
-        gallery.press();
-        gallery.cursor = (WINDOW.0, MARGIN);
-        gallery.resize();
-        gallery.release();
+        gallery.press_at(on_node(gallery, 1, "nav-save"));
+        gallery.let_go();
+        gallery.press_at((gallery.pane_right(), MARGIN));
+        gallery.move_to((WINDOW.0, MARGIN));
+        gallery.let_go();
     });
     assert_eq!(gallery.side, SIDEBAR_LEAST);
     fits(&mut gallery);
@@ -438,8 +425,7 @@ fn the_window_in_chinese() {
         showing(gallery, checkout + 1);
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
         let guessed = pages[0].nodes.iter().find(|node| node.assumed.is_some()).unwrap().id.clone();
-        gallery.cursor = on_node(gallery, 0, &guessed);
-        gallery.press();
+        gallery.press_at(on_node(gallery, 0, &guessed));
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "▸ 详情"));
@@ -455,8 +441,7 @@ fn the_window_in_japanese() {
         showing(gallery, checkout + 1);
         let Picture::Pages(pages) = &gallery.picture else { panic!("no picture") };
         let guessed = pages[0].nodes.iter().find(|node| node.assumed.is_some()).unwrap().id.clone();
-        gallery.cursor = on_node(gallery, 0, &guessed);
-        gallery.press();
+        gallery.press_at(on_node(gallery, 0, &guessed));
     });
     fits(&mut gallery);
     assert!(panel_has(&gallery, "▸ 詳細"));
