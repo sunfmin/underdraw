@@ -345,7 +345,10 @@ impl Fill<'_> {
             }
             if key == "item" {
                 let named = object.get("index").and_then(Value::as_str);
-                for row in each.iter().flatten().filter(|row| row.shown) {
+                for row in each.iter().flatten() {
+                    if !row.shown {
+                        continue;
+                    }
                     let scope = with(scope, &row.item, row.index, named);
                     let mut at = at.under(key, None);
                     at.instance.push(row.index);
@@ -385,7 +388,12 @@ impl Fill<'_> {
         if let Some(rows) = each
             && !object.contains_key("item")
         {
-            let items = rows.into_iter().filter(|row| row.shown).map(|row| row.item).collect();
+            let mut items = Vec::new();
+            for row in rows {
+                if row.shown {
+                    items.push(row.item);
+                }
+            }
             node.props.insert("items".to_string(), Value::Array(items));
         }
         Ok(node)
@@ -403,7 +411,12 @@ impl Fill<'_> {
         };
         let limit = object.get("limit").map(|limit| breakpoint::at(limit, self.breakpoint));
         let limit = limit.and_then(Value::as_u64).map_or(all.len(), |n| n as usize);
-        let top: Vec<&Value> = all.iter().take(limit).collect();
+        let mut top = Vec::new();
+        for item in all {
+            if top.len() < limit {
+                top.push(item.clone());
+            }
+        }
         let nest = object.get("nest").and_then(Value::as_str);
         let fold = object.get("fold").and_then(Value::as_str);
         let mut rows = Vec::new();
@@ -557,7 +570,7 @@ struct Row {
 /// `items` added to `rows` at `level`, each followed by the rows its `nest`
 /// field holds, one level in, hidden under one whose `fold` field is true.
 fn rows_of(
-    items: &[&Value],
+    items: &[Value],
     nest: Option<&str>,
     fold: Option<&str>,
     level: usize,
@@ -565,13 +578,12 @@ fn rows_of(
     rows: &mut Vec<Row>,
 ) {
     for item in items {
-        rows.push(Row { item: (*item).clone(), index: rows.len(), level, shown });
+        rows.push(Row { item: item.clone(), index: rows.len(), level, shown });
         let Some(Value::Array(inner)) = nest.and_then(|nest| item.get(nest)) else {
             continue;
         };
         let folded = fold.and_then(|fold| item.get(fold)) == Some(&Value::Bool(true));
-        let inner: Vec<&Value> = inner.iter().collect();
-        rows_of(&inner, nest, fold, level.saturating_add(1), shown && !folded, rows);
+        rows_of(inner, nest, fold, level.saturating_add(1), shown && !folded, rows);
     }
 }
 
