@@ -1,0 +1,89 @@
+{
+  "doc": "A line of the tree, a directory or description in bold, a phase in gray: the tree it is a row of moves it in by its level.",
+  "params": [
+    "name",
+    "heading",
+    "phase",
+    "meta",
+    "picked"
+  ],
+  "look": {
+    "box": "row",
+    "gap": 6,
+    "items": "center",
+    "height": 26,
+    "padding": [
+      0,
+      12
+    ],
+    "children": [
+      {
+        "text": "{name}",
+        "grow": 1,
+        "maxLines": 1,
+        "weight": {
+          "cases": [
+            {
+              "if": "heading",
+              "then": 600
+            },
+            {
+              "else": 400
+            }
+          ]
+        },
+        "ink": {
+          "cases": [
+            {
+              "if": "phase",
+              "then": "muted"
+            },
+            {
+              "else": "text"
+            }
+          ]
+        }
+      },
+      {
+        "text": "{meta}",
+        "if": "meta != \"\"",
+        "font": "font.caption",
+        "ink": "muted"
+      }
+    ],
+    "fill": {
+      "cases": [
+        {
+          "if": "picked",
+          "then": "fill"
+        },
+        {
+          "else": null
+        }
+      ]
+    }
+  },
+  "fixtures": {
+    "directory": {
+      "name": "shop/",
+      "heading": true,
+      "phase": false,
+      "meta": "",
+      "picked": false
+    },
+    "description": {
+      "name": "order",
+      "heading": true,
+      "phase": false,
+      "meta": "3 states",
+      "picked": true
+    },
+    "phase": {
+      "name": "loading",
+      "heading": false,
+      "phase": true,
+      "meta": "",
+      "picked": false
+    }
+  }
+}
