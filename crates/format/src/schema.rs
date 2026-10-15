@@ -20,6 +20,9 @@ pub type Scope = Vec<(String, Field)>;
 pub struct Schema {
     shapes: BTreeMap<String, Shape>,
     roots: Scope,
+    /// The conditions declared on each type (`Order.cancellable`), by the
+    /// type's name: a value of it reads each as a Bool field.
+    on_types: BTreeMap<String, Vec<String>>,
 }
 
 /// What a path refers to, and every prefix of it (the path included) that may
@@ -60,7 +63,13 @@ impl Schema {
                 Vec::new()
             }
         };
-        let schema = Schema { shapes, roots };
+        let mut on_types: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (name, _) in object(screen, "conditions") {
+            if let Some((type_name, condition)) = name.split_once('.') {
+                on_types.entry(type_name.to_string()).or_default().push(condition.to_string());
+            }
+        }
+        let schema = Schema { shapes, roots, on_types };
         schema.check_fields(findings);
         schema
     }
@@ -123,6 +132,96 @@ impl Schema {
     /// Whether `name` is a declared type.
     pub fn has(&self, name: &str) -> bool {
         self.shapes.contains_key(name)
+    }
+
+    /// The fields of the object type `type_name`, as a scope its own
+    /// conditions start their paths from.
+    pub fn fields_of(&self, type_name: &str) -> Option<Scope> {
+        match self.shapes.get(type_name) {
+            Some(Shape::Object(fields)) => Some(fields.clone()),
+            _ => None,
+        }
+    }
+
+    /// Whether the type `type_name` declares the condition `name`.
+    fn declares(&self, type_name: &str, name: &str) -> bool {
+        self.on_types.get(type_name).is_some_and(|names| names.iter().any(|n| n == name))
+    }
+
+    /// The type condition the path `path` uses (`Order.cancellable` for
+    /// `item.cancellable`, where `item` is an `Order`), if it ends in one.
+    pub fn type_condition(&self, scope: &Scope, path: &str) -> Option<String> {
+        let (value, name) = path.rsplit_once('.')?;
+        let resolved = self.resolve(scope, value)?;
+        let type_name = match &resolved.field.base {
+            Base::Named(type_name) if !resolved.field.array => type_name,
+            _ => return None,
+        };
+        self.declares(type_name, name).then(|| format!("{type_name}.{name}"))
+    }
+
+    /// Why the path `path` does not resolve, when it ends in a condition
+    /// declared on a type the value before it is not: which types declare
+    /// it, and what the value is.
+    pub fn misused(&self, scope: &Scope, path: &str) -> Option<String> {
+        let (value, name) = path.rsplit_once('.')?;
+        let mut on = Vec::new();
+        for (type_name, names) in &self.on_types {
+            if names.iter().any(|n| n == name) {
+                on.push(type_name.clone());
+            }
+        }
+        if on.is_empty() {
+            return None;
+        }
+        let is = match self.resolve(scope, value) {
+            Some(resolved) => resolved.field.describe(),
+            None if self.shapes.contains_key(value) => {
+                return Some(format!(
+                    "{path} is a condition on {value}: use it through a value of {value}, as item.{name}"
+                ));
+            }
+            None => return None,
+        };
+        Some(format!(
+            "{name} is a condition on {}, and {value} is {is}: use it only through a value of {}",
+            on.join(", "),
+            on.join(" or ")
+        ))
+    }
+
+    /// Each value of the type `type_name` in `value`, a value of `field`:
+    /// it, and those inside it, through every list and object.
+    pub fn values_of<'v>(
+        &self,
+        type_name: &str,
+        field: &Field,
+        value: &'v Value,
+        found: &mut Vec<&'v Value>,
+    ) {
+        if field.array {
+            let element = field.element();
+            if let Value::Array(items) = value {
+                for item in items {
+                    self.values_of(type_name, &element, item, found);
+                }
+            }
+            return;
+        }
+        let Some(Shape::Object(fields)) = self.shapes.get(field.base.name()) else {
+            return;
+        };
+        if !value.is_object() {
+            return;
+        }
+        if field.base.name() == type_name {
+            found.push(value);
+        }
+        for (name, inner) in fields {
+            if let Some(inner_value) = value.get(name) {
+                self.values_of(type_name, inner, inner_value, found);
+            }
+        }
     }
 
     /// The first field marked view state inside a value of `field`'s type,
@@ -202,7 +301,12 @@ impl Schema {
             let Some(Shape::Object(fields)) = self.shape(&field) else {
                 return None;
             };
-            field = fields.iter().find(|(name, _)| name == segment)?.1.clone();
+            field = match fields.iter().find(|(name, _)| name == segment) {
+                Some((_, next)) => next.clone(),
+                // A condition declared on the type reads as a Bool field.
+                None if self.declares(field.base.name(), segment) => Field::of(Base::Bool),
+                None => return None,
+            };
             walked.push('.');
             walked.push_str(segment);
         }

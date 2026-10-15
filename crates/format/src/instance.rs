@@ -94,7 +94,8 @@ pub fn instantiate(screen: &Value, state: State, breakpoint: Breakpoint) -> Resu
     let screen = &domain::expand(screen, &mut ignored);
     let schema = Schema::read(screen, &mut ignored);
     let conditions = Conditions::read(screen, &schema, &mut ignored);
-    let fixtures = fixture::read(screen, &schema, &mut ignored);
+    let mut fixtures = fixture::read(screen, &schema, &mut ignored);
+    conditions.fill(&schema, &mut fixtures);
     build(screen, &conditions, &fixtures, state, breakpoint)
 }
 

@@ -94,9 +94,10 @@ pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams)
     let known = Kinds::read(kinds);
     known.check(kinds, &mut findings);
     let schema = Schema::read(screen, &mut findings);
-    let fixtures = fixture::read(screen, &schema, &mut findings);
+    let mut fixtures = fixture::read(screen, &schema, &mut findings);
     params::read(screen, &schema, &mut findings);
     let conditions = Conditions::read(screen, &schema, &mut findings);
+    conditions.fill(&schema, &mut fixtures);
     let operations = Operations::read(screen, &schema, &conditions, &mut findings);
     jobs::check(&operations, &schema, &fixtures, &mut findings);
     let components = screen.get("components").and_then(Value::as_object).cloned().unwrap_or_default();
@@ -158,6 +159,32 @@ pub fn check_among(screen: &Value, kinds: Option<&Value>, others: &ScreenParams)
     if findings.0.is_empty() {
         for condition in conditions.all() {
             let mut holds_in = Vec::new();
+            if let Some(on) = &condition.on {
+                // One on a type holds of each value: it must be true of one
+                // and false of another, wherever the fixtures hold any.
+                let (mut of_some, mut fails_of_some) = (false, false);
+                for (name, data) in &fixtures {
+                    let (holds, fails) = conditions.of_values(&schema, &condition.name, data);
+                    if holds {
+                        holds_in.push(name.clone());
+                    }
+                    of_some = of_some || holds;
+                    fails_of_some = fails_of_some || fails;
+                }
+                if of_some != fails_of_some {
+                    let always = if of_some { "true" } else { "false" };
+                    findings.add(
+                        &format!("conditions.{}", condition.name),
+                        &format!("is {always} of every {on} in the fixtures, so a state it marks cannot be rendered; add an {on} it is not"),
+                    );
+                }
+                table.push(Condition {
+                    name: condition.name.clone(),
+                    label: condition.label.clone(),
+                    holds_in,
+                });
+                continue;
+            }
             for (name, data) in &fixtures {
                 if conditions.holds(&condition.name, data) {
                     holds_in.push(name.clone());
@@ -396,8 +423,7 @@ impl Walk<'_> {
                     if let Some(Value::String(used)) = object.get("disabled") {
                         let UseSite { negated, name } = UseSite::parse(used);
                         if negated {
-                            enabled.holds.extend(self.conditions.implied(name));
-                            enabled.not_null.extend(self.conditions.guards(name));
+                            enabled.extend(self.held(name, scope));
                         }
                     }
                     for (event, handler) in events {
@@ -592,10 +618,22 @@ impl Walk<'_> {
         } else if let Some(required) = &operation.requires
             && !known.holds.contains(required)
         {
+            // A condition on a type is gated through the value the call is
+            // about: the one of that type it passes a field of.
+            let gate = match required.split_once('.') {
+                Some((type_name, short)) => {
+                    let value =
+                        self.value_of(type_name, with, scope).unwrap_or_else(|| "<value>".to_string());
+                    format!("{value}.{short}")
+                }
+                None => required.clone(),
+            };
+            let through =
+                if gate == *required { String::new() } else { ", through the value it acts on".to_string() };
             self.findings.add(
                 node,
                 &format!(
-                    "calls {}, which requires {required}: gate this node by it, \"disabled\": \"!{required}\" or \"if\": \"{required}\"",
+                    "calls {}, which requires {required}: gate this node by it{through}, \"disabled\": \"!{gate}\" or \"if\": \"{gate}\"",
                     operation.name
                 ),
             );
@@ -880,6 +918,35 @@ impl Walk<'_> {
         }
     }
 
+    /// The value of the type `type_name` a call's `with` passes a field of
+    /// (`item` for `{item.id}`), if one does.
+    fn value_of(&self, type_name: &str, with: Option<&Value>, scope: &Scope) -> Option<String> {
+        let Some(Value::Object(given)) = with else {
+            return None;
+        };
+        for text in given.values() {
+            let Some(text) = text.as_str() else {
+                continue;
+            };
+            let Ok(placeholders) = template::placeholders(text) else {
+                continue;
+            };
+            for placeholder in placeholders {
+                let mut value = placeholder.path.as_str();
+                while let Some((prefix, _)) = value.rsplit_once('.') {
+                    value = prefix;
+                    if let Some(resolved) = self.schema.resolve(scope, value)
+                        && !resolved.field.array
+                        && resolved.field.base.name() == type_name
+                    {
+                        return Some(value.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// A yes/no at `at`: `!`, then a condition's name or a Bool path. What it
     /// guarantees when it holds: the paths not null, and the conditions true.
     fn use_site(&mut self, used: &str, scope: &Scope, at: &str) -> Known {
@@ -888,26 +955,50 @@ impl Walk<'_> {
             self.findings.add(at, &format!("{used:?}: here goes !? and a condition's name or a Bool path; name anything more in conditions"));
             return Known::default();
         }
+        if self.conditions.is_on_type(name) {
+            let problem = self.schema.misused(scope, name).unwrap_or_default();
+            self.findings.add(at, &problem);
+            return Known::default();
+        }
+        if !self.conditions.contains(name) {
+            match self.schema.resolve(scope, name) {
+                Some(resolved) if resolved.field.is_plain_bool() => {}
+                Some(resolved) => self.findings.add(
+                    at,
+                    &format!(
+                        "{name} is {}, not a Bool; name the test in conditions",
+                        resolved.field.describe()
+                    ),
+                ),
+                None => match self.schema.misused(scope, name) {
+                    Some(problem) => self.findings.add(at, &problem),
+                    None => self.findings.add(at, &format!("{name} is neither a condition nor a path")),
+                },
+            }
+        }
+        if negated { Known::default() } else { self.held(name, scope) }
+    }
+
+    /// What holds wherever the use site `name` (a condition, or a Bool
+    /// path) does: the paths not null, and the conditions true. A path
+    /// that ends in a condition on a type holds that condition, and the
+    /// paths it guards, read through the value (`item.note`).
+    fn held(&self, name: &str, scope: &Scope) -> Known {
         if self.conditions.contains(name) {
-            return if negated {
-                Known::default()
-            } else {
-                Known {
-                    not_null: self.conditions.guards(name),
-                    holds: self.conditions.implied(name),
-                    confirming: false,
-                }
+            return Known {
+                not_null: self.conditions.guards(name),
+                holds: self.conditions.implied(name),
+                confirming: false,
             };
         }
-        match self.schema.resolve(scope, name) {
-            Some(resolved) if resolved.field.is_plain_bool() => {}
-            Some(resolved) => self.findings.add(
-                at,
-                &format!("{name} is {}, not a Bool; name the test in conditions", resolved.field.describe()),
-            ),
-            None => self.findings.add(at, &format!("{name} is neither a condition nor a path")),
+        match (self.schema.type_condition(scope, name), name.rsplit_once('.')) {
+            (Some(condition), Some((value, _))) => Known {
+                not_null: self.conditions.guards_through(&condition, value),
+                holds: self.conditions.implied(&condition),
+                confirming: false,
+            },
+            _ => Known::default(),
         }
-        Known::default()
     }
 
     fn template(&mut self, text: &str, scope: &Scope, guarded: &BTreeSet<String>, at: &str, key: &str) {
