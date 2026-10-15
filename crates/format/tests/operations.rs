@@ -573,6 +573,9 @@ fn a_call_is_gated_by_an_if_or_by_a_condition_that_implies_it() {
     for (name, from, to) in cases {
         assert_eq!(direct.matches(from).count(), 1, "{name}: {from:?} must appear exactly once");
         let mut screen: Value = serde_json::from_str(&direct.replace(from, to)).unwrap();
+        // The draft's transitions follow the confirmation this rewiring
+        // takes out; they are not what is checked here.
+        screen.as_object_mut().unwrap().remove("transitions");
         if name == "implied" {
             let delete = "/root/children/2/item/overlay/children/4";
             screen.pointer_mut(delete).unwrap()["disabled"] = Value::from("!mayDeleteNow");

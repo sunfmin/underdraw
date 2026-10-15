@@ -27,6 +27,10 @@ pub enum State<'a> {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Node {
     pub id: String,
+    /// Its id as the description writes it: a template inside an item
+    /// (`order-{index}-cancel`), what a transition names it by.
+    #[serde(skip)]
+    pub written_id: String,
     pub kind: String,
     /// Every property other than the node's structure, with templates filled
     /// and cases and responsive values chosen.
@@ -148,13 +152,14 @@ impl Fill<'_> {
         {
             return Ok(Vec::new());
         }
-        let id = match object.get("id") {
-            Some(Value::String(id)) => self.text(id, scope)?,
+        let (id, written_id) = match object.get("id") {
+            Some(Value::String(id)) => (self.text(id, scope)?, id.clone()),
             _ => return Err(format!("a node has no id: {written}")),
         };
         let kind = object.get("kind").and_then(Value::as_str).unwrap_or_default().to_string();
         let mut node = Node {
             id,
+            written_id,
             kind,
             props: Map::new(),
             children: Vec::new(),

@@ -787,5 +787,18 @@
         }
       ]
     }
-  }
+  },
+  "transitions": [
+    { "from": "default", "on": "order-{index}-cancel.tap", "to": "cancel-dialog" },
+    { "from": "cancel-dialog", "on": "reason-{index}.tap", "to": "cancel-ready" },
+    { "from": "cancel-dialog", "on": "cd-keep.tap", "to": "default" },
+    { "from": "cancel-ready", "on": "cd-keep.tap", "to": "default" },
+    { "from": "cancel-ready", "on": "cd-confirm.tap", "outcome": "ok", "to": "default" },
+    { "from": "cancel-ready", "on": "cd-confirm.tap", "outcome": "shipped", "to": "cancel-ready" },
+    { "from": "default", "on": "filter-{index}.tap", "outcome": "ok", "to": "filter-empty" },
+    { "from": "filter-empty", "on": "filter-{index}.tap", "outcome": "ok", "to": "default" },
+    { "from": "no-match", "on": "clear-search.tap", "to": "default" },
+    { "from": "error", "on": "retry.tap", "outcome": "ok", "to": "default" },
+    { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" }
+  ]
 }
