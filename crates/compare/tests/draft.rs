@@ -5,7 +5,7 @@
 
 use serde_json::{Map, Value, json};
 use underdraw_compare::{Comparison, compare};
-use underdraw_format::{Breakpoint, State, instantiate};
+use underdraw_format::{Breakpoint, Lang, State, instantiate};
 use underdraw_handoff::handoff;
 use underdraw_layout::{Font, Measure, Size, layout};
 
@@ -40,8 +40,15 @@ fn faithful(state: State, width: f32) -> Value {
     };
     let handed = handoff(&screen, &mapping, &tokens, None).unwrap();
     let expected = handed.states.iter().find(|s| s.state == named && s.breakpoint == breakpoint).unwrap();
-    let page =
-        layout(&instantiate(&screen, state, breakpoint).unwrap(), &tokens, None, width, &mut Fixed).unwrap();
+    let page = layout(
+        &instantiate(&screen, state, breakpoint).unwrap(),
+        &tokens,
+        None,
+        width,
+        Lang::default(),
+        &mut Fixed,
+    )
+    .unwrap();
     let mut elements = Vec::new();
     for id in &expected.present {
         let rect = page.nodes.iter().find(|n| &n.id == id).unwrap().rect;

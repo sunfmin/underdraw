@@ -151,7 +151,8 @@ NODES
     "disabled"  a use site: "!canAdd"
     "on"        actions (ACTIONS below)
     "ref"       "<component>": stands for that component; other keys ignored
-    "assumed"   "why this is a guess": drawn orange until the person agrees
+    "assumed"   what you guessed there and what else it could be, in a
+                sentence (ASSUMED below): drawn orange until the person agrees
     "platform"  {"web": {"hidden": true, "$why": "…"}} or {"ios": {"<prop>": v}}:
                 one platform leaves it out, or builds a prop differently
     any other key   a prop of the kind, such as "text", "variant", "icon"
@@ -169,6 +170,22 @@ NODES
     { "id": "photos", "kind": "ImageCarousel", "each": "listing.photos" }
   "item" sees item and index; "children" of the same node are drawn once
   and see neither.
+
+ASSUMED
+  "assumed" marks a node as a guess the person has not confirmed. They
+  answer it in the gallery: right, or wrong and what is right instead. To
+  answer, they need what was guessed and what else it could be, so say
+  both, in a whole sentence:
+    "assumed": "Card fields are drawn here; the real build may use the payment provider's hosted fields"
+  check refuses one too short to say that: empty, or a word or two (fewer
+  than 5 words, or than 10 characters in Chinese or Japanese). Write it in
+  the language you speak with the person, whatever the description's
+  "locale" is. Take it out once the person confirms it.
+  The assumptions underdraw makes itself, a navigate to a screen not drawn
+  yet and a kind it does not know, come as whole sentences naming that
+  screen or kind, in English or Chinese as the command that reports them
+  is asked: --lang en|zh on `check <root>`, `render` and `gallery`,
+  English by default.
 
 LAYOUT ON A NODE
   Direction comes from the kind: Stack, List, Scroll, Screen, Card,

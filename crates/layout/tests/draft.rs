@@ -2,7 +2,7 @@
 //! character is half the font size wide, so the geometry is exact.
 
 use serde_json::Value;
-use underdraw_format::{Breakpoint, State, instantiate};
+use underdraw_format::{Breakpoint, Lang, State, instantiate};
 use underdraw_layout::{Draw, Page, Placed, layout};
 
 const DRAFT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../drafts/airbnb-listing");
@@ -18,7 +18,7 @@ fn page(state: State, width: f32) -> Page {
     let (screen, tokens) = (read("screen.json"), read("tokens.json"));
     let breakpoint = Breakpoint::for_width(&tokens, width as u32);
     let root = instantiate(&screen, state, breakpoint).unwrap();
-    layout(&root, &tokens, None, width, &mut Fixed).unwrap()
+    layout(&root, &tokens, None, width, Lang::default(), &mut Fixed).unwrap()
 }
 
 fn placed<'a>(page: &'a Page, id: &str) -> &'a Placed {
@@ -138,7 +138,7 @@ fn tiny_with(children: Value, kinds: Option<&Value>) -> Page {
     });
     let tokens = read("tokens.json");
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
-    layout(&root, &tokens, kinds, 390.0, &mut Fixed).unwrap()
+    layout(&root, &tokens, kinds, 390.0, Lang::default(), &mut Fixed).unwrap()
 }
 
 fn texts(page: &Page) -> Vec<&str> {

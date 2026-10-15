@@ -9,7 +9,7 @@
 
 use serde_json::{Map, Value};
 use taffy::prelude::*;
-use underdraw_format::{Anchor, Edge, Kinds, Node, Track};
+use underdraw_format::{Anchor, Edge, Kinds, Lang, Node, Track};
 
 use crate::place::{Elem, Look, Pin, Words};
 use crate::tokens::{self, Tokens};
@@ -50,6 +50,8 @@ impl Scope<'_, '_> {
 pub(crate) struct Catalog<'t> {
     pub(crate) tokens: &'t Tokens<'t>,
     pub(crate) kinds: &'t Kinds,
+    /// The language a guess underdraw makes itself is said in.
+    pub(crate) lang: Lang,
 }
 
 impl Catalog<'_> {
@@ -63,10 +65,7 @@ impl Catalog<'_> {
             }
             None => {
                 let mut elem = self.unknown(&node.kind, Some(node));
-                elem.assumed = Some(format!(
-                    "{} is not a kind underdraw knows; drawn as a box with its name",
-                    node.kind
-                ));
+                elem.assumed = Some(underdraw_format::assumption::unknown_kind(&node.kind, self.lang));
                 elem
             }
         };

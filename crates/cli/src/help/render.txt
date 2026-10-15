@@ -32,7 +32,9 @@ ANSWERS
                     "label": the number tagged on it in the picture, or null,
                     "assumed": what the agent guessed there, or that its kind is
                       not one underdraw knows, or (given --root) that it
-                      navigates to a screen not drawn yet, or null}, …]
+                      navigates to a screen not drawn yet, or null; what
+                      underdraw assumes itself is a whole sentence in
+                      --lang, en or zh, en by default}, …]
   }
 
 WHAT YOU SEE

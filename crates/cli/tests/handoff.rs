@@ -123,10 +123,14 @@ fn a_guess_is_handed_off_as_unconfirmed() {
     let screen = std::fs::read_to_string(format!("{DRAFT}/screen.json")).unwrap();
     let from = r#""text": "房客推荐","#;
     assert_eq!(screen.matches(from).count(), 1);
-    let guessed = screen.replace(from, &format!(r#"{from} "assumed": "后端还是前端决定？","#));
+    let guessed = screen
+        .replace(from, &format!(r#"{from} "assumed": "猜测由后端决定是否推荐；也可能由前端按评分算出","#));
     std::fs::write(dir.join("screen.json"), guessed).unwrap();
     let (answer, code) = underdraw(&["handoff", dir.to_str().unwrap(), "--platform", "ios"]);
     assert_eq!(code, 0, "{answer:#}");
-    assert_eq!(answer["unconfirmed"], json!([{ "id": "guest-favorite", "assumed": "后端还是前端决定？" }]));
+    assert_eq!(
+        answer["unconfirmed"],
+        json!([{ "id": "guest-favorite", "assumed": "猜测由后端决定是否推荐；也可能由前端按评分算出" }])
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }

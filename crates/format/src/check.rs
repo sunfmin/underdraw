@@ -273,6 +273,18 @@ impl Walk<'_> {
                 &format!("kind {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, KINDS.JSON)"),
             );
         }
+        match object.get("assumed") {
+            Some(Value::String(assumed)) => {
+                if let Some(problem) = crate::assumption::too_short(assumed) {
+                    self.findings.add(&format!("{at}.assumed"), problem);
+                }
+            }
+            Some(_) => self.findings.add(
+                &format!("{at}.assumed"),
+                "is text: say in a sentence what was guessed and what else it could be (`underdraw check --help`, \"assumed\")",
+            ),
+            None => {}
+        }
         if let Some(Value::String(kind)) = object.get("kind")
             && key != "overlay"
             && self.kinds.backdrop(kind)
