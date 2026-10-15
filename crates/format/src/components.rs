@@ -130,7 +130,7 @@ pub enum Takes {
 
 /// Every key a look may hold, and what it takes: what underdraw-layout
 /// reads. A look with `component` holds that component's props instead.
-pub const LOOK: [(&str, Takes); 44] = [
+pub const LOOK: [(&str, Takes); 45] = [
     ("if", Takes::Any),
     ("cases", Takes::Any),
     ("repeat", Takes::Any),
@@ -153,6 +153,7 @@ pub const LOOK: [(&str, Takes); 44] = [
     ("dashed", Takes::Bool),
     ("cross", Takes::Any),
     ("topLine", Takes::Any),
+    ("dividers", Takes::Any),
     ("clip", Takes::Any),
     ("gap", Takes::Any),
     ("padding", Takes::Any),

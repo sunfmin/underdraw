@@ -207,7 +207,8 @@ impl Catalog<'_> {
     }
 
     /// A box: its layout (`box`, sizes, `gap`, `padding`, …), how it looks
-    /// (`fill`, `stroke`, `radius`, `cross`, `topLine`, `wireframe`) and its
+    /// (`fill`, `stroke`, `radius`, `cross`, `topLine`, `dividers`,
+    /// `wireframe`) and its
     /// `children`.
     /// A `frame` also takes the container props a description may set on
     /// the node: `padding`, `gap`, `radius`, `border`, `elevation`.
@@ -275,6 +276,11 @@ impl Catalog<'_> {
             }
             None => {}
         }
+        // A line between its cells: true for the line ink, or an ink.
+        elem.dividers = match get("dividers") {
+            Value::Bool(true) => Some(Ink::Line),
+            value => ink(self.tokens, &value),
+        };
         let mut children = Vec::new();
         if let Some(looks) = object.get("children") {
             children = self.build(looks, scope);
@@ -421,24 +427,28 @@ impl Catalog<'_> {
     }
 
     /// `node`'s children in order: `leading`, the body (`children`, `item`,
-    /// `action`), then `trailing` pushed to the far end; `overlay` floats
+    /// `action`), then `trailing` pushed to the far end and `foot` after it,
+    /// so a column's foot sits on its bottom edge; `overlay` floats
     /// over the box at its `anchor`: a corner, the center, or the bottom edge
     /// from side to side, flush.
     fn children<'a>(&self, node: &'a Node) -> Vec<Elem<'a>> {
         let mut built = Vec::new();
         let mut trailing = Vec::new();
+        let mut foot = Vec::new();
         for child in &node.children {
             match child.slot.as_str() {
                 "trailing" => trailing.push(self.node(child)),
+                "foot" => foot.push(self.node(child)),
                 "overlay" => {}
                 _ => built.push(self.node(child)),
             }
         }
-        if !trailing.is_empty() {
+        if !trailing.is_empty() || !foot.is_empty() {
             let mut spacer = Style::default();
             spacer.flex_grow = 1.0;
             built.push(Elem::new(spacer));
             built.append(&mut trailing);
+            built.append(&mut foot);
         }
         for child in &node.children {
             if child.slot == "overlay" {

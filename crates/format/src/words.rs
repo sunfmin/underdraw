@@ -140,6 +140,8 @@ sentences! {
     go_forward,
     hide_sidebar,
     show_sidebar,
+    hide_marks,
+    show_marks,
     journey_mark,
     nothing_to_copy,
     no_clipboard,

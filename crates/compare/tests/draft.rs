@@ -178,3 +178,40 @@ fn a_capture_that_is_not_one_is_refused() {
     assert!(refused.contains("elements[0]: needs \"id\""), "{refused}");
     assert!(refused.contains("elements[1]: a: a frame is"), "{refused}");
 }
+
+#[test]
+fn a_foot_is_pinned_out_of_its_siblings_order() {
+    // A pane whose cards scroll under a box to write in at its foot: in a
+    // capture taken scrolled, the box sits above cards it follows.
+    let pane = |foot: bool| {
+        let send = json!({ "id": "send", "component": "Button", "text": "Send" });
+        let mut side = json!({ "id": "side", "component": "Stack", "children": [
+            { "id": "a", "component": "Text", "text": "a" }, { "id": "b", "component": "Text", "text": "b" } ] });
+        if foot {
+            side["foot"] = send;
+        } else {
+            side["children"].as_array_mut().unwrap().push(send);
+        }
+        let screen = json!({ "screen": "Pane", "data": {}, "types": {}, "fixtures": { "default": {} },
+            "conditions": {}, "root": { "id": "root", "component": "Screen", "children": [side] } });
+        Screen::read(&screen, Shared::default())
+    };
+    let capture = json!({ "width": 390, "elements": [
+        { "id": "side", "x": 0, "y": 0, "width": 390, "height": 300 },
+        { "id": "a", "x": 0, "y": 100, "width": 390, "height": 20 },
+        { "id": "b", "x": 0, "y": 200, "width": 390, "height": 20 },
+        { "id": "send", "x": 0, "y": 40, "width": 390, "height": 40 } ] });
+    let tokens = read("tokens.json");
+    let order = |foot: bool| {
+        let comparison =
+            compare(&pane(foot), &json!({}), &tokens, State::Fixture("default"), &capture, &mut Fixed)
+                .unwrap();
+        checks(&comparison)
+            .iter()
+            .filter(|(_, check)| *check == "order")
+            .map(|(at, _)| at.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(false), ["send"], "in the flow, it must follow the cards");
+    assert!(order(true).is_empty(), "at the foot, it is pinned");
+}

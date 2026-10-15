@@ -29,14 +29,17 @@ pub fn colour(ink: Ink) -> Color {
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])
 }
 
-/// `page` drawn at `scale` pixels per point.
-pub fn scene(page: &Page, typesetter: &mut Typesetter, scale: f64) -> Scene {
+/// `page`'s wireframe drawn at `scale` pixels per point, and apart, its
+/// marks, to be drawn over it.
+pub fn scene(page: &Page, typesetter: &mut Typesetter, scale: f64) -> (Scene, Scene) {
     let mut scene = Scene::new();
     let at = Affine::scale(scale);
     let paper = RoundedRect::new(0.0, 0.0, f64::from(page.width), f64::from(page.height), 0.0);
     scene.fill(Fill::NonZero, at, colour(Ink::Paper), None, &paper);
-    draws(&mut scene, at, &page.draws, colour, typesetter);
-    scene
+    draws(&mut scene, at, page.wireframe(), colour, typesetter);
+    let mut marks = Scene::new();
+    draws(&mut marks, at, page.marks(), colour, typesetter);
+    (scene, marks)
 }
 
 /// `list` painted into `scene`, its points taken through `at`, each ink in

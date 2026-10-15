@@ -65,6 +65,23 @@ DOES
   ⌘\ does. The history is not kept once the window closes; ← and → alone,
   without ⌘, still step a journey played.
 
+  Left of it, "hide marks ⌘." hides every mark the gallery draws over the
+  pictures, leaving the bare wireframe, and "show marks ⌘." shows them
+  again; ⌘. (Ctrl+. on Linux and Windows, as the button then says) does
+  the same. The marks are the purple marks of where acting goes (dashed
+  outlines, ↗ and → badges), the numbered labels, the orange "?" of each
+  assumption and its outline, the blue pins of notes, and the journeys'
+  marks: the double ring on the node a journey acts on next and each
+  journey's mark on an overview's states. They are hidden at both widths
+  and in states, overviews and flows alike. They are shown when the window
+  opens; hidden, they stay hidden as you pick and act, from state to state
+  and screen to screen, and are shown again once the window is closed and
+  opened. Hidden, the node picked is still drawn as picked, with its go-to
+  buttons; a click still picks and a ⌘-click still acts; holding ⌘ still
+  lights up the purple marks for as long as it is held (the labels, the
+  "?" and the pins stay hidden). A press where a hidden journey's mark was
+  picks its state, and one where a hidden pin was, what is under it.
+
   Each pane that scrolls shows a scrollbar while what it holds is larger
   than it, and none while it fits: the tree and the sidebar on their right
   edge, the pictures on their right edge and, when they scroll sideways,

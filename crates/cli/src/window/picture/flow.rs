@@ -35,7 +35,8 @@ pub(crate) struct Flow {
 /// What one box of the flow shows under its name.
 pub(crate) enum Tile {
     /// The description's first state, drawn at the phone's width.
-    Picture { scene: Box<Scene>, width: f64 },
+    /// Its marks apart, drawn over it while they are shown.
+    Picture { scene: Box<Scene>, marks: Box<Scene>, width: f64 },
     /// A description that cannot be drawn: how many faults it has.
     Faulty(usize),
     /// A screen not drawn yet: a dashed box marked "?".
@@ -197,7 +198,8 @@ impl Shows for Flow {
         }
     }
 
-    /// Each box of a description on a sheet, its picture cut at its foot;
+    /// Each box of a description on a sheet, its picture cut at its foot,
+    /// its marks over it while they are shown;
     /// then the boxes' names and the arrows, all in the flow's own points
     /// scaled to the pane.
     fn draw(&self, scene: &mut Scene, pane: &Desk, seen: &Seen, typesetter: &mut Typesetter) -> Vec<Draw> {
@@ -208,11 +210,14 @@ impl Shows for Flow {
             }
         }
         for (place, tile) in self.map.places.iter().zip(&self.tiles) {
-            let Tile::Picture { scene: picture, width } = tile else { continue };
+            let Tile::Picture { scene: picture, marks, width } = tile else { continue };
             let (x, y) = (place.x, place.y + flow::TITLE);
             scene.push_clip_layer(Fill::NonZero, at, &Area::new(x, y, x + flow::WIDE, place.y + flow::TALL));
             let small = Affine::translate((x, y)) * Affine::scale(flow::WIDE / width);
             scene.append(picture, Some(at * small));
+            if seen.marks {
+                scene.append(marks, Some(at * small));
+            }
             scene.pop_layer();
         }
         let picked = match seen.picked {

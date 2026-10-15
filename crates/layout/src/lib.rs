@@ -127,6 +127,7 @@ pub struct Placed {
 pub struct Page {
     pub width: f32,
     pub height: f32,
+    /// The wireframe, then its marks ([`Page::marks`]).
     pub draws: Vec<Draw>,
     /// Every node with an id, in document order.
     pub nodes: Vec<Placed>,
@@ -136,6 +137,37 @@ pub struct Page {
     /// Each node that draws another description's state it cannot draw,
     /// at its id, and why: drawn crossed out instead.
     pub unpictured: Vec<Finding>,
+    /// How many of `draws`, at their end, are the marks over the
+    /// wireframe: each label, and each guess's outline and "?".
+    #[serde(skip)]
+    marks: usize,
+}
+
+impl Page {
+    /// The wireframe: what is drawn, but for its marks.
+    pub fn wireframe(&self) -> &[Draw] {
+        self.parts().0
+    }
+
+    /// The marks over the wireframe: each label, and each guess's outline
+    /// and "?", drawn over the rest.
+    pub fn marks(&self) -> &[Draw] {
+        self.parts().1
+    }
+
+    /// The marks taken out of what is drawn, which is left the wireframe.
+    pub fn take_marks(&mut self) -> Vec<Draw> {
+        let marks = self.marks().to_vec();
+        self.draws.truncate(self.draws.len().saturating_sub(marks.len()));
+        self.marks = 0;
+        marks
+    }
+
+    /// What is drawn split where the marks start.
+    fn parts(&self) -> (&[Draw], &[Draw]) {
+        let at = self.draws.len().saturating_sub(self.marks);
+        self.draws.split_at_checked(at).unwrap_or((&self.draws, &[]))
+    }
 }
 
 /// Other descriptions' states, laid out, for a node that draws one inside

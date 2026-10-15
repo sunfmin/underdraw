@@ -113,7 +113,11 @@ pub struct Drawing {
     pub origins: BTreeMap<String, Origin>,
     /// What each node does when acted on, by id.
     pub handlers: BTreeMap<String, Handlers>,
+    /// The wireframe.
     pub scene: Scene,
+    /// Its marks, drawn over it: each label, and each guess's outline and
+    /// "?".
+    pub marks: Scene,
     /// Pixels per point: the one asked for, or less when the page would be
     /// taller than the GPU draws.
     pub scale: f64,
@@ -303,9 +307,12 @@ fn handled(node: &Node, handlers: &mut BTreeMap<String, Handlers>) {
 }
 
 impl Laid {
-    /// The page painted at exactly `scale` pixels per point.
+    /// The page painted at exactly `scale` pixels per point, its marks
+    /// over it.
     pub fn scene(&mut self, scale: f64) -> Scene {
-        paint::scene(&self.page, &mut self.typesetter, scale)
+        let (mut scene, marks) = paint::scene(&self.page, &mut self.typesetter, scale);
+        scene.append(&marks, None);
+        scene
     }
 
     /// The scene of the page at `scale` pixels per point, or less when that
@@ -317,7 +324,7 @@ impl Laid {
         let scale = f64::from(scale).min(tallest);
         let pixels_wide = (f64::from(page.width) * scale).ceil() as u32;
         let pixels_high = (f64::from(page.height) * scale).ceil() as u32;
-        let scene = self.scene(scale);
+        let (scene, marks) = paint::scene(page, &mut self.typesetter, scale);
         Drawing {
             dir: self.dir,
             shown: self.shown,
@@ -328,6 +335,7 @@ impl Laid {
             written: self.written,
             origins: self.origins,
             scene,
+            marks,
             scale,
             pixels: [pixels_wide, pixels_high],
         }

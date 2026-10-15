@@ -50,6 +50,12 @@ _Avoid_: popup layer, modal
 Where an overlay floats over its node: a corner, the center, or flush
 along the bottom (a sheet).
 
+**Foot**:
+A node's slot for what stays at its bottom edge while the rest of it
+scrolls, out of its siblings' order: a chat's box to write in at a
+sidebar's foot. StickyBar is the same for a whole screen.
+_Avoid_: sticky footer, bottom slot
+
 **Token**:
 A named design value (`color.primary`, `space.4`) that nodes use instead of raw
 values.
@@ -236,7 +242,10 @@ _Avoid_: panel, inspector, debug view
 **Toolbar**:
 The strip along the top of the gallery's window, over the tree, the
 pictures and the sidebar: back and forward through what the window has
-shown, every change of it a step, kept only while the window is open; and
+shown, every change of it a step, kept only while the window is open; the
+button that hides and shows every mark drawn over the pictures (the
+purple marks of where acting goes, the labels, the orange "?", the pins
+and the journeys' marks), leaving the bare **wireframe**, as ⌘. does; and
 the button that hides and shows the **sidebar**. Its back is the window's,
 not a design's `back`, which still returns along the path taken by acting.
 _Avoid_: navigation bar, header

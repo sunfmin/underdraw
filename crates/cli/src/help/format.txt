@@ -155,8 +155,9 @@ CONDITIONS
 
 TEMPLATES AND FORMATS
   Any string may hold placeholders: {path} or {path|format}. A path is
-  dot-separated: a data root, or inside "item" also item and index. No
-  operators in a placeholder. {{ and }} are literal braces.
+  dot-separated: a data root, or inside "item" also item, index and the
+  index a repeat around it names ("index": "row"). No operators in a
+  placeholder. {{ and }} are literal braces.
     "text": "{summary.remaining} left · {booking.total|money}"
   Formats (closed set; a value that needs one and lacks it is a fault):
     (none)       string, int
@@ -185,7 +186,9 @@ CASES
 
 NODES
   A node is an object:
-    "id"        unique: "todo-{index}" inside an item template. Required on
+    "id"        unique in every state: "todo-{index}" inside an item
+                template, "cell-{row}-{index}" inside one inside another
+                ("index" below); check names an id two nodes share. Required on
                 a node with "on", "bind" or "assumed", and on an instance
                 of a component holding one; any other may leave it out
                 and is given one, the same on every run and unchanged by
@@ -194,7 +197,9 @@ NODES
                 text, title, label or icon ("page-text-hello-name" for
                 {"component": "Text", "text": "Hello {name}"} in "page";
                 four hex digits for text with no ASCII word), "-{index}"
-                after an item's, "-2", "-3"… after one taken. A component's
+                after an item's (inside a repeat inside one, the outer's
+                {index} in the id it is in said by the outer's "index"
+                name), "-2", "-3"… after one taken. A component's
                 own nodes are given theirs without its root's. check,
                 render, handoff and the gallery all name it so
     "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
@@ -204,6 +209,15 @@ NODES
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
     "item"      the node repeated; it sees item (the element) and index (0..)
+    "index"     a name for this repeat's index, beside "each": "row". A
+                repeat inside one rebinds item and index, so a node there
+                reaches this one's index only by its name:
+                  { "id": "rows", "component": "List", "each": "rows", "index": "row",
+                    "item": { "id": "row-{index}", "component": "List", "each": "item.cells",
+                      "item": { "id": "cell-{row}-{index}", "component": "Button", … } } }
+                gives cell-0-0, cell-0-1, cell-1-0…; a transition or a
+                journey names it as written, "cell-{row}-{index}.tap". A
+                word no data root, enclosing repeat, item, index or n takes
     "limit"     at most this many elements: 5, or {"compact": 6, "regular": 9}
     "bind"      a path (or a list of paths) the person edits; its value is
                 given to the component as "value" ("bind": "composer.text";
@@ -227,6 +241,14 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
+    foot       stays at the foot of the node while what is above it scrolls,
+               out of its siblings' order: a chat's box to write in, a side
+               panel's buttons. Drawn after everything else, on the bottom
+               edge of a column (Stack, Card): a pane in a Columns is as
+               tall as its row. `compare` treats it as pinned. StickyBar
+               does this for a whole screen:
+               { "id": "side", "component": "Stack", "children": [ …cards ],
+                 "foot": { "id": "composer", "component": "Row", … } }
   A component draws its slots only if its look places "$children"; check
   refuses a node in a slot of one whose look does not (IconButton, Badge).
   "each" with no "item" passes the elements to the component as "items" (photos):
@@ -260,6 +282,10 @@ LAYOUT ON A NODE
     "border"     a colour token: "color.border"
     "elevation"  an elevation token: outlined in the wireframe
     "columns"    Grid and Columns only: a count, or tracks ["58%", "1fr"]
+    "dividers"   Grid and Columns only: true draws a line between the cells,
+                 in the line ink, for panes split without a border round each
+  Each cell of a Grid or Columns is as tall as its row, so its border and
+  fill reach the row's foot.
   Section takes "gap" and "padding" too. Width, grow, alignment and sizes
   are never written on a node: they belong to a component's look (LOOKS).
   When a built-in component does not lay out as needed, define one.
@@ -549,7 +575,7 @@ COMPONENTS
     id, component, with, if, only, assumed and the slots it fills; any
     other key reaches inside, and is refused. { "slot": "children" } in
     its nodes stands for what an instance gives in that slot (children,
-    leading, trailing, action or overlay): the screen's own nodes, read
+    leading, trailing, action, overlay or foot): the screen's own nodes, read
     where the instance is, under their own ids. check refuses a slot the
     component places nowhere.
   - A component may use another; check refuses one that uses itself, at
@@ -661,14 +687,16 @@ JOURNEYS
     {
       "$comment": "The person opens an order and cancels it before it ships.",
       "steps": [
-        { "screen": "orders", "state": "default", "on": "order-{index}.tap" },
-        { "screen": "order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
-        { "screen": "order",  "state": "cancelled" }
+        { "screen": "Orders", "state": "default", "on": "order-{index}.tap" },
+        { "screen": "Order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
+        { "screen": "Order",  "state": "cancelled" }
       ]
     }
-    "screen"   the screen's directory, by its path from the project root
-               (the nearest directory at or above <dir> holding
-               domain.json; with none, <dir> itself): "orders/list"
+    "screen"   the screen's name, as a navigate names it: "Orders"; or its
+               directory, by its path from the project root (the nearest
+               directory at or above <dir> holding domain.json; with none,
+               <dir> itself): "orders/list". A name no description under
+               the root declares is a finding at the step
     "state"    a fixture or a phase of that screen
     "on"       on every step but the last: "<node id>.<event>", the node
                acted on, its id as written, as in TRANSITIONS
@@ -729,6 +757,8 @@ BUILT-IN COMPONENTS
   Map              aspectRatio (default "16:9"): a gray area with a marker
   DateRangePicker  bind [from, to], months (1..3): the dates over month grids
   DateField        label, bind (a date): "add date" until set
+  TextField        bind (a string), placeholder, lines (default 1): a box to type
+                   in, lines high: the value, or the placeholder muted while it is ""
   Stepper          label, bind (an int): − value +
   PriceBreakdown   lines (list of names), total (default "合计")
   Skeleton         shape: a list of "image 4:3" and "line 70%"
@@ -770,18 +800,28 @@ DOMAIN.JSON
   of the project as if it declared the domain's itself: a screen uses
   "Order" in its "data" and calls "cancelOrder" by name, and `handoff`, `cli`
   and its golden outputs come out as if it had written them. A screen adds
-  its own beside them (a type that wraps the domain's with view state,
-  "OrderRow": { "order": "Order", "menuOpen": … }), but never one of a name
+  its own beside them (one only it uses, such as a type that wraps the
+  domain's with view state, "OrderRow": { "order": "Order", "menuOpen": … }),
+  but never one of a name
   the domain declares: check names the screen's at "types.Order" (or
   "conditions.…", "operations.…"), says it shadows the domain's, and reads
   the domain's in its place. A finding about the domain's file itself is
   at "domain.json …"; one inside a declaration it holds is at its dotted
   path, as if the screen held it, and is fixed in domain.json.
+  A type several screens use goes here once, even one only the screens
+  hold: a row type with view state ("OrderRow" above, its "menuOpen"
+  marked "view": true) used by two screens is declared in domain.json, not
+  copied into each. A screen that declares one the domain holds is named
+  as shadowing it: delete the copy, and check, render and the gallery
+  read the screen as before.
   A condition the domain shares is declared on a type (CONDITIONS), as
   "Order.cancellable", and each screen reads it through its own values
-  of the type. One that is not on a type reads the data of each screen
-  that uses it, so share one only when every such screen holds the fields
-  it names; a condition over one screen's data stays that screen's.
+  of the type. A screen is held only to the ones it reads: one that never
+  reads Order.cancellable may have every order pending, and check lists
+  only those it reads, with the ones their "when" uses. One that is not on
+  a type reads the data of each screen that uses it, so share one only
+  when every such screen holds the fields it names; a condition over one
+  screen's data stays that screen's.
 
 TOKENS.JSON
   {
@@ -844,7 +884,7 @@ LOOKS
     {"repeat": 3 | "{list}" | ["50%", "35%"], "each": look}
                        repeated; inside: n (from 1), index (from 0), item
     {"cases": [{"if": …, "then": look}, {"else": look}]}
-    "$children"        the node's slots: leading, body, trailing, overlays
+    "$children"        the node's slots: leading, body, trailing, foot, overlays
     [look, …]          each in turn
   Any look may carry "if"; it is left out when that does not hold.
   Box keys:
@@ -863,6 +903,7 @@ LOOKS
     cross topLine        a crossed placeholder, a line on top, in an ink
     wireframe            {"screen": "{screen}", "state": "{state}"}: that state
                          of another description drawn in the box (Wireframe)
+    dividers             a line between the cells, in an ink (true: line)
     clip                 cut children at this radius (false: never)
     overflowX            "clip": a row that runs off the edge
     pin                  {"x": "end", "y": "end", "inset": 12}: floats over the

@@ -20,8 +20,8 @@ and [ADR 0007](../adr/0007-kinds-are-data.md) for the look vocabulary.
 ```json
 {
   "components": {
-    "TextField": {
-      "doc": "A one-line input: fills what its row leaves.",
+    "SearchField": {
+      "doc": "A one-line search box: fills what its row leaves.",
       "params": ["value", "placeholder"],
       "look": {
         "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line", "radius": "radius.sm",
@@ -81,6 +81,7 @@ Any look may carry `"if"`, and it is left out when the condition fails.
 | `columns`, `rows`, `span` | Grid tracks: a count, or a list such as `["58%", "1fr"]`. `span` makes a cell cover that many columns and rows. |
 | `fill`, `stroke`, `radius`, `dashed` | Its outline and fill, in an ink (below). |
 | `cross`, `topLine` | A crossed placeholder, or a line along its top, in an ink. |
+| `dividers` | A line between its cells, in an ink (`true`: the line ink), drawn over them, halfway across the gap. |
 | `clip`, `overflowX` | `clip`: children are cut to the box, at this corner radius (`false`: never). `overflowX: "clip"`: a row that runs off the edge. |
 | `pin` | `{"x": "end", "y": "end", "inset": 12}`: floats over its parent. Each axis is `start`, `center` or `end`. |
 | `itemWidth` | Gives every child this width and stops them shrinking (carousel cards). |

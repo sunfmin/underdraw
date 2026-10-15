@@ -32,6 +32,7 @@
     "DateRangePicker": "Material 3 DateRangePicker（原生支持范围）",
     "DateField": "OutlinedTextField(readOnly) 点击打开 DateRangePickerDialog",
     "FieldGroup": "OutlinedCard 包裹",
+    "TextField": "OutlinedTextField(placeholder)；lines > 1 → minLines = lines",
     "Stepper": "自研 − / + IconButton",
     "PriceBreakdown": "Column of Row(SpaceBetween)",
     "Map": "Maps Compose GoogleMap；approx → Circle，否则 Marker"

@@ -355,7 +355,8 @@ impl Differ<'_> {
         };
         let mut before: Option<&Node> = None;
         for child in &node.children {
-            let flows = child.slot != "overlay" && !self.components.pinned(&child.component);
+            let flows = !matches!(child.slot.as_str(), "overlay" | "foot")
+                && !self.components.pinned(&child.component);
             if flows && self.capture.get(&child.id).is_some() {
                 if let Some(previous) = before {
                     self.order(previous, child);

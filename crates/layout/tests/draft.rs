@@ -216,14 +216,62 @@ fn a_nodes_padding_takes_sides_as_a_looks_does() {
 
 #[test]
 fn a_component_not_in_the_catalog_is_drawn_as_a_guess() {
-    let page = tiny(serde_json::json!([{ "id": "input", "component": "TextField" }]));
+    let page = tiny(serde_json::json!([{ "id": "input", "component": "SignaturePad" }]));
     let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();
-    assert!(assumed.contains("TextField"), "{assumed:?}");
+    assert!(assumed.contains("SignaturePad"), "{assumed:?}");
     let marked = page
         .draws
         .iter()
         .any(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(underdraw_layout::Ink::Assumed), .. }));
     assert!(marked, "drawn in the colour of a guess");
+}
+
+/// A built-in TextField bound to `draft`, one line high and four, with
+/// `draft` as `value`.
+fn text_fields(value: &str) -> Page {
+    let screen = serde_json::json!({
+        "screen": "Tiny", "data": { "draft": { "type": "string", "view": true } }, "types": {},
+        "fixtures": { "default": { "draft": value } }, "conditions": {},
+        "root": { "id": "tiny", "component": "Screen", "children": [
+            { "id": "one", "component": "TextField", "bind": "draft", "placeholder": "Add a todo" },
+            { "id": "four", "component": "TextField", "bind": "draft", "placeholder": "Write a message", "lines": 4 } ] }
+    });
+    let tokens = read("tokens.json");
+    let screen = Screen::read(&screen, Shared::default());
+    let root =
+        screen.instantiate(State::Fixture("default"), Breakpoint::for_width(&tokens, 390), None).unwrap();
+    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed, &underdraw_layout::NoPictures)
+        .unwrap()
+}
+
+fn ink_of(page: &Page, shown: &str) -> Vec<Ink> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Text { text, ink, .. } if text == shown => Some(*ink),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_text_field_shows_its_placeholder_muted_while_its_value_is_empty() {
+    let empty = text_fields("");
+    assert_eq!(placed(&empty, "one").assumed, None, "TextField is built in");
+    assert_eq!(ink_of(&empty, "Add a todo"), [Ink::Muted]);
+    assert_eq!(ink_of(&empty, "Write a message"), [Ink::Muted]);
+    let typed = text_fields("milk");
+    assert_eq!(ink_of(&typed, "milk"), [Ink::Text, Ink::Text], "the value, in the ink of text");
+    assert!(ink_of(&typed, "Add a todo").is_empty(), "no placeholder once typed: {:?}", texts(&typed));
+}
+
+#[test]
+fn a_text_field_is_as_high_as_its_lines() {
+    let page = text_fields("");
+    let (one, four) = (placed(&page, "one").rect, placed(&page, "four").rect);
+    // font.body's lines are 22 high, inside 10 above and below.
+    assert_eq!((one.height, four.height), (22.0 + 20.0, 4.0 * 22.0 + 20.0));
+    assert_eq!(one.width, four.width, "both as wide as the screen");
 }
 
 #[test]
@@ -252,6 +300,68 @@ fn a_grid_track_is_a_share_a_part_or_points() {
     ]));
     let width = |id| placed(&page, id).rect.width;
     assert_eq!((width("share"), width("points"), width("part")), (390.0 - 48.0 - 195.0, 48.0, 195.0));
+}
+
+/// The lines a page draws in `ink`, each from and to.
+fn lines(page: &Page, ink: Ink) -> Vec<([f32; 2], [f32; 2])> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Line { from, to, ink: drawn } if *drawn == ink => Some((*from, *to)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_column_fills_its_row_and_panes_are_split_by_a_line() {
+    let text = |id: &str| serde_json::json!({ "id": id, "component": "Text", "text": id });
+    let page = tiny(serde_json::json!([
+        { "id": "panes", "component": "Columns", "gap": 0, "columns": [100, "1fr"], "dividers": true,
+          "children": [
+            { "id": "tree", "component": "Stack", "border": "color.border", "children": [text("a")] },
+            { "id": "pictures", "component": "Stack", "children": [text("b"), text("c"), text("d")] } ] }
+    ]));
+    let (tree, pictures) = (placed(&page, "tree").rect, placed(&page, "pictures").rect);
+    assert!(pictures.height > placed(&page, "b").rect.height * 2.0, "the pictures pane is three lines tall");
+    assert_eq!((tree.y, tree.height), (pictures.y, pictures.height), "the tree fills its row");
+    let outline = page.draws.iter().find_map(|d| match d {
+        Draw::Box { rect, stroke: Some(Ink::Line), .. } if rect.x == tree.x => Some(*rect),
+        _ => None,
+    });
+    assert_eq!(outline, Some(tree), "its border reaches the row's foot");
+    assert_eq!(
+        lines(&page, Ink::Line),
+        [([100.0, tree.y], [100.0, tree.y + tree.height])],
+        "one line between the panes, as tall as the row"
+    );
+}
+
+#[test]
+fn a_grid_draws_lines_between_its_rows_and_columns_halfway_across_the_gap() {
+    let text = |id: &str| serde_json::json!({ "id": id, "component": "Text", "text": id });
+    let page = tiny(serde_json::json!([
+        { "id": "grid", "component": "Grid", "gap": 10, "columns": 2, "dividers": true,
+          "children": [text("a"), text("b"), text("c"), text("d")] }
+    ]));
+    let (a, d) = (placed(&page, "a").rect, placed(&page, "d").rect);
+    let (middle_x, middle_y) = ((a.x + a.width + d.x) / 2.0, (a.y + a.height + d.y) / 2.0);
+    let (top, bottom) = (a.y, d.y + d.height);
+    let (left, right) = (a.x, d.x + d.width);
+    assert_eq!(
+        lines(&page, Ink::Line),
+        [
+            ([middle_x, top], [middle_x, middle_y]),
+            ([left, middle_y], [middle_x, middle_y]),
+            ([middle_x, middle_y], [middle_x, bottom]),
+            ([middle_x, middle_y], [right, middle_y]),
+        ],
+        "b's line down, c's across, d's down and across: they meet in the middle"
+    );
+    let plain = tiny(serde_json::json!([
+        { "id": "grid", "component": "Grid", "columns": 2, "children": [text("a"), text("b")] }
+    ]));
+    assert!(lines(&plain, Ink::Line).is_empty(), "no lines unless asked for");
 }
 
 #[test]
@@ -510,29 +620,39 @@ fn text_in_a_colour_token_is_drawn_in_the_ink_its_colour_reads_as() {
     assert_eq!(ink("missing"), underdraw_layout::Ink::Text);
 }
 
-/// Another screen's state as a picture: a 200 × 400 page holding one box,
-/// with a tag numbering it; or why it cannot be drawn.
+/// Another screen's state as a picture: `List` in `empty`, a 200 wide
+/// page holding a button, numbered; or why it cannot be drawn.
 struct Album;
+
+impl Album {
+    fn picture_of_list(&self) -> Page {
+        underdraw_layout::Pictures::picture(self, "List", Some("empty")).unwrap()
+    }
+}
 
 impl underdraw_layout::Pictures for Album {
     fn picture(&self, screen: &str, state: Option<&str>) -> Result<Page, String> {
         if (screen, state) != ("List", Some("empty")) {
             return Err(format!("no {screen} {state:?}"));
         }
-        let rect = underdraw_layout::Rect { x: 0.0, y: 100.0, width: 200.0, height: 50.0 };
-        let tag = underdraw_layout::Rect { x: 0.0, y: 100.0, width: 18.0, height: 18.0 };
-        Ok(Page {
-            width: 200.0,
-            height: 400.0,
-            draws: vec![
-                Draw::Box { rect, radius: 8.0, fill: Some(Ink::Strong), stroke: None, dashed: false },
-                Draw::Tag { rect: tag, text: "1".to_string(), ink: Ink::Label },
-            ],
-            nodes: Vec::new(),
-            cut: Vec::new(),
-            unpictured: Vec::new(),
-        })
+        Ok(narrow(serde_json::json!([
+            { "id": "go", "component": "Button", "text": "Go", "on": { "tap": { "navigate": "Other" } } }
+        ])))
     }
+}
+
+/// A screen of `children` with no data, laid out 200 wide.
+fn narrow(children: Value) -> Page {
+    let screen = serde_json::json!({
+        "screen": "List", "data": {}, "types": {}, "fixtures": { "empty": {} }, "conditions": {},
+        "root": { "id": "list", "component": "Screen", "children": children }
+    });
+    let tokens = read("tokens.json");
+    let screen = Screen::read(&screen, Shared::default());
+    let root =
+        screen.instantiate(State::Fixture("empty"), Breakpoint::for_width(&tokens, 200), None).unwrap();
+    layout(&root, &tokens, &screen, 200.0, Lang::default(), &mut Fixed, &underdraw_layout::NoPictures)
+        .unwrap()
 }
 
 /// A screen of `children`, laid out at a phone's width with [`Album`].
@@ -548,44 +668,68 @@ fn pictured(children: Value) -> Page {
     layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed, &Album).unwrap()
 }
 
+/// What is drawn of `page` cut to the box `shot`: the state it pictures.
+fn inside(page: &Page, shot: underdraw_layout::Rect) -> &[Draw] {
+    page.draws
+        .iter()
+        .find_map(|d| match d {
+            Draw::Clip { rect, draws, .. } if *rect == shot => Some(draws.as_slice()),
+            _ => None,
+        })
+        .expect("the state is drawn cut to the box")
+}
+
+/// The first box `draws` fills.
+fn filled(draws: &[Draw]) -> (underdraw_layout::Rect, f32) {
+    draws
+        .iter()
+        .find_map(|d| match d {
+            Draw::Box { rect, radius, fill: Some(_), .. } => Some((*rect, *radius)),
+            _ => None,
+        })
+        .expect("a filled box")
+}
+
 #[test]
 fn a_wireframe_draws_the_state_it_names_scaled_to_its_box_without_its_labels() {
     let page = pictured(serde_json::json!([
         { "id": "shot", "component": "Wireframe", "screen": "List", "state": "empty" }
     ]));
+    let list = Album.picture_of_list();
     let shot = placed(&page, "shot").rect;
-    assert_eq!((shot.width, shot.height), (390.0, 780.0), "as tall as the state for its width");
+    assert_eq!(shot.width, 390.0);
+    let tall = list.height * shot.width / list.width;
+    assert!((shot.height - tall).abs() <= 0.5, "as tall as the state for its width: {shot:?}, {tall}");
     assert!(page.unpictured.is_empty());
-    let inside = page
-        .draws
-        .iter()
-        .find_map(|d| match d {
-            Draw::Clip { rect, draws, .. } if *rect == shot => Some(draws),
-            _ => None,
-        })
-        .expect("the state is drawn cut to the box");
-    assert_eq!(inside.len(), 1, "its tag is left out: {inside:?}");
-    let Draw::Box { rect, radius, .. } = &inside[0] else { panic!("{inside:?}") };
-    assert_eq!(
-        (rect.x, rect.y - shot.y, rect.width, rect.height, *radius),
-        (shot.x, 195.0, 390.0, 97.5, 15.6)
-    );
+    assert!(!list.marks().is_empty(), "the button is numbered in its own picture");
+    let inside = inside(&page, shot);
+    assert!(!inside.iter().any(|d| matches!(d, Draw::Tag { .. })), "its labels are left out: {inside:?}");
+    assert!(page.nodes.iter().all(|n| n.id != "go"), "nothing in it is a node of this screen");
+    let scale = (shot.width / list.width).min(shot.height / list.height);
+    let left = shot.x + (shot.width - list.width * scale) / 2.0;
+    let ((button, radius), (drawn, drawn_radius)) = (filled(list.wireframe()), filled(inside));
+    let expected = (left + button.x * scale, shot.y + button.y * scale, button.width * scale, radius * scale);
+    assert_eq!((drawn.x, drawn.y, drawn.width, drawn_radius), expected);
 }
 
 #[test]
 fn a_wireframe_given_a_shape_fits_the_state_in_it_at_the_top() {
     let page = pictured(serde_json::json!([
-        { "id": "shot", "component": "Wireframe", "screen": "List", "state": "empty", "aspectRatio": "1:1" }
+        { "id": "shot", "component": "Wireframe", "screen": "List", "state": "empty", "aspectRatio": "8:1" }
     ]));
+    let list = Album.picture_of_list();
     let shot = placed(&page, "shot").rect;
-    assert_eq!((shot.width, shot.height), (390.0, 390.0));
-    let inside = page.draws.iter().find_map(|d| match d {
-        Draw::Clip { rect, draws, .. } if *rect == shot => Some(draws),
-        _ => None,
-    });
-    let Some([Draw::Box { rect, .. }]) = inside.map(Vec::as_slice) else { panic!("{inside:?}") };
-    // Scaled by 390 / 400 to fit the square's height: 195 wide, in its middle.
-    assert_eq!((rect.x - shot.x, rect.y - shot.y, rect.width), (97.5, 97.5, 195.0));
+    assert_eq!(shot.width, 390.0);
+    assert!((shot.height - 48.75).abs() <= 0.5, "{shot:?}");
+    // Too low for the state at its width: scaled to its height, in its
+    // middle across, at its top.
+    let scale = shot.height / list.height;
+    assert!(list.width * scale < shot.width);
+    let (button, _) = filled(list.wireframe());
+    let (drawn, _) = filled(inside(&page, shot));
+    let left = shot.x + (shot.width - list.width * scale) / 2.0;
+    let expected = (left + button.x * scale, shot.y + button.y * scale, button.width * scale);
+    assert_eq!((drawn.x, drawn.y, drawn.width), expected);
 }
 
 #[test]
@@ -601,4 +745,25 @@ fn a_wireframe_that_cannot_be_drawn_is_crossed_out_and_said_at_its_node() {
     assert!(at[1].1.contains("give it \"screen\""), "{at:?}");
     let shot = placed(&page, "shot").rect;
     assert!(page.draws.iter().any(|d| matches!(d, Draw::Cross { rect, .. } if *rect == shot)));
+}
+
+#[test]
+fn a_foot_sits_on_the_bottom_of_its_column_after_everything_else() {
+    // A pane beside a taller one: its foot is drawn on the pane's bottom
+    // edge, after the cards, with the space left between them.
+    let page = tiny(serde_json::json!([
+        { "id": "panes", "component": "Columns", "gap": 0, "columns": ["1fr", "1fr"], "children": [
+            { "id": "long", "component": "Stack", "children": [
+                { "id": "l1", "component": "Text", "text": "a" }, { "id": "l2", "component": "Text", "text": "b" },
+                { "id": "l3", "component": "Text", "text": "c" }, { "id": "l4", "component": "Text", "text": "d" },
+                { "id": "l5", "component": "Text", "text": "e" }, { "id": "l6", "component": "Text", "text": "f" } ] },
+            { "id": "side", "component": "Stack",
+              "foot": { "id": "send", "component": "Button", "text": "Send" },
+              "children": [ { "id": "card", "component": "Text", "text": "a card" } ] } ] }
+    ]));
+    let (side, card, send) =
+        (placed(&page, "side").rect, placed(&page, "card").rect, placed(&page, "send").rect);
+    assert_eq!(side.height, placed(&page, "long").rect.height, "the pane is as tall as the other");
+    assert_eq!(send.y + send.height, side.y + side.height, "the foot closes the pane");
+    assert!(send.y > card.y + card.height, "below the cards, with room between: {card:?} {send:?}");
 }
