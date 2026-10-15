@@ -88,5 +88,11 @@ fn check(
     others: &ScreenParams,
     measure: &mut Fixed,
 ) -> Result<Checked, String> {
-    underdraw_layout::check(&Screen::read(screen, Shared::default()), tokens, others, measure)
+    underdraw_layout::check(
+        &Screen::read(screen, Shared::default()),
+        tokens,
+        others,
+        measure,
+        &underdraw_layout::NoPictures,
+    )
 }

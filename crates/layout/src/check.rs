@@ -4,7 +4,7 @@
 use serde_json::Value;
 use underdraw_format::{Breakpoint, Checked, Finding, Lang, Model, Screen, ScreenParams, State};
 
-use crate::{Measure, layout};
+use crate::{Measure, Pictures, layout};
 
 /// The widths a project's descriptions are drawn and checked at when its
 /// tokens.json names none: a phone and a laptop browser.
@@ -44,7 +44,8 @@ pub fn widths(tokens: &Value) -> Vec<u32> {
 /// Every fault in `screen`: what underdraw_format finds, then, when there
 /// is none, widths in `tokens` that cannot be used, or else every overlay
 /// that runs off the page in some state at one of the widths it names
-/// ([`widths`]), with text measured by `measure`. `tokens` is the file
+/// ([`widths`]), with text measured by `measure`, and every node that
+/// draws a state `pictures` cannot give. `tokens` is the file
 /// it takes its tokens from, as `layout` takes it; `others` the params of
 /// the screens under its root, as `underdraw_format::check_among` takes them.
 pub fn check(
@@ -52,6 +53,7 @@ pub fn check(
     tokens: &Value,
     others: &ScreenParams,
     measure: &mut dyn Measure,
+    pictures: &dyn Pictures,
 ) -> Result<Checked, String> {
     let model = match Model::read(screen, underdraw_format::check_among(screen, others)) {
         Ok(model) => model,
@@ -65,7 +67,7 @@ pub fn check(
             return Ok(checked);
         }
     };
-    let mut cut = Vec::new();
+    let mut cut: Vec<Finding> = Vec::new();
     for state in model.states() {
         let (what, name) = match state {
             State::Fixture(name) => ("fixture", name),
@@ -73,7 +75,12 @@ pub fn check(
         };
         for &width in &widths {
             let root = model.instantiate(state, Breakpoint::for_width(tokens, width), None)?;
-            let page = layout(&root, tokens, screen, width as f32, Lang::default(), measure)?;
+            let page = layout(&root, tokens, screen, width as f32, Lang::default(), measure, pictures)?;
+            for finding in page.unpictured {
+                if !cut.contains(&finding) {
+                    cut.push(finding);
+                }
+            }
             for id in page.cut {
                 cut.push(Finding {
                     at: id,
