@@ -4,15 +4,16 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::Range;
 
 use std::sync::{Mutex, OnceLock};
 
 use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontFamily, FontWeight, Language, Layout, LayoutContext,
-    LineHeight, StyleProperty,
+    Affinity, Alignment, AlignmentOptions, Cursor, FontContext, FontFamily, FontWeight, Language, Layout,
+    LayoutContext, LineHeight, Selection, StyleProperty,
 };
-use underdraw_layout::{Align, Font, Measure, Size};
+use underdraw_layout::{Align, Font, Measure, Rect, Size};
 
 /// The fonts a wireframe is set in: the system's interface font, then, for
 /// Han characters, the fonts of the locale's writing on macOS, Windows and
@@ -108,7 +109,38 @@ impl Typesetter {
         layout.align(alignment, AlignmentOptions::default());
         layout
     }
+
+    /// Where the bytes `range` of `text` are, set in `font` from the left
+    /// of a box `width` wide as a drawn text is: a box for each line they
+    /// cross, from the box's top-left; for an empty range, the caret there,
+    /// a box as tall as its line and no wider.
+    pub fn spans(&mut self, text: &str, font: Font, width: f32, range: Range<usize>) -> Vec<Rect> {
+        let layout = self.set(text, font, Some(width + HAIR), Align::Start);
+        let caret = |at: usize| Cursor::from_byte_index(&layout, at, Affinity::Downstream);
+        let boxes = if range.is_empty() {
+            vec![caret(range.start).geometry(&layout, 0.0)]
+        } else {
+            let (from, to) = (caret(range.start), caret(range.end));
+            Selection::new(from, to).geometry(&layout).into_iter().map(|(area, _)| area).collect()
+        };
+        boxes
+            .into_iter()
+            .map(|area| {
+                let tall = (area.y1 - area.y0).max(f64::from(font.line_height));
+                Rect {
+                    x: area.x0 as f32,
+                    y: area.y0 as f32,
+                    width: (area.x1 - area.x0) as f32,
+                    height: tall as f32,
+                }
+            })
+            .collect()
+    }
 }
+
+/// How much wider than measured a line is set when it is drawn, so that
+/// rounding never breaks a line the measurement kept whole.
+pub const HAIR: f32 = 1.0;
 
 impl Measure for Typesetter {
     fn text(&mut self, text: &str, font: Font, max_width: Option<f32>) -> Size {

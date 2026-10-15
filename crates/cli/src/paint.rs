@@ -92,8 +92,7 @@ fn paint(scene: &mut Scene, at: Affine, draw: &Draw, typesetter: &mut Typesetter
     }
 }
 
-/// How much wider than measured a line is set when it is drawn.
-const HAIR: f32 = 1.0;
+use crate::text::HAIR;
 
 struct Words {
     font: Font,
