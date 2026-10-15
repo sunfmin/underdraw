@@ -47,7 +47,8 @@ pub enum Block<A> {
     /// Text in large type: what an assumption guessed.
     Big(String),
     /// One line of a conversation, in a bubble: the person's on the right,
-    /// in the notes' blue; the agent's on the left, in gray.
+    /// in the notes' blue; the agent's on the left, in gray; underdraw's,
+    /// saying where moved messages were, in gray without one.
     Bubble(By, String),
     /// A button: what it says, and what a click on it does.
     Button(String, A),
@@ -217,6 +218,9 @@ pub fn lay_out<'a, A>(
                     tall
                 }
                 Block::Item(item) => self::item(&mut inside, &mut laid, typesetter, (x, y, inner), item),
+                Block::Bubble(By::Underdraw, said) => {
+                    words(&mut inside, typesetter, rect(x, y, inner, 0.0), said, BODY, Ink::Muted)
+                }
                 Block::Bubble(by, said) => bubble(&mut inside, typesetter, (x, y, inner), *by, said),
                 Block::Button(said, does) => {
                     button(&mut inside, &mut laid, typesetter, rect(x, y, inner, 0.0), said, does)
@@ -452,7 +456,7 @@ fn bubble(
     let (box_wide, box_tall) = (words_wide + 2.0 * INSET, tall + 2.0 * INSET);
     let (left, fill, stroke, ink) = match by {
         By::Person => (x + wide - box_wide, Ink::Note, None, Ink::Paper),
-        By::Agent => (x, Ink::Paper, Some(Ink::Answered), Ink::Text),
+        By::Agent | By::Underdraw => (x, Ink::Paper, Some(Ink::Answered), Ink::Text),
     };
     draws.push(Draw::Box {
         rect: rect(left, y, box_wide, box_tall),

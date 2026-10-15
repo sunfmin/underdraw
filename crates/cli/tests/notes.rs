@@ -306,7 +306,7 @@ fn notes_lists_a_note_on_a_whole_state_a_transition_or_a_navigate_with_its_refer
 }
 
 #[test]
-fn a_note_whose_node_is_renamed_is_never_closed() {
+fn a_note_on_a_half_edited_description_is_left_where_it_is() {
     let root = root("gone");
     let dir = root.join("orders");
     let file = dir.join("screen.json");
@@ -317,7 +317,80 @@ fn a_note_whose_node_is_renamed_is_never_closed() {
     let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
     assert_eq!((code, &answer["waiting"]), (0, &json!(2)), "{answer}");
     underdraw(&["check", root.to_str().unwrap()]);
-    assert_eq!(std::fs::read_to_string(dir.join("notes.json")).unwrap(), notes, "nothing closes it");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("notes.json")).unwrap(),
+        notes,
+        "a transition still names the old id: nothing moves until it checks clean"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_note_on_what_is_gone_joins_its_states_note_listed_like_any_other() {
+    let root = root("joins");
+    let dir = root.join("orders");
+    let note = |id: &str, on: Value, messages: Value| {
+        let mut note = json!({ "id": id, "messages": messages });
+        note.as_object_mut().unwrap().extend(on.as_object().unwrap().clone());
+        note
+    };
+    let person = |says: &str| json!({ "by": "person", "says": says });
+    let agent = |says: &str| json!({ "by": "agent", "says": says });
+    let line = |says: &str| json!({ "by": "underdraw", "says": says });
+    let export = json!({ "state": { "fixture": "default" }, "node": { "id": "export", "at": "/x", "instance": [], "label": 3, "width": 390 } });
+    let notes = json!({ "notes": [
+        note("N1", export, json!([person("say export what"), agent("it says Export")])),
+        note("N2", json!({ "state": { "fixture": "default" } }), json!([person("too dense")])),
+        note("N3", json!({ "transition": { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" } }), json!([person("why?")])),
+        note("N4", json!({ "navigate": { "from": "OrderList", "node": "export", "to": "ExportDocuments" } }), json!([person("where?")])),
+    ] });
+    std::fs::write(dir.join("notes.json"), notes.to_string()).unwrap();
+    let file = dir.join("screen.json");
+    let screen =
+        std::fs::read_to_string(&file).unwrap().replace(r#""id": "export""#, r#""id": "download""#).replace(
+            r#",
+    { "from": "error", "on": "retry.tap", "outcome": "offline", "to": "error" }"#,
+            "",
+        );
+    std::fs::write(&file, screen).unwrap();
+    let (checked, _) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(checked["ok"], true, "{checked}");
+
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!(code, 0, "{answer}");
+    let listed: Vec<(&Value, &Value)> =
+        answer["notes"].as_array().unwrap().iter().map(|note| (&note["id"], &note["state"])).collect();
+    assert_eq!(
+        listed,
+        [(&json!("N2"), &json!({ "fixture": "default" })), (&json!("N3"), &json!({ "phase": "error" }))],
+        "{answer}"
+    );
+    assert_eq!(
+        answer["notes"][0]["messages"],
+        json!([
+            line("on `export`, now gone"),
+            person("say export what"),
+            agent("it says Export"),
+            line("on navigate from OrderList on export to ExportDocuments, now gone"),
+            person("where?"),
+            person("too dense"),
+        ]),
+        "the person spoke last: it waits on the agent"
+    );
+    assert_eq!(
+        answer["notes"][1]["messages"],
+        json!([
+            line("on transition from error on retry.tap outcome offline to error, now gone"),
+            person("why?")
+        ]),
+        "a state with no note gets one, keeping its id"
+    );
+    assert_eq!(answer["notes"][1]["reference"], format!("{} · phase error", dir.display()));
+    let joined = std::fs::read_to_string(dir.join("notes.json")).unwrap();
+    underdraw(&["notes", root.to_str().unwrap()]);
+    let (checked, _) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!(checked["notes"], json!({ "waiting": 2, "answered": 0 }), "{checked}");
+    assert_eq!(std::fs::read_to_string(dir.join("notes.json")).unwrap(), joined, "nothing moves twice");
     std::fs::remove_dir_all(root).unwrap();
 }
 

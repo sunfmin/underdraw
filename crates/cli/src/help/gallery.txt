@@ -251,8 +251,10 @@ DOES
   A note is a conversation, never closed. The agent reads them with
   `underdraw notes <root>` and answers one, at any length: its pin turns
   green, and the pointer over it shows what the agent said last. A note
-  written on a region, before regions went, is read as on its whole
-  state.
+  whose node or arrow is gone (removed or renamed) joins the note
+  on its whole state, after a gray line saying where it was ("on `price`,
+  now gone"): carry on there. A note written on a region, before regions
+  went, is read as on its whole state.
 
   Answer an assumption: click its orange "?" (or the node it is on). The
   sidebar shows, in a card of its own, what was guessed, in large type,
