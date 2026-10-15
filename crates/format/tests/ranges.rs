@@ -23,6 +23,9 @@ fn checked(screen: &Value) -> Checked {
     check(screen, Some(&serde_json::from_str(KINDS).unwrap()))
 }
 
+/// Text replaced in the draft: (what it says, what is planted instead).
+type Edits<'a> = Vec<(&'a str, &'a str)>;
+
 const APPLY: &str = r#""text": "使用", "disabled": "!hasCode","#;
 const REMOVE_PROMO: &str = r#""removePromo": { "command": "Takes the applied promo code off the order" }"#;
 const CALL_REMOVE_PROMO: &str = r#""on": { "tap": { "call": "removePromo" } }"#;
@@ -36,7 +39,7 @@ fn the_draft_gates_the_promo_code_it_applies_and_passes() {
 #[test]
 fn a_value_that_may_fall_outside_the_parameters_range_is_refused() {
     // (name, edits, where it is found, what is said)
-    let cases: [(&str, Vec<(&str, &str)>, &str, &str); 5] = [
+    let cases: [(&str, Edits, &str, &str); 5] = [
         (
             "a typed code, ungated",
             vec![(APPLY, r#""text": "使用","#)],
@@ -93,7 +96,7 @@ fn a_value_that_may_fall_outside_the_parameters_range_is_refused() {
 #[test]
 fn a_condition_that_gates_the_node_narrows_the_value() {
     // (name, edits)
-    let cases: [(&str, Vec<(&str, &str)>); 3] = [
+    let cases: [(&str, Edits); 3] = [
         (
             "a literal inside",
             vec![(r#""with": { "code": "{promoCode}" }"#, r#""with": { "code": "SAVE50" }"#)],
