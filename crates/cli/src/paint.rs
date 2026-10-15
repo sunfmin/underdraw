@@ -9,8 +9,8 @@ use vello::peniko::{Color, Fill};
 
 use crate::text::Typesetter;
 
-/// The colour of each ink in a wireframe. Gray throughout, but for what
-/// was assumed and the person's notes.
+/// The colour of each ink in a wireframe. Gray throughout, but for the
+/// labels, what was assumed and the person's notes.
 pub fn colour(ink: Ink) -> Color {
     let rgb = match ink {
         Ink::Text | Ink::Strong => [0x22, 0x22, 0x22],
@@ -21,6 +21,7 @@ pub fn colour(ink: Ink) -> Color {
         Ink::Assumed => [0xF0, 0x8C, 0x00],
         Ink::Note => [0x1F, 0x6F, 0xEB],
         Ink::Answered => [0x1A, 0x9E, 0x4B],
+        Ink::Label => [0xD6, 0x1F, 0x4F],
         Ink::Scrim => return Color::from_rgba8(0x00, 0x00, 0x00, 0x59),
     };
     Color::from_rgb8(rgb[0], rgb[1], rgb[2])

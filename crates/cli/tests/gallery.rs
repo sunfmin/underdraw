@@ -161,6 +161,7 @@ fn gallery_help_says_what_the_inbox_lists_and_what_a_click_on_an_item_does() {
         "waiting on the agent · 2",
         "Click an item to show its state with what",
         "leave it",
+        "a red circle with a white number",
     ] {
         assert!(help.contains(said), "{said:?} not in gallery --help");
     }
