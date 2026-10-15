@@ -37,7 +37,7 @@ use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::act::{self, Act};
 use crate::area::{over, rect};
-use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW, SIDEBAR};
+use crate::chrome::{ARROW_FONT, INDENT, MARK, MARK_INSET, MARK_TALL, PIN, ROW};
 use crate::draw::{self, Shown as State, Wanted};
 use crate::field::{Edit, Field, Motion};
 use crate::flow::{self, Screen};
@@ -47,7 +47,7 @@ use crate::journeys::{self, Step};
 use crate::notes::{self, Answer, Answers, Goes, Guess, Note, Proposal, Stands};
 use crate::reference::{self, On, Reference};
 use crate::sidebar::Item as Listed;
-use crate::sidebar::{self, Block, Card, Foot};
+use crate::sidebar::{self, Block, Card, Foot, Sidebar};
 use crate::{chrome, gpu, links, paint, text};
 use panes::{Content, Pane, Panes, Scrolls, Took};
 use picture::{
@@ -257,18 +257,14 @@ struct Gallery {
     /// Every description's notes, by its directory, as notes.json now
     /// holds them.
     notes: BTreeMap<PathBuf, Vec<Note>>,
-    /// The box at the sidebar's foot, where the person writes to the
-    /// conversation on what is picked, kept as typed from one pick to the
-    /// next.
-    talk: Field,
+    /// The sidebar: the box at its foot, where the person writes to the
+    /// conversation on what is picked, and its cards as last laid out.
+    sidebar: Sidebar<Do>,
     /// A ✗ on an assumption being written, in place of the box, while it
     /// is.
     draft: Option<Draft>,
     /// A ✓ on an assumption waiting to be written, while it can be undone.
     confirming: Option<Confirming>,
-    /// Where the caret of the field written in was last drawn, in window
-    /// points: an input method shows what it offers beside it.
-    caret: Option<Rect>,
     /// Where the text of the field written in was, in window points,
     /// while the left button, pressed on it, is held: a drag selects.
     selecting: Option<(f64, f64)>,
@@ -478,6 +474,7 @@ impl Gallery {
     /// same Han character is drawn one way in Japanese, another in Chinese.
     fn speak(&mut self, lang: Lang) -> Result<(), String> {
         self.typesetter = text::Typesetter::new(lang.locale())?;
+        self.sidebar.speak();
         self.lang = lang;
         Ok(())
     }
@@ -490,7 +487,7 @@ impl Gallery {
     /// The tree of `root`, nothing picked and no window open yet.
     fn new(root: &Path, typesetter: text::Typesetter) -> Gallery {
         let lines = lines(root);
-        let talk = Field::new(&typesetter, sidebar::field_width(SIDEBAR));
+        let sidebar = Sidebar::new(&typesetter);
         Gallery {
             root: root.to_path_buf(),
             lang: Lang::default(),
@@ -507,10 +504,9 @@ impl Gallery {
             history: Vec::new(),
             acted: None,
             typesetter,
-            talk,
+            sidebar,
             draft: None,
             confirming: None,
-            caret: None,
             selecting: None,
             hovered: None,
             shift: false,
@@ -577,9 +573,9 @@ impl Gallery {
     /// Whether an input method may compose, only into a field keys type
     /// into ([`Gallery::field_mut`]), and where the caret it shows what it
     /// offers beside is.
-    fn composing(&self) -> (bool, Option<Rect>) {
+    fn composing(&mut self) -> (bool, Option<Rect>) {
         let typing = self.typing();
-        (typing, self.caret.filter(|_| typing))
+        (typing, self.placed().and_then(|placed| placed.caret()).filter(|_| typing))
     }
 
     /// A key pressed: with ⌘ (or Ctrl) held, ⌘V pastes into the note being
@@ -1454,17 +1450,17 @@ impl Gallery {
     /// What the button of the sidebar under `at`, a point in the window,
     /// does; none off its buttons, or while it is hidden.
     fn button_at(&mut self, at: (f64, f64)) -> Option<Do> {
+        self.placed()?.at(at).cloned()
+    }
+
+    /// The sidebar as it now stands, where the panes show it and scrolled
+    /// as they scroll it: laid out again only when what it shows, or its
+    /// size, changed since it last was. None while it is hidden.
+    fn placed(&mut self) -> Option<sidebar::Placed<'_, Do>> {
         let side = self.panes.side()?;
         let (cards, foot) = (self.sidebar_cards(), self.foot());
         let top = -self.panes.scrolled(Scrolls::Side);
-        let laid = sidebar::lay_out(
-            &cards,
-            foot.as_ref(),
-            (side.x0, side.width()),
-            (top, side.y1),
-            &mut self.typesetter,
-        );
-        laid.at(at).cloned()
+        Some(self.sidebar.lay(cards, foot, (side.x0, side.width()), (top, side.y1), &mut self.typesetter))
     }
 
     /// What the sidebar's cards say, one string each: a card's title, then
@@ -1774,42 +1770,6 @@ impl Gallery {
         }
     }
 
-    /// How tall the sidebar's cards are, unscrolled; nothing while it is
-    /// hidden.
-    fn sidebar_height(&mut self) -> f64 {
-        if self.panes.side().is_none() {
-            return 0.0;
-        }
-        let cards = self.sidebar_cards();
-        sidebar::lay_out(
-            &cards,
-            None,
-            (0.0, self.panes.side_width()),
-            (0.0, self.panes.window().1),
-            &mut self.typesetter,
-        )
-        .height
-    }
-
-    /// Where the box at the sidebar's foot starts, from the window's top:
-    /// the foot of what the sidebar's cards scroll in; the window's
-    /// bottom while there is no box, or no sidebar.
-    fn sidebar_foot(&mut self) -> f64 {
-        let foot = self.foot();
-        if self.panes.side().is_none() || foot.is_none() {
-            return self.panes.window().1;
-        }
-        let (right, bottom) = (self.panes.pictures().x1, self.panes.window().1);
-        sidebar::lay_out(
-            &[],
-            foot.as_ref(),
-            (right, self.panes.side_width()),
-            (0.0, bottom),
-            &mut self.typesetter,
-        )
-        .foot
-    }
-
     /// The card of the arrow picked: what it is.
     fn arrow_card(&self) -> Option<Card<Do>> {
         self.arrow()?;
@@ -1908,7 +1868,7 @@ impl Gallery {
                 self.confirming = Some(Confirming { on, answers, at: now + UNDO });
             }
             Answer::Wrong => {
-                let text = Field::new(&self.typesetter, sidebar::field_width(self.panes.side_width()));
+                let text = self.sidebar.field(&self.typesetter);
                 self.draft = Some(Draft { on, answers, text });
             }
         }
@@ -1997,10 +1957,10 @@ impl Gallery {
         self.reference()?;
         let lang = self.lang;
         Some(Foot {
-            field: self.talk.shown(),
+            field: self.sidebar.talk().shown(),
             empty: say!(lang, talk_box),
             send: say!(lang, send),
-            does: (!self.talk.is_blank()).then_some(Do::Send),
+            does: (!self.sidebar.talk().is_blank()).then_some(Do::Send),
         })
     }
 
@@ -2022,7 +1982,7 @@ impl Gallery {
         let talking = self.typing();
         match &mut self.draft {
             Some(draft) => Some(&mut draft.text),
-            None => talking.then_some(&mut self.talk),
+            None => talking.then_some(self.sidebar.talk_mut()),
         }
     }
 
@@ -2037,13 +1997,13 @@ impl Gallery {
     /// it is empty; where it cannot be written, the panel says why and the
     /// box keeps it.
     fn send(&mut self) {
-        let Some(on) = self.reference().filter(|_| !self.talk.is_blank()) else {
+        let Some(on) = self.reference().filter(|_| !self.sidebar.talk().is_blank()) else {
             return;
         };
-        match notes::say(&on, &self.talk.text()) {
+        match notes::say(&on, &self.sidebar.talk().text()) {
             Ok(_) => {
                 self.notes = notes_of(&self.lines);
-                self.talk = Field::new(&self.typesetter, sidebar::field_width(self.panes.side_width()));
+                self.sidebar.empty(&self.typesetter);
                 self.clamp();
                 self.panes.scroll_to(Scrolls::Side, f64::MAX);
             }
@@ -2083,7 +2043,7 @@ impl Gallery {
     /// played while the box is empty. Esc drops a ✗ being written, else
     /// what is picked. Whether that changed what is shown.
     fn key(&mut self, key: &Key, text: Option<&str>) -> bool {
-        let stepping = self.playing.is_some() && self.draft.is_none() && self.talk.is_blank();
+        let stepping = self.playing.is_some() && self.draft.is_none() && self.sidebar.talk().is_blank();
         match key {
             Key::Named(NamedKey::ArrowRight | NamedKey::ArrowLeft) if stepping => {
                 let Some(playing) = &self.playing else { return false };
@@ -2199,11 +2159,7 @@ impl Gallery {
     /// Where the text of the field written in is, in window points, while
     /// one is and the sidebar is shown.
     fn field_rect(&mut self) -> Option<Rect> {
-        let side = self.panes.side()?;
-        let (cards, foot) = (self.sidebar_cards(), self.foot());
-        let top = -self.panes.scrolled(Scrolls::Side);
-        sidebar::lay_out(&cards, foot.as_ref(), (side.x0, side.width()), (top, side.y1), &mut self.typesetter)
-            .field
+        self.placed()?.field()
     }
 
     /// The caret of the field written in put where the pointer is on its
@@ -2405,15 +2361,17 @@ impl Gallery {
 
     /// The panes fitted to how large what each holds is at their widths:
     /// each width, and each scroll, held within its bounds. And the note
-    /// being written fitted to the sidebar's width.
+    /// being written fitted to the sidebar's width. The sidebar, while it
+    /// is shown, laid out for how tall its cards are and how tall the box
+    /// at its foot is.
     fn clamp(&mut self) {
-        let field = sidebar::field_width(self.panes.side_width());
+        let bottom = self.panes.window().1;
+        let (side, foot) =
+            self.placed().map_or((0.0, 0.0), |placed| (placed.height(), bottom - placed.foot()));
         if let Some(draft) = &mut self.draft {
-            draft.text.fit(field);
+            self.sidebar.fit(&mut draft.text);
         }
-        self.talk.fit(field);
         let pictures = self.pictures_size();
-        let (side, foot) = (self.sidebar_height(), self.panes.window().1 - self.sidebar_foot());
         let content = Content { rows: self.lines.len(), pictures, side, foot };
         self.panes.fit(content);
     }
@@ -2482,27 +2440,17 @@ impl Gallery {
         let (pins, reply) = (self.pin_draws(), self.reply_shown());
         let seen = self.seen();
         let right = self.panes.pictures().x1;
-        let (side, foot, cut_at) = if self.panes.side().is_some() {
-            let (cards, foot) = (self.sidebar_cards(), self.foot());
-            let mut side = vec![Draw::Line {
-                from: [right as f32, 0.0],
-                to: [right as f32, height as f32],
-                ink: Ink::Line,
-            }];
-            let at = (-self.panes.scrolled(Scrolls::Side), height);
-            let laid = sidebar::lay_out(
-                &cards,
-                foot.as_ref(),
-                (right, self.panes.side_width()),
-                at,
-                &mut self.typesetter,
-            );
-            self.caret = laid.caret;
-            side.extend(laid.draws);
-            (side, laid.foot_draws, laid.foot)
-        } else {
-            self.caret = None;
-            (Vec::new(), Vec::new(), height)
+        let (side, foot, cut_at) = match self.placed() {
+            Some(placed) => {
+                let edge = Draw::Line {
+                    from: [right as f32, 0.0],
+                    to: [right as f32, height as f32],
+                    ink: Ink::Line,
+                };
+                let ((cards, foot), cut_at) = (placed.draws(), placed.foot());
+                (std::iter::once(edge).chain(cards).collect(), foot, cut_at)
+            }
+            None => (Vec::new(), Vec::new(), height),
         };
 
         let mut scene = Scene::new();
@@ -3565,12 +3513,10 @@ mod tests {
         gallery.let_go();
         assert_eq!(picked_node(&gallery), Some("nav-save"), "the node still picked");
         assert!(!gallery.details, "no button pressed");
-        let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
-        let (right, width) = (gallery.panes.pictures().x1, gallery.panes.side_width());
-        let at = (0.0, gallery.panes.window().1);
-        let laid = sidebar::lay_out(&cards, foot.as_ref(), (right, width), at, &mut gallery.typesetter);
+        let right = gallery.panes.pictures().x1;
+        let laid = gallery.placed().expect("the sidebar is shown");
         let inside = |r: &Rect| f64::from(r.x) > right && f64::from(r.x + r.width) < 1440.0;
-        assert!(laid.buttons.iter().all(|(r, _, _)| inside(r)), "the sidebar's buttons inside it");
+        assert!(laid.buttons().iter().all(|(r, _, _)| inside(r)), "the sidebar's buttons inside it");
         assert!(click_panel_line(&mut gallery, "▸ details"), "each still clicked by its own box");
     }
 
@@ -4245,13 +4191,8 @@ mod tests {
     /// The sidebar's button that reads `text`, clicked in the middle of
     /// its box.
     fn click_panel_line(gallery: &mut Gallery, text: &str) -> bool {
-        let (cards, foot) = (gallery.sidebar_cards(), gallery.foot());
-        let (at, scrolled) = (
-            (gallery.panes.pictures().x1, gallery.panes.side_width()),
-            (-gallery.panes.scrolled(Scrolls::Side), gallery.panes.window().1),
-        );
-        let laid = sidebar::lay_out(&cards, foot.as_ref(), at, scrolled, &mut gallery.typesetter);
-        let Some(r) = laid.buttons.iter().find(|(_, says, _)| *says == text).map(|(r, _, _)| *r) else {
+        let laid = gallery.placed().expect("the sidebar is shown");
+        let Some(r) = laid.buttons().iter().find(|(_, says, _)| *says == text).map(|(r, _, _)| *r) else {
             panic!("no button {text:?}: {:?}", gallery.panel())
         };
         gallery.press_at((f64::from(r.x + r.width / 2.0), f64::from(r.y + r.height / 2.0)))
@@ -4298,11 +4239,11 @@ mod tests {
         press_keys(&mut gallery, &["Backspace"]);
         type_text(&mut gallery, "价格太长");
         press_keys(&mut gallery, &["⇧Enter", "a", "x", "Backspace", " ", "b"]);
-        assert_eq!(gallery.talk.text(), "价格太长\na b", "Shift+Enter breaks a line");
+        assert_eq!(gallery.sidebar.talk().text(), "价格太长\na b", "Shift+Enter breaks a line");
         assert_eq!(gallery.foot().unwrap().does, Some(Do::Send));
         assert!(!dir.join(notes::NOTES).exists(), "nothing is written while typing");
         press_keys(&mut gallery, &["Enter"]);
-        assert!(gallery.talk.is_blank(), "Enter sends, and empties the box");
+        assert!(gallery.sidebar.talk().is_blank(), "Enter sends, and empties the box");
         assert_eq!(
             talk_shown(&gallery),
             ["note N1 · waiting on the agent", "价格太长\na b"],
@@ -4351,7 +4292,7 @@ mod tests {
         gallery.panes.resize((1440.0, 900.0));
         show(&mut gallery, "orders", "default");
         press_keys(&mut gallery, &["n"]);
-        assert_eq!(gallery.talk.text(), "n", "N is a letter typed in the box, no mode");
+        assert_eq!(gallery.sidebar.talk().text(), "n", "N is a letter typed in the box, no mode");
         assert!(!gallery.panel().iter().any(|line| line.contains("write a note")), "{:?}", gallery.panel());
         press_keys(&mut gallery, &["Backspace"]);
         gallery.cursor = on_node(&gallery, 0, "nav-export");
@@ -4544,17 +4485,44 @@ mod tests {
     }
 
     #[test]
+    fn the_sidebar_is_laid_out_at_most_once_a_redraw_however_the_pointer_moves() {
+        let root = root_of("sidebar-once", &[("orders", "orders")]);
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        show(&mut gallery, "orders", "default");
+        gallery.drawn();
+        let laid = gallery.sidebar.layouts();
+        for x in [100.0, 600.0, 1150.0, 1300.0, 1400.0] {
+            gallery.move_to((x, 300.0));
+            gallery.drawn();
+        }
+        assert_eq!(gallery.sidebar.layouts(), laid, "nothing it shows changed: not laid out again");
+        let field = gallery.field_rect().expect("the box is at the sidebar's foot");
+        let (_, caret) = gallery.composing();
+        let caret = caret.expect("its caret is known");
+        assert!(over(field, (f64::from(caret.x), f64::from(caret.y))), "the caret in the field's text");
+        assert!(gallery.button_at((f64::from(field.x) + 1.0, f64::from(field.y) - 1.0)).is_none());
+        assert_eq!(gallery.sidebar.layouts(), laid, "hit-tested and its caret found on the one layout");
+
+        gallery.press_at(on_node(&gallery, 0, "nav-export"));
+        gallery.let_go();
+        gallery.move_to((1300.0, 300.0));
+        gallery.drawn();
+        assert_eq!(gallery.sidebar.layouts(), laid + 1, "a node picked: laid out once, for what it shows");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_note_is_edited_anywhere_selected_by_keys_or_a_drag_and_pasted_into() {
         let root = root_of("notes-edit", &[("orders", "orders")]);
         let mut gallery = opened(&root, (1440.0, 900.0));
         show(&mut gallery, "orders", "default");
-        let written = |gallery: &Gallery| gallery.talk.text();
+        let written = |gallery: &Gallery| gallery.sidebar.talk().text();
         type_text(&mut gallery, "ac");
         press_keys(&mut gallery, &["←", "b", "Home", ">", "End", "!"]);
         assert_eq!(written(&gallery), ">abc!", "typed where the caret is");
         type_text(&mut gallery, " too red");
         press_keys(&mut gallery, &["⇧←", "⇧←", "⇧←"]);
-        let selected = gallery.talk.shown().selected;
+        let selected = gallery.sidebar.talk().shown().selected;
         assert_eq!(selected.len(), 3, "the selection is drawn");
         type_text(&mut gallery, "blue");
         assert_eq!(written(&gallery), ">abc! too blue", "typing replaces what is selected");
@@ -4570,7 +4538,7 @@ mod tests {
         assert!(gallery.drag_field(), "a drag selects");
         gallery.release();
         assert!(!gallery.drag_field(), "released, the pointer selects no more");
-        assert_eq!(gallery.talk.selected(), Some("abc too blue"));
+        assert_eq!(gallery.sidebar.talk().selected(), Some("abc too blue"));
         type_text(&mut gallery, "x");
         press_keys(&mut gallery, &["Enter"]);
         let note = notes::read(&root.join("orders")).unwrap().remove(0);
@@ -4588,24 +4556,25 @@ mod tests {
         type_text(&mut gallery, "ab");
         press_keys(&mut gallery, &["←"]);
         assert!(gallery.ime(Ime::Preedit("ni hao".to_string(), Some((6, 6)))));
-        let shown = gallery.talk.shown();
+        let shown = gallery.sidebar.talk().shown();
         assert_eq!(shown.text, "ani haob", "composed at the caret");
         assert_eq!(&shown.text[shown.composing.clone()], "ni hao", "drawn underlined");
-        let foot = gallery.foot();
-        let (at, bottom) =
-            ((gallery.panes.pictures().x1, gallery.panes.side_width()), gallery.panes.window().1);
-        let laid = sidebar::lay_out(&[], foot.as_ref(), at, (0.0, bottom), &mut gallery.typesetter);
+        let laid = gallery.placed().expect("the sidebar is shown");
         let underlined =
-            laid.foot_draws.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
+            laid.draws().1.iter().filter(|draw| matches!(draw, Draw::Line { ink: Ink::Text, .. })).count();
         assert_eq!(underlined, 1, "one line under what is composed");
-        assert!(laid.caret.is_some(), "the input method is shown where the caret is");
+        assert!(laid.caret().is_some(), "the input method is shown where the caret is");
         press_keys(&mut gallery, &["Enter", "Backspace"]);
-        assert_eq!(gallery.talk.shown().text, "ani haob", "while it composes, its keys are its own");
+        assert_eq!(
+            gallery.sidebar.talk().shown().text,
+            "ani haob",
+            "while it composes, its keys are its own"
+        );
         assert!(!root.join("orders").join(notes::NOTES).exists(), "the Enter that confirms it sends nothing");
         assert!(gallery.ime(Ime::Commit("你好".to_string())));
         press_keys(&mut gallery, &["→", "Delete", "Backspace", "←"]);
         type_text(&mut gallery, "!");
-        assert_eq!(gallery.talk.text(), "a你!好", "the caret moved, deleting where it is");
+        assert_eq!(gallery.sidebar.talk().text(), "a你!好", "the caret moved, deleting where it is");
         assert!(gallery.select_all());
         type_text(&mut gallery, "价格");
         assert!(gallery.compose(Ime::Preedit("tai".to_string(), None)));
@@ -4865,7 +4834,7 @@ mod tests {
             1,
             "while the box holds something, → and ← move its caret, not the journey"
         );
-        assert_eq!(gallery.talk.text(), "ba");
+        assert_eq!(gallery.sidebar.talk().text(), "ba");
         assert!(gallery.select_all());
         press_keys(&mut gallery, &["Backspace"]);
         assert!(click_panel_line(&mut gallery, "→ next step"));
@@ -5197,7 +5166,7 @@ mod tests {
         gallery.feed([key_on("c", KeyCode::KeyJ, false)]);
         assert!(board().is_some(), "a layout with its C elsewhere copies on its C");
         gallery.feed([key_on("n", KeyCode::KeyN, false), Input::Modifiers(ModifiersState::empty())]);
-        assert_eq!(gallery.talk.text(), "", "⌘N types nothing");
+        assert_eq!(gallery.sidebar.talk().text(), "", "⌘N types nothing");
 
         gallery.press_at(on_node(&gallery, 0, "nav-save"));
         gallery.let_go();
@@ -5207,11 +5176,11 @@ mod tests {
         assert!(gallery.chord("c"), "⌘C copies what is selected in it");
         assert_eq!(board().as_deref(), Some("too small"), "not the reference");
         assert!(gallery.chord("x"), "⌘X cuts it");
-        assert_eq!(gallery.talk.shown().text, "");
+        assert_eq!(gallery.sidebar.talk().shown().text, "");
         assert!(!gallery.chord("x"), "with nothing selected, nothing to cut");
         assert!(gallery.chord("v"), "⌘V pastes what was cut");
         assert!(gallery.chord("v"));
-        assert_eq!(gallery.talk.shown().text, "too smalltoo small");
+        assert_eq!(gallery.sidebar.talk().shown().text, "too smalltoo small");
         press_keys(&mut gallery, &["Esc"]);
         assert!(gallery.draft.is_none());
     }
@@ -5286,14 +5255,14 @@ mod tests {
         let caret = gallery.feed([Input::Moved((0.0, 0.0))]).caret.expect("drawn, its caret is known");
         assert!(caret.x as f64 >= gallery.panes.pictures().x1, "in the sidebar, in the box at its foot");
         assert!(gallery.compose(Ime::Preedit("ni".into(), None)));
-        assert!(gallery.talk.is_composing());
+        assert!(gallery.sidebar.talk().is_composing());
         assert!(gallery.compose(Ime::Disabled), "the input method turned off");
-        assert!(!gallery.talk.is_composing(), "drops what it was composing");
+        assert!(!gallery.sidebar.talk().is_composing(), "drops what it was composing");
         gallery.chord("\\");
         let effects = gallery.feed([Input::Moved((0.0, 0.0))]);
         assert!(!effects.ime && effects.caret.is_none(), "the sidebar hidden: the input method off");
         assert!(!gallery.compose(Ime::Commit("你".into())), "and nothing it commits goes anywhere");
-        assert_eq!(gallery.talk.text(), "");
+        assert_eq!(gallery.sidebar.talk().text(), "");
 
         assert!(gallery.feed([Input::Close]).exit, "closing the window exits");
     }
