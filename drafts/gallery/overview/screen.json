@@ -4,6 +4,10 @@
   "tokens": "tokens.json",
   "$comment": "Each state says which journeys pass through it, under its caption, not over its picture: the picture stays whole. A mark names the journey and the step of how many; a broken journey's mark says it breaks there. Clicking a mark plays the journey from that step.",
   "data": {
+    "bar": {
+      "type": "Bar",
+      "view": true
+    },
     "lines": "TreeRow[]",
     "journeys": "TreeJourney[]",
     "description": "string 1..",
@@ -39,10 +43,20 @@
     "Mark.walks": {
       "when": "!breaks",
       "label": "The journey walks here"
+    },
+    "sidebarShown": {
+      "when": "bar.sidebarShown",
+      "label": "The sidebar shown"
     }
   },
   "fixtures": {
     "order": {
+      "bar": {
+        "back": true,
+        "crumbs": "drafts › shop › order",
+        "agent": "listening",
+        "waitingOnYou": 2
+      },
       "lines": [
         {
           "name": "shop/",
@@ -319,158 +333,184 @@
           "markCount": 0,
           "marks": []
         }
-      ]
+      ],
+      "bar": {
+        "forward": true,
+        "crumbs": "drafts › shop › order",
+        "mode": "play",
+        "agent": "away",
+        "waitingOnYou": 0,
+        "sidebar": false
+      }
     }
   },
   "root": {
-    "id": "window",
-    "component": "Window",
+    "id": "screen",
+    "component": "Screen",
+    "gap": 0,
     "children": [
       {
-        "id": "tree",
-        "component": "Stack",
-        "gap": 0,
-        "padding": [
-          8,
-          0
-        ],
-        "border": "color.border",
-        "only": "regular",
-        "children": [
-          {
-            "id": "lines",
-            "component": "List",
-            "gap": 0,
-            "each": "lines",
-            "item": {
-              "id": "line-{index}",
-              "component": "TreeLine",
-              "name": "{item.name}",
-              "depth": "{item.depth}",
-              "heading": "{item.heading}",
-              "phase": "{item.phase}",
-              "meta": "{item.meta}",
-              "picked": false
-            }
-          },
-          {
-            "id": "journeys-heading",
-            "component": "TreeLine",
-            "name": "journeys/",
-            "depth": 2,
-            "heading": true,
-            "phase": false,
-            "meta": "paths through shop",
-            "picked": false
-          },
-          {
-            "id": "journeys",
-            "component": "List",
-            "gap": 0,
-            "each": "journeys",
-            "item": {
-              "id": "journey-{index}",
-              "component": "JourneyEntry",
-              "with": {
-                "journey": "{item.journey}",
-                "picked": "{item.played}"
-              }
-            }
-          }
-        ]
+        "id": "toolbar",
+        "component": "Toolbar",
+        "with": {
+          "bar": "{bar}"
+        }
       },
       {
-        "id": "pictures",
-        "component": "Stack",
-        "gap": 16,
-        "padding": 24,
+        "id": "window",
+        "component": "Window",
         "children": [
           {
-            "id": "title",
-            "component": "Text",
-            "text": "{description}",
-            "font": "font.heading"
-          },
-          {
-            "id": "states",
-            "component": "Grid",
-            "columns": {
-              "compact": 1,
-              "regular": 3
-            },
-            "gap": 24,
-            "each": "states",
-            "index": "state",
-            "item": {
-              "id": "state-{index}",
-              "component": "Stack",
-              "gap": 6,
-              "children": [
-                {
-                  "id": "state-{index}-caption",
-                  "component": "Text",
-                  "text": "{item.name}",
-                  "font": "font.subhead"
-                },
-                {
-                  "id": "state-{index}-marks",
-                  "component": "Stack",
-                  "gap": 4,
-                  "if": "item.marked",
-                  "each": "item.marks",
-                  "item": {
-                    "id": "state-{state}-mark-{index}",
-                    "component": "JourneyMark",
-                    "journey": "{item.journey}",
-                    "step": "{item.step}",
-                    "of": "{item.of}",
-                    "walks": "{item.walks}",
-                    "on": {
-                      "tap": {
-                        "navigate": "Play"
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "state-{index}-picture",
-                  "component": "Thumb"
+            "id": "tree",
+            "component": "Stack",
+            "gap": 0,
+            "padding": [
+              8,
+              0
+            ],
+            "border": "color.border",
+            "only": "regular",
+            "children": [
+              {
+                "id": "lines",
+                "component": "List",
+                "gap": 0,
+                "each": "lines",
+                "item": {
+                  "id": "line-{index}",
+                  "component": "TreeLine",
+                  "name": "{item.name}",
+                  "depth": "{item.depth}",
+                  "heading": "{item.heading}",
+                  "phase": "{item.phase}",
+                  "meta": "{item.meta}",
+                  "picked": false
                 }
-              ]
-            }
-          }
-        ]
-      },
-      {
-        "id": "sidebar",
-        "component": "Stack",
-        "gap": 12,
-        "padding": 12,
-        "border": "color.border",
-        "children": [
+              },
+              {
+                "id": "journeys-heading",
+                "component": "TreeLine",
+                "name": "journeys/",
+                "depth": 2,
+                "heading": true,
+                "phase": false,
+                "meta": "paths through shop",
+                "picked": false
+              },
+              {
+                "id": "journeys",
+                "component": "List",
+                "gap": 0,
+                "each": "journeys",
+                "item": {
+                  "id": "journey-{index}",
+                  "component": "JourneyEntry",
+                  "with": {
+                    "journey": "{item.journey}",
+                    "picked": "{item.played}"
+                  }
+                }
+              }
+            ]
+          },
           {
-            "id": "guide",
-            "component": "Card",
-            "gap": 6,
+            "id": "pictures",
+            "component": "Stack",
+            "gap": 16,
+            "padding": 24,
+            "children": [
+              {
+                "id": "title",
+                "component": "Text",
+                "text": "{description}",
+                "font": "font.heading"
+              },
+              {
+                "id": "states",
+                "component": "Grid",
+                "columns": {
+                  "compact": 1,
+                  "regular": 3
+                },
+                "gap": 24,
+                "each": "states",
+                "item": {
+                  "id": "state-{index}",
+                  "component": "Stack",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "state-{index}-caption",
+                      "component": "Text",
+                      "text": "{item.name}",
+                      "font": "font.subhead"
+                    },
+                    {
+                      "id": "state-{index}-marks",
+                      "component": "Stack",
+                      "gap": 4,
+                      "if": "item.marked",
+                      "each": "item.marks",
+                      "item": {
+                        "id": "state-{state}-mark-{index}",
+                        "component": "JourneyMark",
+                        "journey": "{item.journey}",
+                        "step": "{item.step}",
+                        "of": "{item.of}",
+                        "walks": "{item.walks}",
+                        "on": {
+                          "tap": {
+                            "navigate": "Play"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "id": "state-{index}-picture",
+                      "component": "Thumb"
+                    }
+                  ]
+                },
+                "index": "state"
+              }
+            ]
+          },
+          {
+            "id": "sidebar",
+            "component": "Stack",
+            "gap": 12,
             "padding": 12,
             "border": "color.border",
             "children": [
               {
-                "id": "guide-title",
-                "component": "Text",
-                "text": "Nothing picked",
-                "font": "font.subhead"
-              },
-              {
-                "id": "guide-click",
-                "component": "Text",
-                "text": "Click a state, an arrow or a journey's mark.",
-                "font": "font.caption",
-                "color": "color.textSecondary"
+                "id": "guide",
+                "component": "Card",
+                "gap": 6,
+                "padding": 12,
+                "border": "color.border",
+                "children": [
+                  {
+                    "id": "guide-title",
+                    "component": "Text",
+                    "text": "Nothing picked",
+                    "font": "font.subhead"
+                  },
+                  {
+                    "id": "guide-click",
+                    "component": "Text",
+                    "text": "Click a state, an arrow or a journey's mark.",
+                    "font": "font.caption",
+                    "color": "color.textSecondary"
+                  }
+                ]
               }
-            ]
+            ],
+            "if": "sidebarShown"
           }
-        ]
+        ],
+        "with": {
+          "sidebar": "{sidebarShown}"
+        }
       }
     ]
   },
