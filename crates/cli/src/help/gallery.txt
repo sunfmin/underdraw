@@ -183,13 +183,20 @@ DOES
   - a transition: click its arrow's label in an overview;
   - a navigate: click its arrow's label in a flow.
   Or pick the node, region or arrow and click "write a note on it" in the
-  sidebar. It is typed in a field in the sidebar, as in a chat: ← and →
-  move the caret, Backspace and Delete take the character before or after
-  it, ⌘A (Ctrl+A) selects it all, to type over or delete, ⌘V pastes;
-  Shift+Enter starts a new line, Enter sends it, Esc drops it. What an
-  input method composes (pinyin, before it becomes 汉字) is shown
-  underlined at the caret, and only what it commits is typed: Enter and
-  the other keys are its own while it composes. The field is the same
+  sidebar. It is typed in a field in the sidebar, as in a chat: ← → ↑ ↓,
+  Home and End move the caret (↑ and ↓ by the lines the field shows, Home
+  and End to either end of one); typing goes in where it is, Backspace and
+  Delete take the character before or after it. Shift with those keys, or
+  a drag over the text, selects; a click puts the caret there. Typing or
+  pasting replaces what is selected, Backspace and Delete take it out.
+  ⌘A selects it all, ⌘C copies what is selected (with nothing selected,
+  the reference, as above), ⌘X cuts it, ⌘V pastes (Ctrl on Linux and
+  Windows); Shift+Enter starts a new line, Enter sends it, Esc drops it.
+  While a note is written, ← and → move its caret and do not step a
+  journey played. What an input method composes (pinyin, before it
+  becomes 汉字) is shown underlined at the caret, its candidates beside
+  it, and only what it commits is typed: Enter and the other keys are its
+  own while it composes. The field is the same
   for every line the person writes: a note, a ✗ and a reopening. It is kept in notes.json beside the description's screen.json (a
   navigate's, beside the one it is written in), pinned as ⌘C references it:
   the node as written, the state, and the instance pointed at; the region's

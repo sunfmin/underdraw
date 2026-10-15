@@ -8,6 +8,10 @@
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
 pub use crate::chrome::SIDEBAR as WIDTH;
+/// How wide the text of a card is: its width inside its padding.
+const TEXT_WIDTH: f64 = WIDTH - 2.0 * GUTTER - 2.0 * PADDING;
+/// How wide the text of a field is: a card's, inside the field's outline.
+pub const FIELD_WIDTH: f64 = TEXT_WIDTH - 2.0 * INSET;
 use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, INSET};
 use crate::chrome::{
     BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
@@ -73,6 +77,9 @@ pub struct Laid<'a, A> {
     /// The caret of the field being written in, for an input method to put
     /// what it offers beside.
     pub caret: Option<Rect>,
+    /// Where the text of that field is: a point in it is a place in its
+    /// text, from its top-left.
+    pub field: Option<Rect>,
     /// How far down its last card ends, from its top, unscrolled.
     pub height: f64,
 }
@@ -87,9 +94,9 @@ impl<A> Laid<'_, A> {
 /// `cards` laid out one under another in a sidebar whose left edge is at
 /// `left` and whose top is `top` (scrolled), its text set by `typesetter`.
 pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mut Typesetter) -> Laid<'a, A> {
-    let inner = WIDTH - 2.0 * GUTTER - 2.0 * PADDING;
+    let inner = TEXT_WIDTH;
     let x = left + GUTTER + PADDING;
-    let mut laid = Laid { draws: Vec::new(), buttons: Vec::new(), caret: None, height: 0.0 };
+    let mut laid = Laid { draws: Vec::new(), buttons: Vec::new(), caret: None, field: None, height: 0.0 };
     let mut y = top + GUTTER;
     for card in cards {
         let card_top = y;
@@ -131,8 +138,8 @@ pub fn lay_out<'a, A>(cards: &'a [Card<A>], left: f64, top: f64, typesetter: &mu
                     tall
                 }
                 Block::Field(shown, empty) => {
-                    let (tall, caret) = field(&mut inside, typesetter, (x, y, inner), shown, empty);
-                    laid.caret = Some(caret);
+                    let (tall, caret, words) = field(&mut inside, typesetter, (x, y), shown, empty);
+                    (laid.caret, laid.field) = (Some(caret), Some(words));
                     tall
                 }
             };
@@ -223,18 +230,18 @@ fn bubble(
     box_tall
 }
 
-/// The field being written in at the top of `(x, y, wide)`, outlined as
-/// focused: its text, what is composed in it underlined, the caret, and
-/// everything shaded when it is selected; `empty` in gray while it holds
-/// nothing. How tall, and where its caret is.
+/// The field being written in, a card's text wide, from `(x, y)`,
+/// outlined as focused: its text, what is composed in it underlined, the
+/// caret, and what is selected shaded; `empty` in gray while it holds
+/// nothing. How tall, where its caret is, and where its text is.
 fn field(
     draws: &mut Vec<Draw>,
     typesetter: &mut Typesetter,
-    (x, y, wide): (f64, f64, f64),
+    (x, y): (f64, f64),
     shown: &Shown,
     empty: &str,
-) -> (f64, Rect) {
-    let inner = wide - 2.0 * INSET;
+) -> (f64, Rect, Rect) {
+    let (wide, inner) = (TEXT_WIDTH, FIELD_WIDTH);
     let (left, top) = (x + INSET, y + INSET);
     let tall = set(typesetter, &shown.text, BODY, inner);
     let box_tall = tall + 2.0 * INSET;
@@ -248,8 +255,8 @@ fn field(
     let moved = |span: Rect| {
         rect(left + f64::from(span.x), top + f64::from(span.y), f64::from(span.width), f64::from(span.height))
     };
-    if shown.all {
-        for span in typesetter.spans(&shown.text, BODY, inner as f32, 0..shown.text.len()) {
+    if !shown.selected.is_empty() {
+        for span in typesetter.spans(&shown.text, BODY, inner as f32, shown.selected.clone()) {
             draws.push(Draw::Box {
                 rect: moved(span),
                 radius: 0.0,
@@ -280,7 +287,7 @@ fn field(
         to: [caret.x, caret.y + caret.height],
         ink: Ink::Note,
     });
-    (box_tall, caret)
+    (box_tall, caret, rect(left, top, inner, tall))
 }
 
 /// How tall `said` is set in `font`, wrapped at `wide`.
