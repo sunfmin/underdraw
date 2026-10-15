@@ -1,0 +1,58 @@
+WHEN
+  After `underdraw check` answers "ok": true, to read the node boxes and
+  know where each part went, at a phone width (390) and a desktop width
+  (1120). What a person looks at is the gallery (`underdraw gallery`), not
+  these PNGs.
+
+WHO
+  The agent that writes the description.
+
+READS
+  <path>/screen.json, its tokens.json (spaces, radii, fonts, breakpoints;
+  the nearest at or above <path>, as `underdraw --help` says) and, beside
+  it, kinds.json when there is one (what the project's own
+  kinds look like). Refuses a description `check` finds faults in. With
+  --root, also the "screen" of every description under that directory, as
+  `check <root>` reads them: a node that navigates to a screen none of them
+  declares is assumed, a screen not drawn yet. Without it, navigates are
+  not resolved.
+
+WRITES
+  One PNG: --out, or <dir>/renders/<fixture or phase>-<width>.png. Running
+  it again overwrites the same file.
+
+ANSWERS
+  {
+    "png":        the file written
+    "project":    the screen's project root: the nearest directory at or
+                  above it holding domain.json, or its own directory
+    "tokens":     the tokens.json it took, or null when there is none
+    "state":      {"fixture": name} or {"phase": name}
+    "breakpoint": "compact" or "regular", chosen by tokens' breakpoints and --width
+    "width", "height": the page in points; the page is as tall as its content
+    "scale":      pixels per point (lowered when the page is taller than the GPU draws)
+    "pixels":     [width, height] of the PNG
+    "nodes":      [{"id", "kind", "box": {"x", "y", "width", "height"} in points,
+                    "label": the number tagged on it in the picture, or null,
+                    "assumed": what the agent guessed there, or that its kind is
+                      not one underdraw knows, or (given --root) that it
+                      navigates to a screen not drawn yet, or null; what
+                      underdraw assumes itself is a whole sentence in
+                      --lang, en or zh, en by default}, …]
+  }
+
+WHAT YOU SEE
+  A wireframe, in grays: boxes, text in the system font, crossed boxes for
+  images. A dark numbered circle tags everything a person can act on, in
+  document order; the same number is "label" in nodes, so "3" in a
+  conversation means one node. An orange dashed outline and "?" mark what
+  was assumed, for the person to confirm, and a kind underdraw does not
+  know, drawn as a box with its name. What a dialog (an opaque box pinned
+  over the page) or its backdrop covers gets no number and no "?": its
+  "label" is null, and its "assumed" still says why it was guessed. Icons
+  are Material Symbols, drawn outlined, or solid for a name ending in .fill.
+
+WHAT TRIPS YOU UP
+  - Needs a GPU (Metal on macOS); `underdraw doctor` says whether there is one.
+  - The page shows everything at once: a sticky bar is drawn at the end of
+    the page, not over the content.

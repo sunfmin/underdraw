@@ -1,0 +1,25 @@
+[package]
+name = "underdraw-format"
+description = "The screen description format: reads one and names every fault. Pure; checked by Flux."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+flux-rs.workspace = true
+flux-alloc.workspace = true
+flux-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+
+# `cargo flux` (through ../../verify.sh) checks every function in this crate.
+[package.metadata.flux]
+enabled = true
+check_overflow = "strict"
+
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(flux)'] }
