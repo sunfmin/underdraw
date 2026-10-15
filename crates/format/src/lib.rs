@@ -18,6 +18,7 @@ mod expr;
 mod field;
 mod fixture;
 pub mod icons;
+mod ids;
 mod instance;
 mod jobs;
 mod journeys;

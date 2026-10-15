@@ -79,7 +79,7 @@ fn given(fixtures: &Value, param: &str) -> &'static str {
 }
 
 /// `name` in kebab case: `OrderRow` is `order-row`.
-fn kebab(name: &str) -> String {
+pub(crate) fn kebab(name: &str) -> String {
     let mut kebab = String::new();
     for c in name.chars() {
         if c.is_uppercase() {

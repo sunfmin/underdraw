@@ -196,8 +196,9 @@ fn each_fault_of_a_component_is_found() {
 
 #[test]
 fn a_fault_found_at_each_instance_is_said_once() {
-    // Two id-less instances in one list item: each node inside either is
-    // found at the same place, and so is the fault of the shared body.
+    // Two id-less instances in one list item, each given an id of its own:
+    // the fault of the shared body is said once at each, however many
+    // elements the item is built for.
     let mut reaching = row();
     reaching["nodes"]["children"][0].as_object_mut().unwrap().remove("id");
     reaching["nodes"]["children"][0]["text"] = json!("{title}");
@@ -206,8 +207,18 @@ fn a_fault_found_at_each_instance_is_said_once() {
         screen(reaching, json!({ "id": "pair-{index}", "component": "Row", "children": [] }));
     description["root"]["children"][0]["item"]["children"] = json!([instance.clone(), instance]);
     let checked = check(&description);
-    let said: Vec<_> = checked.findings.iter().filter(|f| f.problem.contains("title reaches past")).collect();
-    assert_eq!(said.len(), 1, "{:#?}", checked.findings);
+    let said: Vec<_> = checked
+        .findings
+        .iter()
+        .filter(|f| f.problem.contains("title reaches past"))
+        .map(|f| f.at.as_str())
+        .collect();
+    assert_eq!(
+        said,
+        ["pair-{index}-item-row-text-title.text", "pair-{index}-item-row-2-text-title.text"],
+        "{:#?}",
+        checked.findings
+    );
 }
 
 #[test]
