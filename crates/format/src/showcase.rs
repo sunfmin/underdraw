@@ -11,6 +11,10 @@ use serde_json::{Map, Value};
 /// declares no screen a navigate can reach.
 pub const KEY: &str = "$showcase";
 
+/// The fixture a shared component with no params is shown in when its
+/// file writes none.
+pub const ALONE: &str = "default";
+
 /// The description that shows the shared component `name`, whose file
 /// holds `component`, in each of its fixtures: one instance of it, named
 /// as its name is in kebab case (`OrderRow` is `order-row`, so its
@@ -19,9 +23,21 @@ pub const KEY: &str = "$showcase";
 /// view state: a component's set or toggle on a param acts on what was
 /// passed, and here the showcase alone holds it. A look's param
 /// (`["status"]`) takes text, a number or true or false, as the first
-/// fixture to give it does.
+/// fixture to give it does. One that declares no params has one state
+/// to show and needs no fixture written: without any, it is shown in
+/// [`ALONE`], an empty one.
 pub fn showcase(name: &str, component: &Value) -> Value {
-    let fixtures = component.get("fixtures").cloned().unwrap_or_else(|| Value::Object(Map::new()));
+    let mut fixtures = component.get("fixtures").cloned().unwrap_or_else(|| Value::Object(Map::new()));
+    let paramless = match component.get("params") {
+        Some(Value::Object(params)) => params.is_empty(),
+        Some(Value::Array(params)) => params.is_empty(),
+        _ => true,
+    };
+    if paramless && fixtures.as_object().is_some_and(Map::is_empty) {
+        let mut alone = Map::new();
+        alone.insert(ALONE.to_string(), Value::Object(Map::new()));
+        fixtures = Value::Object(alone);
+    }
     let mut data = Map::new();
     let mut instance = Map::new();
     instance.insert("id".to_string(), Value::String(kebab(name)));
@@ -142,7 +158,22 @@ mod tests {
             json!({ "id": "order-status", "component": "OrderStatus",
                     "status": "{status}", "count": "{count}", "on": "{on}" })
         );
-        assert_eq!(showcase("Chip", &json!({ "look": {} }))["fixtures"], json!({}), "none written");
+        assert_eq!(
+            showcase("Chip", &json!({ "look": {} }))["fixtures"],
+            json!({ "default": {} }),
+            "no params"
+        );
+        assert_eq!(
+            showcase("Bar", &json!({ "params": [], "look": {} }))["fixtures"],
+            json!({ "default": {} })
+        );
+        assert_eq!(
+            showcase("Pill", &json!({ "params": ["status"], "look": {} }))["fixtures"],
+            json!({}),
+            "none written"
+        );
+        let written = json!({ "params": {}, "fixtures": { "wide": {} }, "nodes": {} });
+        assert_eq!(showcase("Bar", &written)["fixtures"], written["fixtures"], "as written");
         assert_eq!(shows(&json!({ "screen": "Orders" })), None);
     }
 }
