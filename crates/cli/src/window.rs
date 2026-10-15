@@ -4779,7 +4779,7 @@ mod tests {
 
         press_keys(&mut gallery, &["→"]);
         assert_eq!(captions(&gallery), ["open · 390", "open · 1120"]);
-        let marked = Some("cancel".to_string());
+        let marked = Some("summary-cancel".to_string());
         assert_eq!(played(&gallery), (2, vec![marked.clone(), marked]));
         assert!(gallery.panel()[1].contains("· tap, answered ok (marked)"), "{:?}", gallery.panel());
 
@@ -4851,7 +4851,10 @@ mod tests {
         gallery.cursor = (f64::from(open.x) + 4.0, f64::from(open.y) + 4.0);
         assert!(gallery.press(), "picking the mark plays the journey");
         assert_eq!(gallery.picked, Some(journey_of(&gallery, "cancel-an-order")));
-        assert_eq!(played(&gallery), (2, vec![Some("cancel".to_string()), Some("cancel".to_string())]));
+        assert_eq!(
+            played(&gallery),
+            (2, vec![Some("summary-cancel".to_string()), Some("summary-cancel".to_string())])
+        );
         assert_eq!(captions(&gallery), ["open · 390", "open · 1120"]);
     }
 
@@ -4866,6 +4869,8 @@ mod tests {
             "orders/screen.json",
             "order/screen.json",
             "journeys/cancel-an-order.json",
+            "components/OrderRow.json",
+            "components/OrderStatus.json",
         ] {
             std::fs::create_dir_all(root.join(file).parent().unwrap()).unwrap();
             std::fs::copy(shop.join(file), root.join(file)).unwrap();
