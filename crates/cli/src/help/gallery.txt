@@ -107,6 +107,19 @@ DOES
   wireframe, orange an assumption, blue a note or a journey. The card
   says what it is (its component, as the title), the operation it calls
   when acted on ("calls"), and what was assumed there (`assumed`).
+  When acting on the node picked goes somewhere from the state shown,
+  buttons in purple float beside it in the picture, under it (over it
+  where the page has no room), at the width it was clicked at, saying
+  where: "↗ Go to <screen>" for a navigate, "→ <state>" for a declared
+  transition, one "→ <state> · <outcome>" for each outcome where the
+  event calls an operation, and "← Back" for `back`. Clicking one does
+  what a ⌘-click on the node does (below). The card lists the same, one
+  button each, a navigate to a screen not drawn yet grayed and saying
+  so ("↗ <screen> · not drawn yet", beside the node too, where a click
+  goes through it to what is under it), and under them a line saying
+  holding ⌘ (Ctrl on Linux and Windows) and clicking the node does the
+  same. A node that goes nowhere has no button. There is no shortcut
+  for them.
   Its id, and its label and box at each width, as `render` reports them,
   are folded into "▸ details": click it to unfold them, and again to fold
   them, for every node picked after. A node that navigates to a screen no description under
@@ -154,8 +167,9 @@ DOES
   follows what the description says happens there:
   - a transition declared from the state shown on that event shows its
     `to` state. Where the event calls an operation and the transitions
-    name more than one outcome, the sidebar lists them (`ok → default`,
-    `shipped → cancel-ready`): click the one it answered with.
+    name more than one outcome, the node's card lists them (`→ default ·
+    ok`, `→ cancel-ready · shipped`), as the buttons beside it do: click
+    the one it answered with.
   - a `navigate` shows the first state of the description under <root>
     that declares that screen; to a screen no description declares, the
     sidebar says it is not drawn yet.

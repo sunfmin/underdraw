@@ -100,4 +100,10 @@ pub(super) const WORDS: Words = Words {
     node_no_label: "no label",
     answer_right: "✓ right",
     answer_wrong: "✗ wrong",
+    way_state: "→ {to}",
+    way_outcome: "→ {to} · {outcome}",
+    way_navigate: "↗ Go to {screen}",
+    way_undrawn: "↗ {screen} · not drawn yet",
+    way_back: "← Back",
+    way_hint: "Holding ⌘ (Ctrl) and clicking the node does the same.",
 };

@@ -100,4 +100,10 @@ pub(super) const WORDS: Words = Words {
     node_no_label: "无编号",
     answer_right: "✓ 对",
     answer_wrong: "✗ 不对",
+    way_state: "→ {to}",
+    way_outcome: "→ {to} · {outcome}",
+    way_navigate: "↗ 前往 {screen}",
+    way_undrawn: "↗ {screen} · 还没画",
+    way_back: "← 返回",
+    way_hint: "按住 ⌘（Ctrl）点这个节点，效果相同。",
 };

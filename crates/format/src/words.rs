@@ -197,6 +197,13 @@ sentences! {
     node_no_label,
     answer_right,
     answer_wrong,
+    // Where acting on the node picked goes, offered beside it and on its card.
+    way_state,
+    way_outcome,
+    way_navigate,
+    way_undrawn,
+    way_back,
+    way_hint,
 }
 
 /// `sentence` with each `{name}` in it replaced by the value given for
