@@ -328,7 +328,7 @@ impl Components {
             }
         };
         let mut read = Vec::new();
-        reads(look, &mut Vec::new(), &mut read);
+        reads(look, &[], &mut read);
         let mut named: Vec<&str> = Vec::new();
         for name in &read {
             if !params.contains(&name.as_str()) && !named.contains(&name.as_str()) {
