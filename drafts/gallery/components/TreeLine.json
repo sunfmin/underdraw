@@ -72,9 +72,8 @@
       "picked": false
     },
     "description": {
+      "$patch": "directory",
       "name": "order",
-      "heading": true,
-      "phase": false,
       "meta": "3 states",
       "picked": true
     },

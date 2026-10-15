@@ -7,10 +7,11 @@ FIND IT
     declare what a screen shows, and the shape of each      DATA AND TYPES
     give each state its data                                FIXTURES
     open a screen with an id, or navigate with one          PARAMS
-    what may compute: templates, conditions, a length       EXPRESSIONS
     name a decision, show or hide a node                    CONDITIONS
     put a value in a string, a date, money, a plural        TEMPLATES AND FORMATS
     choose a property's value per state                     CASES
+    what each value position takes; "!x" given to a bool    EXPRESSIONS
+    compute a length: indent a line by its depth            EXPRESSIONS, LOOKS
     write the node tree, an id, a list of items             NODES
     a tree: a file tree, nested comments, folding rows      TREES
     mark a guess for the person to confirm                  ASSUMED

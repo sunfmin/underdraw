@@ -49,7 +49,7 @@ pub use conditions::{Condition as Definition, Conditions};
 pub use expand::{Frame, Instances, Met, join as join_id};
 pub use expr::{Atom, Expr, Op};
 pub use field::{Base, By, Derived, Field};
-pub use instance::{Call, Node, SLOTS, State};
+pub use instance::{Call, Evaluated, Instantiated, Node, SLOTS, State};
 pub use jobs::{STATES as JOB_STATES, STATUS as JOB_STATUS};
 pub use journeys::{named as journey_screen, walk as walk_journey};
 pub use links::{Navigate, Undrawn};

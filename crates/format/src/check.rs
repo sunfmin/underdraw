@@ -168,7 +168,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             let state = screen.state(from);
             let shown = Breakpoint::ALL.into_iter().any(|breakpoint| {
                 build(screen, state, breakpoint, None)
-                    .is_ok_and(|tree| transitions::holds(&tree, &transition.node))
+                    .is_ok_and(|built| transitions::holds(&built.root, &transition.node))
             });
             if !shown {
                 findings.add(
@@ -188,7 +188,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
         for state in &states {
             for breakpoint in Breakpoint::ALL {
                 if let Ok(tree) = build(screen, screen.state(state), breakpoint, None)
-                    && let Some(twice) = twice(&tree, &mut BTreeSet::new())
+                    && let Some(twice) = twice(&tree.root, &mut BTreeSet::new())
                     && named.insert(twice.written_id.clone())
                 {
                     findings.add(&twice.written_id, &format!(
@@ -598,9 +598,6 @@ impl<'a> Walk<'a> {
                 continue;
             }
             match (k.as_str(), v) {
-                ("disabled", Value::String(used)) => {
-                    self.use_site(used, scope, &format!("{at}.disabled"));
-                }
                 ("cases", Value::Array(branches)) => self.cases(branches, scope, &known, at, key),
                 ("cases", _) => self.findings.add(at, "cases is a list of branches"),
                 ("item", _) => self.node(v, &item_scope, &known, &format!("{at}.{k}"), k),
@@ -689,9 +686,12 @@ impl<'a> Walk<'a> {
 
     /// The props the node `object`, at `at`, gives the look component
     /// `kind`, held here rather than walked as templates: each param `kind`
-    /// types, given of its type unless it has a default or is nullable, and
-    /// any prop given a condition of the screen's (`"{hasDates}"`), a Bool,
-    /// which only a bool param or one untyped takes.
+    /// types, given of its type unless it has a default or is nullable (a
+    /// bool one an expression, `"!canBack"`), and any prop given a
+    /// condition of the screen's (`"{hasDates}"`), a Bool, which only a
+    /// bool param or one untyped takes. A param `kind` lists and reads only
+    /// as a yes/no, given an expression, is found: listed, it reads it as
+    /// text.
     fn props(
         &mut self,
         kind: &str,
@@ -706,7 +706,7 @@ impl<'a> Walk<'a> {
             let param = typed.iter().find(|(param, _)| param == prop).map(|(_, field)| field.clone());
             // Text shows no Bool, unless a typed param says what it takes.
             let text = TEXT.contains(&prop.as_str()) && param.is_none();
-            if INERT.contains(&prop.as_str()) || text || prop == "disabled" {
+            if INERT.contains(&prop.as_str()) || text {
                 continue;
             }
             let Some(condition) =
@@ -737,19 +737,25 @@ impl<'a> Walk<'a> {
                 }
                 continue;
             };
-            let prop = format!("{at}.{param}");
-            let literal = value.as_str().filter(|text| field.is_plain_bool() && !text.starts_with('{'));
-            if let Some(text) = literal {
-                self.findings.add(
-                    &prop,
-                    &format!(
-                        "{text:?} is text, and {param} is a bool: give true, false, a Bool path (\"{{item.on}}\") or a condition's name (\"{{hasDates}}\"); name anything more in conditions"
-                    ),
-                );
-            } else {
-                self.argument(value, field, scope, known, &prop);
-            }
+            self.argument(value, field, scope, known, &format!("{at}.{param}"));
             held.insert(param.clone());
+        }
+        if self.known.typed(kind).is_none()
+            && let Some(look) = self.known.look(kind)
+        {
+            for param in look.only_asks() {
+                let Some(Value::String(text)) = object.get(&param) else {
+                    continue;
+                };
+                if !held.contains(&param) && !text.starts_with('{') && UseSite::parse(text).is_some() {
+                    self.findings.add(
+                        &format!("{at}.{param}"),
+                        &format!(
+                            "{text:?} is read as text, which always holds, and {kind} asks {param} only as a yes/no: type {kind}'s params, {{\"{param}\": \"bool\", …}}, and {param} takes this expression"
+                        ),
+                    );
+                }
+            }
         }
         held
     }
@@ -1300,6 +1306,28 @@ impl<'a> Walk<'a> {
     /// and whose range lies inside the parameter's wherever the node can
     /// call it.
     fn argument(&mut self, value: &Value, param: &Field, scope: &Scope, known: &Known, at: &str) {
+        // A bool position takes an expression: a use site, `"!canBack"`.
+        if param.is_bool()
+            && let Value::String(text) = value
+            && !text.starts_with('{')
+        {
+            if UseSite::parse(text).is_some() {
+                self.use_site(text, scope, at);
+            } else {
+                self.findings.add(
+                    at,
+                    &format!(
+                        "{text:?} is no expression, and this is a bool: give true, false, a Bool path or a condition's name, each with an optional !, joined by && (\"!bar.canBack\", \"{{hasDates}}\"); name ||, comparisons and anything more in conditions"
+                    ),
+                );
+            }
+            return;
+        }
+        if let Value::Object(object) = value
+            && let Some(branches) = object.get("cases")
+        {
+            return self.argument_cases(branches, param, scope, known, at);
+        }
         // The path the value is, when it is one whole placeholder.
         let mut path = None;
         let given = match value {
@@ -1446,6 +1474,25 @@ impl<'a> Walk<'a> {
             }
         }
         None
+    }
+
+    /// A param's value chosen by `cases`, `branches`, at `at`: each branch's
+    /// value of the param's type, read where its `if` holds.
+    fn argument_cases(&mut self, branches: &Value, param: &Field, scope: &Scope, known: &Known, at: &str) {
+        let Some(branches) = branches.as_array() else {
+            return self.findings.add(at, "cases is a list of branches");
+        };
+        if !branches.last().is_some_and(|b| b.get("else").is_some()) {
+            self.findings
+                .add(at, "the last branch of cases must be {\"else\": …}, so every state has a value");
+        }
+        for (index, branch) in branches.iter().enumerate() {
+            let mut known = known.clone();
+            known.extend(self.branch_if(branch, scope, at, index));
+            if let Some(value) = branch.get("then").or_else(|| branch.get("else")) {
+                self.argument(value, param, scope, &known, at);
+            }
+        }
     }
 
     /// A yes/no at `at`: terms joined by `&&`, each `!`, then a condition's

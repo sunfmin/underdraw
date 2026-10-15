@@ -13,7 +13,7 @@ mod nodes;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use underdraw_format::{Breakpoint, Checked, Condition, Finding, Model, Node, Screen, State};
+use underdraw_format::{Breakpoint, Checked, Condition, Evaluated, Finding, Model, Node, Screen, State};
 
 pub use cli::{Arg, CommandSpec, Failure, Golden, Interface, cli};
 pub use code::Language;
@@ -136,6 +136,11 @@ pub struct Expected {
     /// "with"}, …]`, its arguments filled for this state.
     #[serde(skip_serializing_if = "Map::is_empty")]
     pub calls: Map<String, Value>,
+    /// Every expression as this state decides it, in the order the tree is
+    /// built: each condition over the data, each use site and bool param,
+    /// each `cases` branch tested and the one chosen. The values `render`
+    /// drew from, for a test to assert of the platform's own code.
+    pub expressions: Vec<Evaluated>,
 }
 
 #[derive(Debug, Serialize)]
@@ -339,21 +344,40 @@ pub(crate) fn states(model: &Model, hidden: &[String]) -> Vec<Expected> {
             State::Phase(name) => object([("phase", Value::from(name))]),
         };
         for breakpoint in Breakpoint::ALL {
-            let Ok(root) = model.instantiate(state, breakpoint, None) else {
+            let Ok(built) = model.instantiated(state, breakpoint, None) else {
                 continue;
             };
+            let mut unbuilt = Vec::new();
+            unbuilt_ids(&built.root, hidden, false, &mut unbuilt);
             let mut found = Expected {
                 state: named.clone(),
                 breakpoint,
                 present: Vec::new(),
                 shows: Map::new(),
                 calls: Map::new(),
+                expressions: built
+                    .evaluated
+                    .into_iter()
+                    .filter(|evaluated| !unbuilt.contains(&evaluated.node))
+                    .collect(),
             };
-            collect(&root, hidden, &mut found);
+            collect(&built.root, hidden, &mut found);
             expected.push(found);
         }
     }
     expected
+}
+
+/// The ids of `node` and every node in it that this platform does not
+/// build: those `hidden` names, and all inside one (`under` one already).
+fn unbuilt_ids(node: &Node, hidden: &[String], under: bool, into: &mut Vec<String>) {
+    let unbuilt = under || hidden.contains(&node.id);
+    if unbuilt && !node.id.is_empty() {
+        into.push(node.id.clone());
+    }
+    for child in &node.children {
+        unbuilt_ids(child, hidden, unbuilt, into);
+    }
 }
 
 fn collect(node: &Node, hidden: &[String], into: &mut Expected) {

@@ -16,7 +16,7 @@ use crate::domain;
 use crate::field::Field;
 use crate::fixture;
 use crate::ids;
-use crate::instance::{Node, State, build};
+use crate::instance::{Instantiated, Node, State, build};
 use crate::links::{self, Navigate, Undrawn};
 use crate::operations::Operations;
 use crate::params;
@@ -147,6 +147,17 @@ impl Screen {
         breakpoint: Breakpoint,
         undrawn: Option<&Undrawn>,
     ) -> Result<Node, String> {
+        build(self, state, breakpoint, undrawn).map(|built| built.root)
+    }
+
+    /// The same, with every expression as that state decided it: what a
+    /// platform's tests assert against the reference.
+    pub fn instantiated(
+        &self,
+        state: State,
+        breakpoint: Breakpoint,
+        undrawn: Option<&Undrawn>,
+    ) -> Result<Instantiated, String> {
         build(self, state, breakpoint, undrawn)
     }
 

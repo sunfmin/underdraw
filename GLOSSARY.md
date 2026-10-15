@@ -304,8 +304,9 @@ each node is built there, and the expected states.
 
 **Expected state**:
 For one fixture or phase at one breakpoint, which nodes are present, what
-each shows, and which operation each calls when acted on; what a platform's
-tests assert.
+each shows, which operation each calls when acted on, and what each
+expression comes to there (each condition, each use site, each `cases`
+branch chosen); what a platform's tests assert.
 _Avoid_: snapshot
 
 **Golden output**:

@@ -161,12 +161,12 @@
     },
     "SelectField": {
       "doc": "点开从列表里选：上面是标签，右边一个向下箭头；没选时显示占位，前一级没选时变灰。",
-      "params": [
-        "label",
-        "value",
-        "placeholder",
-        "disabled"
-      ],
+      "params": {
+        "label": "string",
+        "value": "string?",
+        "placeholder": "string?",
+        "disabled": "bool = false"
+      },
       "look": {
         "box": "column",
         "gap": 6,

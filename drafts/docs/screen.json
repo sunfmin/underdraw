@@ -598,7 +598,7 @@
               "fill": "paper", "stroke": "line", "children": ["$children"] } },
     "MenuItem": {
     "doc": "One menu item: an icon, its label, and a check when it is the current choice. A destructive item is shown in the danger colour.",
-    "params": ["leadingIcon", "text", "disabled", "selected"],
+    "params": { "leadingIcon": "icon?", "text": "string", "disabled": "bool = false", "selected": "bool = false" },
     "look": { "box": "row", "gap": 12, "padding": [10, 16], "items": "center", "children": [
       { "if": "leadingIcon", "component": "Glyph", "icon": "{leadingIcon}", "size": 20 },
       { "box": "row", "grow": 1, "children": [
