@@ -406,3 +406,27 @@ fn an_overlay_is_drawn_over_what_comes_after_its_node() {
     assert!(b.y < menu.y + menu.height, "the menu reaches over row b");
     assert_eq!(placed(&page, "b").label, None, "row b, under the menu, has no number");
 }
+
+#[test]
+fn text_in_a_colour_token_is_drawn_in_the_ink_its_colour_reads_as() {
+    let page = tiny(serde_json::json!([
+        { "id": "light", "component": "Text", "text": "light", "color": "color.surface" },
+        { "id": "secondary", "component": "Text", "text": "secondary", "color": "color.textSecondary" },
+        { "id": "dark", "component": "Text", "text": "dark", "color": "color.text" },
+        { "id": "missing", "component": "Text", "text": "missing", "color": "color.nowhere" }
+    ]));
+    let ink = |said: &str| {
+        page.draws
+            .iter()
+            .find_map(|d| match d {
+                Draw::Text { text, ink, .. } if text == said => Some(*ink),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{said} is not drawn"))
+    };
+    // color.surface is #FFFFFF: text in it is meant to show on a dark fill.
+    assert_eq!(ink("light"), underdraw_layout::Ink::Paper);
+    assert_eq!(ink("secondary"), underdraw_layout::Ink::Muted);
+    assert_eq!(ink("dark"), underdraw_layout::Ink::Text);
+    assert_eq!(ink("missing"), underdraw_layout::Ink::Text);
+}

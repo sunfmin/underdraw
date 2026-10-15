@@ -16,7 +16,7 @@ use underdraw_format::look::{
 use underdraw_format::{Anchor, Atom, Components, Edge, Expr, Lang, Node, Track};
 
 use crate::place::{Elem, Look, Pin, Words};
-use crate::tokens::{self, Tokens};
+use crate::tokens::Tokens;
 use crate::{Align, Ink};
 
 /// The most a `repeat` makes, so a wrong count cannot run away.
@@ -191,7 +191,7 @@ impl Catalog<'_> {
         self.style(object, scope, &mut style);
         let mut gap = self.tokens.find_length(&get("gap"));
         let mut radius = self.tokens.find_length(&get("radius")).unwrap_or(0.0);
-        let mut stroke = ink(&get("stroke"));
+        let mut stroke = ink(&self.tokens, &get("stroke"));
         let mut clip = None;
         if get("frame") == Value::Bool(true) {
             let [padding, framed_gap, framed_radius, border, elevation] =
@@ -207,7 +207,7 @@ impl Catalog<'_> {
             }
             if stroke.is_none() {
                 stroke = match (border, elevation) {
-                    (Some(border), _) => Some(tokens::ink(Some(border))),
+                    (Some(border), _) => Some(self.tokens.ink(Some(border))),
                     (None, Some(_)) => Some(Ink::Line),
                     (None, None) => None,
                 };
@@ -217,14 +217,14 @@ impl Catalog<'_> {
             style.gap = taffy::Size { width: length(gap), height: length(gap) };
         }
         let mut elem = Elem::new(style);
-        let fill = ink(&get("fill"));
+        let fill = ink(&self.tokens, &get("fill"));
         if fill.is_some() || stroke.is_some() {
             elem = elem.with(Look::Box { radius, fill, stroke, dashed: get("dashed") == Value::Bool(true) });
         }
-        if let Some(cross) = ink(&get("cross")) {
+        if let Some(cross) = ink(&self.tokens, &get("cross")) {
             elem = elem.with(Look::Cross(cross));
         }
-        if let Some(line) = ink(&get("topLine")) {
+        if let Some(line) = ink(&self.tokens, &get("topLine")) {
             elem = elem.with(Look::TopLine(line));
         }
         let mut children = Vec::new();
@@ -257,7 +257,8 @@ impl Catalog<'_> {
         if let Some(weight) = get("weight").as_u64() {
             font.weight = weight.min(1000) as u16;
         }
-        let mut words = Words::new(said(&get("text")), font, ink(&get("ink")).unwrap_or(Ink::Text));
+        let mut words =
+            Words::new(said(&get("text")), font, ink(&self.tokens, &get("ink")).unwrap_or(Ink::Text));
         words.max_lines = get("maxLines").as_u64().map(|n| n.min(100) as u32);
         words.align =
             get("align").as_str().and_then(look::TextAlign::read).map(text_align).unwrap_or(Align::Start);
@@ -601,7 +602,7 @@ fn bound(n: &serde_json::Number, limit: f64, keep: fn(f64, f64) -> f64) -> Value
 
 /// The ink `value` names: one of the wireframe's own (`muted`, `fill`, …),
 /// or a colour token (`color.textSecondary`); none when it is null.
-fn ink(value: &Value) -> Option<Ink> {
+fn ink(tokens: &Tokens, value: &Value) -> Option<Ink> {
     Some(match value.as_str()? {
         "text" => Ink::Text,
         "muted" => Ink::Muted,
@@ -610,7 +611,7 @@ fn ink(value: &Value) -> Option<Ink> {
         "strong" => Ink::Strong,
         "paper" => Ink::Paper,
         "assumed" => Ink::Assumed,
-        _ => tokens::ink(Some(value)),
+        _ => tokens.ink(Some(value)),
     })
 }
 

@@ -55,15 +55,34 @@ impl Tokens<'_> {
         let weight = font.get("weight").and_then(Value::as_u64).map_or(400, |w| w.min(1000) as u16);
         Font { size: number("size", BODY.size), weight, line_height: number("lineHeight", BODY.line_height) }
     }
+
+    /// The ink a colour token is drawn in. A wireframe has no colour: the
+    /// brand colour reads as the strongest ink, a secondary one as muted, and
+    /// any other as the text ink, or as the paper when tokens.json makes it
+    /// light (a surface's white), so text in it shows on a dark fill.
+    pub(crate) fn ink(&self, value: Option<&Value>) -> Ink {
+        match value.and_then(Value::as_str) {
+            Some("color.textSecondary") => Ink::Muted,
+            Some("color.primary" | "color.primaryPressed") => Ink::Strong,
+            Some("color.border") => Ink::Line,
+            Some(name) if self.get(name).and_then(Value::as_str).is_some_and(light) => Ink::Paper,
+            _ => Ink::Text,
+        }
+    }
 }
 
-/// The ink a colour token is drawn in. A wireframe has no colour: the
-/// brand colour reads as the strongest ink, a secondary one as muted.
-pub(crate) fn ink(value: Option<&Value>) -> Ink {
-    match value.and_then(Value::as_str) {
-        Some("color.textSecondary") => Ink::Muted,
-        Some("color.primary" | "color.primaryPressed") => Ink::Strong,
-        Some("color.border") => Ink::Line,
-        _ => Ink::Text,
-    }
+/// Whether `hex` ("#FFFFFF", "#F7F7F7CC") is a colour near white: its
+/// lightness, the mean of its strongest and weakest channel, is at least
+/// 90%.
+fn light(hex: &str) -> bool {
+    let Some(rgb) = hex.strip_prefix('#').and_then(|digits| digits.get(0..6)) else {
+        return false;
+    };
+    let Ok(rgb) = u32::from_str_radix(rgb, 16) else {
+        return false;
+    };
+    let channels = [(rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF];
+    let strongest = channels.iter().copied().max().unwrap_or(0);
+    let weakest = channels.iter().copied().min().unwrap_or(0);
+    strongest + weakest >= 459
 }
