@@ -1,0 +1,6 @@
+{
+  "$comment": "Where an order stands, as a small outlined pill.",
+  "params": ["status"],
+  "look": { "self": "start", "padding": [2, 10], "stroke": "line", "radius": 999,
+            "children": [ { "text": "{status}", "font": "font.caption" } ] }
+}

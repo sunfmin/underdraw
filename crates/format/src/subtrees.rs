@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::check::Findings;
+use crate::components::{self, Declared};
 use crate::field::{self, Base, Field};
 use crate::instance::SLOTS;
 use crate::schema::{Schema, object};
@@ -29,6 +30,8 @@ const DECLARATION: [&str; 6] = ["params", "nodes", "doc", "$note", "$why", "$com
 /// One component the screen declares: the params it reads, and its nodes.
 pub struct Subtree<'a> {
     pub name: &'a str,
+    /// Whether the project shares it, rather than the screen declaring it.
+    pub shared: bool,
     pub params: Vec<(String, Field)>,
     /// The subtree's root, which the instance's id names.
     pub nodes: &'a Map<String, Value>,
@@ -39,11 +42,12 @@ pub struct Subtree<'a> {
 pub struct Subtrees<'a>(BTreeMap<&'a str, Subtree<'a>>);
 
 impl<'a> Subtrees<'a> {
-    /// The components `screen` declares; one without nodes is left out, and
-    /// a param that is not a field is too, for [`check`] to name.
+    /// The components `screen` declares, the project's and its own; one
+    /// without nodes is left out, and a param that is not a field is too,
+    /// for [`check`] to name.
     pub fn read(screen: &'a Value) -> Subtrees<'a> {
         let mut read = BTreeMap::new();
-        for (name, declared) in object(screen, KEY) {
+        for Declared { name, body: declared, shared, .. } in components::declared(screen) {
             let Some(Value::Object(nodes)) = declared.get("nodes") else {
                 continue;
             };
@@ -53,7 +57,7 @@ impl<'a> Subtrees<'a> {
                     params.push((param.clone(), field));
                 }
             }
-            read.insert(name.as_str(), Subtree { name, params, nodes });
+            read.insert(name, Subtree { name, shared, params, nodes });
         }
         Subtrees(read)
     }
@@ -92,20 +96,19 @@ pub(crate) fn is_slot(node: &Map<String, Value>) -> bool {
     node.contains_key("slot") && !node.contains_key("component")
 }
 
-/// Every fault in the components `screen` declares whose body is nodes
-/// (`components::Components::check` has the rest): each is named with a
-/// capital, holds only params and nodes, its params fields of types the
-/// screen knows and none of them view state, its root without an id of
-/// its own.
+/// Every fault in the components `screen` declares whose body is nodes,
+/// the project's and its own (`components::Components::check` has the
+/// rest): each is named with a capital, holds only params and nodes, its
+/// params fields of types the screen knows (the domain's among them) and
+/// none of them view state, its root without an id of its own.
 pub(crate) fn check(screen: &Value, schema: &Schema, findings: &mut Findings) {
-    for (name, declared) in object(screen, KEY) {
+    for Declared { name, body: declared, at, .. } in components::declared(screen) {
         let Some(declared) = declared
             .as_object()
             .filter(|declared| declared.contains_key("nodes") && !declared.contains_key("look"))
         else {
             continue;
         };
-        let at = format!("{KEY}.{name}");
         if !name.starts_with(|c: char| c.is_ascii_uppercase()) || !field::is_identifier(name) {
             findings.add(&at, "a component's name starts with a capital letter: OrderRow");
         }

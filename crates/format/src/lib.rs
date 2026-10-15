@@ -38,7 +38,7 @@ mod rejected;
 pub use assumption::Lang;
 pub use breakpoint::Breakpoint;
 pub use check::{Checked, Condition, Finding, check, check_among};
-pub use components::{Components, FILTERS, LOOK, Takes, Track, takes};
+pub use components::{Components, FILTERS, LOOK, SHARED as SHARED_COMPONENTS, Takes, Track, takes};
 pub use conditions::{Condition as Definition, Conditions};
 pub use domain::KEY as DOMAIN;
 pub use expr::{Atom, Expr, Op};

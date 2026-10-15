@@ -172,10 +172,10 @@ impl Reference {
                 context.push(label.map_or_else(|| "no label".to_string(), |label| format!("label {label}")));
                 context.push(format!("width {width}"));
                 format!(
-                    "{description} · {} · {} at {} in screen.json · pointed at {}",
+                    "{description} · {} · {} at {} · pointed at {}",
                     state(shown),
                     origin.written,
-                    origin.at,
+                    written_in(&origin.at),
                     context.join(", ")
                 )
             }
@@ -196,6 +196,20 @@ impl Reference {
             On::Transition { transition } => format!("{description} · transition {}", transition.said()),
             On::Navigate { navigate } => format!("{description} · navigate {}", navigate.said()),
         }
+    }
+}
+
+/// Where the node at `at` (a JSON pointer into the description as read) is
+/// written: in screen.json, or, inside a component the project shares, in
+/// its components/<Name>.json.
+fn written_in(at: &str) -> String {
+    let shared = at
+        .strip_prefix('/')
+        .and_then(|at| at.strip_prefix(underdraw_format::SHARED_COMPONENTS))
+        .and_then(|at| at.strip_prefix('/'));
+    match shared.and_then(|at| at.split_once('/')) {
+        Some((name, inside)) => format!("/{inside} in {}/{name}.json", crate::project::COMPONENTS),
+        None => format!("{at} in screen.json"),
     }
 }
 
@@ -235,6 +249,11 @@ mod tests {
         assert_eq!(
             node.line(),
             "/d/orders · fixture default · order-{index} at /root/children/1/item in screen.json · pointed at [2], label 4, width 390"
+        );
+        assert_eq!(
+            written_in("/$components/OrderRow/nodes/children/1"),
+            "/nodes/children/1 in components/OrderRow.json",
+            "a node of a component the project shares is written in its file"
         );
     }
 
