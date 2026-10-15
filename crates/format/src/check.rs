@@ -179,6 +179,24 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             }
         }
     }
+    // Each node a state shows is told apart by its id: a test finds it, a
+    // transition acts on it and a note is pinned to it by that id alone.
+    if findings.0.is_empty() {
+        let mut named = BTreeSet::new();
+        for state in &states {
+            for breakpoint in Breakpoint::ALL {
+                if let Ok(tree) = build(screen, screen.state(state), breakpoint, None)
+                    && let Some(twice) = twice(&tree, &mut BTreeSet::new())
+                    && named.insert(twice.written_id.clone())
+                {
+                    findings.add(&twice.written_id, &format!(
+                        "names more than one node in {state}, {} among them: give each its own id; inside a repeat inside a repeat, name the outer one's index (\"index\": \"row\" beside its \"each\") and write both in the id, \"cell-{{row}}-{{index}}\"",
+                        twice.id
+                    ));
+                }
+            }
+        }
+    }
     let mut table = Vec::new();
     if findings.0.is_empty() {
         for condition in conditions.all() {
@@ -234,12 +252,21 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
     }
 }
 
+/// The first node in `node`, in document order, whose id one before it in
+/// `seen` already has.
+fn twice<'n>(node: &'n crate::instance::Node, seen: &mut BTreeSet<&'n str>) -> Option<&'n crate::instance::Node> {
+    if !seen.insert(&node.id) {
+        return Some(node);
+    }
+    node.children.iter().find_map(|child| twice(child, seen))
+}
+
 /// Properties whose value is always text: placeholders in them follow the
 /// format rules. Anything else given exactly one placeholder takes the value.
 const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
-const INERT: [&str; 11] =
-    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "with", "only", "each", "if"];
+const INERT: [&str; 12] =
+    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "with", "only", "each", "index", "if"];
 
 /// The actions that only move the UI and touch no data. With `set` and
 /// `toggle` on view state, they are all a screen does by itself.
@@ -492,6 +519,22 @@ impl<'a> Walk<'a> {
                     element.view = self.schema.in_view_state(scope, path);
                     item_scope.push(("item".to_string(), element));
                     item_scope.push(("index".to_string(), Field::of(Base::Int)));
+                    // The index named, so a repeat inside can still reach it.
+                    match object.get("index") {
+                        None => {}
+                        Some(Value::String(name))
+                            if crate::field::is_identifier(name)
+                                && !["item", "index", "n"].contains(&name.as_str())
+                                && !scope.iter().any(|(taken, _)| taken == name) =>
+                        {
+                            let index = Field { lo: Some(0.0), ..Field::of(Base::Int) };
+                            item_scope.push((name.clone(), index));
+                        }
+                        Some(name) => self.findings.add(
+                            &format!("{at}.index"),
+                            &format!("{name} cannot name this repeat's index: give a word no data root, enclosing repeat or item, index and n already take, such as \"row\""),
+                        ),
+                    }
                 }
                 _ => self.findings.add(at, &format!("each iterates an array, and {path} is not one")),
             }
@@ -499,6 +542,12 @@ impl<'a> Walk<'a> {
             self.findings.add(
                 at,
                 "\"item\" is the template each repeats, and this node has no \"each\": name the array with \"each\"",
+            );
+        }
+        if object.contains_key("index") && !object.contains_key("each") {
+            self.findings.add(
+                &format!("{at}.index"),
+                "\"index\" names the index of the repeat \"each\" makes, and this node has no \"each\"",
             );
         }
         for (k, v) in object {
