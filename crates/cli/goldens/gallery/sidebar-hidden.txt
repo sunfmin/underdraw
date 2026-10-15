@@ -1,6 +1,8 @@
 picture
   page default · 390
+    ↗ nav-back, photos-carousel, reserve-button
   page default · 1120
+    ↗ nav-back, reserve-button, photos-show-all
 sidebar
   default · the whole state
   note · nothing said yet

@@ -138,20 +138,32 @@ fn tree_shown(gallery: &mut Gallery) -> Vec<String> {
 }
 
 /// The picture shown, as text: a state's pages by their captions, the node
-/// picked and its box in each page, and the pins; an overview's states,
+/// picked and its box in each page, the nodes marked ↗ and → in each, and
+/// the pins; an overview's states,
 /// its arrows and the journeys marked on it; a flow's words; a
 /// description's faults.
 fn picture_shown(gallery: &mut Gallery) -> Vec<String> {
     let mut out = Vec::new();
     match &gallery.picture {
-        Picture::Pages(Pages { pages, .. }) => {
-            for page in pages {
+        Picture::Pages(shown @ Pages { pages, .. }) => {
+            let leading = shown.leading(&gallery.desk());
+            for (index, page) in pages.iter().enumerate() {
                 out.push(format!("page {}", page.caption));
                 if let Some((id, _)) = gallery.node()
                     && let Some(node) = page.nodes.iter().find(|node| node.id == id)
                 {
                     let r = node.rect;
                     out.push(format!("  picked {id}: {}, {} · {} × {}", r.x, r.y, r.width, r.height));
+                }
+                for leads in [Leads::Screen, Leads::State] {
+                    let ids: Vec<&str> = leading
+                        .iter()
+                        .filter(|l| l.page == index && l.leads == leads)
+                        .map(|l| l.id.as_str())
+                        .collect();
+                    if !ids.is_empty() {
+                        out.push(format!("  {} {}", leads.badge(), ids.join(", ")));
+                    }
                 }
             }
             if gallery.playing.is_some() {

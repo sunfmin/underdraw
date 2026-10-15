@@ -12,8 +12,10 @@ tree
 picture
   page default · 390
     picked address: 16, 106 · 358 × 66
+    ↗ nav-back, address
   page default · 1120
     picked address: 16, 106 · 675 × 66
+    ↗ nav-back, address
 sidebar
   推測、あなたの回答待ち
     ここは AddressBook に遷移しますが、ルート以下のどの記述も AddressBook を宣言していないため、AddressBook はまだ描かれていない画面だと推測しています。描かれている画面の名前の書き間違いかもしれませんし、この遷移自体が要らないのかもしれません：描くか、名前を直してください。

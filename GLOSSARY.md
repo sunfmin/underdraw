@@ -264,7 +264,10 @@ _Avoid_: flow, user story, scenario
 
 **Label**:
 The number tagged in a wireframe on each node a person can act on, in document
-order, naming that node in conversation.
+order, naming that node in conversation. It does not say where acting on it goes: the gallery
+marks that apart, in purple, on each node a navigate, a `back` or a
+transition from the state shown leads from: ↗ to another screen, → to
+another state.
 
 **Platform mapping**:
 How one platform realises each component, action and token.
