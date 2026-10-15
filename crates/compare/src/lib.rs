@@ -104,7 +104,7 @@ pub fn compare(
         return Err(format!("the description does not show {named} at the {breakpoint:?} breakpoint"));
     };
     let root = instantiate(screen, state, breakpoint)?;
-    let page = layout(&root, tokens, kinds, capture.width, measure)?;
+    let page = layout(&root, tokens, kinds, capture.width, underdraw_format::Lang::default(), measure)?;
 
     let mut known = Vec::new();
     for state in &handed.states {

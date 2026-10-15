@@ -2,7 +2,7 @@
 //! overlay a picture would cut, which only laying each state out can show.
 
 use serde_json::Value;
-use underdraw_format::{Breakpoint, Checked, Finding, Model, State};
+use underdraw_format::{Breakpoint, Checked, Finding, Lang, Model, State};
 
 use crate::{Measure, layout};
 
@@ -32,7 +32,7 @@ pub fn check(
         };
         for width in CHECKED_WIDTHS {
             let root = model.instantiate(state, Breakpoint::for_width(tokens, width))?;
-            let page = layout(&root, tokens, kinds, width as f32, measure)?;
+            let page = layout(&root, tokens, kinds, width as f32, Lang::default(), measure)?;
             for id in page.cut {
                 cut.push(Finding {
                     at: id,

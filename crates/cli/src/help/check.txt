@@ -54,7 +54,10 @@ ANSWERS
                       "to": the screen it names,
                       "resolved": true when a description under root
                         declares it; false: an assumption, a screen not
-                        drawn yet}, …]
+                        drawn yet,
+                      "assumed": when not resolved, that assumption said
+                        in a whole sentence, in --lang (en or zh; en by
+                        default), or null}, …]
     "notes":        {"open", "answered"}, over every description
   }
 
@@ -65,6 +68,9 @@ EXIT
   notes, open or answered.
 
 WHAT TRIPS YOU UP
+  - "assumed" says what was guessed and what else it could be, in a
+    sentence in the language you speak with the person: a word or two is
+    refused (ASSUMED below).
   - A text property (text, title, subtitle, label, detail) always shows text:
     "{booking.total}" there needs |money. Elsewhere a lone placeholder passes
     the value itself.

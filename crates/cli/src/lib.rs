@@ -27,7 +27,7 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
 use draw::{Shown, Wanted};
 use serde_json::{Value, json};
-use underdraw_format::State;
+use underdraw_format::{Lang, State};
 
 /// What this binary was built from, as `--version` says it: stamped by
 /// `build.rs`.
@@ -58,6 +58,9 @@ enum Command {
     Check {
         /// The screen's directory, which holds screen.json, or the screen.json itself; or a directory holding no screen.json, to check every description under it and the navigates between them
         path: PathBuf,
+        /// The language underdraw words its own assumptions in, a screen not drawn yet among the links: en or zh
+        #[arg(long, default_value = "en", value_parser = lang)]
+        lang: Lang,
     },
     /// Draw a screen in one state as a wireframe PNG, and say where each node went
     #[command(after_long_help = include_str!("help/render.txt"))]
@@ -82,12 +85,18 @@ enum Command {
         /// The directory the screen descriptions are under, as `check <root>` and the gallery take it: a node that navigates to a screen none of them declares is marked assumed. Not given, navigates are not resolved
         #[arg(long)]
         root: Option<PathBuf>,
+        /// The language underdraw words its own assumptions in, a screen not drawn yet or a kind it does not know: en or zh
+        #[arg(long, default_value = "en", value_parser = lang)]
+        lang: Lang,
     },
     /// A window for the person: every screen description under a directory, each drawn at a phone and a desktop width
     #[command(after_long_help = include_str!("help/gallery.txt"))]
     Gallery {
         /// The directory the screen descriptions are under, at any depth
         root: PathBuf,
+        /// The language underdraw words its own assumptions in, a screen not drawn yet or a kind it does not know: en or zh
+        #[arg(long, default_value = "en", value_parser = lang)]
+        lang: Lang,
         /// Run the window itself, in this process: what the command starts
         #[arg(long, hide = true)]
         window: bool,
@@ -179,20 +188,20 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         }
     };
     let answer = match cli.command {
-        Command::Gallery { root, window: true } => {
-            window::run(&root);
+        Command::Gallery { root, lang, window: true } => {
+            window::run(&root, lang);
             return ExitCode::SUCCESS;
         }
-        Command::Gallery { root, window: false } => gallery::gallery(&root),
+        Command::Gallery { root, lang, window: false } => gallery::gallery(&root, lang),
         Command::Notes { create: Some(_), .. }
         | Command::Notes { close: Some(_), .. }
         | Command::Notes { reopen: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
         Command::Notes { path, answer, reply, .. } => {
             notes::notes(&path, answer.as_deref(), reply.as_deref())
         }
-        Command::Check { path } => check(&path),
-        Command::Render { path, fixture, phase, width, scale, out, root } => {
-            render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref())
+        Command::Check { path, lang } => check(&path, lang),
+        Command::Render { path, fixture, phase, width, scale, out, root, lang } => {
+            render(&path, &Wanted { fixture, phase, width, scale }, out, root.as_deref(), lang)
         }
         Command::Schema { path } => schema(&path),
         Command::Cli { path } => derive_cli(&path),
@@ -218,9 +227,9 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
 }
 
 /// One description, or every one under a directory that is none.
-fn check(path: &Path) -> anyhow::Result<Value> {
+fn check(path: &Path, lang: Lang) -> anyhow::Result<Value> {
     if path.is_dir() && !path.join(SCREEN).is_file() {
-        return links::check_root(path);
+        return links::check_root(path, lang);
     }
     let mut answer = serde_json::to_value(check_at(path)?)?;
     let dir = if path.is_dir() { path } else { path.parent().unwrap_or(Path::new(".")) };
@@ -406,7 +415,13 @@ fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
     }
 }
 
-fn render(path: &Path, wanted: &Wanted, out: Option<PathBuf>, root: Option<&Path>) -> anyhow::Result<Value> {
+fn render(
+    path: &Path,
+    wanted: &Wanted,
+    out: Option<PathBuf>,
+    root: Option<&Path>,
+    lang: Lang,
+) -> anyhow::Result<Value> {
     let drawn = match root {
         Some(root) if !root.is_dir() => {
             bail!(
@@ -417,7 +432,7 @@ fn render(path: &Path, wanted: &Wanted, out: Option<PathBuf>, root: Option<&Path
         Some(root) => Some(links::drawn(root)),
         None => None,
     };
-    let laid = draw::lay_out(path, wanted, drawn.as_ref())?;
+    let laid = draw::lay_out(path, wanted, drawn.as_ref(), lang)?;
     let mut gpu = gpu::Gpu::open()?;
     let drawing = laid.draw(wanted.scale, gpu.max_side);
     let [pixels_wide, pixels_high] = drawing.pixels;
@@ -486,4 +501,9 @@ fn doctor() -> Value {
 /// The subcommands that exist, by name.
 pub fn commands() -> Vec<String> {
     Cli::command().get_subcommands().map(|c| c.get_name().to_string()).collect()
+}
+
+/// The language `--lang` names.
+fn lang(name: &str) -> Result<Lang, String> {
+    Lang::parse(name).ok_or_else(|| format!("write one of {}", Lang::NAMES.join(", ")))
 }

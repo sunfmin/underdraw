@@ -8,23 +8,35 @@ wireframe and each platform can build it the same way.
 ### The description
 
 **Screen description**:
-The platform-neutral account of one screen: its data, conditions, fixtures and
-node tree. The single source of truth for that screen.
+The platform-neutral account of one screen: its params, data, conditions,
+fixtures and node tree. The single source of truth for that screen.
 _Avoid_: spec
+
+**Project**:
+One app's screen descriptions under one directory, sharing one design
+language and one **domain**: a screen takes its tokens from the nearest
+directory above it that has them, unless its own directory has them, and
+can use every component the project shares.
+_Avoid_: workspace, app
 
 **Node**:
 One element of the screen, with a stable **id** that becomes each platform's
-test id.
-_Avoid_: element, component, view
+test id, and the **component** it is.
+_Avoid_: element, view
 
-**Kind**:
-What a node is (`Button`, `TextField`, `List`), named without any platform's
-vocabulary.
-_Avoid_: widget, component type
+**Component**:
+What a node is (`Button`, `OrderRow`), named without any platform's
+vocabulary, given its data only through the params it declares and varied
+only through them and its slots; it holds no view state of its own. Its
+body is one of two: a **look**, which a platform builds as one element, or
+nodes, each named by the instance's id joined to its own
+(`order-3-cancel`). Underdraw has its own; a project's are one screen's,
+or shared by every screen of the project.
+_Avoid_: kind, widget, partial, fragment
 
 **Look**:
-What a kind is drawn as in a wireframe, written as data in `kinds.json`:
-boxes, text, `repeat` and `cases`, each key taking only what layout draws.
+What a component is drawn as in a wireframe, written as data: boxes,
+text, `repeat` and `cases`, each key taking only what layout draws.
 _Avoid_: template, style
 
 **Overlay**:
@@ -77,6 +89,11 @@ A view-model field computed from other values, never by the screen, and
 saying by whom: the app (for the screen alone, so never in an operation's
 result) or the server (which answers with it).
 
+**Param**:
+What a screen is opened with, declared by the screen: a `data` field each
+fixture gives, and each `navigate` to the screen must give, of its type.
+_Avoid_: argument, route param
+
 **Fixture**:
 One sample value of the view model; each fixture puts the screen in one state.
 _Avoid_: mock data, example
@@ -103,6 +120,12 @@ _Avoid_: flow, navigation, edge
 A named yes/no decision the screen makes, such as `hasDates`, declared once and
 used by name.
 _Avoid_: flag, predicate
+
+**Domain**:
+The types, conditions and operations a project's screens and components
+share, each declared once and used by name; a screen may add its own, but
+never one of the same name.
+_Avoid_: model, schema
 
 **Operation**:
 A query (it only reads) or a command (it changes something) behind a screen:
@@ -189,12 +212,22 @@ an arrow labelled with its node, drawn from the links `check <root>`
 reports; one to a screen not drawn yet ends at a dashed "?".
 _Avoid_: site map, navigation graph
 
+**Journey**:
+One named path a person takes across screens, told as steps: each a
+state of one screen, and between two steps the node acted on, its event
+and, for a call, the outcome. A branch is another journey. It must be
+walkable: each act is shown in its step's state and leads to the next
+step, by a navigate or a transition, and a navigate gives the next
+step's fixture exactly the params it holds. For the gallery only; never
+handed off.
+_Avoid_: flow, user story, scenario
+
 **Label**:
 The number tagged in a wireframe on each node a person can act on, in document
 order, naming that node in conversation.
 
 **Platform mapping**:
-How one platform realises each kind, action and token.
+How one platform realises each component, action and token.
 
 **Handoff**:
 What one platform is given to build a screen: the generated view model, how

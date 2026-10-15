@@ -7,6 +7,7 @@
 extern crate flux_alloc;
 extern crate flux_core;
 
+pub mod assumption;
 mod breakpoint;
 mod check;
 mod conditions;
@@ -30,6 +31,7 @@ mod transitions;
 #[allow(dead_code)]
 mod rejected;
 
+pub use assumption::Lang;
 pub use breakpoint::Breakpoint;
 pub use check::{Checked, Condition, Finding, check};
 pub use conditions::{Condition as Definition, Conditions};

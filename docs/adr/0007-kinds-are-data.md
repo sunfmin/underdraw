@@ -1,5 +1,7 @@
 # Kinds are data; underdraw only interprets their looks
 
+Superseded in part: kinds and `kinds.json` became components by [ADR 0021](0021-kinds-become-components-one-screens-or-the-projects.md); the look vocabulary stands.
+
 What each kind of node looks like in a wireframe is declared as data in
 `kinds.json`: a project's file beside `tokens.json`, over the defaults
 underdraw ships in the same form. Underdraw's code only interprets a

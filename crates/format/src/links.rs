@@ -9,6 +9,8 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use crate::Lang;
+
 /// The parts of a description that hold nodes, and so actions.
 const TREES: [&str; 3] = ["root", "phases", "components"];
 
@@ -82,25 +84,25 @@ fn targets(on: &Value, to: &mut BTreeSet<String>) {
 
 /// `screen` with each node that navigates to a screen not in `drawn` marked
 /// `"assumed"`, saying which: drawn with the orange "?" for the person to
-/// confirm. A node's own `"assumed"` is kept.
-pub fn assume_undrawn(screen: &Value, drawn: &BTreeSet<String>) -> Value {
+/// confirm, in `lang`. A node's own `"assumed"` is kept.
+pub fn assume_undrawn(screen: &Value, drawn: &BTreeSet<String>, lang: Lang) -> Value {
     let Value::Object(object) = screen else {
         return screen.clone();
     };
     let mut marked = Map::new();
     for (key, value) in object {
-        let value = if TREES.contains(&key.as_str()) { mark(value, drawn) } else { value.clone() };
+        let value = if TREES.contains(&key.as_str()) { mark(value, drawn, lang) } else { value.clone() };
         marked.insert(key.clone(), value);
     }
     Value::Object(marked)
 }
 
-fn mark(value: &Value, drawn: &BTreeSet<String>) -> Value {
+fn mark(value: &Value, drawn: &BTreeSet<String>, lang: Lang) -> Value {
     match value {
         Value::Object(object) => {
             let mut marked = Map::new();
             for (key, inner) in object {
-                let inner = if key == "on" { inner.clone() } else { mark(inner, drawn) };
+                let inner = if key == "on" { inner.clone() } else { mark(inner, drawn, lang) };
                 marked.insert(key.clone(), inner);
             }
             if let Some(on) = object.get("on")
@@ -115,10 +117,7 @@ fn mark(value: &Value, drawn: &BTreeSet<String>) -> Value {
                     }
                 }
                 if !undrawn.is_empty() {
-                    let why = format!(
-                        "navigates to {}, which no description under the root declares: a screen not drawn yet",
-                        undrawn.join(", ")
-                    );
+                    let why = crate::assumption::undrawn(&undrawn, lang);
                     marked.insert("assumed".to_string(), Value::String(why));
                 }
             }
@@ -127,7 +126,7 @@ fn mark(value: &Value, drawn: &BTreeSet<String>) -> Value {
         Value::Array(items) => {
             let mut marked = Vec::new();
             for item in items {
-                marked.push(mark(item, drawn));
+                marked.push(mark(item, drawn, lang));
             }
             Value::Array(marked)
         }

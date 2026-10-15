@@ -48,7 +48,8 @@ DOES
   there (`assumed`), and its label and box at each width, as `render`
   reports them. A node that navigates to a screen no description under
   <root> declares is drawn with the orange "?", a screen not drawn yet, as
-  `underdraw check <root>` reports it. Picking another state keeps that id picked while the state
+  `underdraw check <root>` reports it. What underdraw assumes itself, there and
+  in the panel, is said in --lang: en or zh, en by default. Picking another state keeps that id picked while the state
   has it; clicking where no node is closes the panel. A description with
   faults stays in the tree, marked with how many it has; picking it, or any
   of its states, lists each finding as `underdraw check` names it (where,
