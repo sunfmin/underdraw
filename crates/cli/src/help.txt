@@ -78,7 +78,8 @@ COMMANDS
                              with --answer <id> --reply "…", one answered;
                              with --wait, once one waits
     underdraw render <dir>   a wireframe PNG of one state, and where each node went,
-                             for the agent to read the node boxes
+                             for the agent to read the node boxes; with --all,
+                             every state at both widths on one sheet
   For the agent building the screen on a platform:
     underdraw schema <dir>   the view model as a JSON Schema, to validate API data against
     underdraw handoff <dir> --platform <name>

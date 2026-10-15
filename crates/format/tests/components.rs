@@ -196,8 +196,9 @@ fn each_fault_of_a_component_is_found() {
 
 #[test]
 fn a_fault_found_at_each_instance_is_said_once() {
-    // Two id-less instances in one list item: each node inside either is
-    // found at the same place, and so is the fault of the shared body.
+    // Two id-less instances in one list item, each given an id of its own:
+    // the fault of the shared body is said once at each, however many
+    // elements the item is built for.
     let mut reaching = row();
     reaching["nodes"]["children"][0].as_object_mut().unwrap().remove("id");
     reaching["nodes"]["children"][0]["text"] = json!("{title}");
@@ -206,8 +207,18 @@ fn a_fault_found_at_each_instance_is_said_once() {
         screen(reaching, json!({ "id": "pair-{index}", "component": "Row", "children": [] }));
     description["root"]["children"][0]["item"]["children"] = json!([instance.clone(), instance]);
     let checked = check(&description);
-    let said: Vec<_> = checked.findings.iter().filter(|f| f.problem.contains("title reaches past")).collect();
-    assert_eq!(said.len(), 1, "{:#?}", checked.findings);
+    let said: Vec<_> = checked
+        .findings
+        .iter()
+        .filter(|f| f.problem.contains("title reaches past"))
+        .map(|f| f.at.as_str())
+        .collect();
+    assert_eq!(
+        said,
+        ["pair-{index}-item-row-text-title.text", "pair-{index}-item-row-2-text-title.text"],
+        "{:#?}",
+        checked.findings
+    );
 }
 
 #[test]
@@ -222,6 +233,72 @@ fn a_bool_param_takes_a_condition_of_the_screens() {
     assert!(checked.ok, "{:#?}", checked.findings);
     let root = instantiate(&screen, State::Fixture("some"), Breakpoint::Compact).unwrap();
     assert!(find(&root, "row-0-name").is_some(), "hasItems holds where there is a row");
+}
+
+#[test]
+fn a_nullable_value_is_given_where_an_if_tests_it() {
+    // (name, where the `if` testing picked != null stands, whether it is refused)
+    let cases = [
+        ("on the instance", "instance", false),
+        ("on an enclosing node", "enclosing", false),
+        ("nowhere", "", true),
+    ];
+    for (name, gated, refused) in cases {
+        let mut instance = json!({ "id": "picked-row", "component": "ItemRow",
+            "with": { "item": "{picked}", "open": "{menuOpen}" } });
+        if gated == "instance" {
+            instance["if"] = json!("picking");
+        }
+        let mut enclosing = json!({ "id": "picked-box", "component": "Row", "children": [instance] });
+        if gated == "enclosing" {
+            enclosing["if"] = json!("picking");
+        }
+        let mut description =
+            screen(row(), json!({ "id": "row-{index}", "component": "Text", "text": "{item.name}" }));
+        description["data"]["picked"] = json!("Item?");
+        description["conditions"]["picking"] = json!({ "when": "picked != null", "label": "选了一项" });
+        description["fixtures"]["some"]["picked"] = json!({ "id": "a", "name": "Milk", "done": false });
+        description["fixtures"]["none"]["picked"] = json!(null);
+        description["root"]["children"].as_array_mut().unwrap().push(enclosing);
+        let checked = check(&description);
+        let said = found(&checked, "picked-row.with.item", "is Item?, and the parameter is Item");
+        assert_eq!(said, refused, "{name}: {:#?}", checked.findings);
+        assert_eq!(checked.ok, !refused, "{name}: {:#?}", checked.findings);
+    }
+}
+
+#[test]
+fn a_shared_component_shown_on_its_own_sets_the_param_it_is_passed() {
+    let strip = json!({
+        "params": { "at": "int 1.." },
+        "fixtures": { "first": { "at": 1 } },
+        "nodes": { "component": "Row", "children": [
+            { "id": "second", "component": "Button", "label": "2", "on": { "tap": { "set": "at", "to": 2 } } }
+        ] }
+    });
+    let shown = underdraw_format::showcase("RouteStrip", &strip);
+    let shared = json!({ "RouteStrip": strip });
+    let shared = Shared { domain: None, components: shared.as_object() };
+    let checked = underdraw_format::check(&Screen::read(&shown, shared));
+    assert!(checked.ok, "the showcase alone holds what it passes: {:#?}", checked.findings);
+
+    // A screen that passes it domain data is still refused: the set acts
+    // on what was passed.
+    let mut description =
+        screen(row(), json!({ "id": "strip", "component": "RouteStrip", "with": { "at": "{count}" } }));
+    description["data"]["count"] = json!("int 1..");
+    description["fixtures"]["none"]["count"] = json!(1);
+    description["components"]["RouteStrip"] = strip.clone();
+    description["components"]["RouteStrip"].as_object_mut().unwrap().remove("fixtures");
+    let checked = check(&description);
+    assert!(
+        checked
+            .findings
+            .iter()
+            .any(|f| f.problem.contains("set writes at, and at is given {count}, which is domain data")),
+        "{:#?}",
+        checked.findings
+    );
 }
 
 /// `description` read as a screen of its own, with nothing shared.

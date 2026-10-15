@@ -5,8 +5,9 @@ FORMAT — how to write a description
 
 FILES
   <dir>/screen.json   the screen: view model, fixtures, conditions, nodes
-  domain.json         optional: the types, conditions and operations every
-                      screen of the project shares; its directory is the
+  domain.json         optional: the types, conditions, operations and
+                      samples every screen of the project shares; its
+                      directory is the
                       project root (DOMAIN.JSON below)
   components/<Name>.json
                       optional: a component every screen of the project
@@ -93,9 +94,20 @@ FIXTURES
       "empty":   { "$patch": "default", "todos": [], "summary": {"remaining": 0} }
     }
   "$patch": "<fixture written above>" starts from it and deep-merges the rest
-  over it: objects merge key by key; lists and scalars replace. A fixture
-  may leave out only fields with a default; no unknown fields; types and
-  ranges hold. Use real sample values. The first fixture is the default
+  over it: objects merge key by key; lists and scalars replace.
+  {"$sample": "<name>"}, in place of any value in a fixture (the fixture
+  itself, a field, an item), starts it from that sample in domain.json's
+  "samples" (DOMAIN.JSON), so screens showing the same data (a tree's lines,
+  two journeys) write it once; any other key beside "$sample" merges over
+  it as "$patch" does (only over an object sample):
+      "journeys": { "$sample": "twoJourneys" },
+      "first":    { "$sample": "buy", "name": "Buy again" }
+  It reads, checks and renders exactly as the value written out. A sample
+  is checked where a fixture uses it, as that field's type: one of the
+  wrong type is a finding at the field naming the sample ("… : the fixture
+  starts it from sample buy"); a name no sample has is a finding too.
+  A fixture may leave out only fields with a default; no unknown fields;
+  types and ranges hold. Use real sample values. The first fixture is the default
   for `render`.
 
 PARAMS
@@ -146,16 +158,18 @@ CONDITIONS
   named there at all, and one on a type is never named whole elsewhere.
   It is no field: fixtures never give it, the type has no field of its
   name, and it is used only through a value of its type (check names one
-  used on a value of another type). It must be true of one value of the
-  type and false of another, in any fixtures, wherever they hold one.
+  used on a value of another type). A screen that reads it must hold, in
+  its fixtures, one value of the type it is true of and one it is false
+  of; a screen that never reads it is not held to it.
   Declare one in domain.json (DOMAIN.JSON) to share it: the domain has no
   screen's data, so a condition every screen asks of an Order is one on
   Order. A condition over a screen's data stays that screen's.
 
 TEMPLATES AND FORMATS
   Any string may hold placeholders: {path} or {path|format}. A path is
-  dot-separated: a data root, or inside "item" also item and index. No
-  operators in a placeholder. {{ and }} are literal braces.
+  dot-separated: a data root, or inside "item" also item, index and the
+  index a repeat around it names ("index": "row"). No operators in a
+  placeholder. {{ and }} are literal braces.
     "text": "{summary.remaining} left · {booking.total|money}"
   Formats (closed set; a value that needs one and lacks it is a fault):
     (none)       string, int
@@ -169,9 +183,10 @@ TEMPLATES AND FORMATS
   Any other property given exactly one placeholder and nothing else gets the
   value itself, with its type: "value": "{listing.rating}", "each" items.
   A bool, enum, image or object cannot be shown as text: choose words with
-  cases. A nullable value (or one reached through it) may be shown only
-  where an enclosing "if" or cases branch tests it != null, directly or via
-  a condition whose top-level && chain says so. A negation guarantees nothing.
+  cases. A nullable value (or one reached through it) may be shown, or given
+  to a param that is not nullable, only where its own or an enclosing "if"
+  or cases branch tests it != null, directly or via a condition whose
+  top-level && chain says so. A negation guarantees nothing.
 
 CASES
   Any property's value can be chosen per state; the first true branch wins,
@@ -183,7 +198,22 @@ CASES
 
 NODES
   A node is an object:
-    "id"        required, unique: "todo-{index}" inside an item template
+    "id"        unique in every state: "todo-{index}" inside an item
+                template, "cell-{row}-{index}" inside one inside another
+                ("index" below); check names an id two nodes share. Required on
+                a node with "on", "bind" or "assumed", and on an instance
+                of a component holding one; any other may leave it out
+                and is given one, the same on every run and unchanged by
+                an unrelated node added: the id of the node it is in, its
+                component in kebab case, and the first three words of its
+                text, title, label or icon ("page-text-hello-name" for
+                {"component": "Text", "text": "Hello {name}"} in "page";
+                four hex digits for text with no ASCII word), "-{index}"
+                after an item's (inside a repeat inside one, the outer's
+                {index} in the id it is in said by the outer's "index"
+                name), "-2", "-3"… after one taken. A component's
+                own nodes are given theirs without its root's. check,
+                render, handoff and the gallery all name it so
     "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
                 or one of the screen's own (COMPONENTS); check refuses
                 "kind", its old name
@@ -191,6 +221,15 @@ NODES
     "only"      "compact" or "regular": shown at that breakpoint only
     "each"      a list path: repeat "item" once per element
     "item"      the node repeated; it sees item (the element) and index (0..)
+    "index"     a name for this repeat's index, beside "each": "row". A
+                repeat inside one rebinds item and index, so a node there
+                reaches this one's index only by its name:
+                  { "id": "rows", "component": "List", "each": "rows", "index": "row",
+                    "item": { "id": "row-{index}", "component": "List", "each": "item.cells",
+                      "item": { "id": "cell-{row}-{index}", "component": "Button", … } } }
+                gives cell-0-0, cell-0-1, cell-1-0…; a transition or a
+                journey names it as written, "cell-{row}-{index}.tap". A
+                word no data root, enclosing repeat, item, index or n takes
     "limit"     at most this many elements: 5, or {"compact": 6, "regular": 9}
     "bind"      a path (or a list of paths) the person edits; its value is
                 given to the component as "value" ("bind": "composer.text";
@@ -214,6 +253,14 @@ NODES
                (16 in from the corner), "center" (the middle of the node:
                a dialog) or "bottom" (flush along the bottom edge, as wide
                as the node: a sheet)
+    foot       stays at the foot of the node while what is above it scrolls,
+               out of its siblings' order: a chat's box to write in, a side
+               panel's buttons. Drawn after everything else, on the bottom
+               edge of a column (Stack, Card): a pane in a Columns is as
+               tall as its row. `compare` treats it as pinned. StickyBar
+               does this for a whole screen:
+               { "id": "side", "component": "Stack", "children": [ …cards ],
+                 "foot": { "id": "composer", "component": "Row", … } }
   A component draws its slots only if its look places "$children"; check
   refuses a node in a slot of one whose look does not (IconButton, Badge).
   "each" with no "item" passes the elements to the component as "items" (photos):
@@ -247,6 +294,10 @@ LAYOUT ON A NODE
     "border"     a colour token: "color.border"
     "elevation"  an elevation token: outlined in the wireframe
     "columns"    Grid and Columns only: a count, or tracks ["58%", "1fr"]
+    "dividers"   Grid and Columns only: true draws a line between the cells,
+                 in the line ink, for panes split without a border round each
+  Each cell of a Grid or Columns is as tall as its row, so its border and
+  fill reach the row's foot.
   Section takes "gap" and "padding" too. Width, grow, alignment and sizes
   are never written on a node: they belong to a component's look (LOOKS).
   When a built-in component does not lay out as needed, define one.
@@ -528,12 +579,15 @@ COMPONENTS
   - It holds no view state: check refuses a param marked "view". A flag
     such as a menu's open state is the screen's, in data marked "view":
     true, passed in whole ("{rowMenuOpen}"); a "set" or "toggle" on the
-    param acts on what was passed.
+    param acts on what was passed, and check refuses it where a screen
+    passes domain data. Shown on its own, a shared component holds its
+    params itself, so its set and toggle on them are checked as view
+    state's.
   - It varies only through its params and slots: the instance holds only
     id, component, with, if, only, assumed and the slots it fills; any
     other key reaches inside, and is refused. { "slot": "children" } in
     its nodes stands for what an instance gives in that slot (children,
-    leading, trailing, action or overlay): the screen's own nodes, read
+    leading, trailing, action, overlay or foot): the screen's own nodes, read
     where the instance is, under their own ids. check refuses a slot the
     component places nowhere.
   - A component may use another; check refuses one that uses itself, at
@@ -576,8 +630,10 @@ COMPONENTS
   gallery list it among the descriptions. It is one instance, named as
   the component is in kebab case (order-row, so its nodes are
   order-row-cancel), drawn in each fixture; it declares no screen, so no
-  navigate reaches it. A shared component without fixtures is a finding
-  there, never on a screen using it; a screen's own component takes none.
+  navigate reaches it. One that declares no params has one state to
+  show and needs no "fixtures": without them it is drawn in one, named
+  default. One with params and no fixtures is a finding there, never on
+  a screen using it; a screen's own component takes none.
 
 POPUPS
   underdraw has no dialog, sheet or menu component. A popup is a state like any
@@ -602,8 +658,9 @@ POPUPS
     Screen, the middle and the bottom are those of the whole page, which
     is as tall as its content. A sheet's look leaves out "width".
   - The page is only as tall as its content: an overlay taller than that
-    runs off it and is cut. check finds it, in each state at widths 390
-    and 1120; give the fixture that opens it more content behind it.
+    runs off it and is cut. check finds it, in each state at each of the
+    project's widths (TOKENS.JSON); give the fixture that opens it more
+    content behind it.
   - "backdrop": true dims the screen behind it; what is behind gets no
     number, since nothing there can be acted on while it is open.
 
@@ -642,14 +699,16 @@ JOURNEYS
     {
       "$comment": "The person opens an order and cancels it before it ships.",
       "steps": [
-        { "screen": "orders", "state": "default", "on": "order-{index}.tap" },
-        { "screen": "order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
-        { "screen": "order",  "state": "cancelled" }
+        { "screen": "Orders", "state": "default", "on": "order-{index}.tap" },
+        { "screen": "Order",  "state": "open",    "on": "cancel.tap", "outcome": "ok" },
+        { "screen": "Order",  "state": "cancelled" }
       ]
     }
-    "screen"   the screen's directory, by its path from the project root
-               (the nearest directory at or above <dir> holding
-               domain.json; with none, <dir> itself): "orders/list"
+    "screen"   the screen's name, as a navigate names it: "Orders"; or its
+               directory, by its path from the project root (the nearest
+               directory at or above <dir> holding domain.json; with none,
+               <dir> itself): "orders/list". A name no description under
+               the root declares is a finding at the step
     "state"    a fixture or a phase of that screen
     "on"       on every step but the last: "<node id>.<event>", the node
                acted on, its id as written, as in TRANSITIONS
@@ -710,9 +769,27 @@ BUILT-IN COMPONENTS
   Map              aspectRatio (default "16:9"): a gray area with a marker
   DateRangePicker  bind [from, to], months (1..3): the dates over month grids
   DateField        label, bind (a date): "add date" until set
+  TextField        bind (a string), placeholder, lines (default 1): a box to type
+                   in, lines high: the value, or the placeholder muted while it is ""
   Stepper          label, bind (an int): − value +
   PriceBreakdown   lines (list of names), total (default "合计")
   Skeleton         shape: a list of "image 4:3" and "line 70%"
+  Wireframe        screen (named), state, aspectRatio: another description's
+                   state drawn inside, scaled to the box. screen is the
+                   "screen" a description under the project (the directory
+                   holding domain.json) declares, as a navigate names it;
+                   state one of its fixtures or phases (its first fixture
+                   when not given). Drawn at the first of its widths, as
+                   tall as that state for the box's width unless aspectRatio
+                   says; its labels are left out, and nothing in it is a
+                   node of this screen. check names the node when no
+                   description declares the screen, it has no such state, or
+                   the state cannot be drawn (it has findings), and refuses
+                   a description that draws itself, at any depth (A draws B,
+                   B draws A). Draws the gallery's screens in a design of a
+                   tool that shows them:
+                     { "id": "preview", "component": "Wireframe",
+                       "screen": "OrderList", "state": "empty" }
   Each is a look component (COMPONENTS) whose params are the props above.
   Props a component does not read still reach `handoff` (and so the builder):
   write what the platform needs to know, such as "minLength", "sticky".
@@ -728,25 +805,38 @@ DOMAIN.JSON
     "operations": { "cancelOrder": { "command": "Cancels an order",
                                      "params": { "id": "string" },
                                      "requires": "Order.cancellable",
-                                     "fails": { "notFound": "…" } } }
+                                     "fails": { "notFound": "…" } } },
+    "samples":    { "twoJourneys": [ { "name": "Buy", … }, { "name": "Cancel", … } ] }
   }
+  "samples" names values fixtures start from with "$sample" (FIXTURES);
+  each is any JSON value, untyped here, checked as the field it fills.
   Each key is written as in screen.json (DATA AND TYPES, CONDITIONS,
   OPERATIONS), and nothing else goes there. Every command reads each screen
   of the project as if it declared the domain's itself: a screen uses
   "Order" in its "data" and calls "cancelOrder" by name, and `handoff`, `cli`
   and its golden outputs come out as if it had written them. A screen adds
-  its own beside them (a type that wraps the domain's with view state,
-  "OrderRow": { "order": "Order", "menuOpen": … }), but never one of a name
+  its own beside them (one only it uses, such as a type that wraps the
+  domain's with view state, "OrderRow": { "order": "Order", "menuOpen": … }),
+  but never one of a name
   the domain declares: check names the screen's at "types.Order" (or
   "conditions.…", "operations.…"), says it shadows the domain's, and reads
   the domain's in its place. A finding about the domain's file itself is
   at "domain.json …"; one inside a declaration it holds is at its dotted
   path, as if the screen held it, and is fixed in domain.json.
+  A type several screens use goes here once, even one only the screens
+  hold: a row type with view state ("OrderRow" above, its "menuOpen"
+  marked "view": true) used by two screens is declared in domain.json, not
+  copied into each. A screen that declares one the domain holds is named
+  as shadowing it: delete the copy, and check, render and the gallery
+  read the screen as before.
   A condition the domain shares is declared on a type (CONDITIONS), as
   "Order.cancellable", and each screen reads it through its own values
-  of the type. One that is not on a type reads the data of each screen
-  that uses it, so share one only when every such screen holds the fields
-  it names; a condition over one screen's data stays that screen's.
+  of the type. A screen is held only to the ones it reads: one that never
+  reads Order.cancellable may have every order pending, and check lists
+  only those it reads, with the ones their "when" uses. One that is not on
+  a type reads the data of each screen that uses it, so share one only
+  when every such screen holds the fields it names; a condition over one
+  screen's data stays that screen's.
 
 TOKENS.JSON
   {
@@ -757,14 +847,25 @@ TOKENS.JSON
     "font":       { "body":    { "size": 16, "weight": 400, "lineHeight": 22 },
                     "caption": { "size": 14, "weight": 400, "lineHeight": 18 }, … },
     "elevation":  { "card": { "y": 2, "blur": 8, "color": "#0000001A" } },
-    "breakpoint": { "compact": [0, 743], "regular": [744, null] }
+    "breakpoint": { "compact": [0, 743], "regular": [744, null] },
+    "widths":     [390, 1440]
   }
+  "widths" are the widths in points the project's descriptions are drawn
+  and checked at, each a whole number from 200 to 4000: check lays every
+  state out at each, the gallery draws a state at each side by side, in
+  the order named, and `render` draws at the first unless given --width.
+  With no "widths", 390 (a phone) and 1120 (a desktop).
   A token is named by its dotted path: "space.4", "radius.md", "font.body",
   "color.textSecondary", "elevation.card". A length is a number or a token
   naming one. Groups and names are the project's; a platform file names
   them in code ("tokenNaming"). The wireframe is gray: color.textSecondary
   draws muted, color.primary strong, color.border as a line, other colours
-  as text.
+  as text. Colour itself is out of a design's reach, so the discussion stays
+  on structure: no token or ink draws a hue. Where a meaning rides on a
+  colour (blue for a journey, orange for a guess), let the wireframe show
+  it in structure as well (an icon, a word, a strong fill or a dashed
+  line), and say the colour in "$comment" on the node or in the
+  component's "doc"; a platform file maps the token to the real colour.
 
 LOOKS
   What a look component (COMPONENTS) is drawn as. A component is never a
@@ -798,7 +899,7 @@ LOOKS
     {"repeat": 3 | "{list}" | ["50%", "35%"], "each": look}
                        repeated; inside: n (from 1), index (from 0), item
     {"cases": [{"if": …, "then": look}, {"else": look}]}
-    "$children"        the node's slots: leading, body, trailing, overlays
+    "$children"        the node's slots: leading, body, trailing, foot, overlays
     [look, …]          each in turn
   Any look may carry "if"; it is left out when that does not hold.
   Box keys:
@@ -815,6 +916,9 @@ LOOKS
                          ["3fr", "1fr", 48]; check refuses anything else
     fill stroke radius dashed   outline and fill in an ink
     cross topLine        a crossed placeholder, a line on top, in an ink
+    wireframe            {"screen": "{screen}", "state": "{state}"}: that state
+                         of another description drawn in the box (Wireframe)
+    dividers             a line between the cells, in an ink (true: line)
     clip                 cut children at this radius (false: never)
     overflowX            "clip": a row that runs off the edge
     pin                  {"x": "end", "y": "end", "inset": 12}: floats over the
@@ -832,6 +936,7 @@ LOOKS
   Inks: text, muted, line, fill, strong, paper, or a colour token, drawn in
   the ink it reads as: color.primary strong, color.textSecondary muted,
   color.border line, a colour near white in tokens.json paper, else text.
+  None is a hue: say a colour in "$comment" (TOKENS.JSON).
   Look placeholders take filters, left to right: or:v (when missing),
   count, first, last, head, tail (first word / the rest), slashes
   (2026-11-12 → 2026/11/12), glyph (an icon's character), atLeast:n, atMost:n.

@@ -32,7 +32,9 @@ pub struct Checked {
     pub fixtures: Vec<String>,
     /// The phases, each a tree that renders before data arrives.
     pub phases: Vec<String>,
-    /// Each condition and the fixtures it holds in. Empty while any finding
+    /// Each condition it reads and the fixtures it holds in: one over its
+    /// data, and one on a type it reads through a value of it, or that one
+    /// it reads uses. Empty while any finding
     /// other than coverage stands: a table worked out from a faulty
     /// description would mislead.
     pub conditions: Vec<Condition>,
@@ -141,6 +143,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
         known,
         instances: Instances::new(components),
         findings: &mut findings,
+        read: conditions.read_through(schema),
     };
     match description.get("root") {
         Some(root) => walk.node(root, &schema.roots(), &Known::default(), "root", ""),
@@ -153,6 +156,7 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             walk.node(tree, &Vec::new(), &Known::default(), &format!("phases.{name}"), "");
         }
     }
+    let read = walk.read;
     let fixture_names = screen.fixture_names();
     let states: Vec<String> = fixture_names.iter().chain(&phases).cloned().collect();
     transitions::check(description, components, &states, operations, &mut findings);
@@ -177,13 +181,37 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
             }
         }
     }
+    // Each node a state shows is told apart by its id: a test finds it, a
+    // transition acts on it and a note is pinned to it by that id alone.
+    if findings.0.is_empty() {
+        let mut named = BTreeSet::new();
+        for state in &states {
+            for breakpoint in Breakpoint::ALL {
+                if let Ok(tree) = build(screen, screen.state(state), breakpoint, None)
+                    && let Some(twice) = twice(&tree, &mut BTreeSet::new())
+                    && named.insert(twice.written_id.clone())
+                {
+                    findings.add(&twice.written_id, &format!(
+                        "names more than one node in {state}, {} among them: give each its own id; inside a repeat inside a repeat, name the outer one's index (\"index\": \"row\" beside its \"each\") and write both in the id, \"cell-{{row}}-{{index}}\"",
+                        twice.id
+                    ));
+                }
+            }
+        }
+    }
     let mut table = Vec::new();
     if findings.0.is_empty() {
+        // A condition on a type the description never reads, as the
+        // domain's are to every screen that does not, has no row.
+        let reached = conditions.reached(&read);
         for condition in conditions.all() {
             let mut holds_in = Vec::new();
             if let Some(on) = &condition.on {
-                // One on a type holds of each value: it must be true of one
-                // and false of another, wherever the fixtures hold any.
+                if !reached.contains(&condition.name) {
+                    continue;
+                }
+                // One on a type holds of each value: where the screen reads
+                // it, it must be true of one and false of another.
                 let (mut of_some, mut fails_of_some) = (false, false);
                 for (name, data) in fixtures {
                     let (holds, fails) = conditions.of_values(schema, &condition.name, data);
@@ -193,11 +221,11 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
                     of_some = of_some || holds;
                     fails_of_some = fails_of_some || fails;
                 }
-                if of_some != fails_of_some {
-                    let always = if of_some { "true" } else { "false" };
+                if of_some != fails_of_some && read.contains(&condition.name) {
+                    let (always, add) = if of_some { ("true", "is not") } else { ("false", "is") };
                     findings.add(
                         &format!("conditions.{}", condition.name),
-                        &format!("is {always} of every {on} in the fixtures, so a state it marks cannot be rendered; add an {on} it is not"),
+                        &format!("is {always} of every {on} in the fixtures, so a state it marks cannot be rendered; add one it {add}"),
                     );
                 }
                 table.push(Condition {
@@ -232,12 +260,24 @@ pub fn check_among(screen: &Screen, others: &ScreenParams) -> Checked {
     }
 }
 
+/// The first node in `node`, in document order, whose id one before it in
+/// `seen` already has.
+fn twice<'n>(
+    node: &'n crate::instance::Node,
+    seen: &mut BTreeSet<&'n str>,
+) -> Option<&'n crate::instance::Node> {
+    if !seen.insert(&node.id) {
+        return Some(node);
+    }
+    node.children.iter().find_map(|child| twice(child, seen))
+}
+
 /// Properties whose value is always text: placeholders in them follow the
 /// format rules. Anything else given exactly one placeholder takes the value.
 const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
-const INERT: [&str; 11] =
-    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "with", "only", "each", "if"];
+const INERT: [&str; 12] =
+    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "with", "only", "each", "index", "if"];
 
 /// The actions that only move the UI and touch no data. With `set` and
 /// `toggle` on view state, they are all a screen does by itself.
@@ -299,6 +339,9 @@ struct Walk<'a> {
     /// The instances whose nodes are being walked, outermost first.
     instances: Instances<'a, Around>,
     findings: &'a mut Findings,
+    /// The conditions on a type the screen reads through a value of it
+    /// (`stop.here`): only those must vary in its fixtures.
+    read: BTreeSet<String>,
 }
 
 /// What the walk keeps where an instance is.
@@ -487,6 +530,22 @@ impl<'a> Walk<'a> {
                     element.view = self.schema.in_view_state(scope, path);
                     item_scope.push(("item".to_string(), element));
                     item_scope.push(("index".to_string(), Field::of(Base::Int)));
+                    // The index named, so a repeat inside can still reach it.
+                    match object.get("index") {
+                        None => {}
+                        Some(Value::String(name))
+                            if crate::field::is_identifier(name)
+                                && !crate::look::REPEATED.contains(&name.as_str())
+                                && !scope.iter().any(|(taken, _)| taken == name) =>
+                        {
+                            let index = Field { lo: Some(0.0), ..Field::of(Base::Int) };
+                            item_scope.push((name.clone(), index));
+                        }
+                        Some(name) => self.findings.add(
+                            &format!("{at}.index"),
+                            &format!("{name} cannot name this repeat's index: give a word no data root, enclosing repeat or item, index and n already take, such as \"row\""),
+                        ),
+                    }
                 }
                 _ => self.findings.add(at, &format!("each iterates an array, and {path} is not one")),
             }
@@ -494,6 +553,12 @@ impl<'a> Walk<'a> {
             self.findings.add(
                 at,
                 "\"item\" is the template each repeats, and this node has no \"each\": name the array with \"each\"",
+            );
+        }
+        if object.contains_key("index") && !object.contains_key("each") {
+            self.findings.add(
+                &format!("{at}.index"),
+                "\"index\" names the index of the repeat \"each\" makes, and this node has no \"each\"",
             );
         }
         for (k, v) in object {
@@ -817,6 +882,22 @@ impl<'a> Walk<'a> {
                     self.findings
                         .add(&at, &format!("{name} writes a field of the view model, and {path} is not one"));
                 } else if !self.schema.in_view_state(scope, path) {
+                    // Inside a component, the path is a param's: the screen
+                    // passed what it writes, and holds the way out.
+                    if let Some(frame) = self.instances.innermost() {
+                        let param = path.split('.').next().unwrap_or(path);
+                        let given = match paths(frame).into_iter().find(|(name, _)| name == param) {
+                            Some((_, given)) => format!("is given {{{given}}}, which is domain data"),
+                            None => "is given no field of the screen's".to_string(),
+                        };
+                        self.findings.add(
+                            &at,
+                            &format!(
+                                "{name} writes {path}, and {param} {given}: a component's set and toggle act on what was passed, so pass {param} a field of the screen's data marked \"view\": true; or change it with a command, called with \"call\""
+                            ),
+                        );
+                        continue;
+                    }
                     self.findings.add(
                         &at,
                         &format!(
@@ -1057,7 +1138,12 @@ impl<'a> Walk<'a> {
                             Some(Field { lo: Some(0.0), ..Field::of(Base::Int) })
                         } else {
                             path = Some(placeholder.path.clone());
-                            self.schema.resolve(scope, &placeholder.path).map(|resolved| resolved.field)
+                            // Not null where a condition gating the node tests it.
+                            self.schema.resolve(scope, &placeholder.path).map(|resolved| Field {
+                                nullable: resolved.field.nullable
+                                    && !known.not_null.contains(&placeholder.path),
+                                ..resolved.field
+                            })
                         }
                     }
                     None if let Some(members) = self.schema.members(param) => {
@@ -1212,8 +1298,8 @@ impl<'a> Walk<'a> {
         }
         // Inside a component, a use site reads only its params: a Bool one,
         // or one given a condition of the screen's.
+        let resolved = self.resolve(scope, name);
         if let Some(frame) = self.instances.innermost() {
-            let resolved = self.schema.resolve(scope, name);
             let problem = if frame.at.conditions.contains_key(name) {
                 None
             } else if let Some(resolved) = resolved {
@@ -1238,7 +1324,7 @@ impl<'a> Walk<'a> {
             return if negated { Known::default() } else { self.held(name, scope) };
         }
         if !self.conditions.contains(name) {
-            match self.schema.resolve(scope, name) {
+            match resolved {
                 Some(resolved) if resolved.field.is_plain_bool() => {}
                 Some(resolved) => self.findings.add(
                     at,
@@ -1254,6 +1340,15 @@ impl<'a> Walk<'a> {
             }
         }
         if negated { Known::default() } else { self.held(name, scope) }
+    }
+
+    /// What `path` refers to, from `scope`; a condition on a type it ends
+    /// in is one the screen reads.
+    fn resolve(&mut self, scope: &Scope, path: &str) -> Option<crate::schema::Resolved> {
+        if let Some(condition) = self.schema.type_condition(scope, path) {
+            self.read.insert(condition);
+        }
+        self.schema.resolve(scope, path)
     }
 
     /// What holds wherever the use site `name` (a condition, or a Bool
@@ -1305,7 +1400,7 @@ impl<'a> Walk<'a> {
             if path == "index" {
                 continue;
             }
-            let Some(resolved) = self.schema.resolve(scope, path) else {
+            let Some(resolved) = self.resolve(scope, path) else {
                 let problem = match self.instances.innermost() {
                     Some(frame) => format!(
                         "{path} reaches past the params of {}: a component reads only the params it declares; declare one and give it in the instance's \"with\"",

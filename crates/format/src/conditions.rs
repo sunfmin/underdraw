@@ -138,7 +138,7 @@ impl Conditions {
             match (&condition.on, &other.on) {
                 (Some(on), None) => findings.add(
                     at,
-                    &format!("{name} is a condition over the screen's data, and one on {on} reads only an {on}'s fields"),
+                    &format!("{name} is a condition over the screen's data, and one on {on} reads only the fields of {on}"),
                 ),
                 (None, Some(other_on)) => findings.add(
                     at,
@@ -282,6 +282,37 @@ impl Conditions {
             found.insert(format!("{value}.{path}"));
         }
         found
+    }
+
+    /// The conditions on a type those over the screen's data read through
+    /// a value of it (`selected.here`).
+    pub fn read_through(&self, schema: &Schema) -> BTreeSet<String> {
+        let roots = schema.roots();
+        let mut read = BTreeSet::new();
+        for condition in self.0.iter().filter(|condition| condition.on.is_none()) {
+            let mut used = Vec::new();
+            uses(&condition.when, &mut used);
+            read.extend(used.iter().filter_map(|path| schema.type_condition(&roots, path)));
+        }
+        read
+    }
+
+    /// The conditions `read` names, and every one their `when`s use, and
+    /// theirs: all a screen reading `read` reads.
+    pub fn reached(&self, read: &BTreeSet<String>) -> BTreeSet<String> {
+        let mut reached = BTreeSet::new();
+        let mut pending: Vec<String> = read.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            let Some(condition) = self.get(&name) else {
+                continue;
+            };
+            if reached.insert(name) {
+                let mut used = Vec::new();
+                uses(&condition.when, &mut used);
+                pending.extend(used);
+            }
+        }
+        reached
     }
 
     /// Whether `name` is a condition declared on a type.

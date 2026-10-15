@@ -10,8 +10,8 @@
     "Row":        { "params": ["padding", "gap", "radius", "border", "elevation"], "look": { "box": "row", "frame": true, "children": ["$children"] } },
     "NavBar":     { "params": ["padding", "gap", "radius", "border", "elevation"], "look": { "box": "row", "gap": 8, "height": 56, "padding": [0, 16], "frame": true, "children": ["$children"] } },
     "StickyBar":  { "pinned": true, "params": ["padding", "gap", "radius", "border", "elevation"], "look": { "box": "row", "gap": 16, "justify": "between", "frame": true, "topLine": "line", "children": ["$children"] } },
-    "Grid":       { "params": ["padding", "gap", "radius", "border", "elevation", "columns"], "look": { "box": "grid", "columns": "{columns|or:2}", "gap": 16, "frame": true, "children": ["$children"] } },
-    "Columns":    { "params": ["padding", "gap", "radius", "border", "elevation", "columns"], "look": { "box": "grid", "columns": "{columns|or:1}", "items": "start", "gap": 24, "frame": true, "children": ["$children"] } },
+    "Grid":       { "params": ["padding", "gap", "radius", "border", "elevation", "columns", "dividers"], "look": { "box": "grid", "columns": "{columns|or:2}", "gap": 16, "frame": true, "dividers": "{dividers}", "children": ["$children"] } },
+    "Columns":    { "params": ["padding", "gap", "radius", "border", "elevation", "columns", "dividers"], "look": { "box": "grid", "columns": "{columns|or:1}", "gap": 24, "frame": true, "dividers": "{dividers}", "children": ["$children"] } },
     "Carousel": {
       "doc": "Cards side by side, cut at the edge: the rest scrolls into view.",
       "scrolls": true,
@@ -117,6 +117,12 @@
       "look": { "aspect": "{aspectRatio|or:16:9}", "fill": "fill", "children": [
         { "size": 24, "fill": "strong", "radius": 999, "pin": { "x": "center", "y": "center", "inset": 0 } } ] }
     },
+    "Wireframe": {
+      "doc": "Another description's state drawn inside the box, scaled to it: the screen a description under the project declares, in state.",
+      "params": ["screen", "state", "aspectRatio"],
+      "look": { "wireframe": { "screen": "{screen}", "state": "{state}" }, "aspect": "{aspectRatio}",
+                "fill": "paper", "stroke": "line" }
+    },
     "DateRangePicker": {
       "doc": "The chosen dates over one month per months, each a grid of days.",
       "params": ["value", "months"],
@@ -136,6 +142,16 @@
         { "text": "{label}", "font": "font.caption", "weight": 600 },
         { "cases": [ { "if": "value", "then": { "text": "{value|slashes}", "font": "font.body" } },
                      { "else": { "text": "添加日期", "font": "font.body", "ink": "muted" } } ] } ] }
+    },
+    "TextField": {
+      "doc": "A box to type in, lines lines high (default 1): the value, or the placeholder in gray while it is empty.",
+      "params": ["value", "placeholder", "lines"],
+      "look": { "box": "row", "items": "start", "grow": 1, "padding": [10, 12], "stroke": "line", "radius": 8, "children": [
+        { "box": "column", "grow": 1, "shrink": 1, "children": [ { "cases": [
+          { "if": "value && value != \"\"", "then": { "text": "{value}", "font": "font.body", "maxLines": "{lines|or:1}" } },
+          { "else": { "text": "{placeholder}", "font": "font.body", "ink": "muted", "maxLines": "{lines|or:1}" } } ] } ] },
+        { "box": "column", "width": 0, "shrink": 0, "children": [
+          { "repeat": "{lines|or:1|atLeast:1}", "each": { "height": 22 } } ] } ] }
     },
     "Stepper": {
       "params": ["label", "value"],

@@ -21,7 +21,9 @@ _Avoid_: workspace, app
 
 **Node**:
 One element of the screen, with a stable **id** that becomes each platform's
-test id, and the **component** it is.
+test id, and the **component** it is. The id is written on a node a person
+acts on or answers about; any other may leave it out and is **given** one,
+from the node it is in, its component and what it shows.
 _Avoid_: element, view
 
 **Component**:
@@ -47,6 +49,12 @@ _Avoid_: popup layer, modal
 **Anchor**:
 Where an overlay floats over its node: a corner, the center, or flush
 along the bottom (a sheet).
+
+**Foot**:
+A node's slot for what stays at its bottom edge while the rest of it
+scrolls, out of its siblings' order: a chat's box to write in at a
+sidebar's foot. StickyBar is the same for a whole screen.
+_Avoid_: sticky footer, bottom slot
 
 **Token**:
 A named design value (`color.primary`, `space.4`) that nodes use instead of raw
@@ -74,9 +82,10 @@ _Avoid_: guess, TODO
 A conversation between the person and the agent about a design, pinned
 where it is held: a node of a state, a whole state, an arrow (a transition
 or a navigate), the whole screen (its description picked, apart from any
-one state), or the screens under a directory as a group (its flow picked,
-kept in that directory's own `notes.json`), its messages kept in the order
-said. Each has at most one; one
+one state), the screens under a directory as a group (its flow picked,
+kept in that directory's own `notes.json`), or a whole **journey** (picked
+to play, kept by name in the `notes.json` of the directory holding its
+`journeys/`), its messages kept in the order said. Each has at most one; one
 whose node or arrow is gone joins its state's note, saying where it was. Only the person starts one; the agent
 answers in it, at any length, and may ask back. It waits on the agent while
 the person spoke last, **taken** once `--wait` has handed that message to
@@ -108,6 +117,12 @@ One sample value of the view model; each fixture puts the screen in one state.
 A component the project shares has its own, each a value of its params.
 _Avoid_: mock data, example
 
+**Sample**:
+A value written once in the domain (a tree's lines, two journeys) that a
+fixture of any screen starts from by name, its own fields merged over it,
+checked as the field it fills.
+_Avoid_: shared fixture, seed
+
 **View state**:
 A view-model field only the screen holds, such as an open menu or the row a
 popup is about, marked `"view": true`; never part of an operation's result.
@@ -135,7 +150,8 @@ _Avoid_: flag, predicate
 
 **Domain**:
 The types, conditions and operations a project's screens and components
-share, each declared once and used by name; a screen may add its own, but
+share, and the samples their fixtures start from, each declared once and
+used by name; a screen may add its own, but
 never one of the same name.
 _Avoid_: model, schema
 
@@ -233,7 +249,10 @@ _Avoid_: panel, inspector, debug view
 **Toolbar**:
 The strip along the top of the gallery's window, over the tree, the
 pictures and the sidebar: back and forward through what the window has
-shown, every change of it a step, kept only while the window is open; and
+shown, every change of it a step, kept only while the window is open; the
+button that hides and shows every mark drawn over the pictures (the
+purple marks of where acting goes, the labels, the orange "?", the pins
+and the journeys' marks), leaving the bare **wireframe**, as ⌘. does; and
 the button that hides and shows the **sidebar**. Its back is the window's,
 not a design's `back`, which still returns along the path taken by acting.
 _Avoid_: navigation bar, header

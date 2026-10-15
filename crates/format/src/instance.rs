@@ -49,7 +49,7 @@ pub struct Node {
     /// and cases and responsive values chosen.
     pub props: Map<String, Value>,
     /// The nodes it holds, each with the key it came from in `slot`
-    /// (`children`, `leading`, `trailing`, `item`, `action`, `overlay`).
+    /// (`children`, `leading`, `trailing`, `item`, `action`, `overlay`, `foot`).
     pub children: Vec<Node>,
     pub slot: String,
     /// What the agent guessed here, for the person to confirm.
@@ -84,11 +84,23 @@ impl Node {
 }
 
 /// Keys that hold child nodes.
-pub(crate) const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "overlay"];
+pub const SLOTS: [&str; 7] = ["children", "leading", "trailing", "item", "action", "overlay", "foot"];
 
 /// Keys that only steer how the tree is built.
-const STRUCTURE: [&str; 11] =
-    ["id", "component", "with", "if", "only", "each", "limit", "assumed", "platform", "$note", "$why"];
+const STRUCTURE: [&str; 12] = [
+    "id",
+    "component",
+    "with",
+    "if",
+    "only",
+    "each",
+    "index",
+    "limit",
+    "assumed",
+    "platform",
+    "$note",
+    "$why",
+];
 
 /// The screen `screen` in `state`, at `breakpoint`, each node that
 /// navigates to a screen `undrawn` says is not drawn yet marked assumed.
@@ -325,8 +337,9 @@ impl Fill<'_> {
                 continue;
             }
             if key == "item" {
+                let named = object.get("index").and_then(Value::as_str);
                 for (index, item) in each.iter().flatten().enumerate() {
-                    let scope = with(scope, item, index);
+                    let scope = with(scope, item, index, named);
                     let mut at = at.under(key, None);
                     at.instance.push(index);
                     node.children.append(&mut self.node(value, &scope, "item", &at)?);
@@ -517,11 +530,15 @@ fn repath<T>(on: &mut Value, instances: &Instances<T>) {
     }
 }
 
-/// `scope` with `item` and `index` added for one element of an `each`.
-fn with(scope: &Value, item: &Value, index: usize) -> Value {
+/// `scope` with `item` and `index` added for one element of an `each`,
+/// and the index under the name the repeat gives it, `named`, too.
+fn with(scope: &Value, item: &Value, index: usize, named: Option<&str>) -> Value {
     let mut scope = scope.as_object().cloned().unwrap_or_default();
     scope.insert("item".to_string(), item.clone());
     scope.insert("index".to_string(), Value::from(index));
+    if let Some(named) = named {
+        scope.insert(named.to_string(), Value::from(index));
+    }
     Value::Object(scope)
 }
 

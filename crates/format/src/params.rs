@@ -75,7 +75,8 @@ pub(crate) fn read(screen: &Value, schema: &Schema, findings: &mut Findings) -> 
     Some(params)
 }
 
-/// The fields of `data` each fixture writes, its `$patch`'s included, by
+/// The fields of `data` each fixture writes, its `$patch`'s and `$sample`'s
+/// included, by
 /// fixture in the order written.
 fn given(screen: &Value) -> Vec<(String, BTreeSet<String>)> {
     let mut given: Vec<(String, BTreeSet<String>)> = Vec::new();
@@ -85,9 +86,14 @@ fn given(screen: &Value) -> Vec<(String, BTreeSet<String>)> {
         };
         let mut keys = BTreeSet::new();
         for key in written.keys() {
-            if key != "$patch" {
+            if key != "$patch" && key != "$sample" {
                 keys.insert(key.clone());
             }
+        }
+        if let Some(Value::String(sample)) = written.get("$sample")
+            && let Some(Value::Object(from)) = screen.get("samples").and_then(|samples| samples.get(sample))
+        {
+            keys.extend(from.keys().cloned());
         }
         if let Some(Value::String(base)) = written.get("$patch")
             && let Some((_, from)) = given.iter().find(|(fixture, _)| fixture == base)

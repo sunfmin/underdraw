@@ -1,5 +1,6 @@
 //! A project's domain (docs/adr/0020): the types, conditions and operations
-//! every screen of the project shares, written once in domain.json at the
+//! every screen of the project shares, and the samples its fixtures start
+//! from, written once in domain.json at the
 //! project's root. The caller hands it over with the description
 //! (`Shared`); it is written into the description here, before anything
 //! reads it, so the domain's are read exactly as a screen's own. A screen may add
@@ -15,7 +16,7 @@ use crate::jobs;
 const FILE: &str = "domain.json";
 
 /// What a domain declares, each section keyed by name as a screen's is.
-const SHARED: [&str; 3] = ["types", "conditions", "operations"];
+const SHARED: [&str; 4] = ["types", "conditions", "operations", "samples"];
 
 /// `screen` with what it took from its `domain` written in, and what each
 /// long command derives. The first step of reading a description, which

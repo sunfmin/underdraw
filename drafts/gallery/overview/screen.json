@@ -452,7 +452,7 @@
                       "if": "item.marked",
                       "each": "item.marks",
                       "item": {
-                        "id": "state-mark-{index}",
+                        "id": "state-{state}-mark-{index}",
                         "component": "JourneyMark",
                         "journey": "{item.journey}",
                         "step": "{item.step}",
@@ -470,7 +470,8 @@
                       "component": "Thumb"
                     }
                   ]
-                }
+                },
+                "index": "state"
               }
             ]
           },

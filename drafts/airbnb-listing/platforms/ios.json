@@ -32,6 +32,7 @@
     "DateRangePicker": "自研（系统 DatePicker 不支持范围选择）",
     "DateField": "Button 打开日期 sheet",
     "FieldGroup": "VStack + RoundedRectangle 边框",
+    "TextField": "TextField(prompt:)；lines > 1 → axis: .vertical + lineLimit(lines, reservesSpace: true)",
     "Stepper": "自研 − / + 按钮（系统 Stepper 外观不匹配）",
     "PriceBreakdown": "Grid 两列",
     "Map": "MapKit Map；approx → MapCircle，否则 Marker"
