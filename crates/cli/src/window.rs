@@ -5687,22 +5687,23 @@ mod tests {
         let marked = Some("order-{index}".to_string());
         assert_eq!(played(&gallery), (1, vec![marked.clone(), marked]));
         let panel = gallery.panel();
-        assert_eq!(panel[0], "journey cancel-an-order · step 1 of 3 · shop/orders · default");
-        assert!(panel[1].trim().starts_with("acts on order-{index} (label "), "{panel:?}");
-        assert!(panel[1].ends_with("· tap (marked)"), "{panel:?}");
+        assert_eq!(panel[0], "→ cancel-an-order · the whole journey", "above the step it plays");
+        assert_eq!(panel[1], "journey cancel-an-order · step 1 of 3 · shop/orders · default");
+        assert!(panel[2].trim().starts_with("acts on order-{index} (label "), "{panel:?}");
+        assert!(panel[2].ends_with("· tap (marked)"), "{panel:?}");
         assert!(!panel.iter().any(|line| line.trim() == "← previous step"), "no step before the first");
 
         press_keys(&mut gallery, &["→"]);
         assert_eq!(captions(&gallery), ["open · 390", "open · 1120"]);
         let marked = Some("summary-cancel".to_string());
         assert_eq!(played(&gallery), (2, vec![marked.clone(), marked]));
-        assert!(gallery.panel()[1].contains("· tap, answered ok (marked)"), "{:?}", gallery.panel());
+        assert!(gallery.panel()[2].contains("· tap, answered ok (marked)"), "{:?}", gallery.panel());
 
         assert!(click_panel_line(&mut gallery, "→ next step"));
         assert_eq!(captions(&gallery), ["cancelled · 390", "cancelled · 1120"]);
         assert_eq!(played(&gallery), (3, Vec::new()), "the last step acts on nothing");
         let panel = gallery.panel();
-        assert_eq!(panel[1].trim(), "the journey ends here");
+        assert_eq!(panel[2].trim(), "the journey ends here");
         assert!(!panel.iter().any(|line| line.trim() == "→ next step"), "no step after the last");
         assert!(
             !gallery.feed([key_of(Key::Named(NamedKey::ArrowRight), None)]).redraw,
@@ -5730,6 +5731,51 @@ mod tests {
         over_row(&mut gallery, orders);
         gallery.press_here();
         assert!(gallery.playing.is_none(), "picking another line stops playing");
+    }
+
+    #[test]
+    fn a_journey_picked_talks_about_the_whole_path_as_it_steps() {
+        let root = shop("notes-journey");
+        let mut gallery = opened(&root, (1440.0, 900.0));
+        let journey = journey_of(&gallery, "cancel-an-order");
+        showing(&mut gallery, journey);
+        assert_eq!(gallery.panel()[0], "→ cancel-an-order · the whole journey");
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet");
+        assert!(gallery.state_card().is_none(), "the step's state is not what is talked about");
+        let line = format!("{} · journey cancel-an-order", root.display());
+        assert_eq!(gallery.reference().unwrap().line(), line);
+        gallery.chord("c");
+        assert!(gallery.panel().iter().any(|said| said.ends_with(&line)), "⌘C copies it: {:?}", gallery.panel());
+
+        gallery.acted = None;
+        type_text(&mut gallery, "cancelling takes four steps; too many");
+        press_keys(&mut gallery, &["Enter"]);
+        let note = notes::read(&root).unwrap().remove(0);
+        assert_eq!((note.id.as_str(), &note.on), ("N1", &On::Journey { journey: "cancel-an-order".into() }));
+        let file: Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join(notes::NOTES)).unwrap()).unwrap();
+        assert_eq!(file["notes"][0]["journey"], "cancel-an-order", "kept in its directory's notes.json");
+        let Line { row, state, .. } = &gallery.lines[journey];
+        assert_eq!(gallery.waiting_notes(row, state.as_ref()), 1, "counted on its journey");
+
+        press_keys(&mut gallery, &["→"]);
+        assert_eq!(played(&gallery).0, 2);
+        assert_eq!(gallery.panel()[0], "→ cancel-an-order · the whole journey", "kept as it steps");
+        assert_eq!(talk_shown(&gallery)[1], "cancelling takes four steps; too many", "the note stays shown");
+
+        assert!(gallery.press_at(on_node(&gallery, 0, "summary-cancel")), "a node in the step picked");
+        assert_eq!(picked_node(&gallery), Some("summary-cancel"));
+        assert_eq!(talk_shown(&gallery)[0], "note · nothing said yet", "the node's own conversation");
+        assert!(matches!(gallery.reference().unwrap().on, On::Node { .. }));
+        press_keys(&mut gallery, &["Esc"]);
+        assert_eq!(talk_shown(&gallery)[1], "cancelling takes four steps; too many", "back to the journey's");
+
+        let orders = line_of(&gallery, "orders");
+        showing(&mut gallery, orders);
+        assert!(gallery.click(Do::Visit(Visit::Note(root.clone(), "N1".into()))));
+        assert_eq!(gallery.line, Some(journey), "its inbox item plays the journey");
+        assert_eq!(talk_shown(&gallery)[1], "cancelling takes four steps; too many");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// The line of the description in `dir`, a directory of the drafts.

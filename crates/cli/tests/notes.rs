@@ -268,6 +268,33 @@ fn a_note_on_a_directory_is_listed_answered_and_counted() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn a_note_on_a_journey_is_listed_answered_and_counted() {
+    let root = root("journey");
+    let shop = root.join("shop");
+    std::fs::create_dir_all(&shop).unwrap();
+    std::fs::rename(root.join("orders"), shop.join("orders")).unwrap();
+    let journey = json!({ "notes": [{ "id": "N1", "journey": "cancel-an-order", "messages": [{ "by": "person", "says": "cancelling takes four steps; too many" }] }] });
+    std::fs::write(shop.join("notes.json"), journey.to_string()).unwrap();
+
+    let (answer, code) = underdraw(&["notes", root.to_str().unwrap()]);
+    assert_eq!((code, &answer["waiting"]), (0, &json!(3)), "{answer}");
+    let note = &answer["notes"][0];
+    assert_eq!((&note["description"], &note["journey"]), (&json!("shop"), &json!("cancel-an-order")), "{answer}");
+    assert_eq!(note["reference"], format!("{} · journey cancel-an-order", shop.display()));
+    let (counted, _) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(counted["notes"], json!({ "waiting": 3, "answered": 0 }), "{counted}");
+    assert_eq!(counted["directories"], json!([{ "directory": "shop", "notes": { "waiting": 1, "answered": 0 } }]));
+
+    let (answered, code) =
+        underdraw(&["notes", shop.to_str().unwrap(), "--answer", "N1", "--reply", "two steps now"]);
+    assert_eq!((code, &answered["note"]["stands"]), (0, &json!("unread")), "{answered}");
+    assert_eq!(answered["note"]["journey"], "cancel-an-order");
+    let (counted, _) = underdraw(&["check", root.to_str().unwrap()]);
+    assert_eq!(counted["notes"], json!({ "waiting": 2, "answered": 1 }));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// `underdraw notes <root> --wait` started in the background.
 fn waiting(root: &Path) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_underdraw"))
