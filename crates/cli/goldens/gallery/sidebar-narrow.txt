@@ -1,0 +1,13 @@
+picture
+  page default · 390
+    picked nav-save: 334, 8 · 40 × 40
+    ↗ nav-back, photos-carousel, reserve-button
+  page default · 1120
+    picked nav-save: 1064, 8 · 40 × 40
+    ↗ nav-back, reserve-button, photos-show-all
+sidebar
+  IconButton
+    calls  toggleSaved
+    ▸ details
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
