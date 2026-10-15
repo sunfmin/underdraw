@@ -227,7 +227,11 @@ fn a_bool_param_takes_a_condition_of_the_screens() {
 #[test]
 fn a_nullable_value_is_given_where_an_if_tests_it() {
     // (name, where the `if` testing picked != null stands, whether it is refused)
-    let cases = [("on the instance", "instance", false), ("on an enclosing node", "enclosing", false), ("nowhere", "", true)];
+    let cases = [
+        ("on the instance", "instance", false),
+        ("on an enclosing node", "enclosing", false),
+        ("nowhere", "", true),
+    ];
     for (name, gated, refused) in cases {
         let mut instance = json!({ "id": "picked-row", "component": "ItemRow",
             "with": { "item": "{picked}", "open": "{menuOpen}" } });
@@ -238,7 +242,8 @@ fn a_nullable_value_is_given_where_an_if_tests_it() {
         if gated == "enclosing" {
             enclosing["if"] = json!("picking");
         }
-        let mut description = screen(row(), json!({ "id": "row-{index}", "component": "Text", "text": "{item.name}" }));
+        let mut description =
+            screen(row(), json!({ "id": "row-{index}", "component": "Text", "text": "{item.name}" }));
         description["data"]["picked"] = json!("Item?");
         description["conditions"]["picking"] = json!({ "when": "picked != null", "label": "选了一项" });
         description["fixtures"]["some"]["picked"] = json!({ "id": "a", "name": "Milk", "done": false });

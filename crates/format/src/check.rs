@@ -1080,7 +1080,8 @@ impl<'a> Walk<'a> {
                             path = Some(placeholder.path.clone());
                             // Not null where a condition gating the node tests it.
                             self.schema.resolve(scope, &placeholder.path).map(|resolved| Field {
-                                nullable: resolved.field.nullable && !known.not_null.contains(&placeholder.path),
+                                nullable: resolved.field.nullable
+                                    && !known.not_null.contains(&placeholder.path),
                                 ..resolved.field
                             })
                         }
