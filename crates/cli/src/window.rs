@@ -2100,7 +2100,7 @@ impl Gallery {
             .iter()
             .zip(self.origins())
             .filter_map(|(page, (left, top))| {
-                let r = page.nodes.iter().find(|n| &n.id == id)?.rect;
+                let r = page.nodes.iter().find(|n| n.id == id)?.rect;
                 let (x, y) = (left + f64::from(r.x) * zoom, top + f64::from(r.y) * zoom);
                 let (w, h) = (f64::from(r.width) * zoom, f64::from(r.height) * zoom);
                 Some(rect(x - 2.0, y - 2.0, w + 4.0, h + 4.0))
@@ -2493,7 +2493,7 @@ impl Gallery {
             return None;
         };
         let assumed =
-            pages.iter().find_map(|page| page.nodes.iter().find(|n| &n.id == id)?.assumed.clone())?;
+            pages.iter().find_map(|page| page.nodes.iter().find(|n| n.id == id)?.assumed.clone())?;
         let on = self.reference().filter(|on| matches!(on.on, On::Node { .. }))?;
         Some((on, assumed))
     }
@@ -3003,7 +3003,7 @@ impl Gallery {
         };
         let lang = self.lang;
         let (page, node) =
-            pages.iter().find_map(|page| Some((page, page.nodes.iter().find(|n| &n.id == id)?)))?;
+            pages.iter().find_map(|page| Some((page, page.nodes.iter().find(|n| n.id == id)?)))?;
         let calls = match page.calls.get(id) {
             Some(operations) => operations.join(", "),
             None => say!(lang, calls_nothing),
@@ -3018,7 +3018,7 @@ impl Gallery {
                 let at = say!(lang, at_width, width);
                 blocks.push(Block::Fact(
                     at,
-                    match page.nodes.iter().find(|n| &n.id == id) {
+                    match page.nodes.iter().find(|n| n.id == id) {
                         Some(node) => {
                             let r = node.rect;
                             let label = match node.label {
