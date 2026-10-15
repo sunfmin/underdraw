@@ -5,7 +5,7 @@
 //! the gallery draws it, and pins notes on its nodes, as it does a
 //! screen's.
 
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 /// The key a showcase holds the name of the component it shows under: it
 /// declares no screen a navigate can reach.
@@ -19,7 +19,7 @@ pub const KEY: &str = "$showcase";
 /// param (`["status"]`) takes text, a number or true or false, as the
 /// first fixture to give it does.
 pub fn showcase(name: &str, component: &Value) -> Value {
-    let fixtures = component.get("fixtures").cloned().unwrap_or_else(|| json!({}));
+    let fixtures = component.get("fixtures").cloned().unwrap_or_else(|| Value::Object(Map::new()));
     let mut data = Map::new();
     let mut instance = Map::new();
     instance.insert("id".to_string(), Value::String(kebab(name)));
@@ -41,13 +41,18 @@ pub fn showcase(name: &str, component: &Value) -> Value {
         }
         _ => {}
     }
-    json!({
-        "screen": name,
-        KEY: name,
-        "data": data,
-        "fixtures": fixtures,
-        "root": { "id": "showcase", "component": "Screen", "padding": 16, "children": [instance] },
-    })
+    let mut root = Map::new();
+    root.insert("id".to_string(), Value::String("showcase".to_string()));
+    root.insert("component".to_string(), Value::String("Screen".to_string()));
+    root.insert("padding".to_string(), Value::from(16));
+    root.insert("children".to_string(), Value::Array(vec![Value::Object(instance)]));
+    let mut shown = Map::new();
+    shown.insert("screen".to_string(), Value::String(name.to_string()));
+    shown.insert(KEY.to_string(), Value::String(name.to_string()));
+    shown.insert("data".to_string(), Value::Object(data));
+    shown.insert("fixtures".to_string(), fixtures);
+    shown.insert("root".to_string(), Value::Object(root));
+    Value::Object(shown)
 }
 
 /// The name of the shared component `screen` shows, when it is a
@@ -91,6 +96,8 @@ fn kebab(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
