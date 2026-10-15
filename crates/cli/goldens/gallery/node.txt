@@ -1,0 +1,14 @@
+picture
+  page default · 390
+    picked nav-save: 334, 8 · 40 × 40
+  page default · 1120
+    picked nav-save: 1064, 8 · 40 × 40
+sidebar
+  IconButton
+    calls  toggleSaved
+    ▾ details
+    id  nav-save
+    at 390  label 3 · box 334, 8 · 40 × 40
+    at 1120  label 3 · box 1064, 8 · 40 × 40
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
