@@ -10,6 +10,10 @@
           "by": "person",
           "says": "用 frontend-design 优化这个页面",
           "taken": 1792073676
+        },
+        {
+          "by": "agent",
+          "says": "Done: the next act (Tap “Cancel order”) is now the big headline over the pictures, with the node's number as a badge, where it leads on one line below, and Back / Next right under it. Dropped the 'Next' and 'Step 2 of 3 · …' labels (the route strip already says where you are); the sidebar now only holds what you can talk about. The last step says 'The journey ends here.' in the same place, with Play again."
         }
       ]
     }
