@@ -1,9 +1,10 @@
 //! What the person and the agent say of a description, pinned where it is
 //! said (ADR 0019, ADR 0023): kept in notes.json beside its screen.json,
 //! meant to be committed. A note is a conversation on a node, a whole
-//! state, a transition's arrow, a navigate's arrow, a whole screen, or the
+//! state, a transition's arrow, a navigate's arrow, a whole screen, the
 //! screens under a directory (kept in that directory's notes.json, though
-//! it holds no screen.json): the person's
+//! it holds no screen.json), or a whole journey (kept in the notes.json of
+//! the directory its `journeys/` is in): the person's
 //! messages and the agent's, in the order said, one for each. Only the
 //! person starts one, in the gallery, and says more in it there; the agent answers in it, at any length, and may
 //! ask back. It is never closed: while the person spoke last it waits on
@@ -34,7 +35,8 @@ use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json; a
 /// shared component's, in `components/<Name>/notes.json`; a directory's,
-/// on the screens under it, in the directory itself.
+/// on the screens under it, in the directory itself; a journey's, in the
+/// directory its `journeys/` is in.
 pub const NOTES: &str = "notes.json";
 
 /// Where a conversation stands, read from who spoke last and what was
@@ -431,10 +433,14 @@ pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
 /// `said` added to the note on what `on` references: the last of its
 /// description's notes on the same thing ([`On::same`]), where the
 /// conversation goes on; or a note started on it, numbered after the last,
-/// when there is none. The note's id.
+/// when there is none. A note on a node then says where it is written now.
+/// The note's id.
 fn added(on: &Reference, said: Said) -> anyhow::Result<String> {
     change(&on.description, |notes| {
         if let Some(note) = notes.iter_mut().rev().find(|note| note.on.same(&on.on)) {
+            if let (On::Node { node, .. }, On::Node { node: now, .. }) = (&mut note.on, &on.on) {
+                node.origin.at = now.origin.at.clone();
+            }
             note.messages.push(said);
             return Ok(note.id.clone());
         }
@@ -636,7 +642,8 @@ pub fn counted(dir: &Path) -> Value {
 /// state is, or every node it covered; a whole state once the description
 /// has no state by its name; a transition or a navigate once none is
 /// written with the same keys. The whole screen is there while its
-/// description is, and the screens under a directory while it is.
+/// description is, the screens under a directory while it is, and a
+/// journey while its directory is: it has no state to join.
 fn gone(screen: &Screen, on: &On) -> Option<String> {
     let now_gone = |was: String| Some(format!("on {was}, now gone"));
     let state_gone = on.state().filter(|state| {
@@ -679,7 +686,7 @@ fn gone(screen: &Screen, on: &On) -> Option<String> {
                 .any(|written| written.node == navigate.node && written.to == navigate.to);
             if from && written { None } else { now_gone(format!("navigate {}", navigate.said())) }
         }
-        On::Node { .. } | On::State { .. } | On::Whole { .. } => None,
+        On::Node { .. } | On::State { .. } | On::Whole { .. } | On::Journey { .. } => None,
     }
 }
 
@@ -1143,6 +1150,53 @@ mod tests {
         assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn a_note_on_a_node_written_without_an_id_stays_on_it_as_nodes_are_added() {
+        let description = |children: Value| {
+            json!({ "screen": "Orders", "fixtures": { "default": {} },
+                    "root": { "id": "list", "component": "Stack", "children": children } })
+        };
+        let total = json!({ "component": "Text", "text": "Total" });
+        // Where the node given `id` is written, in the default state.
+        let pointed = |screen: &Screen, id: &str| {
+            let tree = screen.instantiate(
+                underdraw_format::State::Fixture("default"),
+                underdraw_format::Breakpoint::Compact,
+                None,
+            );
+            let tree = tree.unwrap();
+            let node = tree.children.iter().find(|node| node.written_id == id).unwrap();
+            Origin { written: node.written_id.clone(), at: node.written_at.clone(), instance: vec![] }
+        };
+        let before = Screen::read(&description(json!([total.clone()])), Default::default());
+        let origin = pointed(&before, "list-text-total");
+        assert_eq!(origin.at, "/root/children/0");
+        let dir = dir("given");
+        let on = |origin: Origin| Reference {
+            description: dir.clone(),
+            on: On::Node {
+                state: Shown::Fixture("default".into()),
+                node: Pointed { origin, label: None, width: 390 },
+            },
+        };
+        assert_eq!(say(&on(origin), "too small").unwrap(), "N1");
+
+        let after = Screen::read(
+            &description(json!([{ "component": "Text", "text": "Orders" }, total])),
+            Default::default(),
+        );
+        let moved = pointed(&after, "list-text-total");
+        assert_eq!(moved.at, "/root/children/1", "an unrelated node added before it");
+        let mut notes = read(&dir).unwrap();
+        assert!(!join(&mut notes, &after, &[Shown::Fixture("default".into())]), "its node is not gone");
+        assert_eq!(say(&on(moved), "and bold").unwrap(), "N1", "picked again, it is the same note");
+        let notes = read(&dir).unwrap();
+        assert_eq!(notes.len(), 1);
+        let On::Node { node, .. } = &notes[0].on else { panic!("on a node: {:?}", notes[0].on) };
+        assert_eq!(node.origin.at, "/root/children/1", "where it is written now");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn a_note_on_what_is_gone_joins_its_states_note_saying_where_it_was() {
         let screen = json!({

@@ -228,6 +228,16 @@ fn check_holds_each_shared_components_fixtures_to_its_params() {
     let (checked, code) = underdraw(&["check", root.join("order").to_str().unwrap()]);
     assert_eq!((code, &checked["ok"]), (0, &json!(true)), "a screen using it is not held to them: {checked}");
 
+    // One with no params has one state to show, and needs none written.
+    let rule = json!({ "look": { "stroke": "line", "height": 1 } });
+    std::fs::write(root.join("components/Rule.json"), rule.to_string()).unwrap();
+    let (checked, code) = underdraw(&["check", root.join("components/Rule").to_str().unwrap()]);
+    assert_eq!(
+        (code, &checked["ok"], &checked["fixtures"]),
+        (0, &json!(true), &json!(["default"])),
+        "{checked}"
+    );
+
     let screen = root.join("order/screen.json");
     let mut order: Value = serde_json::from_str(&std::fs::read_to_string(&screen).unwrap()).unwrap();
     order["components"] =
@@ -252,5 +262,6 @@ fn help_says_where_shared_components_live() {
     let check = help(&["check", "--help"]);
     assert!(check.contains("components/<Name>.json") && check.contains("shadows the project's"), "{check}");
     assert!(check.contains("\"fixtures\", each a value of its params"), "{check}");
+    assert!(check.contains("declares no params has one state"), "{check}");
     assert!(help(&["gallery", "--help"]).contains("in a section of their own"));
 }

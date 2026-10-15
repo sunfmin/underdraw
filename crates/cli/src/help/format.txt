@@ -146,8 +146,9 @@ CONDITIONS
   named there at all, and one on a type is never named whole elsewhere.
   It is no field: fixtures never give it, the type has no field of its
   name, and it is used only through a value of its type (check names one
-  used on a value of another type). It must be true of one value of the
-  type and false of another, in any fixtures, wherever they hold one.
+  used on a value of another type). A screen that reads it must hold, in
+  its fixtures, one value of the type it is true of and one it is false
+  of; a screen that never reads it is not held to it.
   Declare one in domain.json (DOMAIN.JSON) to share it: the domain has no
   screen's data, so a condition every screen asks of an Order is one on
   Order. A condition over a screen's data stays that screen's.
@@ -169,9 +170,10 @@ TEMPLATES AND FORMATS
   Any other property given exactly one placeholder and nothing else gets the
   value itself, with its type: "value": "{listing.rating}", "each" items.
   A bool, enum, image or object cannot be shown as text: choose words with
-  cases. A nullable value (or one reached through it) may be shown only
-  where an enclosing "if" or cases branch tests it != null, directly or via
-  a condition whose top-level && chain says so. A negation guarantees nothing.
+  cases. A nullable value (or one reached through it) may be shown, or given
+  to a param that is not nullable, only where its own or an enclosing "if"
+  or cases branch tests it != null, directly or via a condition whose
+  top-level && chain says so. A negation guarantees nothing.
 
 CASES
   Any property's value can be chosen per state; the first true branch wins,
@@ -183,7 +185,18 @@ CASES
 
 NODES
   A node is an object:
-    "id"        required, unique: "todo-{index}" inside an item template
+    "id"        unique: "todo-{index}" inside an item template. Required on
+                a node with "on", "bind" or "assumed", and on an instance
+                of a component holding one; any other may leave it out
+                and is given one, the same on every run and unchanged by
+                an unrelated node added: the id of the node it is in, its
+                component in kebab case, and the first three words of its
+                text, title, label or icon ("page-text-hello-name" for
+                {"component": "Text", "text": "Hello {name}"} in "page";
+                four hex digits for text with no ASCII word), "-{index}"
+                after an item's, "-2", "-3"… after one taken. A component's
+                own nodes are given theirs without its root's. check,
+                render, handoff and the gallery all name it so
     "component" what the node is: a built-in component (BUILT-IN COMPONENTS)
                 or one of the screen's own (COMPONENTS); check refuses
                 "kind", its old name
@@ -579,8 +592,10 @@ COMPONENTS
   gallery list it among the descriptions. It is one instance, named as
   the component is in kebab case (order-row, so its nodes are
   order-row-cancel), drawn in each fixture; it declares no screen, so no
-  navigate reaches it. A shared component without fixtures is a finding
-  there, never on a screen using it; a screen's own component takes none.
+  navigate reaches it. One that declares no params has one state to
+  show and needs no "fixtures": without them it is drawn in one, named
+  default. One with params and no fixtures is a finding there, never on
+  a screen using it; a screen's own component takes none.
 
 POPUPS
   underdraw has no dialog, sheet or menu component. A popup is a state like any

@@ -15,6 +15,7 @@ use crate::conditions::Conditions;
 use crate::domain;
 use crate::field::Field;
 use crate::fixture;
+use crate::ids;
 use crate::instance::{Node, State, build};
 use crate::links::{self, Navigate, Undrawn};
 use crate::operations::Operations;
@@ -60,9 +61,11 @@ impl Screen {
     /// What reading it finds is kept with it, for `check` to report.
     pub fn read(description: &Value, shared: Shared) -> Screen {
         let mut findings = Findings::default();
-        let description = domain::expand(description, shared.domain, &mut findings);
+        let mut description = domain::expand(description, shared.domain, &mut findings);
         let none = Map::new();
-        let components = Components::read(&description, shared.components.unwrap_or(&none), &mut findings);
+        let shared_components =
+            ids::give(&mut description, shared.components.unwrap_or(&none), &mut findings);
+        let components = Components::read(&description, &shared_components, &mut findings);
         let schema = Schema::read(&description, &mut findings);
         let mut fixtures = fixture::read(&description, &schema, &mut findings);
         if let Some(name) = showcase::shows(&description)
