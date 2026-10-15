@@ -1,0 +1,31 @@
+tree
+  root/
+    orders  [2 notes]
+      ▸ default  [2 notes]
+      cancel-dialog
+      cancel-ready
+      cancel-unpaid
+      no-match
+      filter-empty
+      loading
+      error
+picture
+  page default · 390
+    picked load-more: 16, 522 · 358 × 48
+  page default · 1120
+    picked load-more: 16, 458 · 1088 × 48
+  pin N1 on page 0: Answered
+  pin N2 on page 0: Line
+  pin N3 on page 0: Note
+  pin N4 on page 0: Note
+  pin N1 on page 1: Answered, faint
+  pin N2 on page 1: Line, faint
+  pin N3 on page 1: Note, faint
+  pin N4 on page 1: Note, faint
+sidebar
+  Button
+    calls  moreOrders
+    ▸ details
+  note N3 · waiting on the agent
+    say how many
+    the agent is changing it (23s)
