@@ -1,0 +1,14 @@
+picture
+  page cancel-ready · 390
+    picked cd-confirm: 155.5, 435 · 112 × 48
+  page cancel-ready · 1120
+    picked cd-confirm: 452, 392 · 112 × 48
+sidebar
+  cd-confirm.tap in cancel-ready calls cancelOrder: click how it answered
+    ok → default
+    shipped → cancel-ready
+  Button
+    calls  cancelOrder
+    ▸ details
+  note · nothing said yet
+    Say below what should change: Enter sends, Shift+Enter breaks the line.
