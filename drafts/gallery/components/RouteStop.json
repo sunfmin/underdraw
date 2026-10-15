@@ -163,31 +163,25 @@
       "last": false
     },
     "passed": {
+      "$patch": "here",
       "number": 1,
       "screen": "orders",
       "state": "default",
       "here": false,
-      "passed": true,
-      "broken": false,
-      "last": false
+      "passed": true
     },
     "ahead": {
+      "$patch": "here",
       "number": 3,
-      "screen": "order",
       "state": "cancelled",
       "here": false,
-      "passed": false,
-      "broken": false,
       "last": true
     },
     "broken": {
-      "number": 2,
-      "screen": "order",
+      "$patch": "here",
       "state": "refunded",
       "here": false,
-      "passed": false,
-      "broken": true,
-      "last": false
+      "broken": true
     }
   }
 }
