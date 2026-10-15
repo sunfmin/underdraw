@@ -6675,6 +6675,138 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// What the tests' clipboard holds.
+    fn board() -> Option<String> {
+        BOARD.with_borrow(|board| board.0.clone())
+    }
+
+    /// A key pressed: `key` on the layout, typing `text`, on `code`.
+    fn key_on(key: &str, code: KeyCode, repeat: bool) -> Input {
+        Input::Key {
+            key: Key::Character(key.into()),
+            code: PhysicalKey::Code(code),
+            text: Some(key.into()),
+            repeat,
+        }
+    }
+
+    #[test]
+    fn a_key_with_command_or_ctrl_held_is_a_shortcut_and_without_it_is_typed() {
+        let mut gallery = gallery();
+        show(&mut gallery, "airbnb-listing", "default");
+        assert!(gallery.chord("\\"), "⌘\\ hides the sidebar");
+        assert!(!gallery.sidebar);
+        let backslash = key_on("\\", KeyCode::Backslash, false);
+        assert!(!gallery.feed([backslash.clone()]).redraw, "\\ alone is no shortcut");
+        assert!(!gallery.sidebar);
+        gallery.feed([Input::Modifiers(ModifiersState::CONTROL), backslash]);
+        assert!(gallery.sidebar, "Ctrl+\\ shows it again, as ⌘\\ does");
+        gallery.feed([Input::Modifiers(ModifiersState::empty())]);
+
+        assert!(gallery.chord("c"), "⌘C with nothing written copies the reference");
+        assert_eq!(board(), gallery.reference().map(|reference| reference.line()));
+        BOARD.with_borrow_mut(|board| board.0 = None);
+        let held = Input::Modifiers(ModifiersState::SUPER);
+        gallery.feed([held.clone(), key_on("c", KeyCode::KeyC, true)]);
+        assert_eq!(board(), None, "a C held down, repeating, copies nothing");
+        gallery.feed([key_on("с", KeyCode::KeyC, false)]);
+        assert!(board().is_some(), "a layout with no C copies on the key where C is");
+        BOARD.with_borrow_mut(|board| board.0 = None);
+        gallery.feed([key_on("c", KeyCode::KeyJ, false)]);
+        assert!(board().is_some(), "a layout with its C elsewhere copies on its C");
+        gallery.feed([key_on("n", KeyCode::KeyN, false), Input::Modifiers(ModifiersState::empty())]);
+        assert!(!gallery.noting, "⌘N starts no note");
+
+        gallery.feed([key_on("n", KeyCode::KeyN, false)]);
+        assert!(gallery.noting, "N alone starts a note");
+        gallery.press_at(on_node(&gallery, 0, "nav-save"));
+        gallery.let_go();
+        assert!(gallery.draft.is_some(), "on the node clicked");
+        type_text(&mut gallery, "too small");
+        assert!(gallery.chord("a"), "⌘A selects all of the note");
+        assert!(gallery.chord("c"), "⌘C copies what is selected in it");
+        assert_eq!(board().as_deref(), Some("too small"), "not the reference");
+        assert!(gallery.chord("x"), "⌘X cuts it");
+        assert_eq!(gallery.draft.as_ref().unwrap().text.shown().text, "");
+        assert!(!gallery.chord("x"), "with nothing selected, nothing to cut");
+        assert!(gallery.chord("v"), "⌘V pastes what was cut");
+        assert!(gallery.chord("v"));
+        assert_eq!(gallery.draft.as_ref().unwrap().text.shown().text, "too smalltoo small");
+        press_keys(&mut gallery, &["Esc"]);
+        assert!(gallery.draft.is_none());
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_pane_under_the_pointer_by_notches_or_points_and_across_with_shift() {
+        let mut gallery = opened(drafts(), (1000.0, 900.0));
+        show(&mut gallery, "airbnb-listing", "default");
+        let notch = |y: f64| Input::Wheel { x: 0.0, y, unit: Unit::Lines };
+        gallery.move_to((gallery.tree + MARGIN, MARGIN));
+        assert!(gallery.feed([notch(-2.0)]).redraw);
+        assert_eq!(gallery.scroll, 2.0 * NOTCH, "two notches toward the person scroll down");
+        gallery.feed([Input::Wheel { x: 0.0, y: 15.0, unit: Unit::Points }]);
+        assert_eq!(gallery.scroll, 2.0 * NOTCH - 15.0, "a trackpad scrolls by points");
+        gallery.feed([Input::Wheel { x: -10.0, y: 0.0, unit: Unit::Points }]);
+        assert_eq!(gallery.across, 10.0, "and across");
+
+        gallery.feed([Input::Modifiers(ModifiersState::SHIFT), notch(-1.0)]);
+        assert_eq!(
+            (gallery.scroll, gallery.across),
+            (2.0 * NOTCH - 15.0, 10.0 + NOTCH),
+            "Shift turns it across"
+        );
+        gallery.feed([Input::Wheel { x: -5.0, y: -5.0, unit: Unit::Points }]);
+        assert_eq!(
+            (gallery.scroll, gallery.across),
+            (2.0 * NOTCH - 10.0, 15.0 + NOTCH),
+            "a wheel already turning across scrolls as it turns, Shift held or not"
+        );
+        gallery.feed([Input::Modifiers(ModifiersState::empty())]);
+
+        let at = gallery.scroll;
+        gallery.move_to((40.0, MARGIN));
+        gallery.feed([notch(-1.0)]);
+        assert_eq!(gallery.scroll, at, "over the tree, the tree scrolls, not the pictures");
+    }
+
+    #[test]
+    fn the_pointer_over_a_line_between_panes_grips_and_an_input_method_is_on_only_while_a_note_is_written() {
+        let mut gallery = gallery();
+        show(&mut gallery, "orders", "default");
+        let moved = |gallery: &mut Gallery, at| gallery.feed([Input::Moved(at)]).cursor;
+        let (tree, side) = (gallery.tree, gallery.pane_right());
+        assert_eq!(moved(&mut gallery, (tree + 1.0, 300.0)), Some(CursorIcon::EwResize));
+        assert_eq!(moved(&mut gallery, (side - 1.0, 300.0)), Some(CursorIcon::EwResize));
+        assert_eq!(moved(&mut gallery, (tree + 40.0, 300.0)), Some(CursorIcon::Default));
+        gallery.press_at((gallery.tree, 300.0));
+        assert_eq!(
+            moved(&mut gallery, (600.0, 300.0)),
+            Some(CursorIcon::EwResize),
+            "held, off the line still"
+        );
+        gallery.let_go();
+        assert_eq!(gallery.feed([Input::Pressed]).cursor, None, "only a move says how the pointer looks");
+        gallery.let_go();
+
+        let effects = gallery.feed([Input::Moved((0.0, 0.0))]);
+        assert!(!effects.ime && effects.caret.is_none(), "nothing written: no input method");
+        press_keys(&mut gallery, &["n"]);
+        gallery.press_at(on_node(&gallery, 0, "nav-export"));
+        assert!(gallery.feed([Input::Released]).ime, "a note started: the input method on");
+        gallery.drawn();
+        let caret = gallery.feed([Input::Moved((0.0, 0.0))]).caret.expect("drawn, its caret is known");
+        assert!(caret.x as f64 >= gallery.pane_right(), "in the sidebar, where the note is written");
+        assert!(gallery.compose(Ime::Preedit("ni".into(), None)));
+        assert!(gallery.draft.as_ref().unwrap().text.is_composing());
+        assert!(gallery.compose(Ime::Disabled), "the input method turned off");
+        assert!(!gallery.draft.as_ref().unwrap().text.is_composing(), "drops what it was composing");
+        let effects = gallery.feed([key_of(Key::Named(NamedKey::Escape), None)]);
+        assert!(!effects.ime && effects.caret.is_none(), "the note dropped: the input method off");
+        assert!(!gallery.compose(Ime::Commit("你".into())), "and nothing it commits goes anywhere");
+
+        assert!(gallery.feed([Input::Close]).exit, "closing the window exits");
+    }
+
     /// Each surface of the window drawn to a PNG and held to a golden one.
     mod frames;
 }
