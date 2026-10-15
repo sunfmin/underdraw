@@ -1,7 +1,7 @@
 //! What the person says of a description, pinned where they said it
 //! (ADR 0019): kept in notes.json beside its screen.json, meant to be
-//! committed. The person writes a note in the gallery, on a node or a
-//! region; the agent
+//! committed. The person writes a note in the gallery, on a node, a
+//! region, a whole state, a transition's arrow or a navigate's arrow; the agent
 //! answers it with one line; the person closes it, or reopens it with a
 //! line added. The agent never creates, closes or reopens one: what it
 //! wants to ask is an assumption. Each change is read from the file as it
@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::SCREEN;
-use crate::draw::Shown;
 use crate::reference::{On, Reference};
 
 /// The file a description's notes are kept in, beside its screen.json.
@@ -46,17 +45,17 @@ pub struct Said {
     pub says: String,
 }
 
-/// One note, pinned to a node or a region of one state as ⌘C references
-/// it: the node as the description writes it and the instance the person
-/// pointed at, or the box dragged and the nodes it covered.
+/// One note, pinned as ⌘C references what it is on: a node as the
+/// description writes it with the instance the person pointed at, a region
+/// dragged with the nodes it covered, a whole state, a transition or a navigate. A navigate's note is kept by the
+/// description the navigate is written in.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     /// `N1`, `N2`…: numbered in the order written, within the description.
     pub id: String,
     pub status: Status,
-    /// The state it was written in.
-    pub state: Shown,
-    /// What it is on: written as `"node"` or `"region"`.
+    /// What it is on, written as its fields: `state` and `node`, `state`
+    /// and `region`, `state`, `transition` or `navigate`.
     #[serde(flatten)]
     pub on: On,
     /// What the person wrote, then each reply and each line the person
@@ -105,7 +104,7 @@ impl Proposal {
 impl Note {
     /// The reference to what the note is on, in the description in `dir`.
     pub fn reference(&self, dir: &Path) -> Reference {
-        Reference { description: dir.to_path_buf(), state: self.state.clone(), on: Some(self.on.clone()) }
+        Reference { description: dir.to_path_buf(), on: self.on.clone() }
     }
 
     /// The agent's last reply, once it has answered.
@@ -120,12 +119,12 @@ impl Note {
             "description": crate::gallery::within(root, dir),
             "id": self.id,
             "status": self.status,
-            "state": self.state,
             "thread": self.thread,
             "proposes": self.proposes,
             "reference": self.reference(dir).line(),
         });
-        if let (Value::Object(answer), Ok(Value::Object(on))) = (&mut answer, serde_json::to_value(&self.on))
+        if let (Some(answer), Ok(Value::Object(on))) =
+            (answer.as_object_mut(), serde_json::to_value(&self.on))
         {
             answer.extend(on);
         }
@@ -195,9 +194,8 @@ fn change<T>(dir: &Path, change: impl FnOnce(&mut Vec<Note>) -> anyhow::Result<T
     Ok(answer)
 }
 
-/// A note the person wrote, `says`, on the node or region `on`
-/// references, added to its description's notes: open, numbered after the
-/// last. Its id.
+/// A note the person wrote, `says`, on what `on` references, added to its
+/// description's notes: open, numbered after the last. Its id.
 pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
     added(on, said(says)?, None)
 }
@@ -206,24 +204,22 @@ pub fn add(on: &Reference, says: &str) -> anyhow::Result<String> {
 /// `proposal`, added to its description's notes as [`add`] adds one, its
 /// thread saying the proposal. Its id.
 pub fn propose(on: &Reference, proposal: Proposal) -> anyhow::Result<String> {
-    added(on, proposal.says(on.state.name()), Some(proposal))
+    let On::Node { state, .. } = &on.on else {
+        bail!("a proposal is on a node, where acting on it should go: pick one first");
+    };
+    added(on, proposal.says(state.name()), Some(proposal))
 }
 
-/// A note saying `says`, and proposing `proposes`, on the node or region
-/// `on` references, added to its description's notes: open, numbered
-/// after the last. Its id.
+/// A note saying `says`, and proposing `proposes`, on what `on` references,
+/// added to its description's notes: open, numbered after the last. Its id.
 fn added(on: &Reference, says: String, proposes: Option<Proposal>) -> anyhow::Result<String> {
-    let Some(pinned) = on.on.clone() else {
-        bail!("a note is pinned to a node or a region: pick one first");
-    };
     change(&on.description, |notes| {
         let last = notes.iter().filter_map(|note| note.id.strip_prefix('N')?.parse::<u32>().ok()).max();
         let id = format!("N{}", last.unwrap_or(0) + 1);
         notes.push(Note {
             id: id.clone(),
             status: Status::Open,
-            state: on.state.clone(),
-            on: pinned,
+            on: on.on.clone(),
             thread: vec![Said { by: By::Person, says }],
             proposes,
         });
@@ -381,8 +377,8 @@ pub fn counted(dir: &Path) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::Origin;
-    use crate::reference::{Frame, Pointed, Region};
+    use crate::draw::{Origin, Shown};
+    use crate::reference::{Frame, Navigate, Pointed, Region, Transition};
 
     /// A directory of its own named `name`, holding an empty description.
     fn dir(name: &str) -> PathBuf {
@@ -398,8 +394,10 @@ mod tests {
             Origin { written: "order-{index}".into(), at: "/root/children/1/item".into(), instance: vec![2] };
         Reference {
             description: dir.to_path_buf(),
-            state: Shown::Fixture("default".into()),
-            on: Some(On::Node(Pointed { origin, label: Some(4), width: 390 })),
+            on: On::Node {
+                state: Shown::Fixture("default".into()),
+                node: Pointed { origin, label: Some(4), width: 390 },
+            },
         }
     }
 
@@ -482,8 +480,6 @@ mod tests {
         let to = Proposal { on: "cd-keep.tap".into(), goes: Goes::To("default".into()) };
         assert_eq!(serde_json::to_value(&to).unwrap(), json!({ "on": "cd-keep.tap", "to": "default" }));
         assert_eq!(read(&dir).unwrap()[1].proposes, Some(proposal), "read back as written");
-        std::fs::write(dir.join(NOTES), "{").unwrap();
-        assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -494,7 +490,10 @@ mod tests {
             Origin { written: "nav-export".into(), at: "/root/children/0".into(), instance: vec![] };
         let region =
             Region { area: Frame { x: 8, y: 40, width: 200, height: 60 }, width: 390, nodes: vec![covered] };
-        let on = Reference { on: Some(On::Region(region)), ..on(&dir) };
+        let on = Reference {
+            description: dir.clone(),
+            on: On::Region { state: Shown::Fixture("default".into()), region },
+        };
         assert_eq!(add(&on, "too busy").unwrap(), "N1");
         let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
         assert_eq!(
@@ -511,8 +510,61 @@ mod tests {
         let answered = note.answer(&dir, &dir);
         assert_eq!(answered["region"], file["notes"][0]["region"], "`notes` lists its box and nodes");
         assert!(answered["reference"].as_str().unwrap().contains("region 8, 40 · 200 × 60"));
-        let state = Reference { on: None, ..on };
-        assert!(add(&state, "x").unwrap_err().to_string().contains("a node or a region"));
+        let error =
+            propose(&on, Proposal { on: "x.tap".into(), goes: Goes::To("default".into()) }).unwrap_err();
+        assert!(error.to_string().contains("a proposal is on a node"), "{error}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_note_on_a_whole_state_or_an_arrow_is_written_as_what_it_is_on() {
+        let dir = dir("arrows");
+        let state = On::State { state: Shown::Phase("loading".into()) };
+        let transition = On::Transition {
+            transition: Transition {
+                from: "default".into(),
+                on: "order-{index}-cancel.tap".into(),
+                outcome: None,
+                to: "cancel-dialog".into(),
+            },
+        };
+        let navigate = On::Navigate {
+            navigate: Navigate {
+                from: "Orders".into(),
+                node: "nav-export".into(),
+                to: "ExportDocuments".into(),
+            },
+        };
+        for on in [&state, &transition, &navigate] {
+            add(&Reference { description: dir.clone(), on: on.clone() }, "here").unwrap();
+        }
+        add(&on(&dir), "and here").unwrap();
+        let file: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(NOTES)).unwrap()).unwrap();
+        let pinned: Vec<Value> = file["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|note| {
+                let mut note = note.clone();
+                for key in ["id", "status", "thread"] {
+                    note.as_object_mut().unwrap().remove(key);
+                }
+                note
+            })
+            .collect();
+        assert_eq!(
+            pinned[..3],
+            [
+                json!({ "state": { "phase": "loading" } }),
+                json!({ "transition": { "from": "default", "on": "order-{index}-cancel.tap", "to": "cancel-dialog" } }),
+                json!({ "navigate": { "from": "Orders", "node": "nav-export", "to": "ExportDocuments" } }),
+            ]
+        );
+        let read: Vec<On> = read(&dir).unwrap().into_iter().map(|note| note.on).collect();
+        assert_eq!(read, [state, transition, navigate, on(&dir).on], "each read back as written");
+
+        std::fs::write(dir.join(NOTES), "{").unwrap();
+        assert!(counted(&dir)["error"].as_str().unwrap().contains("notes.json"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

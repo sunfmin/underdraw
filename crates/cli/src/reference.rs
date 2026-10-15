@@ -1,6 +1,9 @@
-//! A reference to what the person picked in the gallery, a node, a region
-//! or a whole state, naming it as the description writes it so that an
-//! agent can act on it without asking where: what ⌘C copies, as one line.
+//! A reference to what the person picked in the gallery, naming it as the
+//! description writes it so that an agent can act on it without asking
+//! where: a node or a region in a state, a whole state, a transition's
+//! arrow in a
+//! description's overview, or a navigate's arrow in a directory's flow.
+//! What ⌘C copies, as one line, and what a note is pinned to.
 
 use std::path::PathBuf;
 
@@ -8,23 +11,31 @@ use serde::{Deserialize, Serialize};
 
 use crate::draw::{Origin, Shown};
 
-/// A state of one description and, when one is picked, what in it: a
-/// node, or a region.
+/// What is picked in one description: the directory it is in, and what in it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
-    /// The directory the description is in.
+    /// The directory the description is in; for a navigate, the one it is
+    /// written in.
     pub description: PathBuf,
-    pub state: Shown,
-    pub on: Option<On>,
+    pub on: On,
 }
 
-/// What in a state is picked, and a note is pinned to: a node, or a region.
-/// Written as one key, `{"node": …}` or `{"region": …}`.
+/// What in a description a reference names. Written, in notes.json, as the
+/// fields of the one it is: `{"state", "node"}`, `{"state", "region"}`,
+/// `{"state"}`, `{"transition"}` or `{"navigate"}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(untagged)]
 pub enum On {
-    Node(Pointed),
-    Region(Region),
+    /// A node of one state, and the instance of it pointed at.
+    Node { state: Shown, node: Pointed },
+    /// A region of one state: a box dragged over its picture.
+    Region { state: Shown, region: Region },
+    /// A whole state.
+    State { state: Shown },
+    /// A transition the description declares, its arrow in the overview.
+    Transition { transition: Transition },
+    /// A navigate written in the description, its arrow in a flow.
+    Navigate { navigate: Navigate },
 }
 
 /// A box the person dragged over a picture, and the nodes wholly inside
@@ -52,6 +63,20 @@ pub struct Frame {
     pub height: u32,
 }
 
+impl Region {
+    /// The region in a few words, as the gallery's panel names it: its box
+    /// and how many nodes it covers.
+    pub fn named(&self) -> String {
+        let Frame { x, y, width, height } = self.area;
+        let covering = match self.nodes.len() {
+            0 => "no node".to_string(),
+            1 => "1 node".to_string(),
+            n => format!("{n} nodes"),
+        };
+        format!("region {x}, {y} · {width} × {height} covering {covering}")
+    }
+}
+
 /// A node as the description writes it, and the one instance of it the
 /// person pointed at: which data showed it, its label, and the width.
 /// Written as one object: `{"id", "at", "instance", "label", "width"}`.
@@ -63,72 +88,114 @@ pub struct Pointed {
     pub width: u32,
 }
 
+/// A transition as `transitions` in screen.json writes it: from a state, on
+/// `<node id as written>.<event>`, for a call the outcome, to a state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Transition {
+    pub from: String,
+    pub on: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    pub to: String,
+}
+
+/// A navigate as `underdraw check <root>` reports it among its links: the
+/// screen it is in, the node it is on by its id as written, and the screen
+/// it names.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Navigate {
+    pub from: String,
+    pub node: String,
+    pub to: String,
+}
+
 impl On {
-    /// The width of the picture it was picked in.
-    pub fn width(&self) -> u32 {
+    /// The state it is in, for a node, a region or a whole state.
+    pub fn state(&self) -> Option<&Shown> {
         match self {
-            On::Node(pointed) => pointed.width,
-            On::Region(region) => region.width,
+            On::Node { state, .. } | On::Region { state, .. } | On::State { state } => Some(state),
+            On::Transition { .. } | On::Navigate { .. } => None,
         }
     }
 
-    /// What it is, in a few words, as the gallery's panel names it: the
-    /// node's id as written, or the region's box and how many nodes it
-    /// covers.
-    pub fn named(&self) -> String {
+    /// What it is, as the panel says a note is on it: `on <id> in <state> at
+    /// <width>`, `on the whole of <state>`, `on transition …`, `on navigate …`.
+    pub fn said(&self) -> String {
         match self {
-            On::Node(pointed) => pointed.origin.written.clone(),
-            On::Region(Region { area: Frame { x, y, width, height }, nodes, .. }) => {
-                let covering = match nodes.len() {
-                    0 => "no node".to_string(),
-                    1 => "1 node".to_string(),
-                    n => format!("{n} nodes"),
-                };
-                format!("region {x}, {y} · {width} × {height} covering {covering}")
+            On::Node { state, node } => {
+                format!("on {} in {} at {}", node.origin.written, state.name(), node.width)
             }
+            On::Region { state, region } => {
+                format!("on {} in {} at {}", region.named(), state.name(), region.width)
+            }
+            On::State { state } => format!("on the whole of {}", state.name()),
+            On::Transition { transition } => format!("on transition {}", transition.said()),
+            On::Navigate { navigate } => format!("on navigate {}", navigate.said()),
         }
     }
 }
 
+impl Transition {
+    /// `from <state> on <node>.<event> [outcome <outcome>] to <state>`.
+    pub fn said(&self) -> String {
+        let outcome = self.outcome.as_ref().map(|outcome| format!(" outcome {outcome}")).unwrap_or_default();
+        format!("from {} on {}{outcome} to {}", self.from, self.on, self.to)
+    }
+}
+
+impl Navigate {
+    /// `from <screen> on <node> to <screen>`.
+    pub fn said(&self) -> String {
+        format!("from {} on {} to {}", self.from, self.node, self.to)
+    }
+}
+
 impl Reference {
-    /// The reference as one readable line: the description's directory and
-    /// the state, then the node's id as written and where in screen.json,
-    /// then the instance pointed at, as context; or the region's box and
-    /// width, then each node it covers, as written, where, and which
-    /// instance.
+    /// The reference as one readable line: the description's directory,
+    /// then what in it. For a state, the state; for a node, the state, the
+    /// node's id as written and where in screen.json, then the instance
+    /// pointed at, as context; for an arrow, the transition or navigate
+    /// with the keys screen.json and `check` name it by.
     pub fn line(&self) -> String {
-        let state = match &self.state {
+        let state = |state: &Shown| match state {
             Shown::Fixture(name) => format!("fixture {name}"),
             Shown::Phase(name) => format!("phase {name}"),
         };
-        let mut line = format!("{} · {state}", self.description.display());
-        if let Some(On::Region(Region { area, width, nodes })) = &self.on {
-            let Frame { x, y, width: wide, height } = area;
-            line.push_str(&format!(" · region {x}, {y} · {wide} × {height} at width {width} · covering "));
-            if nodes.is_empty() {
-                line.push_str("no node");
+        let description = self.description.display();
+        match &self.on {
+            On::State { state: shown } => format!("{description} · {}", state(shown)),
+            On::Node { state: shown, node: Pointed { origin, label, width } } => {
+                let mut context = Vec::new();
+                if !origin.instance.is_empty() {
+                    context.push(instance(&origin.instance).trim_start().to_string());
+                }
+                context.push(label.map_or_else(|| "no label".to_string(), |label| format!("label {label}")));
+                context.push(format!("width {width}"));
+                format!(
+                    "{description} · {} · {} at {} in screen.json · pointed at {}",
+                    state(shown),
+                    origin.written,
+                    origin.at,
+                    context.join(", ")
+                )
             }
-            let covered: Vec<String> = nodes
-                .iter()
-                .map(|origin| format!("{} at {}{}", origin.written, origin.at, instance(&origin.instance)))
-                .collect();
-            line.push_str(&covered.join(", "));
-        }
-        if let Some(On::Node(Pointed { origin, label, width })) = &self.on {
-            let mut context = Vec::new();
-            if !origin.instance.is_empty() {
-                context.push(instance(&origin.instance).trim_start().to_string());
+            On::Region { state: shown, region: Region { area, width, nodes } } => {
+                let Frame { x, y, width: wide, height } = area;
+                let covered: Vec<String> = nodes
+                    .iter()
+                    .map(|origin| {
+                        format!("{} at {}{}", origin.written, origin.at, instance(&origin.instance))
+                    })
+                    .collect();
+                let covering = if covered.is_empty() { "no node".to_string() } else { covered.join(", ") };
+                format!(
+                    "{description} · {} · region {x}, {y} · {wide} × {height} at width {width} · covering {covering}",
+                    state(shown)
+                )
             }
-            context.push(label.map_or_else(|| "no label".to_string(), |label| format!("label {label}")));
-            context.push(format!("width {width}"));
-            line.push_str(&format!(
-                " · {} at {} in screen.json · pointed at {}",
-                origin.written,
-                origin.at,
-                context.join(", ")
-            ));
+            On::Transition { transition } => format!("{description} · transition {}", transition.said()),
+            On::Navigate { navigate } => format!("{description} · navigate {}", navigate.said()),
         }
-        line
     }
 }
 
@@ -147,8 +214,10 @@ mod tests {
 
     #[test]
     fn a_state_names_its_description_and_itself() {
-        let state =
-            Reference { description: "/d/todo".into(), state: Shown::Phase("loading".into()), on: None };
+        let state = Reference {
+            description: "/d/todo".into(),
+            on: On::State { state: Shown::Phase("loading".into()) },
+        };
         assert_eq!(state.line(), "/d/todo · phase loading");
     }
 
@@ -158,8 +227,10 @@ mod tests {
             Origin { written: "order-{index}".into(), at: "/root/children/1/item".into(), instance: vec![2] };
         let node = Reference {
             description: "/d/orders".into(),
-            state: Shown::Fixture("default".into()),
-            on: Some(On::Node(Pointed { origin, label: Some(4), width: 390 })),
+            on: On::Node {
+                state: Shown::Fixture("default".into()),
+                node: Pointed { origin, label: Some(4), width: 390 },
+            },
         };
         assert_eq!(
             node.line(),
@@ -181,16 +252,37 @@ mod tests {
         let area = Frame { x: 16, y: 120, width: 358, height: 200 };
         let mut region = Reference {
             description: "/d/orders".into(),
-            state: Shown::Fixture("default".into()),
-            on: Some(On::Region(Region { area, width: 390, nodes })),
+            on: On::Region {
+                state: Shown::Fixture("default".into()),
+                region: Region { area, width: 390, nodes },
+            },
         };
         assert_eq!(
             region.line(),
             "/d/orders · fixture default · region 16, 120 · 358 × 200 at width 390 · covering order-{index} at /root/children/1/item [2], nav-export at /root/children/0"
         );
-        if let Some(On::Region(Region { nodes, .. })) = &mut region.on {
+        if let On::Region { region: Region { nodes, .. }, .. } = &mut region.on {
             nodes.clear();
         }
         assert!(region.line().ends_with("at width 390 · covering no node"), "{}", region.line());
+    }
+
+    #[test]
+    fn an_arrow_names_its_transition_or_navigate_by_the_keys_it_is_written_with() {
+        let transition = Transition {
+            from: "default".into(),
+            on: "order-{index}-cancel.tap".into(),
+            outcome: Some("ok".into()),
+            to: "cancel-dialog".into(),
+        };
+        let reference = Reference { description: "/d/orders".into(), on: On::Transition { transition } };
+        assert_eq!(
+            reference.line(),
+            "/d/orders · transition from default on order-{index}-cancel.tap outcome ok to cancel-dialog"
+        );
+        let navigate =
+            Navigate { from: "Orders".into(), node: "nav-export".into(), to: "ExportDocuments".into() };
+        let reference = Reference { description: "/d/orders".into(), on: On::Navigate { navigate } };
+        assert_eq!(reference.line(), "/d/orders · navigate from Orders on nav-export to ExportDocuments");
     }
 }
