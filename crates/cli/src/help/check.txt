@@ -9,7 +9,8 @@ READS
   <path>/screen.json, or <path> when it is a file, and kinds.json beside it
   when there is one: every node's kind must be defined there or by
   underdraw, and its looks are checked too (KINDS.JSON below). Once the
-  description has no other fault, tokens.json too: every fixture and phase
+  description has no other fault, its tokens.json too (the nearest at or
+  above the screen, as `underdraw --help` says): every fixture and phase
   is laid out at widths 390 and 1120, in the system's fonts as `render`
   does, and an overlay that runs off the page is a finding. Writes nothing.
 

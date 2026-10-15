@@ -2,9 +2,19 @@ underdraw — describe a screen once, as JSON, then check it, show it to a
 person, and hand it off to web, iOS and Android.
 
 A screen description is a directory holding screen.json (the screen: its
-view model, fixtures, conditions and node tree), usually beside tokens.json,
+view model, fixtures, conditions and node tree), usually beside
 platforms/*.json and, for kinds of the project's own, kinds.json. How to
 write each file, every kind and every rule: `underdraw check --help`, FORMAT.
+
+A screen is in a project: one app's screens under one directory, sharing
+one design language. Every command finds it the same way:
+  project root  the nearest directory at or above the screen holding
+                domain.json; with none, the screen's own directory
+  tokens        tokens.json in the nearest directory at or above the
+                screen that has one, so a screen's own tokens.json wins
+                over one above it, and screens with none beside them share
+                the one above; with none anywhere, no tokens
+  `underdraw render` answers which root and tokens.json it took.
 
 NEEDS
   System fonts to check a description; to render one or open the gallery,

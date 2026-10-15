@@ -11,6 +11,7 @@ mod gallery;
 mod gpu;
 mod links;
 mod paint;
+mod project;
 mod reference;
 mod text;
 mod window;
@@ -28,14 +29,14 @@ use draw::{Shown, Wanted};
 use serde_json::{Value, json};
 use underdraw_format::{Lang, State};
 
+use crate::project::{Project, TOKENS};
+
 /// What this binary was built from, as `--version` says it: stamped by
 /// `build.rs`.
 pub const VERSION: &str = env!("UNDERDRAW_VERSION");
 
 /// The file a screen's directory holds its description in.
 const SCREEN: &str = "screen.json";
-/// The design tokens beside it.
-const TOKENS: &str = "tokens.json";
 /// What the project's own kinds look like, beside the description; optional.
 const KINDS: &str = "kinds.json";
 
@@ -217,7 +218,7 @@ fn check_at(path: &Path) -> anyhow::Result<underdraw_format::Checked> {
 /// Every fault in the description, overlays the picture would cut among
 /// them: laid out in the system's fonts, as `render` does.
 fn checked(screen: &Value, dir: &Path, kinds: Option<&Value>) -> anyhow::Result<underdraw_format::Checked> {
-    let tokens = read_tokens(dir)?;
+    let tokens = Project::of(dir)?.tokens;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
     underdraw_layout::check(screen, &tokens, kinds, &mut typesetter).map_err(anyhow::Error::msg)
@@ -269,7 +270,7 @@ fn derive_cli(path: &Path) -> anyhow::Result<Value> {
 
 fn handoff(path: &Path, platform: &str) -> anyhow::Result<Value> {
     let (screen, dir) = read(path)?;
-    let tokens = read_tokens(&dir)?;
+    let tokens = Project::of(&dir)?.tokens;
     let kinds = read_kinds(&dir)?;
     let mapping = read_platform(&dir, platform)?;
     match underdraw_handoff::handoff(&screen, &mapping, &tokens, kinds.as_ref()) {
@@ -323,7 +324,7 @@ fn compare(
             dir.join("platforms").display()
         );
     };
-    let tokens = read_tokens(&dir)?;
+    let tokens = Project::of(&dir)?.tokens;
     let mapping = read_platform(&dir, platform)?;
     let locale = screen.get("locale").and_then(Value::as_str);
     let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
@@ -364,7 +365,6 @@ fn read_platform(dir: &Path, platform: &str) -> anyhow::Result<Value> {
     serde_json::from_str(&text).with_context(|| format!("{} is not JSON", file.display()))
 }
 
-/// tokens.json beside the description, or no tokens.
 /// kinds.json beside the description, when the project has one.
 fn read_kinds(dir: &Path) -> anyhow::Result<Option<Value>> {
     match std::fs::read_to_string(dir.join(KINDS)) {
@@ -372,15 +372,6 @@ fn read_kinds(dir: &Path) -> anyhow::Result<Option<Value>> {
             .map(Some)
             .with_context(|| format!("{} is not JSON", dir.join(KINDS).display())),
         Err(_) => Ok(None),
-    }
-}
-
-fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
-    match std::fs::read_to_string(dir.join(TOKENS)) {
-        Ok(text) => {
-            serde_json::from_str(&text).with_context(|| format!("{} is not JSON", dir.join(TOKENS).display()))
-        }
-        Err(_) => Ok(json!({})),
     }
 }
 
@@ -419,8 +410,11 @@ fn render(
     encoder.write_header()?.write_image_data(&pixels)?;
 
     let page = &drawing.page;
+    let project = Project::of(&drawing.dir)?;
     Ok(json!({
         "png": out,
+        "project": project.root,
+        "tokens": project.tokens_file,
         "state": match drawing.shown { Shown::Fixture(_) => json!({ "fixture": name }), Shown::Phase(_) => json!({ "phase": name }) },
         "breakpoint": drawing.breakpoint,
         "width": page.width,

@@ -91,14 +91,14 @@ DOES
   which data showed what they mean; it is not where to edit.
 
   The window watches <root> and is drawn from the files as they now stand:
-  edit a description's screen.json, tokens.json or kinds.json and the state
-  shown is drawn again within a moment, scrolled where it was and with the
-  node picked still picked while it is there, without the window coming
-  forward; a description that gains faults shows them, and its
-  picture again once they are fixed. A description directory added under
-  <root> comes into the tree, and one removed leaves it. When the state
-  shown goes, its description's overview is shown instead. The window
-  opens on the first description's overview.
+  edit a description's screen.json or kinds.json, or a tokens.json under
+  <root> it takes its tokens from, and the state shown is drawn again
+  within a moment, scrolled where it was and with the node picked still
+  picked while it is there, without the window coming forward; a
+  description that gains faults shows them, and its picture again once
+  they are fixed. A description directory added under <root> comes into
+  the tree, and one removed leaves it. When the state shown goes, its
+  description's overview is shown instead. The window opens on the first description's overview.
 
 ANSWERS
   {

@@ -11,7 +11,7 @@ use underdraw_format::{Breakpoint, Lang, Model, Node, State, Transition};
 use underdraw_layout::Page;
 use vello::Scene;
 
-use crate::{checked, paint, pick, read, read_kinds, read_tokens, text};
+use crate::{checked, paint, pick, read, read_kinds, text};
 
 /// The state to draw, and at what size.
 pub struct Wanted {
@@ -138,7 +138,7 @@ pub fn lay_out(
     lang: Lang,
 ) -> anyhow::Result<Laid> {
     let (screen, dir) = read(path)?;
-    let tokens = read_tokens(&dir)?;
+    let tokens = crate::project::Project::of(&dir)?.tokens;
     let kinds = read_kinds(&dir)?;
     let checked = checked(&screen, &dir, kinds.as_ref())?;
     if !checked.ok {
