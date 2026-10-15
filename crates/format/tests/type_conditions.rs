@@ -78,11 +78,8 @@ fn a_row_gates_its_cancel_button_on_the_orders_condition() {
         let default = ["default".to_string()];
         assert_eq!(
             table,
-            [
-                ("Order.cancellable", &default[..]),
-                ("Order.hasNote", &default[..]),
-                ("Order.quiet", &default[..])
-            ]
+            [("Order.cancellable", &default[..]), ("Order.hasNote", &default[..])],
+            "Order.quiet is the domain's, and the screen never reads it"
         );
     }
     let screen = read(&screen(button(json!({ "if": "item.cancellable" }))));
@@ -237,4 +234,24 @@ fn read(description: &Value) -> Screen {
 
 fn check(description: &Value) -> Checked {
     underdraw_format::check(&read(description))
+}
+
+#[test]
+fn check_lists_only_the_conditions_the_description_reads() {
+    let names = |row: Value| -> Vec<String> {
+        let mut screen = screen(button(json!({ "if": "item.cancellable" })));
+        screen["root"]["children"][0]["item"]["children"] = json!([row]);
+        let checked = check(&screen);
+        assert!(checked.ok, "{:#?}", checked.findings);
+        checked.conditions.iter().map(|c| c.name.clone()).collect()
+    };
+    let text = |text: &str| json!({ "id": "order-{index}-id", "component": "Text", "text": text });
+    assert!(names(text("{item.id}")).is_empty(), "no domain condition read, none listed");
+    let quiet =
+        json!({ "id": "order-{index}-quiet", "component": "Text", "text": "Quiet", "if": "item.quiet" });
+    assert_eq!(
+        names(quiet),
+        ["Order.cancellable", "Order.hasNote", "Order.quiet"],
+        "one read is listed with those its when uses"
+    );
 }

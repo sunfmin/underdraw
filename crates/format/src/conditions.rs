@@ -297,6 +297,24 @@ impl Conditions {
         read
     }
 
+    /// The conditions `read` names, and every one their `when`s use, and
+    /// theirs: all a screen reading `read` reads.
+    pub fn reached(&self, read: &BTreeSet<String>) -> BTreeSet<String> {
+        let mut reached = BTreeSet::new();
+        let mut pending: Vec<String> = read.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            let Some(condition) = self.get(&name) else {
+                continue;
+            };
+            if reached.insert(name) {
+                let mut used = Vec::new();
+                uses(&condition.when, &mut used);
+                pending.extend(used);
+            }
+        }
+        reached
+    }
+
     /// Whether `name` is a condition declared on a type.
     pub fn is_on_type(&self, name: &str) -> bool {
         self.get(name).is_some_and(|condition| condition.on.is_some())
