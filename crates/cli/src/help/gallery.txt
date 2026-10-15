@@ -73,6 +73,13 @@ DOES
   in the tree with how many faults it has; picking it lists each (the
   step where it breaks, then what is wrong) instead of playing it.
 
+  An overview marks each state with the journeys that pass through it, so
+  a change to a screen shows whose paths it lies on: a blue mark over the
+  state's picture, at its top left, for each step of a journey listed in
+  the tree that is in that state ("→ cancel-an-order · step 2"), stacked
+  when there are several. Clicking a mark plays that journey from that
+  step; one that is broken shows its faults instead, as picking it does.
+
   Click through a design as a prototype: a plain click inspects a node, as
   above; hold ⌘ (Ctrl on Linux and Windows) and click to act on it. Acting
   raises the node's tap (or its first event, when it has no tap) and
