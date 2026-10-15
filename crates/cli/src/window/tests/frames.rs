@@ -333,7 +333,7 @@ fn a_wrong_assumption_written_with_an_input_method() {
         gallery.compose(Ime::Preedit("dui hua kuang".to_string(), None));
     });
     fits(&mut gallery);
-    assert!(gallery.draft.as_ref().is_some_and(|draft| draft.text.is_composing()));
+    assert!(gallery.rejecting.is_some() && gallery.talk.is_composing());
     std::fs::remove_dir_all(root).unwrap();
 }
 

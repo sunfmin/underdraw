@@ -61,9 +61,6 @@ pub enum Block<A> {
     Item(Item<A>),
     /// Buttons side by side, sharing the card's width.
     Row(Vec<(String, A)>),
-    /// The field being written in, with its caret: what it holds, and what
-    /// it says while empty.
-    Field(Shown, String),
 }
 
 /// The box at the sidebar's foot, fixed there below the cards as they
@@ -108,9 +105,6 @@ impl<A> Block<A> {
                 .chain((!item.says.is_empty()).then(|| item.says.clone()))
                 .collect(),
             Block::Row(buttons) => buttons.iter().map(|(text, _)| text.clone()).collect(),
-            Block::Field(shown, empty) => {
-                vec![if shown.text.is_empty() { empty.clone() } else { shown.text.clone() }]
-            }
         }
     }
 }
@@ -239,11 +233,6 @@ pub fn lay_out<'a, A>(
                         let at = rect(x + i as f64 * (each + gap), y, each, tall);
                         button(&mut inside, &mut laid, typesetter, at, said, does);
                     }
-                    tall
-                }
-                Block::Field(shown, empty) => {
-                    let (tall, caret, words) = field(&mut inside, typesetter, (x, y, inner), shown, empty);
-                    (laid.caret, laid.field) = (Some(caret), Some(words));
                     tall
                 }
             };
