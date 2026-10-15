@@ -1,0 +1,32 @@
+{
+  "$comment": "A shop's orders, shared by the order list and one order's page: each calls cancelOrder by name and declares it nowhere, and gates it on Order.cancellable, declared once on the type.",
+  "types": {
+    "Order": {
+      "id": "string",
+      "number": "string 1..20",
+      "customer": "string 1..40",
+      "total": "money",
+      "status": "OrderStatus"
+    },
+    "OrderStatus": "enum(pending, shipped, cancelled)"
+  },
+  "conditions": {
+    "Order.cancellable": { "when": "status == \"pending\"", "label": "Not shipped yet" }
+  },
+  "operations": {
+    "listOrders": {
+      "query": "The shop's latest orders, newest first",
+      "result": "Order[] ..20",
+      "fails": { "offline": "the server cannot be reached" }
+    },
+    "cancelOrder": {
+      "command": "Cancels an order that has not shipped",
+      "params": { "id": "string" },
+      "requires": "Order.cancellable",
+      "fails": {
+        "notFound": "no order has this id",
+        "shipped": "the order shipped since it was shown"
+      }
+    }
+  }
+}
