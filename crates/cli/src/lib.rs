@@ -5,6 +5,7 @@
 //! answer as one JSON object.
 
 mod act;
+mod area;
 mod chrome;
 mod draw;
 mod field;

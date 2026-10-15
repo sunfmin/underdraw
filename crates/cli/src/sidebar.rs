@@ -12,6 +12,7 @@
 
 use underdraw_layout::{Align, Draw, Font, Ink, Measure, Rect};
 
+use crate::area::{over, rect};
 use crate::chrome::{BIG, BUBBLE, BUBBLE_RADIUS, FACT, INSET, MARK, MARK_INSET, MARK_RADIUS, MARK_TALL};
 use crate::chrome::{
     BUTTON, BUTTON_PAD, BUTTON_RADIUS, CARD_BETWEEN as BETWEEN, CARD_PADDING as PADDING, CARD_RADIUS,
@@ -559,16 +560,6 @@ fn centred(rect: Rect, text: String, ink: Ink) -> Draw {
         underline: false,
         strike: false,
     }
-}
-
-fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
-    Rect { x: x as f32, y: y as f32, width: width.max(0.0) as f32, height: height.max(0.0) as f32 }
-}
-
-/// Whether `at` is on `r`, edges included.
-fn over(r: Rect, at: (f64, f64)) -> bool {
-    let (x, y) = (f64::from(r.x), f64::from(r.y));
-    (x..=x + f64::from(r.width)).contains(&at.0) && (y..=y + f64::from(r.height)).contains(&at.1)
 }
 
 #[cfg(test)]
