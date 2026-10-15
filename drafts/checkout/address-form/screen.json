@@ -16,17 +16,34 @@
       "type": "AddressDraft",
       "view": true,
       "doc": "正在填的内容；改地址时先填上原来的"
+    },
+    "picking": {
+      "type": "Level?",
+      "view": true,
+      "doc": "正在选哪一级地区；null 时选择面板没打开"
+    },
+    "options": {
+      "type": "Region[] ..60",
+      "from": "listRegions",
+      "doc": "正在选的那一级可选的地区"
     }
   },
   "types": {
     "AddressDraft": {
       "name": "string ..20",
       "phone": "string ..20",
+      "province": "string ..20",
+      "city": "string ..20",
+      "district": "string ..20",
       "line": {
-        "type": "string ..120",
-        "doc": "省、市、区和街道"
+        "type": "string ..80",
+        "doc": "街道、门牌号、楼栋房号"
       },
       "isDefault": "bool = false"
+    },
+    "Level": "enum(province, city, district)",
+    "Region": {
+      "name": "string 1..20"
     }
   },
   "conditions": {
@@ -34,8 +51,32 @@
       "when": "addressId != null",
       "label": "修改已有地址"
     },
+    "hasProvince": {
+      "when": "form.province != \"\"",
+      "label": "选了省"
+    },
+    "hasCity": {
+      "when": "form.city != \"\"",
+      "label": "选了市"
+    },
+    "pickingProvince": {
+      "when": "picking == \"province\"",
+      "label": "在选省"
+    },
+    "pickingCity": {
+      "when": "picking == \"city\"",
+      "label": "在选市"
+    },
+    "pickingDistrict": {
+      "when": "picking == \"district\"",
+      "label": "在选区"
+    },
+    "pickerOpen": {
+      "when": "picking != null",
+      "label": "选择面板打开"
+    },
     "canSave": {
-      "when": "form.name != \"\" && form.phone != \"\" && form.line != \"\"",
+      "when": "form.name != \"\" && form.phone != \"\" && form.province != \"\" && form.city != \"\" && form.district != \"\" && form.line != \"\"",
       "label": "都填了"
     }
   },
@@ -46,13 +87,20 @@
         "id": "string?",
         "name": "string 1..20",
         "phone": "string 1..20",
-        "line": "string 1..120",
+        "province": "string 1..20",
+        "city": "string 1..20",
+        "district": "string 1..20",
+        "line": "string 1..80",
         "isDefault": "bool = false"
       },
       "requires": "canSave",
       "fails": {
         "invalidPhone": "手机号格式不对"
       }
+    },
+    "listRegions": {
+      "query": "正在选的那一级可选的地区：省份；或所选省的城市；或所选市的区县",
+      "result": "Region[] ..60"
     }
   },
   "components": {
@@ -110,6 +158,87 @@
           }
         ]
       }
+    },
+    "SelectField": {
+      "doc": "点开从列表里选：上面是标签，右边一个向下箭头；没选时显示占位，前一级没选时变灰。",
+      "params": [
+        "label",
+        "value",
+        "placeholder",
+        "disabled"
+      ],
+      "look": {
+        "box": "column",
+        "gap": 6,
+        "grow": 1,
+        "children": [
+          {
+            "text": "{label}",
+            "font": "font.caption",
+            "ink": "muted"
+          },
+          {
+            "box": "row",
+            "padding": [
+              12,
+              12
+            ],
+            "radius": 8,
+            "stroke": "line",
+            "justify": "between",
+            "items": "center",
+            "fill": {
+              "cases": [
+                {
+                  "if": "disabled",
+                  "then": "fill"
+                },
+                {
+                  "else": null
+                }
+              ]
+            },
+            "children": [
+              {
+                "cases": [
+                  {
+                    "if": "value && value != \"\"",
+                    "then": {
+                      "text": "{value}"
+                    }
+                  },
+                  {
+                    "else": {
+                      "text": "{placeholder}",
+                      "ink": "muted"
+                    }
+                  }
+                ]
+              },
+              {
+                "component": "Glyph",
+                "icon": "expand_more",
+                "size": 20
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Sheet": {
+      "doc": "从底部升起的面板，背后变暗。",
+      "params": [],
+      "look": {
+        "box": "column",
+        "backdrop": true,
+        "padding": 16,
+        "gap": 8,
+        "radius": 16,
+        "fill": "paper",
+        "children": [
+          "$children"
+        ]
+      }
     }
   },
   "fixtures": {
@@ -118,17 +247,112 @@
       "form": {
         "name": "",
         "phone": "",
+        "province": "",
+        "city": "",
+        "district": "",
         "line": ""
-      }
+      },
+      "picking": null,
+      "options": []
     },
     "edit": {
       "addressId": "a2",
       "form": {
         "name": "孙小明",
         "phone": "138 0000 5678",
-        "line": "上海市 浦东新区 世纪大道 100 号 环球金融中心 32 楼",
+        "province": "上海市",
+        "city": "上海市",
+        "district": "浦东新区",
+        "line": "世纪大道 100 号 环球金融中心 32 楼",
         "isDefault": false
-      }
+      },
+      "picking": null,
+      "options": []
+    },
+    "picking-province": {
+      "$patch": "new",
+      "picking": "province",
+      "options": [
+        {
+          "name": "北京市"
+        },
+        {
+          "name": "上海市"
+        },
+        {
+          "name": "天津市"
+        },
+        {
+          "name": "重庆市"
+        },
+        {
+          "name": "河北省"
+        },
+        {
+          "name": "山西省"
+        },
+        {
+          "name": "江苏省"
+        },
+        {
+          "name": "浙江省"
+        }
+      ]
+    },
+    "picking-city": {
+      "$patch": "new",
+      "form": {
+        "province": "江苏省"
+      },
+      "picking": "city",
+      "options": [
+        {
+          "name": "南京市"
+        },
+        {
+          "name": "苏州市"
+        },
+        {
+          "name": "无锡市"
+        },
+        {
+          "name": "常州市"
+        },
+        {
+          "name": "南通市"
+        },
+        {
+          "name": "扬州市"
+        }
+      ]
+    },
+    "picking-district": {
+      "$patch": "new",
+      "form": {
+        "province": "江苏省",
+        "city": "苏州市"
+      },
+      "picking": "district",
+      "options": [
+        {
+          "name": "姑苏区"
+        },
+        {
+          "name": "吴中区"
+        },
+        {
+          "name": "相城区"
+        },
+        {
+          "name": "虎丘区"
+        },
+        {
+          "name": "吴江区"
+        },
+        {
+          "name": "工业园区"
+        }
+      ]
     }
   },
   "root": {
@@ -190,10 +414,58 @@
             "bind": "form.phone"
           },
           {
+            "id": "field-region",
+            "component": "Stack",
+            "gap": "space.3",
+            "children": [
+              {
+                "id": "field-province",
+                "component": "SelectField",
+                "label": "省份",
+                "placeholder": "选择省份",
+                "value": "{form.province}",
+                "on": {
+                  "tap": {
+                    "set": "picking",
+                    "to": "province"
+                  }
+                }
+              },
+              {
+                "id": "field-city",
+                "component": "SelectField",
+                "label": "城市",
+                "placeholder": "选择城市",
+                "value": "{form.city}",
+                "disabled": "!hasProvince",
+                "on": {
+                  "tap": {
+                    "set": "picking",
+                    "to": "city"
+                  }
+                }
+              },
+              {
+                "id": "field-district",
+                "component": "SelectField",
+                "label": "区县",
+                "placeholder": "选择区县",
+                "value": "{form.district}",
+                "disabled": "!hasCity",
+                "on": {
+                  "tap": {
+                    "set": "picking",
+                    "to": "district"
+                  }
+                }
+              }
+            ]
+          },
+          {
             "id": "field-line",
             "component": "TextField",
-            "label": "地址",
-            "placeholder": "省、市、区、街道、门牌号",
+            "label": "详细地址",
+            "placeholder": "街道、门牌号、楼栋房号",
             "bind": "form.line"
           },
           {
@@ -246,6 +518,9 @@
                         "id": "{addressId}",
                         "name": "{form.name}",
                         "phone": "{form.phone}",
+                        "province": "{form.province}",
+                        "city": "{form.city}",
+                        "district": "{form.district}",
                         "line": "{form.line}",
                         "isDefault": "{form.isDefault}"
                       }
@@ -257,6 +532,9 @@
                       "with": {
                         "name": "{form.name}",
                         "phone": "{form.phone}",
+                        "province": "{form.province}",
+                        "city": "{form.city}",
+                        "district": "{form.district}",
                         "line": "{form.line}",
                         "isDefault": "{form.isDefault}"
                       }
@@ -268,6 +546,99 @@
           }
         ]
       }
-    ]
+    ],
+    "overlay": {
+      "id": "region-sheet",
+      "component": "Sheet",
+      "if": "pickerOpen",
+      "anchor": "bottom",
+      "children": [
+        {
+          "id": "region-sheet-head",
+          "component": "Row",
+          "children": [
+            {
+              "id": "region-sheet-title",
+              "component": "Text",
+              "font": "font.subhead",
+              "text": {
+                "cases": [
+                  {
+                    "if": "pickingProvince",
+                    "then": "选择省份"
+                  },
+                  {
+                    "if": "pickingCity",
+                    "then": "选择城市"
+                  },
+                  {
+                    "else": "选择区县"
+                  }
+                ]
+              }
+            }
+          ],
+          "trailing": [
+            {
+              "id": "region-sheet-close",
+              "component": "IconButton",
+              "icon": "close",
+              "on": {
+                "tap": {
+                  "set": "picking",
+                  "to": null
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "region-options",
+          "component": "List",
+          "each": "options",
+          "item": {
+            "id": "region-{index}",
+            "component": "ListItem",
+            "title": "{item.name}",
+            "on": {
+              "tap": {
+                "cases": [
+                  {
+                    "if": "pickingProvince",
+                    "then": {
+                      "set": {
+                        "form.province": "{item.name}",
+                        "form.city": "",
+                        "form.district": "",
+                        "picking": "city"
+                      }
+                    }
+                  },
+                  {
+                    "if": "pickingCity",
+                    "then": {
+                      "set": {
+                        "form.city": "{item.name}",
+                        "form.district": "",
+                        "picking": "district"
+                      }
+                    }
+                  },
+                  {
+                    "else": {
+                      "set": {
+                        "form.district": "{item.name}",
+                        "picking": null
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "assumed": "选了省自动接着选市、选了市接着选区；改前一级会清空后面的。也可以一个面板里三列同时滚动选"
+        }
+      ]
+    }
   }
 }
