@@ -4,6 +4,7 @@
 //! capture differs (`underdraw-compare`), draws on the GPU, and prints the
 //! answer as one JSON object.
 
+mod draw;
 mod gpu;
 mod paint;
 mod text;
@@ -17,8 +18,9 @@ use std::process::ExitCode;
 use anyhow::{Context, bail};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
+use draw::{Shown, Wanted};
 use serde_json::{Value, json};
-use underdraw_format::{Breakpoint, State};
+use underdraw_format::State;
 
 /// What this binary was built from, as `--version` says it: stamped by
 /// `build.rs`.
@@ -139,7 +141,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
     let answer = match cli.command {
         Command::Check { path } => check(&path),
         Command::Render { path, fixture, phase, width, scale, out } => {
-            render(&path, Wanted { fixture, phase, width, scale, out })
+            render(&path, &Wanted { fixture, phase, width, scale }, out)
         }
         Command::Schema { path } => schema(&path),
         Command::Cli { path } => derive_cli(&path),
@@ -340,45 +342,15 @@ fn read_tokens(dir: &Path) -> anyhow::Result<Value> {
     }
 }
 
-/// What `render` was asked for.
-struct Wanted {
-    fixture: Option<String>,
-    phase: Option<String>,
-    width: u32,
-    scale: u32,
-    out: Option<PathBuf>,
-}
-
-fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
-    let (screen, dir) = read(path)?;
-    let tokens = read_tokens(&dir)?;
-    let kinds = read_kinds(&dir)?;
-    let checked = checked(&screen, &dir, kinds.as_ref())?;
-    if !checked.ok {
-        bail!(
-            "the description has {} finding(s), so a picture of it would mislead: run `underdraw check {}` and fix them first",
-            checked.findings.len(),
-            path.display()
-        );
-    }
-    let (state, name) = pick(&checked, &wanted.fixture, &wanted.phase)?;
-    let breakpoint = Breakpoint::for_width(&tokens, wanted.width);
-    let root = underdraw_format::instantiate(&screen, state, breakpoint).map_err(anyhow::Error::msg)?;
-    let locale = screen.get("locale").and_then(Value::as_str);
-    let mut typesetter = text::Typesetter::new(locale).map_err(anyhow::Error::msg)?;
-    let page = underdraw_layout::layout(&root, &tokens, kinds.as_ref(), wanted.width as f32, &mut typesetter)
-        .map_err(anyhow::Error::msg)?;
-
+fn render(path: &Path, wanted: &Wanted, out: Option<PathBuf>) -> anyhow::Result<Value> {
+    let laid = draw::lay_out(path, wanted)?;
     let gpu = gpu::Gpu::open()?;
-    // A long page is drawn at a lower scale rather than not at all.
-    let tallest = f64::from(gpu.max_side) / f64::from(page.height.max(page.width).max(1.0));
-    let scale = f64::from(wanted.scale).min(tallest);
-    let pixels_wide = (f64::from(page.width) * scale).ceil() as u32;
-    let pixels_high = (f64::from(page.height) * scale).ceil() as u32;
-    let scene = paint::scene(&page, &mut typesetter, scale);
-    let pixels = gpu.render(&scene, pixels_wide, pixels_high)?;
+    let drawing = laid.draw(wanted.scale, gpu.max_side);
+    let [pixels_wide, pixels_high] = drawing.pixels;
+    let pixels = gpu.render(&drawing.scene, pixels_wide, pixels_high)?;
 
-    let out = wanted.out.unwrap_or_else(|| dir.join("renders").join(format!("{name}-{}.png", wanted.width)));
+    let name = drawing.shown.name();
+    let out = out.unwrap_or_else(|| drawing.dir.join("renders").join(format!("{name}-{}.png", wanted.width)));
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("cannot create {}", parent.display()))?;
     }
@@ -388,14 +360,15 @@ fn render(path: &Path, wanted: Wanted) -> anyhow::Result<Value> {
     encoder.set_depth(png::BitDepth::Eight);
     encoder.write_header()?.write_image_data(&pixels)?;
 
+    let page = &drawing.page;
     Ok(json!({
         "png": out,
-        "state": match state { State::Fixture(_) => json!({ "fixture": name }), State::Phase(_) => json!({ "phase": name }) },
-        "breakpoint": breakpoint,
+        "state": match drawing.shown { Shown::Fixture(_) => json!({ "fixture": name }), Shown::Phase(_) => json!({ "phase": name }) },
+        "breakpoint": drawing.breakpoint,
         "width": page.width,
         "height": page.height,
-        "scale": scale,
-        "pixels": [pixels_wide, pixels_high],
+        "scale": drawing.scale,
+        "pixels": drawing.pixels,
         "nodes": page.nodes,
     }))
 }

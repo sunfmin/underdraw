@@ -1,16 +1,19 @@
-//! The GPU: a headless device (Metal on macOS) that vello renders a scene
-//! into, read back as RGBA rows.
+//! The GPU (Metal on macOS) that vello renders a scene on: headless, the
+//! picture read back as RGBA rows, or for a window, the picture presented
+//! in it.
 
 use std::sync::mpsc;
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, bail};
 use vello::wgpu;
+use vello::wgpu::util::TextureBlitter;
 use vello::{AaConfig, RenderParams, Renderer, RendererOptions, Scene};
 
 /// What a device must allow: wgpu's rows are copied out in multiples of this.
 const ROW_ALIGN: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
 pub struct Gpu {
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     /// The adapter's name and backend, as doctor reports them.
@@ -20,12 +23,66 @@ pub struct Gpu {
     pub max_side: u32,
 }
 
+/// A window's surface, set up for the GPU that presents in it.
+pub struct Window<'w> {
+    surface: wgpu::Surface<'w>,
+    config: wgpu::SurfaceConfiguration,
+    /// vello draws only into a storage texture, which a window's surface is
+    /// not: its picture is copied across.
+    blitter: TextureBlitter,
+}
+
+/// The entry to the system's GPUs; a window's display is not needed on any
+/// platform underdraw runs on.
+fn instance() -> wgpu::Instance {
+    wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle())
+}
+
 impl Gpu {
     /// The system's GPU, or why there is none.
     pub fn open() -> anyhow::Result<Gpu> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        Gpu::on(&instance(), None)
+    }
+
+    /// The GPU that can draw in `window`, `width` × `height` pixels, and the
+    /// window's surface set up for it; or why there is none.
+    #[expect(dead_code, reason = "the gallery's window is its first caller")]
+    pub fn open_for_window<'w>(
+        window: impl Into<wgpu::SurfaceTarget<'w>>,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<(Gpu, Window<'w>)> {
+        let instance = instance();
+        let surface = instance.create_surface(window).context("the window gave the GPU no surface")?;
+        let gpu = Gpu::on(&instance, Some(&surface))?;
+        let format = surface
+            .get_capabilities(&gpu.adapter)
+            .formats
+            .into_iter()
+            .find(|f| matches!(f, wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm))
+            .context("the window takes no 8-bit RGBA or BGRA pixels")?;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::AutoVsync,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+            desired_maximum_frame_latency: 2,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
+        };
+        surface.configure(&gpu.device, &config);
+        let blitter = TextureBlitter::new(&gpu.device, format);
+        Ok((gpu, Window { surface, config, blitter }))
+    }
+
+    /// The adapter that can draw on `surface`, when there is one, and a
+    /// device on it.
+    fn on(instance: &wgpu::Instance, surface: Option<&wgpu::Surface<'_>>) -> anyhow::Result<Gpu> {
         let options = wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: surface,
             ..Default::default()
         };
         let adapter = pollster::block_on(instance.request_adapter(&options))
@@ -40,6 +97,7 @@ impl Gpu {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&descriptor)).context("the GPU refused a device")?;
         Ok(Gpu {
+            adapter,
             device,
             queue,
             name: info.name,
@@ -48,19 +106,25 @@ impl Gpu {
         })
     }
 
-    /// `scene` rendered `width` × `height` pixels: RGBA, row after row.
-    pub fn render(&self, scene: &Scene, width: u32, height: u32) -> anyhow::Result<Vec<u8>> {
+    /// `scene` drawn `width` × `height` pixels into a texture of its own,
+    /// which `usage` says what else may be done with.
+    fn draw(
+        &self,
+        scene: &Scene,
+        width: u32,
+        height: u32,
+        usage: wgpu::TextureUsages,
+    ) -> anyhow::Result<wgpu::Texture> {
         let mut renderer = Renderer::new(&self.device, RendererOptions::default())
             .map_err(|e| anyhow!("vello could not start: {e}"))?;
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("picture"),
-            size,
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | usage,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -73,7 +137,49 @@ impl Gpu {
         renderer
             .render_to_texture(&self.device, &self.queue, scene, &view, &params)
             .map_err(|e| anyhow!("vello could not render: {e}"))?;
+        Ok(texture)
+    }
 
+    /// `scene` presented in `window`, filling it: the window's size is the
+    /// one it was opened or last resized at.
+    #[expect(dead_code, reason = "the gallery's window is its first caller")]
+    pub fn present(&self, window: &Window<'_>, scene: &Scene) -> anyhow::Result<()> {
+        let frame = match window.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                frame
+            }
+            // Hidden, or not ready for a frame yet: the next one is drawn when it is.
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
+            other => bail!("the window's surface could not be drawn on: {other:?}"),
+        };
+        let (width, height) = (window.config.width, window.config.height);
+        let picture = self.draw(scene, width, height, wgpu::TextureUsages::TEXTURE_BINDING)?;
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        window.blitter.copy(
+            &self.device,
+            &mut encoder,
+            &picture.create_view(&wgpu::TextureViewDescriptor::default()),
+            &frame.texture.create_view(&wgpu::TextureViewDescriptor::default()),
+        );
+        self.queue.submit([encoder.finish()]);
+        self.queue.present(frame);
+        Ok(())
+    }
+
+    /// `window` set up again at `width` × `height` pixels, as when it is
+    /// resized.
+    #[expect(dead_code, reason = "the gallery's window is its first caller")]
+    pub fn resize(&self, window: &mut Window<'_>, width: u32, height: u32) {
+        window.config.width = width;
+        window.config.height = height;
+        window.surface.configure(&self.device, &window.config);
+    }
+
+    /// `scene` rendered `width` × `height` pixels and read back: RGBA, row
+    /// after row.
+    pub fn render(&self, scene: &Scene, width: u32, height: u32) -> anyhow::Result<Vec<u8>> {
+        let texture = self.draw(scene, width, height, wgpu::TextureUsages::COPY_SRC)?;
+        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let row = width * 4;
         let padded = row.div_ceil(ROW_ALIGN) * ROW_ALIGN;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
