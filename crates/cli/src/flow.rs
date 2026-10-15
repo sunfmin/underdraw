@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::area::{over, rect};
 use crate::links::Link;
 
 /// A box's width, in points.
@@ -61,9 +62,7 @@ pub struct Map {
 impl Map {
     /// The box at `at`, in the map's points, if any.
     pub fn place_at(&self, at: (f64, f64)) -> Option<&Place> {
-        self.places.iter().find(|place| {
-            (place.x..=place.x + WIDE).contains(&at.0) && (place.y..=place.y + TALL).contains(&at.1)
-        })
+        self.places.iter().find(|place| over(rect(place.x, place.y, WIDE, TALL), at))
     }
 }
 
