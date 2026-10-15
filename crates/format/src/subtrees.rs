@@ -90,7 +90,8 @@ pub(crate) fn is_slot(node: &Map<String, Value>) -> bool {
 /// the project's and its own (`components::Components::check` has the
 /// rest): each is named with a capital, holds only params and nodes, its
 /// params fields of types the screen knows (the domain's among them) and
-/// none of them view state, its root without an id of its own.
+/// none of them view state, its root without an id of its own; and the
+/// typed params of those whose body is a look, held to the same types.
 pub(crate) fn check(declared: &[Declared], schema: &Schema, findings: &mut Findings) {
     for Declared { name, body: declared, at, .. } in declared {
         // A look component's typed params are held to the same types.
