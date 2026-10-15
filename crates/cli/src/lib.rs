@@ -112,6 +112,9 @@ enum Command {
         /// The answer: one line saying what was done, or why not
         #[arg(long, value_name = "LINE")]
         reply: Option<String>,
+        /// Block until a note is open, then answer as without it: at once when one is open already
+        #[arg(long)]
+        wait: bool,
         /// Refused: the person writes notes, in the gallery
         #[arg(long, hide = true, alias = "add", num_args = 0..=1, default_missing_value = "")]
         create: Option<String>,
@@ -196,8 +199,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         Command::Notes { create: Some(_), .. }
         | Command::Notes { close: Some(_), .. }
         | Command::Notes { reopen: Some(_), .. } => Err(anyhow::anyhow!(notes::THE_PERSONS)),
-        Command::Notes { path, answer, reply, .. } => {
-            notes::notes(&path, answer.as_deref(), reply.as_deref())
+        Command::Notes { path, answer, reply, wait, .. } => {
+            notes::notes(&path, answer.as_deref(), reply.as_deref(), wait)
         }
         Command::Check { path, lang } => check(&path, lang),
         Command::Render { path, fixture, phase, width, scale, out, root, lang } => {

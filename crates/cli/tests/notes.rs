@@ -119,3 +119,92 @@ fn check_counts_the_notes_and_exits_as_it_would_without_them() {
     assert_eq!(none["notes"], json!({ "open": 0, "answered": 0 }), "no notes.json, no notes");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// `underdraw notes <root> --wait` started in the background.
+fn waiting(root: &Path) -> std::process::Child {
+    Command::new(env!("CARGO_BIN_EXE_underdraw"))
+        .args(["notes", root.to_str().unwrap(), "--wait"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap()
+}
+
+/// Whether `child` is still waiting after `millis`.
+fn still_waiting(child: &mut std::process::Child, millis: u64) -> bool {
+    std::thread::sleep(std::time::Duration::from_millis(millis));
+    child.try_wait().unwrap().is_none()
+}
+
+/// What `child` answered once it exited, within ten seconds.
+fn answered(mut child: std::process::Child) -> (Value, i32) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        assert!(std::time::Instant::now() < deadline, "--wait did not answer within 10s");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let out = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let answer =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("not one JSON object ({e}): {stdout}"));
+    (answer, out.status.code().unwrap())
+}
+
+/// The orders notes.json under `root` with note `id` set to `status`, as
+/// the gallery writes it when the person writes, closes or reopens one.
+fn set(root: &Path, id: &str, status: &str) {
+    let file = root.join("orders/notes.json");
+    let mut notes: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    for note in notes["notes"].as_array_mut().unwrap() {
+        if note["id"] == id {
+            note["status"] = json!(status);
+        }
+    }
+    // Put in place whole, as the gallery does, so --wait never reads half.
+    let written = file.with_extension("json.new");
+    std::fs::write(&written, notes.to_string()).unwrap();
+    std::fs::rename(written, file).unwrap();
+}
+
+#[test]
+fn wait_answers_as_soon_as_a_note_is_open() {
+    let root = root("wait");
+    set(&root, "N1", "answered");
+    set(&root, "N2", "closed");
+    let mut child = waiting(&root);
+    assert!(still_waiting(&mut child, 600), "no note open: it waits");
+    set(&root, "N2", "open");
+    let (answer, code) = answered(child);
+    assert_eq!(code, 0, "{answer}");
+    let ids: Vec<&Value> = answer["notes"].as_array().unwrap().iter().map(|note| &note["id"]).collect();
+    assert_eq!((ids, &answer["open"], &answer["answered"]), (vec![&json!("N2")], &json!(1), &json!(1)));
+
+    let (now, code) = answered(waiting(&root));
+    assert_eq!((code, &now), (0, &answer), "a note open already: it answers at once, as `notes` does");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn wait_killed_and_run_again_loses_no_note() {
+    let root = root("wait-killed");
+    set(&root, "N1", "closed");
+    set(&root, "N2", "closed");
+    let mut child = waiting(&root);
+    assert!(still_waiting(&mut child, 300));
+    child.kill().unwrap();
+    child.wait().unwrap();
+    set(&root, "N1", "open");
+    let (answer, code) = answered(waiting(&root));
+    assert_eq!((code, &answer["notes"][0]["id"]), (0, &json!("N1")), "{answer}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn wait_is_refused_with_answer() {
+    let root = root("wait-answer");
+    let dir = root.join("orders");
+    let (refused, code) =
+        underdraw(&["notes", dir.to_str().unwrap(), "--wait", "--answer", "N1", "--reply", "x"]);
+    assert_eq!(code, 2);
+    assert!(refused["error"].as_str().unwrap().contains("--wait"), "{refused}");
+    std::fs::remove_dir_all(root).unwrap();
+}
