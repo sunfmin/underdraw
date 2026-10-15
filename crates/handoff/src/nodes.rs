@@ -1,4 +1,4 @@
-//! Every node of the description as one platform builds it: how its kind is
+//! Every node of the description as one platform builds it: how its component is
 //! realised there, its test id, and what each of its events does there.
 
 use serde::Serialize;
@@ -9,11 +9,11 @@ use underdraw_format::Finding;
 #[derive(Debug, Serialize)]
 pub struct Spec {
     pub id: String,
-    pub kind: String,
+    pub component: String,
     /// The node it sits in, and under which key (`children`, `item`, …).
     pub parent: Option<String>,
     pub slot: String,
-    /// How the platform realises the kind, from the platform mapping.
+    /// How the platform realises the component, from the platform mapping.
     pub implement: String,
     /// The test id, written as the platform writes it.
     pub test_id: String,
@@ -63,7 +63,7 @@ const SLOTS: [&str; 6] = ["children", "leading", "trailing", "item", "action", "
 /// Keys that decide whether and how often a node is shown.
 const SHOWN: [&str; 4] = ["if", "only", "each", "limit"];
 /// Keys said of the node elsewhere in a spec, or not at all.
-const OTHER: [&str; 8] = ["id", "kind", "ref", "assumed", "platform", "on", "$note", "$why"];
+const OTHER: [&str; 8] = ["id", "component", "ref", "assumed", "platform", "on", "$note", "$why"];
 
 pub struct Walk<'a> {
     pub platform: &'a str,
@@ -94,7 +94,7 @@ impl Walk<'_> {
             }
             return;
         }
-        let Some(kind) = object.get("kind").and_then(Value::as_str) else {
+        let Some(component) = object.get("component").and_then(Value::as_str) else {
             return;
         };
         let id = object.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -126,13 +126,13 @@ impl Walk<'_> {
                 }
             }
         }
-        let implement = self.mapped("kinds", "kind", kind, &id);
+        let implement = self.mapped("components", "component", component, &id);
         let test_id =
             self.mapping.get("testId").and_then(Value::as_str).unwrap_or("{id}").replace("{id}", &id);
         let events = self.events(object.get("on"), &id);
         self.specs.push(Spec {
             id: id.clone(),
-            kind: kind.to_string(),
+            component: component.to_string(),
             parent: parent.map(str::to_string),
             slot: slot.to_string(),
             implement,

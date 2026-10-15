@@ -14,7 +14,7 @@ the platforms it accepts are the files in this folder.
   "elementTree": "XCUITest: app.descendants(matching: .any), frames by identifier",
   "tokenNaming": { "pattern": "Theme.{group}.{name}", "example": "space.4 → Theme.space._4" },
   "breakpoints": "horizontalSizeClass: .compact → compact, .regular → regular",
-  "kinds":   { "Button": "Button; variant primary → .borderedProminent", "…": "…" },
+  "components":   { "Button": "Button; variant primary → .borderedProminent", "…": "…" },
   "actions": { "navigate": "NavigationLink(value:) / path.append", "…": "…" }
 }
 ```
@@ -28,10 +28,10 @@ the platforms it accepts are the files in this folder.
 | `elementTree` | how a test reads the running UI's elements | passed on in `rules` |
 | `tokenNaming.pattern` | a token's name in code: `{group}`, `{name}`, `{kebab-name}` | `tokens` |
 | `breakpoints` | how the platform tells `compact` from `regular` | passed on in `rules` |
-| `kinds` | per kind, what builds it | every node's `implement` |
+| `components` | per component, what builds it | every node's `implement` |
 | `actions` | per action, what does it | every event's `implement` |
 
-A kind or action the description uses with no entry here, and a missing
+A component or action the description uses with no entry here, and a missing
 `language`, `testId` or `tokenNaming.pattern`, is a finding: handoff still
 answers, with `"ok": false` and exit 1.
 
@@ -40,7 +40,7 @@ answers, with `"ok": false` and exit 1.
 A node may say how one platform differs, under `platform`:
 
 ```json
-{ "id": "nav", "kind": "NavBar",
+{ "id": "nav", "component": "NavBar",
   "platform": { "web": { "hidden": true, "$why": "the site header already has these" } } }
 ```
 

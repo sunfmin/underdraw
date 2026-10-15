@@ -88,8 +88,8 @@ its own node tree that reads no data:
 
 ```json
 "phases": {
-  "loading": { "id": "detail-loading", "kind": "Screen", "children": [ … ] },
-  "error":   { "id": "detail-error",   "kind": "Screen", "children": [ … ] }
+  "loading": { "id": "detail-loading", "component": "Screen", "children": [ … ] },
+  "error":   { "id": "detail-error",   "component": "Screen", "children": [ … ] }
 }
 ```
 

@@ -103,14 +103,14 @@
   },
   "root": {
     "id": "export",
-    "kind": "Screen",
+    "component": "Screen",
     "children": [
       {
         "id": "nav",
-        "kind": "NavBar",
+        "component": "NavBar",
         "leading": {
           "id": "nav-back",
-          "kind": "IconButton",
+          "component": "IconButton",
           "icon": "arrow_back",
           "on": {
             "tap": {
@@ -120,26 +120,26 @@
         },
         "children": {
           "id": "nav-title",
-          "kind": "Text",
+          "component": "Text",
           "text": "导出文档",
           "font": "font.heading"
         }
       },
       {
         "id": "body",
-        "kind": "Stack",
+        "component": "Stack",
         "gap": 16,
         "padding": 16,
         "children": [
           {
             "id": "intro",
-            "kind": "Text",
+            "component": "Text",
             "text": "把「{team.name}」的 {team.docCount} 个文档导出为一个 PDF 压缩包。文档多时需要几分钟，可以离开这个页面，导出会继续。",
             "color": "color.textSecondary"
           },
           {
             "id": "export-start",
-            "kind": "Button",
+            "component": "Button",
             "variant": "primary",
             "text": {
               "cases": [
@@ -162,43 +162,43 @@
           },
           {
             "id": "progress",
-            "kind": "Card",
+            "component": "Card",
             "if": "exporting",
             "gap": 8,
             "children": [
               {
                 "id": "progress-label",
-                "kind": "Text",
+                "component": "Text",
                 "text": "正在导出… {job.progress}%"
               },
               {
                 "id": "progress-bar",
-                "kind": "ProgressBar",
+                "component": "ProgressBar",
                 "value": "{job.progress}"
               }
             ]
           },
           {
             "id": "done",
-            "kind": "Card",
+            "component": "Card",
             "if": "exported",
             "gap": 8,
             "children": [
               {
                 "id": "done-title",
-                "kind": "Text",
+                "component": "Text",
                 "text": "导出完成",
                 "font": "font.subhead"
               },
               {
                 "id": "done-detail",
-                "kind": "Text",
+                "component": "Text",
                 "text": "{job.result.files} 个文档 · {job.result.size}",
                 "color": "color.textSecondary"
               },
               {
                 "id": "done-download",
-                "kind": "Button",
+                "component": "Button",
                 "variant": "secondary",
                 "text": "下载压缩包",
                 "on": {
@@ -211,26 +211,26 @@
           },
           {
             "id": "failed",
-            "kind": "Card",
+            "component": "Card",
             "if": "exportFailed",
             "gap": 8,
             "children": [
               {
                 "id": "failed-title",
-                "kind": "Text",
+                "component": "Text",
                 "text": "导出失败",
                 "font": "font.subhead",
                 "color": "color.danger"
               },
               {
                 "id": "failed-detail",
-                "kind": "Text",
+                "component": "Text",
                 "text": "停在 {job.progress}%。文档总量可能超过 2 GB，或者网络断开了。",
                 "color": "color.textSecondary"
               },
               {
                 "id": "failed-retry",
-                "kind": "Button",
+                "component": "Button",
                 "variant": "secondary",
                 "text": "重新导出",
                 "on": {
@@ -248,11 +248,11 @@
   "phases": {
     "loading": {
       "id": "loading",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "id": "loading-sk",
-          "kind": "Skeleton",
+          "component": "Skeleton",
           "shape": [
             "line 30%",
             "line 90%",
@@ -263,17 +263,17 @@
     },
     "error": {
       "id": "error",
-      "kind": "Screen",
+      "component": "Screen",
       "children": [
         {
           "id": "err",
-          "kind": "EmptyState",
+          "component": "EmptyState",
           "icon": "cloud_off",
           "title": "团队信息加载失败",
           "detail": "检查网络后重试",
           "action": {
             "id": "retry",
-            "kind": "Button",
+            "component": "Button",
             "text": "重试",
             "on": {
               "tap": {

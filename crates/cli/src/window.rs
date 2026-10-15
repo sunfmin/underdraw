@@ -952,7 +952,7 @@ impl Gallery {
 
     /// What the panel says, one line each: what the last act on a node
     /// came to, and any outcomes to choose from, each on a line of its own;
-    /// then, of the node picked, its id, kind, the operation it calls, what
+    /// then, of the node picked, its id, component, the operation it calls, what
     /// was assumed there, then its label and box at each width. Nothing
     /// when no node is picked and nothing was acted on.
     fn panel(&self) -> Vec<String> {
@@ -983,7 +983,7 @@ impl Gallery {
         };
         let mut lines = vec![
             format!("id  {id}"),
-            format!("kind  {}", node.kind),
+            format!("component  {}", node.component),
             format!("calls  {calls}"),
             format!("assumed  {}", node.assumed.as_deref().unwrap_or("nothing")),
         ];
@@ -1729,7 +1729,7 @@ mod tests {
             panel[..5],
             [
                 "id  nav-save",
-                "kind  IconButton",
+                "component  IconButton",
                 "calls  toggleSaved",
                 "assumed  nothing",
                 "at 390  label 3 · box 334, 8 · 40 × 40",

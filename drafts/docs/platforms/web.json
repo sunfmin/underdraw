@@ -6,7 +6,7 @@
   "elementTree": "Playwright: every element with a data-testid, framed by getBoundingClientRect plus scrollX/scrollY",
   "tokenNaming": { "pattern": "var(--{group}-{kebab-name})", "example": "color.textSecondary → var(--color-text-secondary)" },
   "breakpoints": "CSS media query: compact = max-width 743px",
-  "kinds": {
+  "components": {
     "Screen": "<main>",
     "NavBar": "<header> with the title and its trailing button",
     "Text": "<p>/<span>; role heading → <h1>",

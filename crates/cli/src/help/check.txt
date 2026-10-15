@@ -7,8 +7,8 @@ WHO
 
 READS
   <path>/screen.json, or <path> when it is a file, and kinds.json beside it
-  when there is one: every node's kind must be defined there or by
-  underdraw, and its looks are checked too (KINDS.JSON below). Once the
+  when there is one: every node's component must be defined there or
+  by underdraw, and its looks are checked too (LOOKS below). Once the
   description has no other fault, tokens.json too: every fixture and phase
   is laid out at widths 390 and 1120, in the system's fonts as `render`
   does, and an overlay that runs off the page is a finding. Writes nothing.
@@ -96,7 +96,7 @@ WHAT TRIPS YOU UP
     filled "from": "<query>.next" — under a condition that tests it != null.
     Do not write cursor or limit in its params: paging adds them.
   - A "call" to a "destructive" operation is made only inside its
-    confirmation: an overlay whose kind has a backdrop and that a node
+    confirmation: an overlay whose component has a backdrop and that a node
     opens with {"open": "<its id>"}. The menu item or button a person first
     acts on opens it instead (OPERATIONS below).
   - A "call" to a bulk form (an operation's "bulk": its name) gives its

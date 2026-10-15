@@ -47,9 +47,9 @@ fn a_phone_is_one_column_with_the_bar_at_the_end() {
 
 /// Carousel items run past the edge on purpose; they are cut there.
 fn inside_carousel(page: &Page, node: &Placed) -> bool {
-    page.nodes
-        .iter()
-        .any(|c| c.kind == "Carousel" && c.rect.y <= node.rect.y && node.rect.y < c.rect.y + c.rect.height)
+    page.nodes.iter().any(|c| {
+        c.component == "Carousel" && c.rect.y <= node.rect.y && node.rect.y < c.rect.y + c.rect.height
+    })
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn the_loading_phase_lays_out_its_skeleton() {
 }
 
 #[test]
-fn every_kind_in_the_draft_is_in_the_catalog() {
+fn every_component_in_the_draft_is_in_the_catalog() {
     let page = page(State::Fixture("default"), 1120.0);
     let unknown: Vec<_> = page
         .draws
@@ -107,7 +107,7 @@ fn every_kind_in_the_draft_is_in_the_catalog() {
             _ => None,
         })
         .collect();
-    assert!(unknown.is_empty(), "kinds drawn as unknown at {unknown:?}");
+    assert!(unknown.is_empty(), "components drawn as unknown at {unknown:?}");
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn tiny(children: Value) -> Page {
 fn tiny_with(children: Value, kinds: Option<&Value>) -> Page {
     let screen = serde_json::json!({
         "screen": "Tiny", "data": {}, "types": {}, "fixtures": { "default": {} }, "conditions": {},
-        "root": { "id": "tiny", "kind": "Screen", "children": children }
+        "root": { "id": "tiny", "component": "Screen", "children": children }
     });
     let tokens = read("tokens.json");
     let root = instantiate(&screen, State::Fixture("default"), Breakpoint::for_width(&tokens, 390)).unwrap();
@@ -154,8 +154,8 @@ fn texts(page: &Page) -> Vec<&str> {
 #[test]
 fn a_filled_icon_reads_apart_from_its_outline() {
     let page = tiny(serde_json::json!([
-        { "id": "open", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
-        { "id": "done", "kind": "ListItem", "leadingIcon": "check_circle.fill", "title": "b" }
+        { "id": "open", "component": "ListItem", "leadingIcon": "circle", "title": "a" },
+        { "id": "done", "component": "ListItem", "leadingIcon": "check_circle.fill", "title": "b" }
     ]));
     let texts = texts(&page);
     // Material Symbols' circle (U+EF4A) outlined, and its check_circle
@@ -166,8 +166,8 @@ fn a_filled_icon_reads_apart_from_its_outline() {
 #[test]
 fn an_icon_is_as_big_as_its_square() {
     let page = tiny(serde_json::json!([
-        { "id": "row", "kind": "ListItem", "leadingIcon": "circle", "title": "a" },
-        { "id": "big", "kind": "Glyph", "icon": "flight", "size": 48 }
+        { "id": "row", "component": "ListItem", "leadingIcon": "circle", "title": "a" },
+        { "id": "big", "component": "Glyph", "icon": "flight", "size": 48 }
     ]));
     let size = |glyph: &str| {
         page.draws.iter().find_map(|d| match d {
@@ -183,16 +183,16 @@ fn an_icon_is_as_big_as_its_square() {
 #[test]
 fn a_nodes_padding_takes_sides_as_a_looks_does() {
     let page = tiny(serde_json::json!([
-        { "id": "body", "kind": "Stack", "padding": [0, "space.4"], "children": [
-            { "id": "line", "kind": "Text", "text": "a" } ] }
+        { "id": "body", "component": "Stack", "padding": [0, "space.4"], "children": [
+            { "id": "line", "component": "Text", "text": "a" } ] }
     ]));
     let (body, line) = (placed(&page, "body").rect, placed(&page, "line").rect);
     assert_eq!((line.x, line.width, line.y), (16.0, 390.0 - 32.0, body.y), "16 either side, none above");
 }
 
 #[test]
-fn a_kind_not_in_the_catalog_is_drawn_as_a_guess() {
-    let page = tiny(serde_json::json!([{ "id": "input", "kind": "TextField" }]));
+fn a_component_not_in_the_catalog_is_drawn_as_a_guess() {
+    let page = tiny(serde_json::json!([{ "id": "input", "component": "TextField" }]));
     let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();
     assert!(assumed.contains("TextField"), "{assumed:?}");
     let marked = page
@@ -203,16 +203,16 @@ fn a_kind_not_in_the_catalog_is_drawn_as_a_guess() {
 }
 
 #[test]
-fn a_projects_kind_is_drawn_from_its_look() {
-    let kinds = serde_json::json!({ "kinds": { "TextField": { "look": {
+fn a_projects_component_is_drawn_from_its_look() {
+    let kinds = serde_json::json!({ "components": { "TextField": { "look": {
         "box": "row", "grow": 1, "padding": [10, 12], "stroke": "line",
         "children": [ { "text": "{placeholder}", "ink": "muted" } ] } } } });
-    let row = serde_json::json!([{ "id": "composer", "kind": "Row", "gap": 12, "children": [
-        { "id": "input", "kind": "TextField", "placeholder": "添加一项待办" },
-        { "id": "add", "kind": "Button", "text": "添加" } ] }]);
+    let row = serde_json::json!([{ "id": "composer", "component": "Row", "gap": 12, "children": [
+        { "id": "input", "component": "TextField", "placeholder": "添加一项待办" },
+        { "id": "add", "component": "Button", "text": "添加" } ] }]);
     let page = tiny_with(row, Some(&kinds));
     let (input, add) = (placed(&page, "input"), placed(&page, "add"));
-    assert_eq!(input.assumed, None, "a defined kind is no guess");
+    assert_eq!(input.assumed, None, "a defined component is no guess");
     assert_eq!(input.rect.x + input.rect.width + 12.0, add.rect.x, "the field fills up to the button");
     assert_eq!(add.rect.x + add.rect.width, 390.0, "the button ends the row");
     assert!(texts(&page).contains(&"添加一项待办"), "{:?}", texts(&page));
@@ -221,10 +221,10 @@ fn a_projects_kind_is_drawn_from_its_look() {
 #[test]
 fn a_grid_track_is_a_share_a_part_or_points() {
     let page = tiny(serde_json::json!([
-        { "id": "grid", "kind": "Grid", "gap": 0, "columns": ["1fr", 48, "50%"], "children": [
-            { "id": "share", "kind": "Text", "text": "a" },
-            { "id": "points", "kind": "Text", "text": "b" },
-            { "id": "part", "kind": "Text", "text": "c" } ] }
+        { "id": "grid", "component": "Grid", "gap": 0, "columns": ["1fr", 48, "50%"], "children": [
+            { "id": "share", "component": "Text", "text": "a" },
+            { "id": "points", "component": "Text", "text": "b" },
+            { "id": "part", "component": "Text", "text": "c" } ] }
     ]));
     let width = |id| placed(&page, id).rect.width;
     assert_eq!((width("share"), width("points"), width("part")), (390.0 - 48.0 - 195.0, 48.0, 195.0));
@@ -233,11 +233,11 @@ fn a_grid_track_is_a_share_a_part_or_points() {
 #[test]
 fn an_overlay_anchored_at_the_center_sits_in_the_middle() {
     let page = tiny(serde_json::json!([
-        { "id": "body", "kind": "Stack", "children": [
-            { "id": "a", "kind": "Text", "text": "a" }, { "id": "b", "kind": "Text", "text": "b" },
-            { "id": "c", "kind": "Text", "text": "c" }, { "id": "d", "kind": "Text", "text": "d" } ],
-          "overlay": { "id": "dialog", "kind": "Card", "anchor": "center", "children": [
-            { "id": "dialog-text", "kind": "Text", "text": "?" } ] } }
+        { "id": "body", "component": "Stack", "children": [
+            { "id": "a", "component": "Text", "text": "a" }, { "id": "b", "component": "Text", "text": "b" },
+            { "id": "c", "component": "Text", "text": "c" }, { "id": "d", "component": "Text", "text": "d" } ],
+          "overlay": { "id": "dialog", "component": "Card", "anchor": "center", "children": [
+            { "id": "dialog-text", "component": "Text", "text": "?" } ] } }
     ]));
     let (body, dialog) = (placed(&page, "body").rect, placed(&page, "dialog").rect);
     assert_eq!(dialog.x - body.x, body.x + body.width - (dialog.x + dialog.width), "as far from either side");
@@ -250,15 +250,15 @@ fn an_overlay_anchored_at_the_center_sits_in_the_middle() {
 
 #[test]
 fn a_dialog_hides_the_tags_of_what_it_covers() {
-    let kinds = serde_json::json!({ "kinds": { "Dialog": { "look": {
+    let kinds = serde_json::json!({ "components": { "Dialog": { "look": {
         "box": "column", "width": "80%", "padding": 16, "fill": "paper", "stroke": "line",
         "children": ["$children"] } } } });
-    let button = |id: &str| serde_json::json!({ "id": id, "kind": "Button", "text": id, "on": { "tap": { "go": id } } });
+    let button = |id: &str| serde_json::json!({ "id": id, "component": "Button", "text": id, "on": { "tap": { "go": id } } });
     let buttons: Vec<Value> = ["a", "b", "c", "d", "e"].map(button).into();
     let page = tiny_with(
-        serde_json::json!([{ "id": "body", "kind": "Stack", "gap": 8,
+        serde_json::json!([{ "id": "body", "component": "Stack", "gap": 8,
             "children": buttons,
-            "overlay": { "id": "dialog", "kind": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
+            "overlay": { "id": "dialog", "component": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
         Some(&kinds),
     );
     let dialog = placed(&page, "dialog").rect;
@@ -284,14 +284,14 @@ fn a_dialog_hides_the_tags_of_what_it_covers() {
 
 #[test]
 fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
-    let kinds = serde_json::json!({ "kinds": { "Dialog": { "look": {
+    let kinds = serde_json::json!({ "components": { "Dialog": { "look": {
         "box": "column", "backdrop": true, "width": "80%", "padding": 16, "fill": "paper",
         "children": ["$children"] } } } });
-    let button = |id: &str| serde_json::json!({ "id": id, "kind": "Button", "text": id, "on": { "tap": { "go": id } } });
+    let button = |id: &str| serde_json::json!({ "id": id, "component": "Button", "text": id, "on": { "tap": { "go": id } } });
     let buttons: Vec<Value> = ["a", "b", "c", "d", "e"].map(button).into();
     let page = tiny_with(
-        serde_json::json!([{ "id": "body", "kind": "Stack", "gap": 8, "children": buttons,
-            "overlay": { "id": "dialog", "kind": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
+        serde_json::json!([{ "id": "body", "component": "Stack", "gap": 8, "children": buttons,
+            "overlay": { "id": "dialog", "component": "Dialog", "anchor": "center", "children": [button("ok")] } }]),
         Some(&kinds),
     );
     let body = placed(&page, "body").rect;
@@ -311,15 +311,15 @@ fn a_backdrop_dims_what_the_dialog_floats_over_and_hides_its_tags() {
 
 #[test]
 fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
-    let kinds = serde_json::json!({ "kinds": { "Dialog": { "look": {
+    let kinds = serde_json::json!({ "components": { "Dialog": { "look": {
         "box": "column", "backdrop": true, "width": "80%", "padding": 16, "fill": "paper",
         "children": ["$children"] } } } });
     let page = tiny_with(
-        serde_json::json!([{ "id": "body", "kind": "Stack", "children": [
-            { "id": "behind", "kind": "Text", "text": "behind", "assumed": "a guess behind" },
-            { "id": "filler", "kind": "Text", "text": "filler" } ],
-          "overlay": { "id": "dialog", "kind": "Dialog", "anchor": "center", "children": [
-            { "id": "inside", "kind": "Text", "text": "inside", "assumed": "a guess on the dialog" } ] } }]),
+        serde_json::json!([{ "id": "body", "component": "Stack", "children": [
+            { "id": "behind", "component": "Text", "text": "behind", "assumed": "a guess behind" },
+            { "id": "filler", "component": "Text", "text": "filler" } ],
+          "overlay": { "id": "dialog", "component": "Dialog", "anchor": "center", "children": [
+            { "id": "inside", "component": "Text", "text": "inside", "assumed": "a guess on the dialog" } ] } }]),
         Some(&kinds),
     );
     let marks: Vec<_> = page
@@ -349,11 +349,11 @@ fn a_backdrop_hides_the_marks_of_guesses_behind_it() {
 #[test]
 fn an_overlay_anchored_at_the_bottom_spans_it_edge_to_edge() {
     let page = tiny(serde_json::json!([
-        { "id": "body", "kind": "Stack", "padding": [0, 16], "children": [
-            { "id": "a", "kind": "Text", "text": "a" }, { "id": "b", "kind": "Text", "text": "b" },
-            { "id": "c", "kind": "Text", "text": "c" } ],
-          "overlay": { "id": "sheet", "kind": "Card", "anchor": "bottom", "children": [
-            { "id": "sheet-text", "kind": "Text", "text": "?" } ] } }
+        { "id": "body", "component": "Stack", "padding": [0, 16], "children": [
+            { "id": "a", "component": "Text", "text": "a" }, { "id": "b", "component": "Text", "text": "b" },
+            { "id": "c", "component": "Text", "text": "c" } ],
+          "overlay": { "id": "sheet", "component": "Card", "anchor": "bottom", "children": [
+            { "id": "sheet-text", "component": "Text", "text": "?" } ] } }
     ]));
     let (body, sheet) = (placed(&page, "body").rect, placed(&page, "sheet").rect);
     assert_eq!((sheet.x, sheet.width), (body.x, body.width), "as wide as the node, padding and all");
@@ -364,12 +364,12 @@ fn an_overlay_anchored_at_the_bottom_spans_it_edge_to_edge() {
 fn an_overlay_taller_than_its_node_is_named_as_cut() {
     let overlay = |lines: usize| {
         let texts: Vec<Value> = (0..lines)
-            .map(|n| serde_json::json!({ "id": format!("t{n}"), "kind": "Text", "text": "line" }))
+            .map(|n| serde_json::json!({ "id": format!("t{n}"), "component": "Text", "text": "line" }))
             .collect();
-        tiny(serde_json::json!([{ "id": "body", "kind": "Stack", "children": [
-            { "id": "a", "kind": "Text", "text": "a" }, { "id": "b", "kind": "Text", "text": "b" },
-            { "id": "c", "kind": "Text", "text": "c" } ],
-          "overlay": { "id": "sheet", "kind": "Stack", "anchor": "bottom", "children": texts } }]))
+        tiny(serde_json::json!([{ "id": "body", "component": "Stack", "children": [
+            { "id": "a", "component": "Text", "text": "a" }, { "id": "b", "component": "Text", "text": "b" },
+            { "id": "c", "component": "Text", "text": "c" } ],
+          "overlay": { "id": "sheet", "component": "Stack", "anchor": "bottom", "children": texts } }]))
     };
     assert_eq!(overlay(1).cut, Vec::<String>::new(), "a short sheet fits");
     assert_eq!(overlay(12).cut, ["sheet"], "a tall one runs off the top");
@@ -377,21 +377,21 @@ fn an_overlay_taller_than_its_node_is_named_as_cut() {
 
 #[test]
 fn an_overlay_is_drawn_over_what_comes_after_its_node() {
-    let kinds = serde_json::json!({ "kinds": { "Menu": { "look": {
+    let kinds = serde_json::json!({ "components": { "Menu": { "look": {
         "box": "column", "width": 200, "padding": 8, "fill": "paper", "stroke": "line",
         "children": ["$children"] } } } });
     let row = |id: &str, menu: bool| {
-        let mut row = serde_json::json!({ "id": id, "kind": "Row", "padding": 8, "on": { "tap": { "go": id } },
-            "children": [{ "id": format!("{id}-text"), "kind": "Text", "text": id }] });
+        let mut row = serde_json::json!({ "id": id, "component": "Row", "padding": 8, "on": { "tap": { "go": id } },
+            "children": [{ "id": format!("{id}-text"), "component": "Text", "text": id }] });
         if menu {
-            row["overlay"] = serde_json::json!({ "id": "menu", "kind": "Menu", "anchor": "top-trailing", "children": [
-                { "id": "m1", "kind": "Text", "text": "one" }, { "id": "m2", "kind": "Text", "text": "two" },
-                { "id": "m3", "kind": "Text", "text": "three" }, { "id": "m4", "kind": "Text", "text": "four" } ] });
+            row["overlay"] = serde_json::json!({ "id": "menu", "component": "Menu", "anchor": "top-trailing", "children": [
+                { "id": "m1", "component": "Text", "text": "one" }, { "id": "m2", "component": "Text", "text": "two" },
+                { "id": "m3", "component": "Text", "text": "three" }, { "id": "m4", "component": "Text", "text": "four" } ] });
         }
         row
     };
     let page = tiny_with(
-        serde_json::json!([{ "id": "list", "kind": "Stack", "children": [row("a", true), row("b", false), row("c", false)] }]),
+        serde_json::json!([{ "id": "list", "component": "Stack", "children": [row("a", true), row("b", false), row("c", false)] }]),
         Some(&kinds),
     );
     let menu = placed(&page, "menu").rect;

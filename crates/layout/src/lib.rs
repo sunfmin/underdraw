@@ -99,7 +99,7 @@ pub enum Draw {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Placed {
     pub id: String,
-    pub kind: String,
+    pub component: String,
     #[serde(rename = "box")]
     pub rect: Rect,
     /// The number tagged on it in the picture, when a person can act on it.
@@ -128,8 +128,8 @@ pub trait Measure {
 
 /// `root` laid out `width` points wide, its height whatever its content
 /// takes, with `tokens` (tokens.json) for spaces, radii and fonts, and each
-/// kind drawn as `kinds` (the project's kinds.json, over underdraw's own)
-/// says; a node of a kind none of them defines is drawn as a box with its
+/// component drawn as `kinds` (the project's kinds.json, over underdraw's own)
+/// says; a node of a component none of them defines is drawn as a box with its
 /// name, and assumed, said in `lang`.
 pub fn layout(
     root: &Node,

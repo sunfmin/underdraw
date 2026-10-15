@@ -1,5 +1,5 @@
 {
-  "kinds": {
+  "components": {
     "SearchField": {
       "doc": "One part of the search on a desktop: a small label over what was searched; it shares the row with the others.",
       "look": {

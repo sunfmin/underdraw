@@ -97,8 +97,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "unguarded-null",
-            r#""kind": "Link", "if": "hasDates", "font": "font.caption""#,
-            r#""kind": "Link", "font": "font.caption""#,
+            r#""component": "Link", "if": "hasDates", "font": "font.caption""#,
+            r#""component": "Link", "font": "font.caption""#,
             "bar-dates.text",
             "may be null",
         ),
@@ -146,11 +146,18 @@ fn each_planted_fault_is_found_where_it_was_planted() {
             "put the template for one element in \"item\"",
         ),
         (
-            "kind-not-defined",
+            "kind-for-component",
+            r#""component": "Badge", "if": "listing.isGuestFavorite""#,
             r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
-            r#""kind": "Bagde", "if": "listing.isGuestFavorite""#,
+            "guest-favorite.kind",
+            "write \"component\" in place of \"kind\"",
+        ),
+        (
+            "component-not-defined",
+            r#""component": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""component": "Bagde", "if": "listing.isGuestFavorite""#,
             "guest-favorite",
-            "kind Bagde is not defined",
+            "component Bagde is not defined",
         ),
         (
             "limit-not-a-count",
@@ -189,15 +196,15 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "anchor-not-a-place",
-            r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
-            r#""kind": "Badge", "anchor": "middle", "if": "listing.isGuestFavorite""#,
+            r#""component": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""component": "Badge", "anchor": "middle", "if": "listing.isGuestFavorite""#,
             "guest-favorite.anchor",
             "middle is not an anchor",
         ),
         (
             "anchor-per-breakpoint",
-            r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
-            r#""kind": "Badge", "anchor": { "compact": "bottom", "regular": "middle" }, "if": "listing.isGuestFavorite""#,
+            r#""component": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""component": "Badge", "anchor": { "compact": "bottom", "regular": "middle" }, "if": "listing.isGuestFavorite""#,
             "guest-favorite.anchor.regular",
             "middle is not an anchor",
         ),
@@ -210,8 +217,8 @@ fn each_planted_fault_is_found_where_it_was_planted() {
         ),
         (
             "only-not-a-breakpoint",
-            r#""kind": "Badge", "if": "listing.isGuestFavorite""#,
-            r#""kind": "Badge", "only": "compcat", "if": "listing.isGuestFavorite""#,
+            r#""component": "Badge", "if": "listing.isGuestFavorite""#,
+            r#""component": "Badge", "only": "compcat", "if": "listing.isGuestFavorite""#,
             "guest-favorite.only",
             "compcat\" is not a breakpoint",
         ),
@@ -228,7 +235,7 @@ fn each_planted_fault_is_found_where_it_was_planted() {
 }
 
 #[test]
-fn underdraws_own_kinds_pass_as_a_projects() {
+fn underdraws_own_components_pass_as_a_projects() {
     let defaults: Value =
         serde_json::from_str(include_str!("../../format/kinds.json")).expect("the defaults are JSON");
     let checked = check(&draft(), Some(&defaults));
@@ -236,14 +243,14 @@ fn underdraws_own_kinds_pass_as_a_projects() {
 }
 
 #[test]
-fn each_fault_in_a_projects_kinds_is_found() {
-    let kinds = json!({ "kinds": {
+fn each_fault_in_a_projects_components_is_found() {
+    let kinds = json!({ "components": {
         "NoLook": { "doc": "forgot its look" },
         "Wrong": { "assumed": "looks like a Badge for now", "look": { "box": "row", "colour": "line", "children": [
             { "text": "{title|upper}" },
-            { "kind": "Nowhere" },
+            { "component": "Nowhere" },
             { "cases": [ { "if": "title", "then": "$kids" } ] },
-            { "kind": "Glyph", "icon": "chevron.right" },
+            { "component": "Glyph", "icon": "chevron.right" },
             { "box": "grid", "columns": ["2fr", "{width}", 48, "48"], "rows": ["1.5fr", "wide"] },
             { "box": "column", "backdrop": true },
             { "box": "column", "backdrop": true, "pin": { "x": "center", "y": "center" } },
@@ -253,23 +260,23 @@ fn each_fault_in_a_projects_kinds_is_found() {
     }, "icons": { "checklist": "☑" } });
     let checked = check(&draft(), Some(&kinds));
     let expected = [
-        ("kinds.NoLook", "needs \"look\""),
-        ("kinds.Wrong.look", "colour is not a key"),
-        ("kinds.Wrong.look.children[0].text", "upper is not a filter"),
-        ("kinds.Wrong.look.children[1]", "kind Nowhere is not defined"),
-        ("kinds.Wrong.look.children[2].cases", "must be {\"else\""),
-        ("kinds.Wrong.look.children[2].cases[0].then", "$kids is not a look"),
-        ("kinds.Wrong.look.children[3].icon", "chevron.right is not a Material Symbols icon"),
-        ("kinds.Wrong.look.children[4].columns[3]", "\"48\" is not a grid track"),
-        ("kinds.Wrong.look.children[4].rows[1]", "\"wide\" is not a grid track"),
-        ("kinds.Wrong.look.children[5]", "backdrop is drawn only by a box that floats"),
-        ("kinds.Wrong.assumed", "underdraw draws no guesses"),
-        ("kinds.Wrong.pinned", "pinned is true or false"),
-        ("kinds.Wrong.look.children[7].box", "\"stack\" is not a box: write row, column, grid"),
-        ("kinds.Wrong.look.children[7].justify.cases[1].else", "\"left\" is not a justify"),
-        ("kinds.Wrong.look.children[8].underline", "underline is true or false"),
-        ("kinds.Wrong.look.children[8].pin.x", "\"right\" is not an edge: write start, center, end"),
-        ("kinds.Wrong.look.children[8].pin.z", "a pin holds x, y and inset"),
+        ("components.NoLook", "needs \"look\""),
+        ("components.Wrong.look", "colour is not a key"),
+        ("components.Wrong.look.children[0].text", "upper is not a filter"),
+        ("components.Wrong.look.children[1]", "component Nowhere is not defined"),
+        ("components.Wrong.look.children[2].cases", "must be {\"else\""),
+        ("components.Wrong.look.children[2].cases[0].then", "$kids is not a look"),
+        ("components.Wrong.look.children[3].icon", "chevron.right is not a Material Symbols icon"),
+        ("components.Wrong.look.children[4].columns[3]", "\"48\" is not a grid track"),
+        ("components.Wrong.look.children[4].rows[1]", "\"wide\" is not a grid track"),
+        ("components.Wrong.look.children[5]", "backdrop is drawn only by a box that floats"),
+        ("components.Wrong.assumed", "underdraw draws no guesses"),
+        ("components.Wrong.pinned", "pinned is true or false"),
+        ("components.Wrong.look.children[7].box", "\"stack\" is not a box: write row, column, grid"),
+        ("components.Wrong.look.children[7].justify.cases[1].else", "\"left\" is not a justify"),
+        ("components.Wrong.look.children[8].underline", "underline is true or false"),
+        ("components.Wrong.look.children[8].pin.x", "\"right\" is not an edge: write start, center, end"),
+        ("components.Wrong.look.children[8].pin.z", "a pin holds x, y and inset"),
         ("icons", "icons are Material Symbols"),
     ];
     for (at, said) in expected {
@@ -279,32 +286,32 @@ fn each_fault_in_a_projects_kinds_is_found() {
             checked.findings
         );
     }
-    let pinned = checked.findings.iter().any(|f| f.at == "kinds.Wrong.look.children[6]");
+    let pinned = checked.findings.iter().any(|f| f.at == "components.Wrong.look.children[6]");
     assert!(!pinned, "a pinned box may have a backdrop: {:#?}", checked.findings);
     let decided_later =
-        ["kinds.Wrong.look.children[7].justify.cases[0].then", "kinds.Wrong.look.children[8].pin.y"];
+        ["components.Wrong.look.children[7].justify.cases[0].then", "components.Wrong.look.children[8].pin.y"];
     for at in decided_later {
         assert!(!checked.findings.iter().any(|f| f.at == at), "{at} passes: {:#?}", checked.findings);
     }
 }
 
 #[test]
-fn a_kind_with_a_backdrop_must_be_an_overlay() {
-    let kinds = json!({ "kinds": { "Badge": { "look": {
+fn a_component_with_a_backdrop_must_be_an_overlay() {
+    let kinds = json!({ "components": { "Badge": { "look": {
         "box": "row", "backdrop": true, "children": [ { "text": "{text}" } ] } } } });
     let checked = check(&draft(), Some(&kinds));
     assert!(found(&checked, "guest-favorite", "put it in \"overlay\""), "{:#?}", checked.findings);
 }
 
 #[test]
-fn a_kind_says_whether_it_scrolls_or_is_pinned() {
+fn a_component_says_whether_it_scrolls_or_is_pinned() {
     let defaults = Kinds::read(None);
     assert!(defaults.scrolls("Carousel") && defaults.pinned("StickyBar"));
     assert!(!defaults.scrolls("Row") && !defaults.pinned("Row"));
-    let project = json!({ "kinds": {
+    let project = json!({ "components": {
         "Feed": { "scrolls": true, "look": "$children" },
         "StickyBar": { "look": "$children" } } });
     let kinds = Kinds::read(Some(&project));
-    assert!(kinds.scrolls("Feed"), "a project's own kind scrolls when it says so");
-    assert!(!kinds.pinned("StickyBar"), "a project's kind replaces the default whole");
+    assert!(kinds.scrolls("Feed"), "a project's own component scrolls when it says so");
+    assert!(!kinds.pinned("StickyBar"), "a project's component replaces the default whole");
 }

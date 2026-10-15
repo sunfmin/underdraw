@@ -25,7 +25,7 @@ pub struct Handoff {
     pub screen: String,
     pub platform: String,
     pub language: String,
-    /// True when the platform mapping covers every kind and action used.
+    /// True when the platform mapping covers every component and action used.
     pub ok: bool,
     pub findings: Vec<Finding>,
     /// The platform's conventions, as its mapping states them.
@@ -151,7 +151,7 @@ pub fn handoff(
             Language::TypeScript
         }
     };
-    for key in ["platform", "testId", "kinds", "actions"] {
+    for key in ["platform", "testId", "components", "actions"] {
         if mapping.get(key).is_none() {
             findings.push(Finding {
                 at: key.to_string(),

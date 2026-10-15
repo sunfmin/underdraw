@@ -1,6 +1,6 @@
 //! What an assumption must say for the person to answer it: what was
 //! guessed, and what else it could be. The agent writes its own `assumed`;
-//! the ones underdraw makes itself (a screen not drawn yet, a kind it does
+//! the ones underdraw makes itself (a screen not drawn yet, a component it does
 //! not know) are written here, as whole sentences in the language asked for.
 
 /// The language underdraw words its own assumptions in, as the commands
@@ -82,15 +82,15 @@ pub fn undrawn(screens: &[String], lang: Lang) -> String {
     }
 }
 
-/// The assumption on a node of `kind`, which no kinds.json and none of
-/// underdraw's own kinds define.
-pub fn unknown_kind(kind: &str, lang: Lang) -> String {
+/// The assumption on a node of `component`, which no kinds.json and none of
+/// underdraw's own components define.
+pub fn unknown_component(component: &str, lang: Lang) -> String {
     match lang {
         Lang::En => format!(
-            "{kind} is not a kind underdraw knows, so it is drawn as a box with its name, guessed to be a kind of this project whose look is not written yet; it could instead be a misspelt name of a kind underdraw has: define its look in kinds.json, or correct the name."
+            "{component} is not a component underdraw knows, so it is drawn as a box with its name, guessed to be a component of this project whose look is not written yet; it could instead be a misspelt name of a component underdraw has: define its look in kinds.json, or correct the name."
         ),
         Lang::Zh => format!(
-            "{kind} 不是 underdraw 认识的种类，所以画成一个写着名字的框，猜测它是这个项目里还没写外观的种类；也可能是 underdraw 已有种类的名字写错了：在 kinds.json 里写出它的外观，或者改正名字。"
+            "{component} 不是 underdraw 认识的组件，所以画成一个写着名字的框，猜测它是这个项目里还没写外观的组件；也可能是 underdraw 已有组件的名字写错了：在 kinds.json 里写出它的外观，或者改正名字。"
         ),
     }
 }
@@ -119,17 +119,17 @@ mod tests {
     #[test]
     fn what_underdraw_assumes_itself_is_long_enough_in_every_language() {
         for lang in Lang::NAMES.map(|name| Lang::parse(name).unwrap()) {
-            for said in [undrawn(&["OrderDetail".to_string()], lang), unknown_kind("Gauge", lang)] {
+            for said in [undrawn(&["OrderDetail".to_string()], lang), unknown_component("Gauge", lang)] {
                 assert_eq!(too_short(&said), None, "{said}");
             }
         }
     }
 
     #[test]
-    fn names_the_screen_or_kind() {
+    fn names_the_screen_or_component() {
         let two = ["OrderDetail".to_string(), "Export".to_string()];
         assert!(undrawn(&two, Lang::En).contains("OrderDetail, Export are screens not drawn yet"));
         assert!(undrawn(&two, Lang::Zh).contains("OrderDetail、Export"));
-        assert!(unknown_kind("Gauge", Lang::Zh).starts_with("Gauge 不是"));
+        assert!(unknown_component("Gauge", Lang::Zh).starts_with("Gauge 不是"));
     }
 }

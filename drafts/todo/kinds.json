@@ -1,5 +1,5 @@
 {
-  "kinds": {
+  "components": {
     "TextField": {
       "doc": "A one-line input: fills what its row leaves, its placeholder in gray until something is typed.",
       "look": {

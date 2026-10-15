@@ -68,7 +68,7 @@ const SLACK: f32 = 1.0;
 
 /// How `capture` differs from `screen` in `state` on the platform `mapping`
 /// describes. The wireframe is laid out at the capture's width, text
-/// measured by `measure`, each kind drawn as `kinds` says. Refused, with why: a description with faults, a
+/// measured by `measure`, each component drawn as `kinds` says. Refused, with why: a description with faults, a
 /// capture that is not one, a state not shown at that width.
 pub fn compare(
     screen: &Value,
@@ -150,7 +150,7 @@ struct Differ<'a> {
     capture: &'a Capture,
     expected: &'a Expected,
     page: &'a Page,
-    /// Which kinds scroll, and which are pinned out of the flow.
+    /// Which components scroll, and which are pinned out of the flow.
     kinds: &'a Kinds,
     platform: &'a str,
     checked: Checked,
@@ -341,14 +341,14 @@ impl Differ<'_> {
                 self.find(&node.id, "inside", problem);
             }
         }
-        let scrolls = self.kinds.scrolls(&node.kind);
+        let scrolls = self.kinds.scrolls(&node.component);
         let (holder, scrolled) = match frame {
             Some(frame) => (Some((node.id.as_str(), frame)), scrolls),
             None => (holder, scrolled || scrolls),
         };
         let mut before: Option<&Node> = None;
         for child in &node.children {
-            let flows = child.slot != "overlay" && !self.kinds.pinned(&child.kind);
+            let flows = child.slot != "overlay" && !self.kinds.pinned(&child.component);
             if flows && self.capture.get(&child.id).is_some() {
                 if let Some(previous) = before {
                     self.order(previous, child);

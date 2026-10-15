@@ -1,5 +1,5 @@
 {
-  "kinds": {
+  "components": {
     "Thumb": {
       "doc": "A product photo as a fixed square.",
       "look": { "size": 64, "radius": 8, "stroke": "line", "cross": "line" }
@@ -44,10 +44,10 @@
         "stroke": { "cases": [ { "if": "selected", "then": "strong" }, { "else": "line" } ] },
         "children": [
           { "cases": [
-            { "if": "selected", "then": { "kind": "Glyph", "icon": "radio_button_checked" } },
-            { "else": { "kind": "Glyph", "icon": "radio_button_unchecked" } }
+            { "if": "selected", "then": { "component": "Glyph", "icon": "radio_button_checked" } },
+            { "else": { "component": "Glyph", "icon": "radio_button_unchecked" } }
           ] },
-          { "if": "icon", "kind": "Glyph", "icon": "{icon}" },
+          { "if": "icon", "component": "Glyph", "icon": "{icon}" },
           { "box": "column", "gap": 2, "grow": 1,
             "children": [
               { "text": "{title}", "font": "font.subhead" },

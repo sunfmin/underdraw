@@ -339,7 +339,13 @@ fn record(node: &Node, assumed: Option<String>, rect: Rect, clip: Option<Rect>, 
         out.marked.push(Marked { node: listed, rect, acts, guessed, covered: false });
     }
     if !node.id.is_empty() {
-        out.nodes.push(Placed { id: node.id.clone(), kind: node.kind.clone(), rect, label: None, assumed });
+        out.nodes.push(Placed {
+            id: node.id.clone(),
+            component: node.component.clone(),
+            rect,
+            label: None,
+            assumed,
+        });
     }
 }
 

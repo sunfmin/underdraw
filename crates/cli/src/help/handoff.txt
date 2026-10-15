@@ -8,14 +8,14 @@ WHO
 
 READS
   <path>/screen.json, tokens.json, and platforms/<platform>.json: the
-  platform's mapping of each kind and action, its test-id form, and its token
+  platform's mapping of each component and action, its test-id form, and its token
   naming ("tokenNaming": {"pattern": "Theme.{group}.{name}"}). Writes nothing.
   Refuses a description `check` finds faults in.
 
 ANSWERS
   {
     "screen", "platform", "language"
-    "ok":         true when the mapping covers every kind and action used
+    "ok":         true when the mapping covers every component and action used
     "findings":   [{"at", "problem"}, …]: what the mapping is missing
     "rules":      the platform's conventions: stack, testId, breakpoints, elementTree
     "code":       {"file", "text"}: the view model's types and every condition,
@@ -33,8 +33,8 @@ ANSWERS
                   query's params include cursor and limit; a call with a
                   cursor appends the page's rows, one with null replaces them.
     "tokens":     [{"token": "color.primary", "name": the platform's name, "value"}, …]
-    "nodes":      [{"id", "kind", "parent", "slot",
-                    "implement": how the platform builds this kind,
+    "nodes":      [{"id", "component", "parent", "slot",
+                    "implement": how the platform builds this component,
                     "test_id": the test id as the platform writes it,
                     "props": what the description says, as written,
                     "shown": its if / only / each / limit,

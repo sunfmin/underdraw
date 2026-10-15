@@ -170,125 +170,125 @@
 
   "phases": {
     "loading": {
-      "id": "results-loading", "kind": "Screen", "children": [
-        { "id": "nav-loading", "kind": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ], "children": [
-          { "id": "nav-loading-title", "kind": "Text", "text": "正在搜索航班…", "font": "font.subhead" } ] },
-        { "id": "loading-skeleton", "kind": "Skeleton",
+      "id": "results-loading", "component": "Screen", "children": [
+        { "id": "nav-loading", "component": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ], "children": [
+          { "id": "nav-loading-title", "component": "Text", "text": "正在搜索航班…", "font": "font.subhead" } ] },
+        { "id": "loading-skeleton", "component": "Skeleton",
           "shape": ["line 100%", "line 60%", "line 90%", "line 90%", "line 40%", "line 90%", "line 90%", "line 40%"] } ] },
     "error": {
-      "id": "results-error", "kind": "Screen", "children": [
-        { "id": "nav-error", "kind": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ] },
-        { "id": "error-state", "kind": "EmptyState", "icon": "warning", "title": "航班搜索失败", "detail": "请检查网络后重试。",
-          "children": [ { "id": "error-retry", "kind": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "call": "searchFlights" } } } ] } ] }
+      "id": "results-error", "component": "Screen", "children": [
+        { "id": "nav-error", "component": "NavBar", "only": "compact", "leading": [ { "ref": "nav-back" } ] },
+        { "id": "error-state", "component": "EmptyState", "icon": "warning", "title": "航班搜索失败", "detail": "请检查网络后重试。",
+          "children": [ { "id": "error-retry", "component": "Button", "variant": "secondary", "text": "重试", "on": { "tap": { "call": "searchFlights" } } } ] } ] }
   },
 
   "root": {
-    "id": "flight-results", "kind": "Screen",
+    "id": "flight-results", "component": "Screen",
     "children": [
 
-      { "id": "nav", "kind": "NavBar", "only": "compact",
+      { "id": "nav", "component": "NavBar", "only": "compact",
         "leading": [ { "ref": "nav-back" } ],
-        "trailing": [ { "id": "nav-edit", "kind": "Button", "variant": "secondary", "size": "small", "text": "修改",
+        "trailing": [ { "id": "nav-edit", "component": "Button", "variant": "secondary", "size": "small", "text": "修改",
                         "on": { "tap": { "open": "sheet-search" } } } ],
         "children": [
-          { "id": "nav-title", "kind": "Stack", "children": [
-            { "id": "nav-route", "kind": "Text", "text": "{search.from.city} → {search.to.city}", "font": "font.subhead" },
-            { "id": "nav-meta", "kind": "Text", "font": "font.caption", "color": "color.textSecondary",
+          { "id": "nav-title", "component": "Stack", "children": [
+            { "id": "nav-route", "component": "Text", "text": "{search.from.city} → {search.to.city}", "font": "font.subhead" },
+            { "id": "nav-meta", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
               "text": "{search.date|date:short} · {search.passengers} 位 · {search.cabin}" } ] } ] },
 
-      { "id": "search-bar", "kind": "Row", "only": "regular", "gap": "space.3", "padding": "space.4",
+      { "id": "search-bar", "component": "Row", "only": "regular", "gap": "space.3", "padding": "space.4",
         "children": [
-          { "id": "search-from", "kind": "SearchField", "label": "出发", "value": "{search.from.city} {search.from.code}" },
-          { "id": "search-to", "kind": "SearchField", "label": "到达", "value": "{search.to.city} {search.to.code}" },
-          { "id": "search-date", "kind": "SearchField", "label": "日期", "value": "{search.date|date}" },
-          { "id": "search-who", "kind": "SearchField", "label": "乘客与舱位", "value": "{search.passengers} 位 · {search.cabin}" },
-          { "id": "search-go", "kind": "Button", "variant": "primary", "text": "重新搜索", "on": { "tap": { "call": "searchFlights" } } } ] },
+          { "id": "search-from", "component": "SearchField", "label": "出发", "value": "{search.from.city} {search.from.code}" },
+          { "id": "search-to", "component": "SearchField", "label": "到达", "value": "{search.to.city} {search.to.code}" },
+          { "id": "search-date", "component": "SearchField", "label": "日期", "value": "{search.date|date}" },
+          { "id": "search-who", "component": "SearchField", "label": "乘客与舱位", "value": "{search.passengers} 位 · {search.cabin}" },
+          { "id": "search-go", "component": "Button", "variant": "primary", "text": "重新搜索", "on": { "tap": { "call": "searchFlights" } } } ] },
 
-      { "id": "content", "kind": "Scroll", "children": [
+      { "id": "content", "component": "Scroll", "children": [
 
-        { "id": "day-strip", "kind": "Strip", "each": "days", "padding": "space.4",
-          "item": { "id": "day-{index}", "kind": "DayPrice", "date": "{item.date|date:short}", "selected": "{item.selected}",
+        { "id": "day-strip", "component": "Strip", "each": "days", "padding": "space.4",
+          "item": { "id": "day-{index}", "component": "DayPrice", "date": "{item.date|date:short}", "selected": "{item.selected}",
                     "price": { "cases": [ { "if": "item.soldOut", "then": "售罄" }, { "else": "{item.lowest|money}" } ] },
                     "on": { "tap": { "call": "searchFlights", "with": { "date": "{item.date}" } } } } },
 
-        { "id": "divider-days", "kind": "Divider" },
+        { "id": "divider-days", "component": "Divider" },
 
-        { "id": "body", "kind": "Columns", "gap": "space.6", "padding": "space.4",
+        { "id": "body", "component": "Columns", "gap": "space.6", "padding": "space.4",
           "columns": { "compact": ["1fr"], "regular": ["27%", "1fr"] },
           "children": [
 
-            { "id": "filter-panel", "kind": "Stack", "only": "regular", "gap": "space.6", "children": [
-              { "id": "filter-head", "kind": "Section", "title": "筛选",
+            { "id": "filter-panel", "component": "Stack", "only": "regular", "gap": "space.6", "children": [
+              { "id": "filter-head", "component": "Section", "title": "筛选",
                 "subtitle": { "cases": [ { "if": "hasFilters", "then": "已选 {filters.activeCount} 项" }, { "else": "全部航班" } ] },
                 "children": [
-                  { "id": "filter-clear", "kind": "Link", "if": "hasFilters", "text": "清除全部筛选",
+                  { "id": "filter-clear", "component": "Link", "if": "hasFilters", "text": "清除全部筛选",
                     "on": { "tap": { "call": "clearFilters" } } } ] },
-              { "id": "filter-stops", "kind": "Section", "title": "经停", "gap": "space.1", "children": [
-                { "id": "filter-stops-list", "kind": "List", "each": "filters.stops",
-                  "item": { "id": "stop-{index}", "kind": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
+              { "id": "filter-stops", "component": "Section", "title": "经停", "gap": "space.1", "children": [
+                { "id": "filter-stops-list", "component": "List", "each": "filters.stops",
+                  "item": { "id": "stop-{index}", "component": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
                             "checked": "{item.checked}", "on": { "tap": { "call": "toggleFilter", "with": { "group": "stops", "option": "{item.label}" } } } } } ] },
-              { "id": "filter-airlines", "kind": "Section", "title": "航空公司", "gap": "space.1", "children": [
-                { "id": "filter-airlines-list", "kind": "List", "each": "filters.airlines",
-                  "item": { "id": "airline-{index}", "kind": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
+              { "id": "filter-airlines", "component": "Section", "title": "航空公司", "gap": "space.1", "children": [
+                { "id": "filter-airlines-list", "component": "List", "each": "filters.airlines",
+                  "item": { "id": "airline-{index}", "component": "Checkbox", "label": "{item.label}", "detail": "{item.detail}",
                             "checked": "{item.checked}", "on": { "tap": { "call": "toggleFilter", "with": { "group": "airlines", "option": "{item.label}" } } } } } ] },
-              { "id": "filter-times", "kind": "Section", "title": "起飞时间", "children": [
-                { "id": "filter-times-grid", "kind": "Grid", "columns": 2, "gap": "space.2", "each": "filters.departWindows",
-                  "item": { "id": "window-{index}", "kind": "Chip", "text": "{item.label}", "selected": "{item.checked}",
+              { "id": "filter-times", "component": "Section", "title": "起飞时间", "children": [
+                { "id": "filter-times-grid", "component": "Grid", "columns": 2, "gap": "space.2", "each": "filters.departWindows",
+                  "item": { "id": "window-{index}", "component": "Chip", "text": "{item.label}", "selected": "{item.checked}",
                             "on": { "tap": { "call": "toggleFilter", "with": { "group": "departWindows", "option": "{item.label}" } } } } } ] } ] },
 
-            { "id": "results", "kind": "Stack", "gap": "space.4", "children": [
+            { "id": "results", "component": "Stack", "gap": "space.4", "children": [
 
-              { "id": "filter-chips", "kind": "Strip", "only": "compact", "children": [
-                { "id": "chip-filters", "kind": "Chip", "selected": { "cases": [ { "if": "hasFilters", "then": true }, { "else": false } ] },
+              { "id": "filter-chips", "component": "Strip", "only": "compact", "children": [
+                { "id": "chip-filters", "component": "Chip", "selected": { "cases": [ { "if": "hasFilters", "then": true }, { "else": false } ] },
                   "text": { "cases": [ { "if": "hasFilters", "then": "筛选 · {filters.activeCount}" }, { "else": "筛选" } ] },
                   "on": { "tap": { "open": "sheet-filters" } } },
-                { "id": "chip-nonstop", "kind": "Chip", "text": "直飞", "selected": "{filters.nonstopOnly}",
+                { "id": "chip-nonstop", "component": "Chip", "text": "直飞", "selected": "{filters.nonstopOnly}",
                   "on": { "tap": { "call": "toggleNonstop" } } },
-                { "id": "chip-airlines", "kind": "Chip", "text": "航空公司", "menu": true, "on": { "tap": { "open": "sheet-filters" } } },
-                { "id": "chip-times", "kind": "Chip", "text": "起飞时间", "menu": true, "on": { "tap": { "open": "sheet-filters" } } } ] },
+                { "id": "chip-airlines", "component": "Chip", "text": "航空公司", "menu": true, "on": { "tap": { "open": "sheet-filters" } } },
+                { "id": "chip-times", "component": "Chip", "text": "起飞时间", "menu": true, "on": { "tap": { "open": "sheet-filters" } } } ] },
 
-              { "id": "sort-tabs", "kind": "Row", "gap": "space.2", "each": "sortOptions",
-                "item": { "id": "sort-{index}", "kind": "SortTab", "label": "{item.label}", "detail": "{item.detail}",
+              { "id": "sort-tabs", "component": "Row", "gap": "space.2", "each": "sortOptions",
+                "item": { "id": "sort-{index}", "component": "SortTab", "label": "{item.label}", "detail": "{item.detail}",
                           "selected": "{item.selected}", "on": { "tap": { "call": "searchFlights", "with": { "sort": "{index}" } } } } },
 
-              { "id": "partial-notice", "kind": "Row", "if": "partialResults", "padding": "space.3",
+              { "id": "partial-notice", "component": "Row", "if": "partialResults", "padding": "space.3",
                 "border": "color.border", "radius": "radius.sm", "children": [
-                  { "id": "partial-text", "kind": "Text", "font": "font.caption",
+                  { "id": "partial-text", "component": "Text", "font": "font.caption",
                     "text": "! 还有航空公司没返回报价，结果可能不全，稍后会自动更新。" } ] },
 
-              { "id": "results-count", "kind": "Text", "if": "!noResults", "font": "font.caption", "color": "color.textSecondary",
+              { "id": "results-count", "component": "Text", "if": "!noResults", "font": "font.caption", "color": "color.textSecondary",
                 "text": "共 {results.total} 个航班 · 价格为每位成人含税" },
 
-              { "id": "flight-list", "kind": "List", "if": "!noResults", "gap": "space.3", "each": "results.flights",
+              { "id": "flight-list", "component": "List", "if": "!noResults", "gap": "space.3", "each": "results.flights",
                 "item": { "ref": "flight-card" } },
 
-              { "id": "no-results", "kind": "EmptyState", "if": "noResults", "icon": "flight",
+              { "id": "no-results", "component": "EmptyState", "if": "noResults", "icon": "flight",
                 "title": "没有符合筛选条件的航班", "detail": "试试放宽经停、航空公司或起飞时间。",
-                "children": [ { "id": "no-results-clear", "kind": "Button", "variant": "secondary", "text": "清除全部筛选",
+                "children": [ { "id": "no-results-clear", "component": "Button", "variant": "secondary", "text": "清除全部筛选",
                                 "on": { "tap": { "call": "clearFilters" } } } ] } ] } ] } ] } ]
   },
 
   "components": {
-    "nav-back": { "id": "nav-back", "kind": "IconButton", "icon": "arrow_back", "label": "返回", "on": { "tap": { "back": true } } },
+    "nav-back": { "id": "nav-back", "component": "IconButton", "icon": "arrow_back", "label": "返回", "on": { "tap": { "back": true } } },
     "flight-card": {
-      "id": "flight-{index}", "kind": "Card", "padding": "space.4", "gap": "space.3", "border": "color.border", "radius": "radius.md",
+      "id": "flight-{index}", "component": "Card", "padding": "space.4", "gap": "space.3", "border": "color.border", "radius": "radius.md",
       "on": { "tap": { "navigate": "FlightDetail", "with": { "flight": "{item.id}" } } },
       "children": [
-        { "id": "flight-{index}-head", "kind": "Row", "gap": "space.2", "children": [
-          { "id": "flight-{index}-logo", "kind": "Avatar", "image": "{item.logo}", "size": 20 },
-          { "id": "flight-{index}-airline", "kind": "Text", "text": "{item.airline} · {item.flightNo}", "font": "font.caption",
+        { "id": "flight-{index}-head", "component": "Row", "gap": "space.2", "children": [
+          { "id": "flight-{index}-logo", "component": "Avatar", "image": "{item.logo}", "size": 20 },
+          { "id": "flight-{index}-airline", "component": "Text", "text": "{item.airline} · {item.flightNo}", "font": "font.caption",
             "color": "color.textSecondary" },
-          { "id": "flight-{index}-cheapest", "kind": "Tag", "if": "item.isCheapest", "text": "最便宜" },
-          { "id": "flight-{index}-fastest", "kind": "Tag", "if": "item.isFastest", "text": "最快" } ] },
-        { "id": "flight-{index}-main", "kind": "Row", "gap": "space.3", "children": [
-          { "id": "flight-{index}-route", "kind": "Route", "depart": "{item.depart}", "departCode": "{item.departCode}",
+          { "id": "flight-{index}-cheapest", "component": "Tag", "if": "item.isCheapest", "text": "最便宜" },
+          { "id": "flight-{index}-fastest", "component": "Tag", "if": "item.isFastest", "text": "最快" } ] },
+        { "id": "flight-{index}-main", "component": "Row", "gap": "space.3", "children": [
+          { "id": "flight-{index}-route", "component": "Route", "depart": "{item.depart}", "departCode": "{item.departCode}",
             "arrive": "{item.arrive}", "arriveCode": "{item.arriveCode}", "nextDay": "{item.nextDay}",
             "duration": "{item.duration}", "stops": "{item.stopsText}", "nonstop": "{item.nonstop}" },
-          { "id": "flight-{index}-price", "kind": "Stack", "gap": "space.1", "children": [
-            { "id": "flight-{index}-amount", "kind": "Text", "text": "{item.price|money}", "font": "font.price", "align": "end" },
-            { "id": "flight-{index}-seats", "kind": "Text", "if": "item.fewSeats", "text": "仅剩 {item.seatsLeft} 座",
+          { "id": "flight-{index}-price", "component": "Stack", "gap": "space.1", "children": [
+            { "id": "flight-{index}-amount", "component": "Text", "text": "{item.price|money}", "font": "font.price", "align": "end" },
+            { "id": "flight-{index}-seats", "component": "Text", "if": "item.fewSeats", "text": "仅剩 {item.seatsLeft} 座",
               "font": "font.caption", "align": "end" } ] } ] },
-        { "id": "flight-{index}-bag", "kind": "Text", "font": "font.caption", "color": "color.textSecondary",
+        { "id": "flight-{index}-bag", "component": "Text", "font": "font.caption", "color": "color.textSecondary",
           "text": { "cases": [ { "if": "item.includesBag", "then": "含 20kg 托运行李" }, { "else": "不含托运行李，可加购" } ] } } ]
     }
   },

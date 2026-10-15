@@ -13,7 +13,7 @@ fn draft(file: &str) -> Value {
 fn each_event_names_the_operation_it_calls() {
     let mapping = json!({
         "platform": "web", "language": "typescript", "testId": "{id}",
-        "tokenNaming": { "pattern": "{group}.{name}" }, "kinds": {},
+        "tokenNaming": { "pattern": "{group}.{name}" }, "components": {},
         "actions": { "call": "await operations[operation](with)" }
     });
     let handoff = handoff(&draft("screen.json"), &mapping, &draft("tokens.json"), Some(&draft("kinds.json")))

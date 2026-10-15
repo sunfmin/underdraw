@@ -101,12 +101,12 @@ fn a_gap_in_the_mapping_is_a_finding() {
     let mut mapping: Value =
         serde_json::from_str(&std::fs::read_to_string(format!("{DRAFT}/platforms/ios.json")).unwrap())
             .unwrap();
-    mapping["kinds"].as_object_mut().unwrap().remove("Stepper");
+    mapping["components"].as_object_mut().unwrap().remove("Stepper");
     std::fs::write(dir.join("platforms/ios.json"), mapping.to_string()).unwrap();
     let (answer, code) = underdraw(&["handoff", dir.to_str().unwrap(), "--platform", "ios"]);
     assert_eq!((code, &answer["ok"]), (1, &json!(false)));
     assert!(
-        answer["findings"][0]["problem"].as_str().unwrap().contains("kind Stepper"),
+        answer["findings"][0]["problem"].as_str().unwrap().contains("component Stepper"),
         "{}",
         answer["findings"]
     );

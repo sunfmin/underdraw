@@ -22,7 +22,7 @@ fn screen() -> Value {
             "a": { "plan": "yearly", "user": { "name": "A", "score": 4.5, "default": true, "since": "2026-01-02" } },
             "b": { "plan": "monthly", "user": null }
         },
-        "root": { "id": "root", "kind": "Screen", "children": [ { "id": "t", "kind": "Text", "text": "x" } ] }
+        "root": { "id": "root", "component": "Screen", "children": [ { "id": "t", "component": "Text", "text": "x" } ] }
     })
 }
 
@@ -30,7 +30,7 @@ fn code(language: &str) -> String {
     let mapping = json!({
         "platform": language, "language": language, "testId": "{id}",
         "tokenNaming": { "pattern": "{group}.{name}" },
-        "kinds": { "Screen": "screen", "Text": "text" }, "actions": {}
+        "components": { "Screen": "screen", "Text": "text" }, "actions": {}
     });
     let handoff =
         handoff(&screen(), &mapping, &json!({}), None).unwrap_or_else(|c| panic!("{:?}", c.findings));
@@ -84,15 +84,15 @@ fn typescript() {
 }
 
 #[test]
-fn a_mapping_that_misses_a_kind_says_so() {
+fn a_mapping_that_misses_a_component_says_so() {
     let mapping = json!({
         "platform": "ios", "language": "swift", "testId": "{id}",
-        "tokenNaming": { "pattern": "{group}.{name}" }, "kinds": { "Screen": "screen" }, "actions": {}
+        "tokenNaming": { "pattern": "{group}.{name}" }, "components": { "Screen": "screen" }, "actions": {}
     });
     let handoff =
         handoff(&screen(), &mapping, &json!({}), None).unwrap_or_else(|c| panic!("{:?}", c.findings));
     assert!(!handoff.ok);
     assert_eq!(handoff.findings.len(), 1);
     assert_eq!(handoff.findings[0].at, "t");
-    assert!(handoff.findings[0].problem.contains("kind Text"), "{:?}", handoff.findings);
+    assert!(handoff.findings[0].problem.contains("component Text"), "{:?}", handoff.findings);
 }

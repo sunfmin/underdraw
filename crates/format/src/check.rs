@@ -75,7 +75,7 @@ impl Findings {
 /// fixtures, the conditions, and every node's paths, templates and cases.
 /// When there is none, which fixtures each condition holds in; a condition
 /// that holds in all of them, or in none, is then itself a fault. Every
-/// node's kind is one `kinds` (the project's kinds.json) or underdraw
+/// node's component is one `kinds` (the project's kinds.json) or underdraw
 /// defines, and the project's looks are checked too.
 pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
     let mut findings = Findings::default();
@@ -174,7 +174,8 @@ pub fn check(screen: &Value, kinds: Option<&Value>) -> Checked {
 /// format rules. Anything else given exactly one placeholder takes the value.
 const TEXT: [&str; 5] = ["text", "title", "subtitle", "label", "detail"];
 /// Keys that hold no template and no node.
-const INERT: [&str; 10] = ["$comment", "$note", "$why", "assumed", "id", "kind", "ref", "only", "each", "if"];
+const INERT: [&str; 10] =
+    ["$comment", "$note", "$why", "assumed", "id", "component", "ref", "only", "each", "if"];
 
 /// The actions that only move the UI and touch no data. With `set` and
 /// `toggle` on view state, they are all a screen does by itself.
@@ -188,7 +189,7 @@ struct Known {
     not_null: BTreeSet<String>,
     holds: BTreeSet<String>,
     /// Inside a confirmation: an overlay that dims the screen behind it
-    /// (its kind's look has a backdrop) and that a node opens by its id,
+    /// (its component's look has a backdrop) and that a node opens by its id,
     /// `{"open": "<id>"}`. Only here may a destructive operation be called.
     confirming: bool,
 }
@@ -265,12 +266,18 @@ impl Walk<'_> {
             }
             return;
         }
-        if let Some(Value::String(kind)) = object.get("kind")
+        if object.contains_key("kind") {
+            self.findings.add(
+                &format!("{at}.kind"),
+                "a node names the component it is: write \"component\" in place of \"kind\"",
+            );
+        }
+        if let Some(Value::String(kind)) = object.get("component")
             && !self.kinds.has(kind)
         {
             self.findings.add(
                 at,
-                &format!("kind {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, KINDS.JSON)"),
+                &format!("component {kind} is not defined: define its look in kinds.json beside screen.json (`underdraw check --help`, LOOKS)"),
             );
         }
         match object.get("assumed") {
@@ -285,18 +292,18 @@ impl Walk<'_> {
             ),
             None => {}
         }
-        if let Some(Value::String(kind)) = object.get("kind")
+        if let Some(Value::String(kind)) = object.get("component")
             && key != "overlay"
             && self.kinds.backdrop(kind)
         {
             self.findings.add(
                 at,
-                &format!("kind {kind} has a backdrop, which only an overlay draws: put it in \"overlay\", or take backdrop out of its look"),
+                &format!("component {kind} has a backdrop, which only an overlay draws: put it in \"overlay\", or take backdrop out of its look"),
             );
         }
         let mut known = known.clone();
         if key == "overlay"
-            && let Some(Value::String(kind)) = object.get("kind")
+            && let Some(Value::String(kind)) = object.get("component")
             && self.kinds.backdrop(kind)
             && object.get("id").and_then(Value::as_str).is_some_and(|id| self.opened.contains(id))
         {
@@ -530,7 +537,7 @@ impl Walk<'_> {
             self.findings.add(
                 node,
                 &format!(
-                    "calls {}, which is destructive: call it only from inside its confirmation, an overlay whose kind has a backdrop and that a node opens with {{\"open\": \"<the overlay's id>\"}}; here, open that instead",
+                    "calls {}, which is destructive: call it only from inside its confirmation, an overlay whose component has a backdrop and that a node opens with {{\"open\": \"<the overlay's id>\"}}; here, open that instead",
                     operation.name
                 ),
             );
