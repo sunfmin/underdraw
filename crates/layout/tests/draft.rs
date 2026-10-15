@@ -214,14 +214,61 @@ fn a_nodes_padding_takes_sides_as_a_looks_does() {
 
 #[test]
 fn a_component_not_in_the_catalog_is_drawn_as_a_guess() {
-    let page = tiny(serde_json::json!([{ "id": "input", "component": "TextField" }]));
+    let page = tiny(serde_json::json!([{ "id": "input", "component": "SignaturePad" }]));
     let assumed = placed(&page, "input").assumed.as_deref().unwrap_or_default();
-    assert!(assumed.contains("TextField"), "{assumed:?}");
+    assert!(assumed.contains("SignaturePad"), "{assumed:?}");
     let marked = page
         .draws
         .iter()
         .any(|d| matches!(d, Draw::Box { dashed: true, stroke: Some(underdraw_layout::Ink::Assumed), .. }));
     assert!(marked, "drawn in the colour of a guess");
+}
+
+/// A built-in TextField bound to `draft`, one line high and four, with
+/// `draft` as `value`.
+fn text_fields(value: &str) -> Page {
+    let screen = serde_json::json!({
+        "screen": "Tiny", "data": { "draft": { "type": "string", "view": true } }, "types": {},
+        "fixtures": { "default": { "draft": value } }, "conditions": {},
+        "root": { "id": "tiny", "component": "Screen", "children": [
+            { "id": "one", "component": "TextField", "bind": "draft", "placeholder": "Add a todo" },
+            { "id": "four", "component": "TextField", "bind": "draft", "placeholder": "Write a message", "lines": 4 } ] }
+    });
+    let tokens = read("tokens.json");
+    let screen = Screen::read(&screen, Shared::default());
+    let root =
+        screen.instantiate(State::Fixture("default"), Breakpoint::for_width(&tokens, 390), None).unwrap();
+    layout(&root, &tokens, &screen, 390.0, Lang::default(), &mut Fixed).unwrap()
+}
+
+fn ink_of(page: &Page, shown: &str) -> Vec<Ink> {
+    page.draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Text { text, ink, .. } if text == shown => Some(*ink),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_text_field_shows_its_placeholder_muted_while_its_value_is_empty() {
+    let empty = text_fields("");
+    assert_eq!(placed(&empty, "one").assumed, None, "TextField is built in");
+    assert_eq!(ink_of(&empty, "Add a todo"), [Ink::Muted]);
+    assert_eq!(ink_of(&empty, "Write a message"), [Ink::Muted]);
+    let typed = text_fields("milk");
+    assert_eq!(ink_of(&typed, "milk"), [Ink::Text, Ink::Text], "the value, in the ink of text");
+    assert!(ink_of(&typed, "Add a todo").is_empty(), "no placeholder once typed: {:?}", texts(&typed));
+}
+
+#[test]
+fn a_text_field_is_as_high_as_its_lines() {
+    let page = text_fields("");
+    let (one, four) = (placed(&page, "one").rect, placed(&page, "four").rect);
+    // font.body's lines are 22 high, inside 10 above and below.
+    assert_eq!((one.height, four.height), (22.0 + 20.0, 4.0 * 22.0 + 20.0));
+    assert_eq!(one.width, four.width, "both as wide as the screen");
 }
 
 #[test]

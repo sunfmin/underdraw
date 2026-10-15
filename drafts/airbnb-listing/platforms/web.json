@@ -31,6 +31,7 @@
     "DateRangePicker": "自研或 react-day-picker range 模式",
     "DateField": "<button> 打开日期弹层（不用原生 <input type=date>，样式不可控）",
     "FieldGroup": "带边框的 grid 容器",
+    "TextField": "<input placeholder>；lines > 1 → <textarea rows=lines>",
     "Stepper": "− / 数字 / + 三个元素，aria-live 播报",
     "PriceBreakdown": "<dl>",
     "Map": "Mapbox GL / Google Maps JS，静态时用 Static Images API"
