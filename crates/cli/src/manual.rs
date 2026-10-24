@@ -88,7 +88,7 @@ pub(crate) enum Command {
     ///
     /// **Reads**
     ///
-    /// <path>/screen.json, or <path> when it is a file, with the domain.json of its project when there is one ([domain-json](help:domain-json)) and the components the project shares, each components/<Name>.json at its root: every node's component must be one of the screen's own "components", the project's or underdraw's, and the screen's own and the project's are checked too: each has a look or nodes, a look reads only the params it declares, none uses itself, and none of the screen's own has a name the project shares, which shadows the project's ([components](help:components), [looks](help:looks)). A kinds.json beside it is a finding: its components belong in "components". Once the description has no other fault, its tokens.json too (the nearest at or above the screen, as `underdraw --help` says): every fixture and phase is laid out at each of the widths its tokens.json names ("widths", [tokens-json](help:tokens-json); 390 and 1120 when it names none), in the system's fonts as `render` does, and an overlay that runs off the page is a finding, as are "widths" that are not a list of whole numbers from 200 to 4000. Writes nothing.
+    /// <path>/screen.json, or <path> when it is a file, with the domain.json of its project when there is one ([domain-json](help:domain-json)) and the components the project shares, each components/<Name>.json at its root: every node's component must be one of the screen's own "components", the project's or underdraw's, and the screen's own and the project's are checked too: each has a look or nodes, a look reads only the params it declares, none uses itself, and none of the screen's own has a name the project shares, which shadows the project's ([components](help:components), [looks](help:looks)). A kinds.json beside it is a finding: its components belong in "components". Once the description has no other fault, its tokens.json too (the nearest at or above the screen, as `underdraw --help` says): every fixture and phase is laid out at each of the widths its tokens.json names ("widths", [tokens-json](help:tokens-json); {const:DEFAULT_WIDTHS} when it names none), in the system's fonts as `render` does, and an overlay that runs off the page is a finding, as are "widths" that are not a list of whole numbers from {const:WIDTH_LEAST} to {const:WIDTH_MOST}. Writes nothing.
     ///
     /// <path> may be <project root>/components/<Name>, the description that shows a shared component on its own: its fixtures, each held to its params ([components](help:components)), are its states.
     ///
@@ -206,7 +206,7 @@ pub(crate) enum Command {
     ///
     /// One PNG: --out, or <dir>/renders/<fixture or phase>-<width>.png. Running it again overwrites the same file.
     ///
-    /// With --all, one sheet instead: --out, or <dir>/renders/all.png. A row for each state, the fixtures then the phases in the order written (as `check` lists them), each drawn at each of the project's widths side by side, in the order its tokens.json names them, each page captioned with its state and width ("default · 390"). --all takes no --fixture, --phase or --width.
+    /// With --all, one sheet instead: --out, or <dir>/renders/all.png. A row for each state, the fixtures then the phases in the order written (as `check` lists them), each drawn at each of the project's widths side by side, in the order its tokens.json names them, each page captioned with its state and width ("default · {const:PHONE_WIDTH}"). --all takes no --fixture, --phase or --width.
     ///
     /// **Answers**
     ///
@@ -268,9 +268,9 @@ pub(crate) enum Command {
         /// A phase to show instead of data, such as loading
         #[arg(long, verbatim_doc_comment)]
         phase: Option<String>,
-        /// The page width in points: 390 is a phone, 1120 a laptop browser
+        /// The page width in points
         ///
-        /// From {const:WIDTH_LEAST} to {const:WIDTH_MOST}. Not given, the first of the widths its tokens.json names ("widths"), or {const:PHONE_WIDTH}.
+        /// {const:PHONE_WIDTH} is a phone, {const:DESKTOP_WIDTH} a laptop browser. From {const:WIDTH_LEAST} to {const:WIDTH_MOST}. Not given, the first of the widths its tokens.json names ("widths"), or {const:PHONE_WIDTH}.
         #[arg(long, value_parser = clap::value_parser!(u32).range(i64::from(*WIDTH_RANGE.start())..=i64::from(*WIDTH_RANGE.end())), verbatim_doc_comment)]
         width: Option<u32>,
         /// Every fixture and phase, each at every width its tokens.json names, captioned, in one PNG
@@ -747,7 +747,7 @@ pub(crate) enum Command {
     /// ```
     /// {
     ///   "command": ["delete-doc", "b", "--yes"],  the command line after the CLI's name
-    ///   "exit": 1,                        the code it exited with
+    ///   "exit": {const:CLI_FAILED},                        the code it exited with
     ///   "stdout": "{\"error\": …}",       what it printed, as text (or the
     ///                                     JSON value it parsed to)
     ///   "failure": "notFound"             optional: the named failure the test
@@ -757,7 +757,7 @@ pub(crate) enum Command {
     /// }
     /// ```
     ///
-    /// The command line is read as `underdraw cli` says the command takes it, defaults filled in, and matched to the golden output of that command, in that fixture, given the same parameters (and, for a destructive command, with --yes or without it, and for a long one, with --no-wait or without it, as the run was). A capture with "failure" is of that named failure; a bulk form's, of its partial failure: the fixture and the ids must be the golden output's too. Exit 2 when it is not one the derived CLI takes, or has no golden output (the error lists the ones there are).
+    /// The command line is read as `underdraw cli` says the command takes it, defaults filled in, and matched to the golden output of that command, in that fixture, given the same parameters (and, for a destructive command, with --yes or without it, and for a long one, with --no-wait or without it, as the run was). A capture with "failure" is of that named failure; a bulk form's, of its partial failure: the fixture and the ids must be the golden output's too. Exit {const:FAILED} when it is not one the derived CLI takes, or has no golden output (the error lists the ones there are).
     ///
     /// **Answers**
     ///
@@ -780,9 +780,9 @@ pub(crate) enum Command {
     ///
     /// **How to use it**
     ///
-    /// - In a UI test: load a fixture from `underdraw handoff`'s "fixtures", show the screen, dump its elements into a capture, run compare with that --fixture, and fail the test on exit 1, printing "findings".
+    /// - In a UI test: load a fixture from `underdraw handoff`'s "fixtures", show the screen, dump its elements into a capture, run compare with that --fixture, and fail the test on exit {const:FAULTS}, printing "findings".
     /// - To check what the UI calls: in the same state, act on each node that handoff's state lists under "calls" (and any other you wire to the data layer), record what the app called, and put it in "acted". A node acted on that is not in "acted" is not checked.
-    /// - In a CLI's test: give the CLI a fake server holding a fixture's data (`underdraw cli`'s "fixtures", which needs no platform file), run each command `underdraw cli` lists a golden output for, write each run as a capture, and fail on exit 1.
+    /// - In a CLI's test: give the CLI a fake server holding a fixture's data (`underdraw cli`'s "fixtures", which needs no platform file), run each command `underdraw cli` lists a golden output for, write each run as a capture, and fail on exit {const:FAULTS}.
     /// - Fix the UI, not the capture. When the UI is right and the description is not, change the description, `render` it, and show the person.
     ///
     /// **What trips you up**
@@ -894,7 +894,7 @@ pub(crate) enum Command {
     ///               filled: a paged query's first page, its "next" null in a
     ///               fixture of the last page and set in one with more to come;
     ///     for each fixture, each command a node of the screen calls there,
-    ///               given what that node passes: exit 1 where its precondition
+    ///               given what that node passes: exit {const:CLI_REFUSED} where its precondition
     ///               does not hold in the fixture, {} where it holds and the
     ///               command answers with nothing (a command that answers with
     ///               something has no golden output: the fixture does not hold it).
