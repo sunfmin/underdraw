@@ -654,10 +654,79 @@ fn notes_help_answers_a_note_by_what_the_listing_names_it() {
     let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["notes", "--help"]).output().unwrap();
     let help = String::from_utf8(out.stdout).unwrap();
     for said in [
-        "underdraw notes <path> --answer play/N3 --reply",
         "[{\"note\":        what --answer takes for it",
         "--answer takes the note's \"note\", not its \"id\"",
     ] {
         assert!(help.contains(said), "{said:?} not in notes --help");
     }
+}
+
+/// The `sh` lines `notes --help` shows, each as the words a shell would
+/// pass, `<path>` and `<root>` read as `root`.
+fn shown(root: &Path) -> Vec<Vec<String>> {
+    let root = root.to_str().unwrap();
+    agent_help::code_blocks(&underdraw::manual(), "sh")
+        .into_iter()
+        .filter(|block| block.at == "`underdraw notes`")
+        .map(|block| words(&block.code.replace("<path>", root).replace("<root>", root)))
+        .collect()
+}
+
+/// `line` split as a shell splits it: at blank space outside double quotes,
+/// the quotes dropped.
+fn words(line: &str) -> Vec<String> {
+    let (mut words, mut word, mut quoted) = (Vec::new(), None::<String>, false);
+    for c in line.trim_end().chars() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                word.get_or_insert_default();
+            }
+            c if c.is_whitespace() && !quoted => words.extend(word.take()),
+            c => word.get_or_insert_default().push(c),
+        }
+    }
+    words.extend(word);
+    words
+}
+
+/// Each line `notes --help` shows answering or waiting runs as it says, so
+/// an example there cannot drift from what works.
+#[test]
+fn notes_runs_each_line_its_help_shows() {
+    let root = root("shown");
+    let play = root.join("play");
+    std::fs::create_dir_all(&play).unwrap();
+    for file in ["screen.json", "tokens.json"] {
+        std::fs::copy(root.join("orders").join(file), play.join(file)).unwrap();
+    }
+    let notes = std::fs::read_to_string(root.join("orders/notes.json")).unwrap();
+    std::fs::write(play.join("notes.json"), notes.replace("\"N1\"", "\"N3\"")).unwrap();
+
+    let shown = shown(&root);
+    assert_eq!(shown.len(), 4, "{shown:?}");
+    for words in shown {
+        let args: Vec<&str> = words.iter().map(String::as_str).collect();
+        let ["underdraw", args @ ..] = &args[..] else { panic!("not an underdraw line: {words:?}") };
+        let child = Command::new(env!("CARGO_BIN_EXE_underdraw"))
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let (answer, code) = answered(child);
+        assert_eq!(code, 0, "{args:?}: {answer}");
+        let given = |flag: &str| args.iter().position(|arg| *arg == flag).map(|at| args[at + 1]);
+        match (given("--answer"), given("--reply")) {
+            (Some(note), Some(reply)) => {
+                assert_eq!(answer["note"]["note"], note, "{args:?}: {answer}");
+                let messages = answer["note"]["messages"].as_array().unwrap();
+                assert_eq!(messages.last().unwrap()["says"], reply, "{args:?}: {answer}");
+            }
+            _ => {
+                assert!(args.contains(&"--wait"), "{args:?}");
+                assert_eq!(answer["notes"][0]["note"], "orders/N1", "{args:?}: {answer}");
+            }
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
 }

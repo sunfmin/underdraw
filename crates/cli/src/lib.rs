@@ -519,6 +519,12 @@ fn doctor() -> Value {
     json!({ "ok": gpu.is_object(), "version": VERSION, "gpu": gpu, "findings": findings })
 }
 
+/// The manual `--help` answers: for a test to hold the examples it shows
+/// (`agent_help::code_blocks`) to what the tool does.
+pub fn manual() -> agent_help::Help {
+    manual::help()
+}
+
 /// The subcommands that exist, by name.
 pub fn commands() -> Vec<String> {
     Cli::command().get_subcommands().map(|c| c.get_name().to_string()).collect()
