@@ -1,0 +1,35 @@
+{
+  "screen": "ShopOrders",
+  "title": "Orders",
+  "tokens": "tokens.json",
+  "$comment": "The shop's latest orders; one not shipped yet can be cancelled from its card, the OrderRow the project shares (components/OrderRow.json).",
+  "data": {
+    "orders": { "type": "Order[] ..20", "from": "listOrders" }
+  },
+  "fixtures": {
+    "default": {
+      "orders": [
+        { "id": "A12", "number": "#1042", "customer": "Ana Ruiz", "total": { "amount": 4200, "currency": "JPY" }, "status": "pending" },
+        { "id": "o-1041", "number": "#1041", "customer": "Ken Mori", "total": { "amount": 12800, "currency": "JPY" }, "status": "shipped" }
+      ]
+    }
+  },
+  "root": {
+    "id": "orders", "component": "Screen", "padding": "space.4", "gap": "space.3",
+    "children": [
+      { "id": "title", "component": "Text", "text": "Orders", "font": "font.title" },
+      { "id": "list", "component": "List", "gap": "space.3", "each": "orders",
+        "item": {
+          "id": "order-{index}", "component": "Card", "border": "color.border", "radius": "radius.md", "padding": "space.4", "gap": "space.2",
+          "on": { "tap": { "navigate": "ShopOrder", "with": { "orderId": "{item.id}" } } },
+          "children": [
+            { "id": "order-{index}-row", "component": "OrderRow", "with": { "order": "{item}" } }
+          ]
+        } }
+    ]
+  },
+  "phases": {
+    "loading": { "id": "loading", "component": "Screen", "padding": "space.4", "children": [
+      { "id": "sk", "component": "Skeleton", "shape": ["line 90%", "line 90%", "line 60%"] } ] }
+  }
+}

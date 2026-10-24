@@ -1,0 +1,187 @@
+{
+  "doc": "One stop of a journey's route: its step's number in a circle, filled where the person is, crossed where it breaks; its screen and state under it.",
+  "params": [
+    "number",
+    "screen",
+    "state",
+    "here",
+    "passed",
+    "broken",
+    "last"
+  ],
+  "look": {
+    "box": "column",
+    "gap": 4,
+    "items": "center",
+    "width": 96,
+    "children": [
+      {
+        "box": "row",
+        "items": "center",
+        "width": "100%",
+        "children": [
+          {
+            "cases": [
+              {
+                "if": "number == 1",
+                "then": {
+                  "box": "row",
+                  "grow": 1,
+                  "height": 2
+                }
+              },
+              {
+                "else": {
+                  "box": "row",
+                  "grow": 1,
+                  "height": 2,
+                  "fill": "line"
+                }
+              }
+            ]
+          },
+          {
+            "box": "row",
+            "size": 22,
+            "radius": 999,
+            "items": "center",
+            "justify": "center",
+            "fill": {
+              "cases": [
+                {
+                  "if": "here",
+                  "then": "strong"
+                },
+                {
+                  "if": "passed",
+                  "then": "fill"
+                },
+                {
+                  "else": null
+                }
+              ]
+            },
+            "stroke": {
+              "cases": [
+                {
+                  "if": "here",
+                  "then": null
+                },
+                {
+                  "else": "line"
+                }
+              ]
+            },
+            "dashed": {
+              "cases": [
+                {
+                  "if": "broken",
+                  "then": true
+                },
+                {
+                  "else": false
+                }
+              ]
+            },
+            "children": [
+              {
+                "text": "{number}",
+                "font": "font.caption",
+                "weight": 600,
+                "ink": {
+                  "cases": [
+                    {
+                      "if": "here",
+                      "then": "paper"
+                    },
+                    {
+                      "else": "text"
+                    }
+                  ]
+                }
+              }
+            ],
+            "shrink": 0
+          },
+          {
+            "cases": [
+              {
+                "if": "last",
+                "then": {
+                  "box": "row",
+                  "grow": 1,
+                  "height": 2
+                }
+              },
+              {
+                "else": {
+                  "box": "row",
+                  "grow": 1,
+                  "height": 2,
+                  "fill": "line"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "text": "{screen}",
+        "font": "font.caption",
+        "weight": 600,
+        "align": "center",
+        "maxLines": 1
+      },
+      {
+        "text": "{state}",
+        "font": "font.caption",
+        "ink": "muted",
+        "align": "center",
+        "maxLines": 1,
+        "strike": {
+          "cases": [
+            {
+              "if": "broken",
+              "then": true
+            },
+            {
+              "else": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": {
+    "here": {
+      "number": 2,
+      "screen": "order",
+      "state": "open",
+      "here": true,
+      "passed": false,
+      "broken": false,
+      "last": false
+    },
+    "passed": {
+      "$patch": "here",
+      "number": 1,
+      "screen": "orders",
+      "state": "default",
+      "here": false,
+      "passed": true
+    },
+    "ahead": {
+      "$patch": "here",
+      "number": 3,
+      "state": "cancelled",
+      "here": false,
+      "last": true
+    },
+    "broken": {
+      "$patch": "here",
+      "state": "refunded",
+      "here": false,
+      "broken": true
+    }
+  }
+}

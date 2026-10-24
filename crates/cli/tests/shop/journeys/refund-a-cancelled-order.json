@@ -1,0 +1,7 @@
+{
+  "$comment": "Broken on purpose, for the gallery's goldens: the order has no refunded state.",
+  "steps": [
+    { "screen": "order", "state": "cancelled", "on": "summary-refund.tap" },
+    { "screen": "order", "state": "refunded" }
+  ]
+}
