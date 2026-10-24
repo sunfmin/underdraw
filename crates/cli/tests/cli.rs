@@ -214,3 +214,30 @@ fn a_command_line_with_no_golden_output_is_refused() {
     assert_eq!(code, 2);
     assert!(answer["error"].as_str().unwrap().contains("no golden output"), "{answer}");
 }
+
+/// The bulk run `cli --help` shows, `delete-docs c e --yes` answering
+/// `{"results": …}` with c not found, is one `compare` holds right, so the
+/// example cannot drift from what the derived CLI must print.
+#[test]
+fn the_bulk_run_cli_help_shows_passes_compare() {
+    let manual = underdraw::manual();
+    let shown = |language: &str, holding: &str| -> Vec<String> {
+        agent_help::code_blocks(&manual, language)
+            .into_iter()
+            .filter(|block| block.at == "`underdraw cli`" && block.code.contains(holding))
+            .map(|block| block.code)
+            .collect()
+    };
+    let [line] = &shown("sh", "delete-docs")[..] else { panic!("one bulk line in cli --help") };
+    let [stdout] = &shown("json", "\"results\"")[..] else { panic!("one bulk answer in cli --help") };
+    let argv: Vec<&str> = line.split_whitespace().collect();
+    let stdout: Value = serde_json::from_str(stdout).unwrap();
+    let fixture = "confirm-delete-selected";
+    let (printed, exit) = stub(&server(fixture), &argv, Some("notFound"), false);
+    assert_eq!(serde_json::from_str::<Value>(&printed).unwrap(), stdout, "the faithful stub prints it");
+
+    let path = capture("shown", &argv, Some("notFound"), (stdout.to_string(), exit));
+    let (answer, code) =
+        underdraw(&["compare", DRAFT, "--capture", path.to_str().unwrap(), "--fixture", fixture]);
+    assert_eq!((code, &answer["ok"]), (0, &json!(true)), "{argv:?}: {answer}");
+}
