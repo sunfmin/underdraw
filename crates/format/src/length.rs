@@ -161,7 +161,7 @@ pub fn arithmetic(text: &str) -> bool {
 }
 
 /// What `{depth} * space.4` is, said once wherever it is refused.
-pub const ONLY_A_LOOK: &str = "only a look computes, and only a length: give the look the operands as props (\"depth\": \"{item.depth}\") and write the length in its look, \"{depth} * space.4\"; any other value computed from others is a derived field (DATA AND TYPES)";
+pub const ONLY_A_LOOK: &str = "only a look computes, and only a length: give the look the operands as props (\"depth\": \"{item.depth}\") and write the length in its look, \"{depth} * space.4\"; any other value computed from others is a derived field (`underdraw help data-and-types`)";
 
 impl Computed {
     /// `text` as a computed length, when it asks for arithmetic (an

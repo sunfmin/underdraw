@@ -260,8 +260,10 @@ fn help_says_where_shared_components_live() {
     };
     assert!(help(&["--help"]).contains("components/<Name>.json"));
     let check = help(&["check", "--help"]);
-    assert!(check.contains("components/<Name>.json") && check.contains("shadows the project's"), "{check}");
-    assert!(check.contains("\"fixtures\", each a value of its params"), "{check}");
-    assert!(check.contains("declares no params has one state"), "{check}");
+    assert!(check.contains("shadows the project's") && check.contains("(help:components)"), "{check}");
+    let components = help(&["help", "components"]);
+    assert!(components.contains("components/<Name>.json"), "{components}");
+    assert!(components.contains("\"fixtures\", each a value of its params"), "{components}");
+    assert!(components.contains("declares no params has one state"), "{components}");
     assert!(help(&["gallery", "--help"]).contains("in a section of their own"));
 }

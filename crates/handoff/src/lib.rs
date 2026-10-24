@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use underdraw_format::{Breakpoint, Checked, Condition, Evaluated, Finding, Model, Node, Screen, State};
 
-pub use cli::{Arg, CommandSpec, Failure, Golden, Interface, cli};
+pub use cli::{Arg, CommandSpec, FAILED, Failure, Golden, Interface, REFUSED, cli};
 pub use code::Language;
 pub use json_schema::json_schema;
 pub use nodes::{Event, Hidden, Spec};

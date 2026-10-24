@@ -22,7 +22,7 @@ pub fn too_short(assumed: &str) -> Option<&'static str> {
         return None;
     }
     Some(
-        "is too short for the person to answer: say in a sentence what was guessed and what else it could be, \"<the guess>; it could instead be <the other>\", in the language you speak with the person (`underdraw check --help`, \"assumed\")",
+        "is too short for the person to answer: say in a sentence what was guessed and what else it could be, \"<the guess>; it could instead be <the other>\", in the language you speak with the person (`underdraw help assumed`)",
     )
 }
 

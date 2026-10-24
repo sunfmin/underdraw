@@ -25,6 +25,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "agent-help"
+version = "0.1.0"
+source = "git+https://github.com/sunfmin/agent-cli#85aef7df5e46b242bbd4ee76de7d485ff2fb0652"
+dependencies = [
+ "agent-help-derive",
+ "clap",
+ "flux-alloc",
+ "flux-core",
+]
+
+[[package]]
+name = "agent-help-derive"
+version = "0.1.0"
+source = "git+https://github.com/sunfmin/agent-cli#85aef7df5e46b242bbd4ee76de7d485ff2fb0652"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2874,6 +2896,7 @@ checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 name = "underdraw"
 version = "0.1.0"
 dependencies = [
+ "agent-help",
  "anyhow",
  "arboard",
  "clap",
