@@ -1,0 +1,35 @@
+The reference for writing screen.json, domain.json and tokens.json, from the files' keys to every built-in component: the topics below.
+
+What you want to do, and the topic that says how (`underdraw help <topic>`; check's own sections are in `underdraw check --help`):
+
+- lay out a description's files, or a project's: [files](help:files)
+- start a screen.json: its name, title, locale: [screen-json](help:screen-json)
+- see one whole screen that passes check: [a-whole-screen](help:a-whole-screen)
+- declare what a screen shows, and the shape of each: [data-and-types](help:data-and-types)
+- give each state its data: [fixtures](help:fixtures)
+- open a screen with an id, or navigate with one: [params](help:params)
+- name a decision, show or hide a node: [conditions](help:conditions)
+- put a value in a string, a date, money, a plural: [templates-and-formats](help:templates-and-formats)
+- choose a property's value per state: [cases](help:cases)
+- what each value position takes; "!x" given to a bool: [expressions](help:expressions)
+- compute a length: indent a line by its depth: [expressions](help:expressions), [looks](help:looks)
+- write the node tree, an id, a list of items: [nodes](help:nodes)
+- a tree: a file tree, nested comments, folding rows: [trees](help:trees)
+- mark a guess for the person to confirm: [assumed](help:assumed)
+- space, align, size or scroll a node: [layout-on-a-node](help:layout-on-a-node)
+- act on a tap: navigate, open, set, call: [actions](help:actions)
+- load, save, delete, a confirmed or bulk or long one: [operations](help:operations)
+- a list that pages: [paging](help:paging)
+- make a component, for one screen or shared: [components](help:components)
+- draw a component as boxes and text: [looks](help:looks)
+- pick a built-in component and its props: [built-in-components](help:built-in-components)
+- a popup: a dialog, a sheet, a menu: [popups](help:popups)
+- show loading or an error: [phases](help:phases)
+- say which state an act leads to, for the gallery: [transitions](help:transitions)
+- a journey across screens: [journeys](help:journeys)
+- a phone and a desktop layout: [responsive](help:responsive)
+- share types, conditions, operations between screens: [domain-json](help:domain-json)
+- colors, spacing, type sizes, widths: [tokens-json](help:tokens-json)
+- what the person sees and does in the gallery window: [gallery-window](help:gallery-window)
+- what check reads and answers: `underdraw check --help`, **Reads**, **Answers**
+- a finding you do not understand: `underdraw check --help`, **What trips you up**

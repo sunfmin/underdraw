@@ -1,0 +1,6 @@
+- `<dir>/screen.json`: the screen: view model, fixtures, conditions, nodes
+- `domain.json`: optional: the types, conditions, operations and samples every screen of the project shares; its directory is the project root ([domain-json](help:domain-json))
+- `components/<Name>.json`: optional: a component every screen of the project shares, at the project root ([components](help:components))
+- `tokens.json`: design tokens; read by name, always this file name, from the nearest directory at or above <dir> that has one (beside screen.json, or shared above it)
+- `<dir>/platforms/<name>.json`: how one platform builds it: `underdraw handoff --help`
+- `<dir>/journeys/<name>.json`: optional: one path a person takes across screens, walked by `check <root>` ([journeys](help:journeys))
