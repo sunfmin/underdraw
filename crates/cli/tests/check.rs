@@ -323,3 +323,22 @@ fn a_root_holds_each_navigate_to_the_params_of_the_screen_it_opens() {
     assert_eq!((code, &alone["ok"]), (0, &json!(true)), "alone, it cannot see ExportDocuments: {alone:#}");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// The screen `help a-whole-screen` shows passes `check`, as it says, so the
+/// example cannot drift from a description that works.
+#[test]
+fn the_whole_screen_the_help_shows_passes_check() {
+    let blocks = agent_help::code_blocks(&underdraw::manual(), "json");
+    let [screen] =
+        &blocks.iter().filter(|block| block.at == "topic `a-whole-screen`").collect::<Vec<_>>()[..]
+    else {
+        panic!("one screen in help a-whole-screen")
+    };
+    let dir = std::env::temp_dir().join(format!("underdraw-{}-whole-screen", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("screen.json"), &screen.code).unwrap();
+    std::fs::copy(Path::new(DRAFT).join("tokens.json"), dir.join("tokens.json")).unwrap();
+    let (answer, code) = underdraw(&["check", dir.to_str().unwrap()]);
+    assert_eq!((code, &answer["findings"]), (0, &json!([])), "{answer:#}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
