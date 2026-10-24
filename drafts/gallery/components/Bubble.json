@@ -1,0 +1,111 @@
+{
+  "doc": "A message of a note: the person's on the right, filled; the agent's on the left, outlined.",
+  "params": [
+    "text",
+    "mine"
+  ],
+  "look": {
+    "cases": [
+      {
+        "if": "mine",
+        "then": {
+          "box": "row",
+          "justify": "end",
+          "children": [
+            {
+              "box": "column",
+              "padding": [
+                6,
+                10
+              ],
+              "radius": 10,
+              "width": "85%",
+              "fill": {
+                "cases": [
+                  {
+                    "if": "mine",
+                    "then": "fill"
+                  },
+                  {
+                    "else": null
+                  }
+                ]
+              },
+              "stroke": {
+                "cases": [
+                  {
+                    "if": "mine",
+                    "then": null
+                  },
+                  {
+                    "else": "line"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "text": "{text}",
+                  "font": "font.caption"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "else": {
+          "box": "row",
+          "children": [
+            {
+              "box": "column",
+              "padding": [
+                6,
+                10
+              ],
+              "radius": 10,
+              "width": "85%",
+              "fill": {
+                "cases": [
+                  {
+                    "if": "mine",
+                    "then": "fill"
+                  },
+                  {
+                    "else": null
+                  }
+                ]
+              },
+              "stroke": {
+                "cases": [
+                  {
+                    "if": "mine",
+                    "then": null
+                  },
+                  {
+                    "else": "line"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "text": "{text}",
+                  "font": "font.caption"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "fixtures": {
+    "person": {
+      "text": "Make the cancel button quieter.",
+      "mine": true
+    },
+    "agent": {
+      "text": "Done: it is a secondary button now.",
+      "mine": false
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a2924da75d4cdee36fbc86fe23f0c0d1ee0ac95f9978e61d4da0325f185da198 # shrinks to look = Object {"frame": Bool(true), "children": Array []}, props = {"a": Null, "b": Null, "c": Null, "item": Null, "n": Null, "index": Null}
+cc 5572e66faa237c4b1d242cac96e5272403d5d1daf5fecae161df614dab79de25 # shrinks to look = Object {"repeat": String("{n}"), "each": Object {"frame": Bool(true), "children": Array []}}, props = {"a": Null, "b": Null, "c": Null, "item": Null, "n": Array [Number(1), Number(2)], "index": Null}
+cc 4a73a3ad675a6be4e856bc4c779ee5802275564bc6bfad0e96c2e81f58d41a2a # shrinks to look = Object {"repeat": Number(1), "each": Object {"text": String("{item}")}}, props = {"a": Null, "b": Null, "c": Null, "item": Null, "n": Null, "index": Null}
