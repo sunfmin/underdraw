@@ -440,7 +440,7 @@ impl<'a> Walk<'a> {
         {
             self.findings.add(
                 at,
-                &format!("component {kind} is not defined: define it in the screen's \"components\", or share it in the project's components/{kind}.json, with its params and its look or nodes (`underdraw check --help`, COMPONENTS)"),
+                &format!("component {kind} is not defined: define it in the screen's \"components\", or share it in the project's components/{kind}.json, with its params and its look or nodes (`underdraw help components`)"),
             );
         }
         match object.get("assumed") {
@@ -451,7 +451,7 @@ impl<'a> Walk<'a> {
             }
             Some(_) => self.findings.add(
                 &format!("{at}.assumed"),
-                "is text: say in a sentence what was guessed and what else it could be (`underdraw check --help`, \"assumed\")",
+                "is text: say in a sentence what was guessed and what else it could be (`underdraw help assumed`)",
             ),
             None => {}
         }

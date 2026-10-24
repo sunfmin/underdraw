@@ -9,6 +9,7 @@ repository.workspace = true
 underdraw-format = { path = "../format" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+agent-help = { git = "https://github.com/sunfmin/agent-cli" }
 serde.workspace = true
 serde_json.workspace = true
 vello = "0.11.0"

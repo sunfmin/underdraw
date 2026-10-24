@@ -150,7 +150,8 @@ fn says_when_there_is_no_display() {
 
 #[test]
 fn gallery_help_says_what_the_inbox_lists_and_what_a_click_on_an_item_does() {
-    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["gallery", "--help"]).output().unwrap();
+    let out =
+        Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["help", "gallery-window"]).output().unwrap();
     let help = String::from_utf8(out.stdout).unwrap();
     for said in [
         "The inbox:",
@@ -163,6 +164,6 @@ fn gallery_help_says_what_the_inbox_lists_and_what_a_click_on_an_item_does() {
         "leave it",
         "a red circle with a white number",
     ] {
-        assert!(help.contains(said), "{said:?} not in gallery --help");
+        assert!(help.contains(said), "{said:?} not in help gallery-window");
     }
 }

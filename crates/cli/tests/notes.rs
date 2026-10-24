@@ -606,10 +606,11 @@ fn check_reports_notes_json_in_the_old_form_as_a_fault_to_delete() {
 
 #[test]
 fn gallery_help_names_everything_a_note_can_be_pinned_to() {
-    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["gallery", "--help"]).output().unwrap();
+    let out =
+        Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["help", "gallery-window"]).output().unwrap();
     let help = String::from_utf8(out.stdout).unwrap();
     for pinned in ["- a node:", "- a whole state:", "- a transition:", "- a navigate:"] {
-        assert!(help.contains(pinned), "{pinned} not in gallery --help");
+        assert!(help.contains(pinned), "{pinned} not in help gallery-window");
     }
 }
 
@@ -636,9 +637,13 @@ fn notes_carries_each_messages_mark_and_its_help_says_what_each_means() {
 
     let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(["notes", "--help"]).output().unwrap();
     let help = String::from_utf8(out.stdout).unwrap();
-    for said in
-        ["MARKS", "\"answers\"   the person's answer", "\"proposes\"  where acting", "right  ✓", "wrong  ✗"]
-    {
+    for said in [
+        "**Marks**",
+        "`\"answers\"`: the person's answer",
+        "`\"proposes\"`: where acting",
+        "`right`: ✓",
+        "`wrong`: ✗",
+    ] {
         assert!(help.contains(said), "{said:?} not in notes --help");
     }
     std::fs::remove_dir_all(root).unwrap();

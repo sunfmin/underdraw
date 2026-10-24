@@ -196,7 +196,9 @@ fn help_documents_domain_json() {
     };
     assert!(help(&["--help"]).contains("domain.json at the project root"));
     let check = help(&["check", "--help"]);
-    assert!(check.contains("DOMAIN.JSON") && check.contains("shadows the domain's"), "{check}");
+    assert!(check.contains("(help:domain-json)"), "{check}");
+    let domain = help(&["help", "domain-json"]);
+    assert!(domain.contains("shadows the domain's"), "{domain}");
     assert!(help(&["cli", "--help"]).contains("domain.json"));
     assert!(help(&["handoff", "--help"]).contains("domain.json"));
 }
@@ -251,11 +253,9 @@ fn help_documents_conditions_on_types() {
         String::from_utf8(out.stdout).unwrap()
     };
     assert!(help(&["--help"]).contains("declared on a type"));
-    let check = help(&["check", "--help"]);
-    assert!(
-        check.contains("A condition on a type is named <Type>.<name>")
-            && check.contains("\"requires\": \"Order.cancellable\""),
-        "{check}"
-    );
+    let conditions = help(&["help", "conditions"]);
+    assert!(conditions.contains("A condition on a type is named <Type>.<name>"), "{conditions}");
+    let domain = help(&["help", "domain-json"]);
+    assert!(domain.contains("\"requires\": \"Order.cancellable\""), "{domain}");
     assert!(help(&["cli", "--help"]).contains("Order.cancellable"));
 }

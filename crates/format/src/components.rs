@@ -620,9 +620,7 @@ impl Components {
                             }
                             None => findings.add(
                                 at,
-                                &format!(
-                                    "{name} is not a key a look reads; see `underdraw check --help`, LOOKS"
-                                ),
+                                &format!("{name} is not a key a look reads; see `underdraw help looks`"),
                             ),
                         }
                     }

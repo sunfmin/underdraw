@@ -96,16 +96,21 @@ fn doctor_and_version() {
     assert!(version.starts_with(&format!("underdraw {}", env!("CARGO_PKG_VERSION"))), "{version}");
 }
 
+/// What `underdraw <args>` prints, and its exit code.
+fn printed(args: &[&str]) -> (String, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();
+    (String::from_utf8(out.stdout).unwrap(), out.status.code().unwrap())
+}
+
 #[test]
 fn help_names_exactly_the_commands_that_exist() {
-    let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).arg("--help").output().unwrap();
-    let help = String::from_utf8(out.stdout).unwrap();
-    // A command is named where a line starts with `underdraw <command>`.
+    let (help, _) = printed(&["--help"]);
+    // A command is named where `underdraw <command>` starts a piece of code.
     let mut named: Vec<String> = help
-        .lines()
-        .filter_map(|line| line.trim_start().strip_prefix("underdraw "))
-        .filter_map(|rest| rest.split_whitespace().next())
-        .filter(|word| word.chars().all(|c| c.is_ascii_lowercase()))
+        .split("`underdraw ")
+        .skip(1)
+        .filter_map(|rest| rest.split([' ', '`']).next())
+        .filter(|word| !word.is_empty() && word.chars().all(|c| c.is_ascii_lowercase()))
         .map(str::to_string)
         .collect();
     named.sort();
@@ -113,6 +118,56 @@ fn help_names_exactly_the_commands_that_exist() {
     let mut exist = underdraw::commands();
     exist.sort();
     assert_eq!(named, exist);
+}
+
+/// `--help` is the whole manual, each command's `--help` its own part of it,
+/// `help <topic>` one topic, and `-h` one screen.
+#[test]
+fn the_manual_answers_whole_by_command_and_by_topic() {
+    let (manual, code) = printed(&["--help"]);
+    assert_eq!(code, 0);
+    assert!(manual.starts_with("# `underdraw`\n"), "{manual}");
+    assert!(manual.contains("\n#### `underdraw check`\n"), "{manual}");
+    assert!(manual.contains("\n### `underdraw help components`\n"), "{manual}");
+    assert_eq!(printed(&["help"]), (manual, 0));
+
+    let (check, code) = printed(&["check", "--help"]);
+    assert_eq!(code, 0);
+    assert!(check.starts_with("# `underdraw check`\n"), "{check}");
+    assert!(check.contains("\n## Arguments\n"), "{check}");
+    assert!(!check.contains("`underdraw render`\n"), "only check's part: {check}");
+
+    let (components, code) = printed(&["help", "components"]);
+    assert_eq!(code, 0);
+    assert!(components.starts_with("# `underdraw help components`\n"), "{components}");
+    let (answer, code) = underdraw(&["help", "nope"]);
+    assert_eq!(code, 2, "{answer}");
+    assert!(answer["error"].as_str().unwrap().contains("components"), "names the topics there are: {answer}");
+
+    let (short, code) = printed(&["-h"]);
+    assert_eq!(code, 0);
+    assert!(short.lines().count() <= 24, "one screen: {short}");
+    for command in underdraw::commands() {
+        assert!(short.contains(&format!("\n  {command} ")), "-h lists {command}: {short}");
+    }
+}
+
+/// The index names, for each thing an agent wants to do, the topic that says
+/// how, and reaches every topic, so an added topic fails here until it is
+/// listed.
+#[test]
+fn the_index_reaches_every_topic() {
+    let (manual, _) = printed(&["--help"]);
+    let topics: Vec<&str> = manual
+        .lines()
+        .filter_map(|line| line.strip_prefix("### `underdraw help ")?.strip_suffix('`'))
+        .collect();
+    assert!(topics.len() > 20, "{topics:?}");
+    let (index, _) = printed(&["help", "index"]);
+    for topic in topics.iter().filter(|topic| **topic != "index") {
+        assert!(index.contains(&format!("(help:{topic})")), "the index does not reach {topic}");
+    }
+    assert!(manual.contains("(help:index)"), "the manual's own text links the index");
 }
 
 #[test]
@@ -267,43 +322,4 @@ fn a_root_holds_each_navigate_to_the_params_of_the_screen_it_opens() {
     let (alone, code) = underdraw(&["check", root.join("orders").to_str().unwrap()]);
     assert_eq!((code, &alone["ok"]), (0, &json!(true)), "alone, it cannot see ExportDocuments: {alone:#}");
     std::fs::remove_dir_all(root).unwrap();
-}
-
-/// The index both helps open with names, for each line, the sections that
-/// say how: each must be a heading of `check --help`, and every heading of
-/// FORMAT must be reached from it, so a renamed or added section fails here.
-#[test]
-fn the_index_reaches_every_section_of_format() {
-    let help = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_underdraw")).args(args).output().unwrap();
-        String::from_utf8(out.stdout).unwrap()
-    };
-    let check = help(&["check", "--help"]);
-    let index: Vec<&str> = check
-        .lines()
-        .skip_while(|line| *line != "FIND IT")
-        .skip(3)
-        .take_while(|line| !line.is_empty())
-        .collect();
-    let named: Vec<&str> =
-        index.iter().flat_map(|line| line.rsplit_once("  ").unwrap().1.split(", ")).collect();
-    // A heading is a line of capitals, not indented.
-    let heading = |line: &&str| {
-        !line.starts_with(' ')
-            && line.chars().any(|c| c.is_ascii_uppercase())
-            && !line.chars().any(|c| c.is_ascii_lowercase())
-    };
-    let headings: Vec<&str> = check.lines().filter(heading).collect();
-    for section in &named {
-        assert!(
-            headings.contains(section),
-            "the index names {section:?}, which no heading of check --help is"
-        );
-    }
-    let format = include_str!("../src/help/format.txt");
-    for section in format.lines().filter(heading) {
-        assert!(named.contains(&section), "FORMAT's {section:?} is not reached from the index");
-    }
-    assert!(check.contains("\nFIND IT\n"), "check --help opens with the index");
-    assert!(help(&["--help"]).contains(&index.join("\n")), "--help opens with the same index");
 }
