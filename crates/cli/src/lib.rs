@@ -33,6 +33,7 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use agent_help::Topic;
 use anyhow::{Context, bail};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, FromArgMatches};
@@ -42,7 +43,6 @@ use underdraw_format::{Lang, Screen, ScreenParams, State};
 
 use crate::manual::{Cli, Command};
 use crate::project::{Project, TOKENS};
-use agent_help::Topic;
 
 // The binary every topic's reference names: `underdraw help <topic>`.
 agent_help::binary!("underdraw");
